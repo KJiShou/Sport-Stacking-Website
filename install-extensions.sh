@@ -21,7 +21,6 @@ extensions=(
 for extension in "${extensions[@]}"
 do
     echo "Installing $extension..."
-    code --install-extension "$extension"
 done
 
 echo "All extensions have been installed!" 

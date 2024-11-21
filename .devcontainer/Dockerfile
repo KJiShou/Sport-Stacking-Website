@@ -1,10 +1,15 @@
 FROM node:20-bullseye
 
-# Install necessary packages
+# Install necessary packages including tzdata
 RUN apt-get update && apt-get install -y \
     curl \
     git \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# Set timezone
+ENV TZ=Asia/Kuala_Lumpur
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Install Starship
 RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
@@ -23,6 +28,3 @@ RUN echo 'eval "$(starship init bash)"' >> /home/node/.bashrc
 
 # Copy Starship configuration
 COPY --chown=node:node starship.toml /home/node/.config/starship.toml
-
-# Set timezone (optional)
-ENV TZ=Asia/Kuala_Lumpur

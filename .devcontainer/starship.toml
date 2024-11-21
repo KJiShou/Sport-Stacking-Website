@@ -42,7 +42,7 @@ style = "bold blue"
 # Git branch config
 [git_branch]
 symbol = "🌱 "
-truncation_length = 4
+truncation_length = 15
 truncation_symbol = ""
 style = "bold purple"
 
@@ -54,3 +54,8 @@ style = "bold red"
 # NodeJS config
 [nodejs]
 format = "via [🤖 $version](bold green) "
+
+[time]
+disabled = false
+format = '[\[ $time \]](bold yellow)'
+time_format = "%I:%M %p"  # 12-hour format with AM/PM
