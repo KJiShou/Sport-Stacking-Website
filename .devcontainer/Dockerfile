@@ -13,4 +13,4 @@ RUN mkdir -p /home/node/.config
 RUN echo 'eval "$(starship init bash)"' >> /home/node/.bashrc
 
 # Copy Starship configuration
-COPY starship.toml ~/.config/starship.toml 
+COPY --chown=node:node starship.toml /home/node/.config/starship.toml 

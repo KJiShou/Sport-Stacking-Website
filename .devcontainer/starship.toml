@@ -54,9 +54,3 @@ style = "bold red"
 # NodeJS config
 [nodejs]
 format = "via [🤖 $version](bold green) "
-
-# Time config
-[time]
-disabled = false
-format = '[\[ $time \]](bold yellow)'
-time_format = "%I:%M %p"
