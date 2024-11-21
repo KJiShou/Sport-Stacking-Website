@@ -1,0 +1,62 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
+# Inserts a blank line between shell prompts
+add_newline = true
+
+# Increase command timeout to prevent git warnings
+command_timeout = 3000
+
+# Configure the prompt format
+format = """
+[](#9A348E)\
+$username\
+$directory\
+$git_branch\
+$git_status\
+$nodejs\
+$time\
+$line_break\
+$character"""
+
+# Replace the '❯' symbol in the prompt
+[character]
+success_symbol = "[➜](bold green)"
+error_symbol = "[✗](bold red)"
+
+# Username config
+[username]
+style_user = "white bold"
+style_root = "red bold"
+format = "[$user]($style) "
+disabled = false
+show_always = true
+
+# Directory config
+[directory]
+truncation_length = 3
+truncation_symbol = "…/"
+home_symbol = "🏠 ~"
+read_only = " "
+style = "bold blue"
+
+# Git branch config
+[git_branch]
+symbol = "🌱 "
+truncation_length = 4
+truncation_symbol = ""
+style = "bold purple"
+
+# Git status config
+[git_status]
+format = '([\[$all_status$ahead_behind\]]($style) )'
+style = "bold red"
+
+# NodeJS config
+[nodejs]
+format = "via [🤖 $version](bold green) "
+
+# Time config
+[time]
+disabled = false
+format = '[\[ $time \]](bold yellow)'
+time_format = "%I:%M %p"
