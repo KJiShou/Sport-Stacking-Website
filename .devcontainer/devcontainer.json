@@ -1,7 +1,7 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/typescript-node
 {
-	"name": "Node.js & TypeScript",
+	"name": "Node.js Development",
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
@@ -9,9 +9,82 @@
 		"vscode": {
 			"extensions": [
 				"dbaeumer.vscode-eslint",
-				"esbenp.prettier-vscode"
-			]
+				"esbenp.prettier-vscode",
+				"aaron-bond.better-comments",
+				"usernamehw.errorlens",
+				"formulahendry.auto-close-tag",
+				"formulahendry.auto-rename-tag",
+				"ms-vscode.atom-keybindings",
+				"streetsidesoftware.code-spell-checker",
+				"christian-kohler.path-intellisense",
+				"PKief.material-icon-theme",
+				"wix.vscode-import-cost",
+				"dsznajder.es7-react-js-snippets",
+				"eamodio.gitlens"
+			],
+			"settings": {
+				"editor.formatOnSave": true,
+				"editor.defaultFormatter": "esbenp.prettier-vscode",
+				"editor.codeActionsOnSave": {
+					"source.fixAll.eslint": true
+				},
+				"files.eol": "\n",
+				"better-comments.tags": [
+					{
+						"tag": "!",
+						"color": "#FF2D00",
+						"strikethrough": false,
+						"underline": false,
+						"backgroundColor": "transparent",
+						"bold": false,
+						"italic": false
+					},
+					{
+						"tag": "?",
+						"color": "#3498DB",
+						"strikethrough": false,
+						"underline": false,
+						"backgroundColor": "transparent",
+						"bold": false,
+						"italic": false
+					},
+					{
+						"tag": "//",
+						"color": "#474747",
+						"strikethrough": true,
+						"underline": false,
+						"backgroundColor": "transparent",
+						"bold": false,
+						"italic": false
+					},
+					{
+						"tag": "todo",
+						"color": "#FF8C00",
+						"strikethrough": false,
+						"underline": false,
+						"backgroundColor": "transparent",
+						"bold": false,
+						"italic": false
+					},
+					{
+						"tag": "*",
+						"color": "#98C379",
+						"strikethrough": false,
+						"underline": false,
+						"backgroundColor": "transparent",
+						"bold": false,
+						"italic": false
+					}
+				],
+				"cSpell.words": [
+					"devcontainer",
+					"Kuala",
+					"Lumpur",
+					"starship"
+				]
+			}
 		}
 	},
-	"remoteUser": "node"
+	"remoteUser": "node",
+	"postCreateCommand": "npm install && npm run setup"
 }
