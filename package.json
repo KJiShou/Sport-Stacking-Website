@@ -1,6 +1,7 @@
 {
   "dependencies": {
-    "@arco-design/web-react": "^2.64.1"
+    "@arco-design/web-react": "^2.64.1",
+    "next": "^15.0.3"
   },
   "scripts": {
     "setup": "./install-extensions.sh"

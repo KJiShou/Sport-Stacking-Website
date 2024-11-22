@@ -86,5 +86,5 @@
 		}
 	},
 	"remoteUser": "node",
-	"postCreateCommand": "npm install && npm run setup"
+	"postCreateCommand": "npm install && npm run setup && yarn add next"
 }
