@@ -28,3 +28,9 @@ RUN echo 'eval "$(starship init bash)"' >> /home/node/.bashrc
 
 # Copy Starship configuration
 COPY --chown=node:node starship.toml /home/node/.config/starship.toml
+
+
+# Set timezone (optional)
+ENV TZ=Asia/Kuala_Lumpur
+
+RUN cd ./db-website && yarn install
