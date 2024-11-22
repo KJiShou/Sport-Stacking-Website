@@ -86,5 +86,6 @@
 		}
 	},
 	"remoteUser": "node",
-	"postCreateCommand": "npm install && npm run setup && yarn add next"
+	"postCreateCommand": "npm run setup",
+	"forwardPorts": [5000]
 }
