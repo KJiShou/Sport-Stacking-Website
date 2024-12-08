@@ -8,13 +8,6 @@ To install all required VS Code extensions:
 npm run setup
 ```
 
-## Run Server
-
-```bash
-cd db-website/ && yarn dev
-```
-
-
 This will install the following extensions:
 - Better Comments
 - Error Lens
@@ -28,3 +21,9 @@ This will install the following extensions:
 - Import Cost
 - ES7+ React/Redux Snippets
 - GitLens
+
+## Run Server
+
+```bash
+cd db-website/ && yarn dev
+```
