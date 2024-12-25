@@ -15,10 +15,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
 
 # Install TypeScript globally
-RUN npm install -g typescript ts-node ts-node-dev
-
-# Switch to node user
-USER node
+RUN npm install -g npm@latest
 
 # Create directory for Starship config
 RUN mkdir -p /home/node/.config
