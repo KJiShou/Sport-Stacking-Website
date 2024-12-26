@@ -1,24 +1,18 @@
 // import { useState } from 'react'
-import { Button } from '@arco-design/web-react';
+//import { Button } from '@arco-design/web-react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import '@arco-design/web-react/dist/css/arco.css';
+import Navbar from './components/Navbar';
 
-function App() {
+const App = () => {
     return (
-        <>
-            <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-                <Button type="primary">Hello Arco</Button>
-                <Button type="primary" onClick={() => {}}>
-                    Hello Arco
-                </Button>
-                <h1 className="text-4xl font-bold text-blue-600">
-                    Welcome to Home Page
-                </h1>
-                <p className="text-lg mt-4 text-gray-700">
-                    This page uses Tailwind CSS!
-                </p>
-            </div>
-        </>
+        <Router>
+            <Navbar />
+            <Routes>
+                <Route path="/" element={<div />} />
+            </Routes>
+        </Router>
     );
-}
+};
 
 export default App;
