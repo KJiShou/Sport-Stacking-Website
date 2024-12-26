@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-size: 10px;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+
+  --color-ghostwhite: #f5f6fa;
+}
+
+html {
+  box-sizing: border-box;
+}
+
+body,
+main {
+  margin: 0;
+  padding: 0;
+  color: #444;
+}
+
+*,
+*:before,
+*:after {
+  box-sizing: inherit;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@media (hover: hover) {
+  /* Customize website's scrollbar like Mac OS
+  Not supports in Firefox and IE */
+
+  /* total width */
+  ::-webkit-scrollbar {
+    background-color: rgba(0, 0, 0, 0);
+    width: 10px;
+    height: 10px;
+    z-index: 999999;
+  }
+
+  /* background of the scrollbar except button or resizer */
+  ::-webkit-scrollbar-track {
+    background-color: rgba(0, 0, 0, 0);
+  }
+
+  /* scrollbar itself */
+  ::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0);
+    border-radius: 25px;
+    border: 0px solid #fff;
+
+    &:hover {
+      background-color: #a0a0a5;
+      border: 2px solid #f4f4f4;
+    }
+  }
+
+  /* set button(top and bottom of the scrollbar) */
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  /* scrollbar when element is hovered */
+  :hover::-webkit-scrollbar-thumb {
+    background-color: #a0a0a5;
+    border: 2px solid #fff;
+  }
+}
+
+.md-input {
+  background-color: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  transition: border 500ms;
+
+  &:hover, &:focus {
+    background-color: white;
+    border-bottom-color: rgb(var(--primary-6));
+  }
+
+  &::placeholder {
+    color: rgba(0, 0, 0, 0.3);
+  }
+}
+
+.tab-container {
+    .arco-tabs-content {
+      padding-top: 0px;
+    }
+}
