@@ -25,5 +25,5 @@ This will install the following extensions:
 ## Run Server
 
 ```bash
-cd db-website/ && yarn dev
+yarn dev
 ```
