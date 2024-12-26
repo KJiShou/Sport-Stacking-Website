@@ -25,3 +25,9 @@ RUN echo 'eval "$(starship init bash)"' >> /home/node/.bashrc
 
 # Copy Starship configuration
 COPY --chown=node:node starship.toml /home/node/.config/starship.toml
+
+# Lint and format code during the build
+RUN yarn lint || true
+RUN yarn format || true
+
+RUN yarn add -D editorconfig
