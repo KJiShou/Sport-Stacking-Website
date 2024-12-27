@@ -1,5 +1,11 @@
 FROM node:20-bullseye
 
+# Switch to root user explicitly
+USER root
+
+# Set working directory
+WORKDIR /src
+
 # Install necessary packages including tzdata
 RUN apt-get update && apt-get install -y \
     curl \
@@ -25,6 +31,14 @@ RUN echo 'eval "$(starship init bash)"' >> /home/node/.bashrc
 
 # Copy Starship configuration
 COPY --chown=node:node starship.toml /home/node/.config/starship.toml
+
+# Copy Node environment setup to root
+RUN cp -r /home/node/.bashrc /root/.bashrc
+RUN cp -r /home/node/.config /root/.config
+
+# Install Starship Prompt for root user
+RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
+RUN echo 'eval "$(starship init bash)"' >> /root/.bashrc
 
 # Lint and format code during the build
 RUN yarn lint || true
