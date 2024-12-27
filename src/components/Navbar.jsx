@@ -12,8 +12,8 @@ import {
     IconCaretRight,
     IconCaretLeft,
 } from '@arco-design/web-react/icon';
-import { DeviceBreakpoint } from './deviceStore';
-import { useDeviceBreakpoint } from './index';
+import { DeviceBreakpoint } from '../hooks/DeviceInspector/deviceStore';
+import { useDeviceBreakpoint } from '../hooks/DeviceInspector/index';
 
 const Navbar = () => {
     const MenuItem = Menu.Item;
