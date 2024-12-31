@@ -45,19 +45,30 @@ jobs:
 
       # Step 5: Install Dependencies
       - name: Install dependencies
-        run: yarn
+        run: yarn install --immutable
 
-      # Step 6: Lint Code
+      # Step 6: Format Code with Biome
+      - name: Format Code
+        run: yarn format
+
+      # Step 7: Lint Code
       - name: Run lint
         run: yarn lint
 
-      # Step 7: Build the Project
+      # Step 8: Build the Project
       - name: Build Project
         run: yarn build
 
-      # Step 8: Deploy to Server
+      # Step 9: Deploy to Server
       - name: Deploy to Production
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_PATH: ${{ secrets.SERVER_PATH }}
         run: |
           echo "Deploying to production environment..."
-          # Replace this command with your actual deployment commands
-          # Example: scp -r dist/* user@server:/path/to/deploy
+          rsync -avz --delete dist/ $SERVER_USER@$SERVER_HOST:$SERVER_PATH
+
+      # Step 10: Post-Deployment Health Check
+      - name: Health Check
+        run: curl -f http://${{ secrets.SERVER_HOST }} || exit 1
