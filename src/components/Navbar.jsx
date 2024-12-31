@@ -1,13 +1,13 @@
-import { useState, useEffect } from "react";
-import { Layout, Menu, Button, Message } from "@arco-design/web-react";
+import { useState, useEffect } from 'react';
+import { Layout, Menu, Button, Message } from '@arco-design/web-react';
 import {
     IconHome,
     IconCalendar,
     IconCaretRight,
     IconCaretLeft,
-} from "@arco-design/web-react/icon";
-import { DeviceBreakpoint } from "../hooks/DeviceInspector/deviceStore";
-import { useDeviceBreakpoint } from "../hooks/DeviceInspector/index";
+} from '@arco-design/web-react/icon';
+import { DeviceBreakpoint } from '../hooks/DeviceInspector/deviceStore';
+import { useDeviceBreakpoint } from '../hooks/DeviceInspector/index';
 
 const Navbar = () => {
     const MenuItem = Menu.Item;
@@ -32,15 +32,15 @@ const Navbar = () => {
             >
                 <div className="logo" />
                 <Menu
-                    defaultOpenKeys={["1"]}
-                    defaultSelectedKeys={["0_3"]}
+                    defaultOpenKeys={['1']}
+                    defaultSelectedKeys={['0_3']}
                     onClickMenuItem={(key) =>
                         Message.info({
                             content: `You select ${key}`,
                             showIcon: true,
                         })
                     }
-                    style={{ width: "100%" }}
+                    style={{ width: '100%' }}
                     mode="horizontal"
                 >
                     <MenuItem key="0_1" disabled>
@@ -101,7 +101,6 @@ const Navbar = () => {
                 >
                     {collapse ? <IconCaretRight /> : <IconCaretLeft />}
                 </Button>
-                <div>a</div>
                 <div>a</div>
                 <div>a</div>
                 <div>a</div>

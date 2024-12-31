@@ -1,5 +1,5 @@
-import { atom } from "jotai";
-import { atomWithStorage } from "jotai/utils";
+import {atom} from "jotai";
+import {atomWithStorage} from "jotai/utils";
 
 export enum DeviceNetworkStatus {
     Online = "online",
@@ -26,14 +26,9 @@ export enum DeviceOrientation {
     LANDSCAPE = 1,
 }
 
-export const deviceNetworkStatusAtom = atom<DeviceNetworkStatus>(
-    DeviceNetworkStatus.Online,
-);
+export const deviceNetworkStatusAtom = atom<DeviceNetworkStatus>(DeviceNetworkStatus.Online);
 
-export const deviceLanguageAtom = atomWithStorage<DeviceLanguage>(
-    "lang",
-    "en-US",
-);
+export const deviceLanguageAtom = atomWithStorage<DeviceLanguage>("lang", "en-US");
 
 export const calculateDeviceBreakpoint = (width: number): DeviceBreakpoint => {
     if (width >= DeviceBreakpoint["6xl"]) return DeviceBreakpoint["6xl"];
@@ -48,10 +43,7 @@ export const calculateDeviceBreakpoint = (width: number): DeviceBreakpoint => {
     return DeviceBreakpoint.xs;
 };
 
-export const compareDeviceBreakpoints = (
-    a: DeviceBreakpoint,
-    b: DeviceBreakpoint,
-): 0 | 1 | -1 => {
+export const compareDeviceBreakpoints = (a: DeviceBreakpoint, b: DeviceBreakpoint): 0 | 1 | -1 => {
     if (a === b) return 0;
     if (a > b) return 1;
     return -1;
@@ -59,6 +51,4 @@ export const compareDeviceBreakpoints = (
 
 export const deviceBreakpointAtom = atom<DeviceBreakpoint>(DeviceBreakpoint.xs);
 
-export const deviceOrientationAtom = atom<DeviceOrientation>(
-    DeviceOrientation.LANDSCAPE,
-);
+export const deviceOrientationAtom = atom<DeviceOrientation>(DeviceOrientation.LANDSCAPE);

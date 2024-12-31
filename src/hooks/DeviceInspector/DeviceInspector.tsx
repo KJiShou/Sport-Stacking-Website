@@ -1,19 +1,14 @@
 "use client";
 
-import { Message, Modal } from "@arco-design/web-react";
-import { useSetAtom } from "jotai";
-import React, { useRef } from "react";
-import { useEffectOnce, useMount } from "react-use";
-import {
-    calculateDeviceBreakpoint,
-    deviceBreakpointAtom,
-    deviceNetworkStatusAtom,
-    deviceOrientationAtom,
-} from "./deviceStore";
-import { DeviceNetworkStatus, DeviceOrientation } from "./deviceStore";
+import {Message, Modal} from "@arco-design/web-react";
+import {useSetAtom} from "jotai";
+import React, {useRef} from "react";
+import {useEffectOnce, useMount} from "react-use";
+import {calculateDeviceBreakpoint, deviceBreakpointAtom, deviceNetworkStatusAtom, deviceOrientationAtom} from "./deviceStore";
+import {DeviceNetworkStatus, DeviceOrientation} from "./deviceStore";
 
 const fetchOS = () => {
-    const { userAgent } = navigator;
+    const {userAgent} = navigator;
 
     if (userAgent.indexOf("Win") > -1) {
         return "Windows";
@@ -39,7 +34,7 @@ const fetchOS = () => {
 };
 
 const fetchBrowser = () => {
-    const { userAgent } = navigator;
+    const {userAgent} = navigator;
 
     if (userAgent.indexOf("Chrome") > -1) {
         return "Chrome";
@@ -53,10 +48,7 @@ const fetchBrowser = () => {
         return "Safari";
     }
 
-    if (
-        userAgent.indexOf("compatible") > -1 &&
-        userAgent.indexOf("MSIE") > -1
-    ) {
+    if (userAgent.indexOf("compatible") > -1 && userAgent.indexOf("MSIE") > -1) {
         return "IE";
     }
 
@@ -64,7 +56,7 @@ const fetchBrowser = () => {
 };
 
 const fetchBrowserVersion = () => {
-    const { userAgent } = navigator;
+    const {userAgent} = navigator;
 
     const regexes = {
         Chrome: /Chrome\/(\S+)/,
@@ -103,8 +95,8 @@ export const DeviceInspector = () => {
     const handleDeviceInfoViewerOpen = async () => {
         Modal.info({
             title: "Device Info",
-            style: { maxWidth: "90%" },
-            okButtonProps: { style: { width: "50%" } },
+            style: {maxWidth: "90%"},
+            okButtonProps: {style: {width: "50%"}},
             content: (
                 <div className="flex flex-col gap-5">
                     <div className="flex flex-row">
@@ -119,10 +111,7 @@ export const DeviceInspector = () => {
                     </div>
                     <div className="flex flex-row">
                         <div className="w-5/12">Resolution</div>
-                        <div
-                            className="w-7/12"
-                            ref={windowInnerResolutionDivRef}
-                        >
+                        <div className="w-7/12" ref={windowInnerResolutionDivRef}>
                             {`${window.innerWidth} x ${window.innerHeight}`}
                         </div>
                     </div>
@@ -134,18 +123,11 @@ export const DeviceInspector = () => {
                     </div>
                     <div className="flex flex-row">
                         <div className="w-5/12">Color Depth</div>
-                        <div className="w-7/12">
-                            {window.screen.colorDepth} bit
-                        </div>
+                        <div className="w-7/12">{window.screen.colorDepth} bit</div>
                     </div>
                     <div className="flex flex-row">
                         <div className="w-5/12">Touch Screen</div>
-                        <div className="w-7/12">
-                            {"ontouchstart" in window ||
-                            navigator.maxTouchPoints > 0
-                                ? "Yes"
-                                : "No"}
-                        </div>
+                        <div className="w-7/12">{"ontouchstart" in window || navigator.maxTouchPoints > 0 ? "Yes" : "No"}</div>
                     </div>
                 </div>
             ),
@@ -159,22 +141,17 @@ export const DeviceInspector = () => {
         mountedRef.current = true;
 
         const handleWindowResize = async () => {
-            const { innerWidth, innerHeight } = window;
+            const {innerWidth, innerHeight} = window;
 
             setDeviceBreakpoint(calculateDeviceBreakpoint(innerWidth));
-            setDeviceOrientation(
-                innerWidth > innerHeight
-                    ? DeviceOrientation.LANDSCAPE
-                    : DeviceOrientation.PORTRAIT,
-            );
+            setDeviceOrientation(innerWidth > innerHeight ? DeviceOrientation.LANDSCAPE : DeviceOrientation.PORTRAIT);
 
             if (windowInnerResolutionDivRef.current) {
                 windowInnerResolutionDivRef.current.innerText = `${innerWidth} x ${innerHeight}`;
             }
 
             if (devicePixelRatioDivRef.current) {
-                devicePixelRatioDivRef.current.innerText =
-                    window.devicePixelRatio.toString();
+                devicePixelRatioDivRef.current.innerText = window.devicePixelRatio.toString();
             }
         };
 
