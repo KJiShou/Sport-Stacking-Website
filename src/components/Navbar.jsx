@@ -1,24 +1,18 @@
-import { useState, useEffect } from 'react';
-import {
-    Layout,
-    Menu,
-    Breadcrumb,
-    Button,
-    Message,
-} from '@arco-design/web-react';
+import { useState, useEffect } from "react";
+import { Layout, Menu, Button, Message } from "@arco-design/web-react";
 import {
     IconHome,
     IconCalendar,
     IconCaretRight,
     IconCaretLeft,
-} from '@arco-design/web-react/icon';
-import { DeviceBreakpoint } from '../hooks/DeviceInspector/deviceStore';
-import { useDeviceBreakpoint } from '../hooks/DeviceInspector/index';
+} from "@arco-design/web-react/icon";
+import { DeviceBreakpoint } from "../hooks/DeviceInspector/deviceStore";
+import { useDeviceBreakpoint } from "../hooks/DeviceInspector/index";
 
 const Navbar = () => {
     const MenuItem = Menu.Item;
     const SubMenu = Menu.SubMenu;
-    const Sider = Layout.Sider;
+    //const Sider = Layout.Sider;
     const Header = Layout.Header;
     const Footer = Layout.Footer;
     const Content = Layout.Content;
@@ -33,24 +27,21 @@ const Navbar = () => {
 
     return (
         <Layout className={`max-h-full h-full max-w-full w-full`}>
-            <Sider
-                collapsed={collapse}
-                collapsible
-                trigger={null}
-                breakpoint="xl"
-                className={`max-h-full w-full h-full max-w-full`}
+            <Header
+                className={`fixed h-24 flex z-20 w-full flex-row justify-between`}
             >
                 <div className="logo" />
                 <Menu
-                    defaultOpenKeys={['1']}
-                    defaultSelectedKeys={['0_3']}
+                    defaultOpenKeys={["1"]}
+                    defaultSelectedKeys={["0_3"]}
                     onClickMenuItem={(key) =>
                         Message.info({
                             content: `You select ${key}`,
                             showIcon: true,
                         })
                     }
-                    style={{ width: '100%' }}
+                    style={{ width: "100%" }}
+                    mode="horizontal"
                 >
                     <MenuItem key="0_1" disabled>
                         <IconHome />
@@ -99,29 +90,23 @@ const Navbar = () => {
                         <MenuItem key="4_3">Menu 3</MenuItem>
                     </SubMenu>
                 </Menu>
-            </Sider>
-            <Layout>
-                <Header>
-                    <Button
-                        shape="round"
-                        className="trigger"
-                        onClick={() => {
-                            setCollapse(!collapse);
-                        }}
-                    >
-                        {collapse ? <IconCaretRight /> : <IconCaretLeft />}
-                    </Button>
-                </Header>
-                <Layout style={{ padding: '0 24px' }}>
-                    <Breadcrumb style={{ margin: '16px 0' }}>
-                        <Breadcrumb.Item>Home</Breadcrumb.Item>
-                        <Breadcrumb.Item>List</Breadcrumb.Item>
-                        <Breadcrumb.Item>App</Breadcrumb.Item>
-                    </Breadcrumb>
-                    <Content>Content</Content>
-                    <Footer>Footer</Footer>
-                </Layout>
-            </Layout>
+            </Header>
+            <Content className={`pt-24`}>
+                <Button
+                    shape="round"
+                    className="trigger"
+                    onClick={() => {
+                        setCollapse(!collapse);
+                    }}
+                >
+                    {collapse ? <IconCaretRight /> : <IconCaretLeft />}
+                </Button>
+                <div>a</div>
+                <div>a</div>
+                <div>a</div>
+                <div>a</div>
+            </Content>
+            <Footer>Footer</Footer>
         </Layout>
     );
 };

@@ -1,12 +1,12 @@
-import { atom } from 'jotai';
-import { atomWithStorage } from 'jotai/utils';
+import { atom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 
 export enum DeviceNetworkStatus {
-    Online = 'online',
-    Offline = 'offline',
+    Online = "online",
+    Offline = "offline",
 }
 
-export type DeviceLanguage = 'en-US' | 'ms-MY' | 'zh-CN';
+export type DeviceLanguage = "en-US" | "ms-MY" | "zh-CN";
 
 export enum DeviceBreakpoint {
     xs = 240, //Mobile Layout
@@ -15,10 +15,10 @@ export enum DeviceBreakpoint {
     lg = 992,
     xl = 1280, //PC Layout
     xxl = 1536,
-    '3xl' = 1920,
-    '4xl' = 2560, //Double PC Layout
-    '5xl' = 3840,
-    '6xl' = 4096,
+    "3xl" = 1920,
+    "4xl" = 2560, //Double PC Layout
+    "5xl" = 3840,
+    "6xl" = 4096,
 }
 
 export enum DeviceOrientation {
@@ -31,15 +31,15 @@ export const deviceNetworkStatusAtom = atom<DeviceNetworkStatus>(
 );
 
 export const deviceLanguageAtom = atomWithStorage<DeviceLanguage>(
-    'lang',
-    'en-US',
+    "lang",
+    "en-US",
 );
 
 export const calculateDeviceBreakpoint = (width: number): DeviceBreakpoint => {
-    if (width >= DeviceBreakpoint['6xl']) return DeviceBreakpoint['6xl'];
-    if (width >= DeviceBreakpoint['5xl']) return DeviceBreakpoint['5xl'];
-    if (width >= DeviceBreakpoint['4xl']) return DeviceBreakpoint['4xl'];
-    if (width >= DeviceBreakpoint['3xl']) return DeviceBreakpoint['3xl'];
+    if (width >= DeviceBreakpoint["6xl"]) return DeviceBreakpoint["6xl"];
+    if (width >= DeviceBreakpoint["5xl"]) return DeviceBreakpoint["5xl"];
+    if (width >= DeviceBreakpoint["4xl"]) return DeviceBreakpoint["4xl"];
+    if (width >= DeviceBreakpoint["3xl"]) return DeviceBreakpoint["3xl"];
     if (width >= DeviceBreakpoint.xxl) return DeviceBreakpoint.xxl;
     if (width >= DeviceBreakpoint.xl) return DeviceBreakpoint.xl;
     if (width >= DeviceBreakpoint.lg) return DeviceBreakpoint.lg;
