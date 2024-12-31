@@ -2,12 +2,12 @@ name: Deploy to Production
 run-name: Deploy to Production
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
 
 jobs:
   lint:

@@ -1,13 +1,8 @@
-import { useState, useEffect } from "react";
-import { Layout, Menu, Button, Message } from "@arco-design/web-react";
-import {
-    IconHome,
-    IconCalendar,
-    IconCaretRight,
-    IconCaretLeft,
-} from "@arco-design/web-react/icon";
-import { DeviceBreakpoint } from "../hooks/DeviceInspector/deviceStore";
-import { useDeviceBreakpoint } from "../hooks/DeviceInspector/index";
+import {useState, useEffect} from "react";
+import {Layout, Menu, Button, Message} from "@arco-design/web-react";
+import {IconHome, IconCalendar, IconCaretRight, IconCaretLeft} from "@arco-design/web-react/icon";
+import {DeviceBreakpoint} from "../hooks/DeviceInspector/deviceStore";
+import {useDeviceBreakpoint} from "../hooks/DeviceInspector/index";
 
 const Navbar = () => {
     const MenuItem = Menu.Item;
@@ -27,9 +22,7 @@ const Navbar = () => {
 
     return (
         <Layout className={`max-h-full h-full max-w-full w-full`}>
-            <Header
-                className={`fixed h-24 flex z-20 w-full flex-row justify-between`}
-            >
+            <Header className={`fixed h-24 flex z-20 w-full flex-row justify-between`}>
                 <div className="logo" />
                 <Menu
                     defaultOpenKeys={["1"]}
@@ -40,7 +33,7 @@ const Navbar = () => {
                             showIcon: true,
                         })
                     }
-                    style={{ width: "100%" }}
+                    style={{width: "100%"}}
                     mode="horizontal"
                 >
                     <MenuItem key="0_1" disabled>
@@ -101,7 +94,6 @@ const Navbar = () => {
                 >
                     {collapse ? <IconCaretRight /> : <IconCaretLeft />}
                 </Button>
-                <div>a</div>
                 <div>a</div>
                 <div>a</div>
                 <div>a</div>
