@@ -58,17 +58,3 @@ jobs:
       # Step 8: Build the Project
       - name: Build Project
         run: yarn build
-
-      # Step 9: Deploy to Server
-      - name: Deploy to Production
-        env:
-          SERVER_USER: ${{ secrets.SERVER_USER }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          SERVER_PATH: ${{ secrets.SERVER_PATH }}
-        run: |
-          echo "Deploying to production environment..."
-          rsync -avz --delete dist/ $SERVER_USER@$SERVER_HOST:$SERVER_PATH
-
-      # Step 10: Post-Deployment Health Check
-      - name: Health Check
-        run: curl -f http://${{ secrets.SERVER_HOST }} || exit 1
