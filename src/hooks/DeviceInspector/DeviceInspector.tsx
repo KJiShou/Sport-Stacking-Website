@@ -1,66 +1,66 @@
-'use client';
+"use client";
 
-import { Message, Modal } from '@arco-design/web-react';
-import { useSetAtom } from 'jotai';
-import React, { useRef } from 'react';
-import { useEffectOnce, useMount } from 'react-use';
+import { Message, Modal } from "@arco-design/web-react";
+import { useSetAtom } from "jotai";
+import React, { useRef } from "react";
+import { useEffectOnce, useMount } from "react-use";
 import {
     calculateDeviceBreakpoint,
     deviceBreakpointAtom,
     deviceNetworkStatusAtom,
     deviceOrientationAtom,
-} from './deviceStore';
-import { DeviceNetworkStatus, DeviceOrientation } from './deviceStore';
+} from "./deviceStore";
+import { DeviceNetworkStatus, DeviceOrientation } from "./deviceStore";
 
 const fetchOS = () => {
     const { userAgent } = navigator;
 
-    if (userAgent.indexOf('Win') > -1) {
-        return 'Windows';
+    if (userAgent.indexOf("Win") > -1) {
+        return "Windows";
     }
 
-    if (userAgent.indexOf('Mac') > -1) {
-        return 'Mac';
+    if (userAgent.indexOf("Mac") > -1) {
+        return "Mac";
     }
 
-    if (userAgent.indexOf('Android') > -1) {
-        return 'Android';
+    if (userAgent.indexOf("Android") > -1) {
+        return "Android";
     }
 
-    if (userAgent.indexOf('Linux') > -1) {
-        return 'Linux';
+    if (userAgent.indexOf("Linux") > -1) {
+        return "Linux";
     }
 
-    if (userAgent.indexOf('like Mac') > -1) {
-        return 'iOS';
+    if (userAgent.indexOf("like Mac") > -1) {
+        return "iOS";
     }
 
-    return 'Unknown';
+    return "Unknown";
 };
 
 const fetchBrowser = () => {
     const { userAgent } = navigator;
 
-    if (userAgent.indexOf('Chrome') > -1) {
-        return 'Chrome';
+    if (userAgent.indexOf("Chrome") > -1) {
+        return "Chrome";
     }
 
-    if (userAgent.indexOf('Firefox') > -1) {
-        return 'Firefox';
+    if (userAgent.indexOf("Firefox") > -1) {
+        return "Firefox";
     }
 
-    if (userAgent.indexOf('Safari') > -1) {
-        return 'Safari';
+    if (userAgent.indexOf("Safari") > -1) {
+        return "Safari";
     }
 
     if (
-        userAgent.indexOf('compatible') > -1 &&
-        userAgent.indexOf('MSIE') > -1
+        userAgent.indexOf("compatible") > -1 &&
+        userAgent.indexOf("MSIE") > -1
     ) {
-        return 'IE';
+        return "IE";
     }
 
-    return 'Unknown';
+    return "Unknown";
 };
 
 const fetchBrowserVersion = () => {
@@ -75,8 +75,8 @@ const fetchBrowserVersion = () => {
 
     const browser = fetchBrowser();
 
-    if (browser === 'Unknown') {
-        return 'Unknown';
+    if (browser === "Unknown") {
+        return "Unknown";
     }
 
     const match = userAgent.match(regexes[browser]);
@@ -85,7 +85,7 @@ const fetchBrowserVersion = () => {
         return match[1];
     }
 
-    return 'Unknown';
+    return "Unknown";
 };
 
 export const DeviceInspector = () => {
@@ -102,9 +102,9 @@ export const DeviceInspector = () => {
 
     const handleDeviceInfoViewerOpen = async () => {
         Modal.info({
-            title: 'Device Info',
-            style: { maxWidth: '90%' },
-            okButtonProps: { style: { width: '50%' } },
+            title: "Device Info",
+            style: { maxWidth: "90%" },
+            okButtonProps: { style: { width: "50%" } },
             content: (
                 <div className="flex flex-col gap-5">
                     <div className="flex flex-row">
@@ -141,10 +141,10 @@ export const DeviceInspector = () => {
                     <div className="flex flex-row">
                         <div className="w-5/12">Touch Screen</div>
                         <div className="w-7/12">
-                            {'ontouchstart' in window ||
+                            {"ontouchstart" in window ||
                             navigator.maxTouchPoints > 0
-                                ? 'Yes'
-                                : 'No'}
+                                ? "Yes"
+                                : "No"}
                         </div>
                     </div>
                 </div>
@@ -206,12 +206,12 @@ export const DeviceInspector = () => {
         //     }
         // };
 
-        window.addEventListener('resize', handleWindowResize);
+        window.addEventListener("resize", handleWindowResize);
 
         // networkHealthChecker.current = window.setInterval(healthCheckNetwork, 10000);
 
         const handleWindowKeyDown = async (event: KeyboardEvent) => {
-            if (event.key === 'i' && event.ctrlKey && event.altKey) {
+            if (event.key === "i" && event.ctrlKey && event.altKey) {
                 handleDeviceInfoViewerOpen();
             }
         };
@@ -222,15 +222,15 @@ export const DeviceInspector = () => {
             }
         };
 
-        window.addEventListener('keydown', handleWindowKeyDown);
-        window.addEventListener('touchstart', handleTouch);
+        window.addEventListener("keydown", handleWindowKeyDown);
+        window.addEventListener("touchstart", handleTouch);
 
         handleWindowResize().then();
 
         return () => {
-            window.removeEventListener('resize', handleWindowResize);
-            window.removeEventListener('keydown', handleWindowKeyDown);
-            window.removeEventListener('touchstart', handleTouch);
+            window.removeEventListener("resize", handleWindowResize);
+            window.removeEventListener("keydown", handleWindowKeyDown);
+            window.removeEventListener("touchstart", handleTouch);
             // window.clearInterval(networkHealthChecker.current);
         };
     });
