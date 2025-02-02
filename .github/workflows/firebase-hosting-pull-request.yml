@@ -24,8 +24,8 @@ jobs:
             - name: Install Dependencies
               run: yarn install --immutable # Ensures all dependencies are installed
 
-            - name: change to root
-              run: sudo chown -R node:node dist
+            - name: Fix Permissions for dist
+              run: sudo chmod -R 755 dist
 
             - name: Build Project
               run: yarn build # Now Vite is available
