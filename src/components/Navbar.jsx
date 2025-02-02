@@ -96,7 +96,6 @@ const Navbar = () => {
                 </Button>
                 <div>a</div>
                 <div>a</div>
-                <div>a</div>
             </Content>
             <Footer>Footer</Footer>
         </Layout>
