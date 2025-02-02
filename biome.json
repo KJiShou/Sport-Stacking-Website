@@ -15,7 +15,8 @@
       "**/public/sw.js",
       "public/sw.js",
       ".yarn/**",
-      "apps/website-builder/**"
+      "apps/website-builder/**",
+      "dist/**/*"
     ]
   },
   "formatter": {
