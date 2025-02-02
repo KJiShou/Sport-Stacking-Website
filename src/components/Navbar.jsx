@@ -1,8 +1,14 @@
-import {useState, useEffect} from "react";
-import {Layout, Menu, Button, Message} from "@arco-design/web-react";
-import {IconHome, IconCalendar, IconCaretRight, IconCaretLeft} from "@arco-design/web-react/icon";
-import {DeviceBreakpoint} from "../hooks/DeviceInspector/deviceStore";
-import {useDeviceBreakpoint} from "../hooks/DeviceInspector/index";
+import { useState, useEffect } from 'react';
+import { Layout, Menu, Button, Message } from '@arco-design/web-react';
+import {
+    IconHome,
+    IconCalendar,
+    IconCaretRight,
+    IconCaretLeft,
+} from '@arco-design/web-react/icon';
+import { DeviceBreakpoint } from '../hooks/DeviceInspector/deviceStore';
+import { useDeviceBreakpoint } from '../hooks/DeviceInspector/index';
+import { useNavigate } from 'react-router-dom';
 
 const Navbar = () => {
     const MenuItem = Menu.Item;
@@ -11,7 +17,7 @@ const Navbar = () => {
     const Header = Layout.Header;
     const Footer = Layout.Footer;
     const Content = Layout.Content;
-
+    const navigate = useNavigate();
     const [collapse, setCollapse] = useState(false);
 
     const deviceBreakPoint = useDeviceBreakpoint();
@@ -22,25 +28,32 @@ const Navbar = () => {
 
     return (
         <Layout className={`max-h-full h-full max-w-full w-full`}>
-            <Header className={`fixed h-24 flex z-20 w-full flex-row justify-between`}>
+            <Header
+                className={`fixed h-24 flex z-20 w-full flex-row justify-between`}
+            >
                 <div className="logo" />
                 <Menu
-                    defaultOpenKeys={["1"]}
-                    defaultSelectedKeys={["0_3"]}
+                    defaultOpenKeys={['1']}
+                    defaultSelectedKeys={['0_3']}
                     onClickMenuItem={(key) =>
                         Message.info({
                             content: `You select ${key}`,
                             showIcon: true,
                         })
                     }
-                    style={{width: "100%"}}
+                    style={{ width: '100%' }}
                     mode="horizontal"
                 >
                     <MenuItem key="0_1" disabled>
                         <IconHome />
                         Menu 1
                     </MenuItem>
-                    <MenuItem key="0_2">
+                    <MenuItem
+                        key="0_2"
+                        onClick={() => {
+                            navigate('/admin');
+                        }}
+                    >
                         <IconCalendar />
                         Menu 2
                     </MenuItem>
@@ -94,8 +107,6 @@ const Navbar = () => {
                 >
                     {collapse ? <IconCaretRight /> : <IconCaretLeft />}
                 </Button>
-                <div>a</div>
-                <div>a</div>
             </Content>
             <Footer>Footer</Footer>
         </Layout>

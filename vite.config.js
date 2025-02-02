@@ -1,15 +1,16 @@
-import {defineConfig} from "vite";
-import react from "@vitejs/plugin-react";
-import {vitePluginForArco} from "@arco-plugins/vite-react";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { vitePluginForArco } from '@arco-plugins/vite-react';
 
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [
         react(),
         vitePluginForArco({
-            style: "css",
+            style: 'css',
         }),
     ],
+    root: 'src',
     server: {
         port: 5000, // Sets the server port to 5000
         host: true, // Allows access from outside the container
@@ -19,7 +20,7 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            "@": "/src", // Enables '@' as an alias for '/src' directory
+            '@': '/src', // Enables '@' as an alias for '/src' directory
         },
     },
     css: {
