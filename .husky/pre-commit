@@ -1,0 +1,2 @@
+echo "Running Prettier and ESLint before commit..."
+yarn format && yarn lint

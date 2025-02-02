@@ -21,3 +21,9 @@ This will install the following extensions:
 - Import Cost
 - ES7+ React/Redux Snippets
 - GitLens
+
+## Run Server
+
+```bash
+yarn dev
+```
