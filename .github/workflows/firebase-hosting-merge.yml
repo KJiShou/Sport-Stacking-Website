@@ -22,11 +22,15 @@ jobs:
             - name: Install Dependencies
               run: yarn install --immutable
 
-            - name: Fix Permissions for dist
-              run: sudo chmod -R 755 dist
-
             - name: Build Project
               run: yarn build
+
+              - name: List files after build
+                run: ls -la && ls -la dist || echo "⚠️ dist/ directory is missing!"
+
+              - name: Fix Permissions for dist
+                run: sudo chmod -R 755 dist
+
 
             - uses: FirebaseExtended/action-hosting-deploy@v0
               with:
