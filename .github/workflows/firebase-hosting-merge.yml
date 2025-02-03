@@ -25,13 +25,6 @@ jobs:
             - name: Build Project
               run: yarn build
 
-              - name: List files after build
-                run: ls -la && ls -la dist || echo "⚠️ dist/ directory is missing!"
-
-              - name: Fix Permissions for dist
-                run: sudo chmod -R 755 dist
-
-
             - uses: FirebaseExtended/action-hosting-deploy@v0
               with:
                   repoToken: ${{ secrets.GITHUB_TOKEN }}
