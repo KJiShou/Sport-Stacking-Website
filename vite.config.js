@@ -32,5 +32,6 @@ export default defineConfig({
     },
     build: {
         chunkSizeWarningLimit: 1000, // Increase chunk size limit to avoid warnings for large bundles
+        outDir: "dist",
     },
 });
