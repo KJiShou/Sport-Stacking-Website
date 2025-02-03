@@ -10,6 +10,7 @@ export default defineConfig({
             style: "css",
         }),
     ],
+    root: "src",
     server: {
         port: 5000, // Sets the server port to 5000
         host: true, // Allows access from outside the container
@@ -31,5 +32,6 @@ export default defineConfig({
     },
     build: {
         chunkSizeWarningLimit: 1000, // Increase chunk size limit to avoid warnings for large bundles
+        outDir: "dist",
     },
 });

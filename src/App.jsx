@@ -12,6 +12,7 @@ const App = () => {
             <Navbar />
             <Routes>
                 <Route path="/" element={<div />} />
+                <Route path="/admin" element={<div />} />
             </Routes>
         </Router>
     );

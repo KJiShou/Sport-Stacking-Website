@@ -3,6 +3,7 @@ import {Layout, Menu, Button, Message} from "@arco-design/web-react";
 import {IconHome, IconCalendar, IconCaretRight, IconCaretLeft} from "@arco-design/web-react/icon";
 import {DeviceBreakpoint} from "../hooks/DeviceInspector/deviceStore";
 import {useDeviceBreakpoint} from "../hooks/DeviceInspector/index";
+import {useNavigate} from "react-router-dom";
 
 const Navbar = () => {
     const MenuItem = Menu.Item;
@@ -11,7 +12,7 @@ const Navbar = () => {
     const Header = Layout.Header;
     const Footer = Layout.Footer;
     const Content = Layout.Content;
-
+    const navigate = useNavigate();
     const [collapse, setCollapse] = useState(false);
 
     const deviceBreakPoint = useDeviceBreakpoint();
@@ -40,7 +41,12 @@ const Navbar = () => {
                         <IconHome />
                         Menu 1
                     </MenuItem>
-                    <MenuItem key="0_2">
+                    <MenuItem
+                        key="0_2"
+                        onClick={() => {
+                            navigate("/admin");
+                        }}
+                    >
                         <IconCalendar />
                         Menu 2
                     </MenuItem>
@@ -94,8 +100,6 @@ const Navbar = () => {
                 >
                     {collapse ? <IconCaretRight /> : <IconCaretLeft />}
                 </Button>
-                <div>a</div>
-                <div>a</div>
             </Content>
             <Footer>Footer</Footer>
         </Layout>
