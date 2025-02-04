@@ -1,6 +1,6 @@
-import { Layout, Menu, Avatar } from '@arco-design/web-react';
-import { IconHome, IconCalendar, IconUser } from '@arco-design/web-react/icon';
-import { useNavigate, useLocation } from 'react-router-dom';
+import {Layout, Menu, Avatar} from "@arco-design/web-react";
+import {IconHome, IconCalendar, IconUser} from "@arco-design/web-react/icon";
+import {useNavigate, useLocation} from "react-router-dom";
 
 const Navbar = () => {
     const MenuItem = Menu.Item;
@@ -14,22 +14,20 @@ const Navbar = () => {
     };
 
     const recordsMenuItems = [
-        { key: '/records/cycle', label: 'Cycle' },
-        { key: '/records/3-6-3', label: '3-6-3' },
-        { key: '/records/3-3-3', label: '3-3-3' },
-        { key: '/records/double', label: 'Double' },
+        {key: "/records/cycle", label: "Cycle"},
+        {key: "/records/3-6-3", label: "3-6-3"},
+        {key: "/records/3-3-3", label: "3-3-3"},
+        {key: "/records/double", label: "Double"},
     ];
 
     return (
-        <Header
-            className={`fixed h-24 flex z-20 w-full flex-row justify-between bg-white`}
-        >
+        <Header className={`fixed h-24 flex z-20 w-full flex-row justify-between bg-white`}>
             <div className="logo" />
             <Menu
-                defaultOpenKeys={['1']}
+                defaultOpenKeys={["1"]}
                 defaultSelectedKeys={[location.pathname]}
                 onClickMenuItem={handleNavigation}
-                style={{ width: '100%' }}
+                style={{width: "100%"}}
                 mode="horizontal"
             >
                 <MenuItem key="/">
@@ -53,13 +51,13 @@ const Navbar = () => {
                         </span>
                     }
                 >
-                    {recordsMenuItems.map(({ key, label }) => (
+                    {recordsMenuItems.map(({key, label}) => (
                         <MenuItem key={key}>{label}</MenuItem>
                     ))}
                 </SubMenu>
             </Menu>
             <div className="flex items-center m-10 cursor-pointer">
-                <Avatar style={{ backgroundColor: '#3370ff' }} className={``}>
+                <Avatar style={{backgroundColor: "#3370ff"}} className={``}>
                     <IconUser />
                 </Avatar>
             </div>
