@@ -3,12 +3,12 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Welcome to Firebase Hosting</title>
+        <title>Sport Stacking</title>
 
         <!-- update the version number as needed -->
-        <script defer src="/__/firebase/11.2.0/firebase-app-compat.js"></script>
+        <!-- <script defer src="/__/firebase/11.2.0/firebase-app-compat.js"></script> -->
         <!-- include only the Firebase features as you need -->
-        <script
+        <!-- <script
             defer
             src="/__/firebase/11.2.0/firebase-auth-compat.js"
         ></script>
@@ -43,12 +43,12 @@
         <script
             defer
             src="/__/firebase/11.2.0/firebase-performance-compat.js"
-        ></script>
+        ></script> -->
         <!--
       initialize the SDK after all desired features are loaded, set useEmulator to false
       to avoid connecting the SDK to running emulators.
     -->
-        <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+        <!-- <script defer src="/__/firebase/init.js?useEmulator=true"></script> -->
 
         <style media="screen">
             body {
@@ -103,17 +103,6 @@
                 text-align: center;
                 font-size: 13px;
             }
-            @media (max-width: 600px) {
-                body,
-                #message {
-                    margin-top: 0;
-                    background: white;
-                    box-shadow: none;
-                }
-                body {
-                    border-top: 16px solid #ffa100;
-                }
-            }
         </style>
     </head>
     <body>
@@ -146,22 +135,22 @@
                 //
                 // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
 
-                try {
-                    let app = firebase.app();
-                    let features = [
-                        'auth',
-                        'database',
-                        'firestore',
-                        'functions',
-                        'messaging',
-                        'storage',
-                        'analytics',
-                        'remoteConfig',
-                        'performance',
-                    ].filter((feature) => typeof app[feature] === 'function');
-                } catch (e) {
-                    console.error(e);
-                }
+                // try {
+                //     let app = firebase.app();
+                //     let features = [
+                //         'auth',
+                //         'database',
+                //         'firestore',
+                //         'functions',
+                //         'messaging',
+                //         'storage',
+                //         'analytics',
+                //         'remoteConfig',
+                //         'performance',
+                //     ].filter((feature) => typeof app[feature] === 'function');
+                // } catch (e) {
+                //     console.error(e);
+                // }
             });
         </script>
     </body>
