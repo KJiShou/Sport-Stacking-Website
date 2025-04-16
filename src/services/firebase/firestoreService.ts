@@ -2,7 +2,7 @@ import {db} from "./config";
 import {collection, addDoc, getDocs} from "firebase/firestore";
 import {Athlete} from "../../types";
 
-import {CompetitionSchema, type Competition} from "../../schema";
+import {CompetitionSchema, type Competition} from "@/schema";
 
 const collectionRef = collection(db, "competitions");
 
