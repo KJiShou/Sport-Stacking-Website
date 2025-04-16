@@ -3,7 +3,17 @@ import {initializeApp} from "firebase/app";
 import {getFirestore} from "firebase/firestore";
 import {getStorage} from "firebase/storage";
 
-const firebaseConfig = {
+interface FirebaseConfig {
+    apiKey: string;
+    authDomain: string;
+    projectId: string;
+    storageBucket: string;
+    messagingSenderId: string;
+    appId: string;
+    measurementId: string;
+}
+
+const firebaseConfig: FirebaseConfig = {
     apiKey: "AIzaSyASIxz9tcaoo7_Bdoyfpgdc1akUjjTCGNU",
     authDomain: "sport-stacking-website.firebaseapp.com",
     projectId: "sport-stacking-website",

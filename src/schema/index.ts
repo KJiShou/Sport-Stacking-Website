@@ -2,12 +2,17 @@ import * as z from "zod";
 
 // competitions
 export const CompetitionSchema = z.object({
-    id: z.string(),
-    name: z.string().optional().nullable(),
-    startDate: z.date().optional().nullable(),
-    endDate: z.date().optional().nullable(),
+    id: z.string().optional(), // <-- make optional
+    name: z.string(),
+    startDate: z.union([z.string(), z.date()]).optional().nullable(),
+    endDate: z.union([z.string(), z.date()]).optional().nullable(),
     location: z.string().optional().nullable(),
     status: z.enum(["upcoming", "ongoing", "completed"]).optional().nullable(),
+    maxNumber: z
+        .preprocess((val) => Number(val), z.number())
+        .optional()
+        .nullable(),
+
     age_brackets: z
         .array(
             z.object({
@@ -16,22 +21,29 @@ export const CompetitionSchema = z.object({
                 maxAge: z.number(),
                 code: z.enum(["individual", "relay"]),
                 type: z.enum(["individual", "team"]),
-                maxNumber: z.number().optional().nullable(),
+                maxNumber: z
+                    .preprocess((val) => Number(val), z.number())
+                    .optional()
+                    .nullable(),
             }),
         )
         .optional()
         .nullable(),
-    maxNumber: z.number().optional().nullable(),
+
     events: z
         .array(
             z.object({
                 code: z.enum(["individual", "relay"]),
                 type: z.enum(["individual", "team"]),
-                teamSize: z.number().optional().nullable(),
+                teamSize: z
+                    .preprocess((val) => Number(val), z.number())
+                    .optional()
+                    .nullable(),
             }),
         )
         .optional()
         .nullable(),
+
     final_criteria: z
         .array(
             z.object({
@@ -40,14 +52,17 @@ export const CompetitionSchema = z.object({
         )
         .optional()
         .nullable(),
+
     finalCategory: z
         .array(
             z.object({
                 name: z.string(),
-                start: z.number(),
-                end: z.number(),
+                start: z.preprocess((val) => Number(val), z.number()),
+                end: z.preprocess((val) => Number(val), z.number()),
             }),
         )
         .optional()
         .nullable(),
 });
+
+export type Competition = z.infer<typeof CompetitionSchema>;

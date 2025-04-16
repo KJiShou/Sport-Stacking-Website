@@ -1,3 +1,4 @@
+import type * as React from "react";
 import Home from "../pages/Home/Home";
 import Athletes from "../pages/Athletes/Athletes";
 import Tournaments from "../pages/Tournaments/Tournaments";
@@ -6,7 +7,12 @@ import page_3_6_3 from "../pages/Records/3-6-3/3-6-3";
 import Cycle from "../pages/Records/Cycle/Cycle";
 import Double from "../pages/Records/Double/Double";
 
-const routes = [
+export interface Route {
+    path: string;
+    component: React.ComponentType;
+}
+
+const routes: Route[] = [
     {path: "/", component: Home},
     {path: "/athletes", component: Athletes},
     {path: "/tournaments", component: Tournaments},

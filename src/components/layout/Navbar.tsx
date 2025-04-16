@@ -1,19 +1,26 @@
+import type * as React from "react";
+
 import {Layout, Menu, Avatar} from "@arco-design/web-react";
 import {IconHome, IconCalendar, IconUser} from "@arco-design/web-react/icon";
 import {useNavigate, useLocation} from "react-router-dom";
 
-const Navbar = () => {
+interface MenuItem {
+    key: string;
+    label: string;
+}
+
+const Navbar: React.FC = () => {
     const MenuItem = Menu.Item;
     const SubMenu = Menu.SubMenu;
     const Header = Layout.Header;
     const navigate = useNavigate();
     const location = useLocation();
 
-    const handleNavigation = (key) => {
+    const handleNavigation = (key: string): void => {
         navigate(key);
     };
 
-    const recordsMenuItems = [
+    const recordsMenuItems: MenuItem[] = [
         {key: "/records/cycle", label: "Cycle"},
         {key: "/records/3-6-3", label: "3-6-3"},
         {key: "/records/3-3-3", label: "3-3-3"},
@@ -21,7 +28,7 @@ const Navbar = () => {
     ];
 
     return (
-        <Header className={`fixed h-24 flex z-20 w-full flex-row justify-between bg-white`}>
+        <Header className="fixed h-24 flex z-20 w-full flex-row justify-between bg-white">
             <div className="logo" />
             <Menu
                 defaultOpenKeys={["1"]}
@@ -57,7 +64,7 @@ const Navbar = () => {
                 </SubMenu>
             </Menu>
             <div className="flex items-center m-10 cursor-pointer">
-                <Avatar style={{backgroundColor: "#3370ff"}} className={``}>
+                <Avatar style={{backgroundColor: "#3370ff"}} className="">
                     <IconUser />
                 </Avatar>
             </div>
