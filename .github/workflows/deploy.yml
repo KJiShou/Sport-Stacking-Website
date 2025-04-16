@@ -1,62 +1,73 @@
-name: Deploy to Production
-run-name: Deploy to Production
+name: ⚙️ CI - Lint, Format, Build
+
+run-name: 🚀 Deploy triggered by @${{ github.actor }}
 
 on:
-    push:
-        branches:
-            - main
-            - dev
-    pull_request:
-        branches:
-            - main
-            - dev
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
 
 jobs:
-    lint:
-        runs-on: ubuntu-latest
-        name: Lint and Deploy
-        environment: production # Matches GitHub Environment settings
+  lint_and_build:
+    name: Lint & Build on ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
-        steps:
-            # Step 1: Checkout Code
-            - uses: actions/checkout@v4
+    steps:
+      # Step 1: Checkout Code
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
 
-            # Step 2: Setup Node.js
-            - name: Setup Node.js 20.x
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 20.x
+      # Step 2: Setup Node.js + Yarn
+      - name: ⚙️ Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: yarn
 
-            # Step 3: Enable Corepack for Yarn
-            - name: Enable corepack
-              run: corepack enable
+      # Step 3: Enable Corepack (if using Yarn 3+)
+      - name: Enable Corepack
+        run: corepack enable
 
-            # Step 4: Cache Yarn Modules
-            - name: Get yarn cache directory path
-              id: yarn-cache-dir-path
-              run: echo "yarn-dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+      # Step 4: Cache Yarn Modules
+      - name: 📦 Get yarn cache directory
+        id: yarn-cache-dir-path
+        run: echo "yarn-dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
 
-            - name: Cache node modules
-              uses: actions/cache@v4
-              id: yarn-cache
-              with:
-                  path: ${{ steps.yarn-cache-dir-path.outputs.yarn-dir }}
-                  key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-                  restore-keys: |
-                      ${{ runner.os }}-yarn-
+      - name: 🗃️ Cache yarn modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.yarn-dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
 
-            # Step 5: Install Dependencies
-            - name: Install dependencies
-              run: yarn install --immutable
+      # Step 5: Install Dependencies
+      - name: 📦 Install dependencies
+        run: yarn install --immutable
 
-            # Step 6: Format Code with Biome
-            - name: Format Code
-              run: yarn format
+      # Step 6: Format Code with Biome
+      - name: 🧹 Format Code
+        run: yarn format
 
-            # Step 7: Lint Code
-            - name: Run lint
-              run: yarn lint
+      # Step 7: Biome Check (optional but recommended)
+      - name: 🧪 Run Biome check
+        run: yarn check
 
-            # Step 8: Build the Project
-            - name: Build Project
-              run: yarn build
+      # Step 8: Lint Code
+      - name: 🔍 Run lint
+        run: yarn lint
+
+      # Step 9: Build the Project
+      - name: 🏗️ Build Project
+        run: yarn build
+
+      # Step 10: (Optional) Cache Build Output
+      - name: 💾 Cache build output (optional)
+        uses: actions/cache@v4
+        with:
+          path: dist
+          key: ${{ runner.os }}-build-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-build-
