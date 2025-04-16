@@ -1,34 +1,34 @@
-import { db } from "./config";
-import { collection, addDoc, getDocs } from "firebase/firestore";
-import { Athlete } from "../../types";
+import {db} from "./config";
+import {collection, addDoc, getDocs} from "firebase/firestore";
+import {Athlete} from "../../types";
 
-import { CompetitionSchema, Competition } from "../../schema";
+import {CompetitionSchema, type Competition} from "../../schema";
 
 const collectionRef = collection(db, "competitions");
 
 export async function getCompetitions(): Promise<Competition[]> {
-  const snapshot = await getDocs(collectionRef);
+    const snapshot = await getDocs(collectionRef);
 
-  return snapshot.docs
-    .map((docSnap) => {
-      const data = { id: docSnap.id, ...docSnap.data() };
+    return snapshot.docs
+        .map((docSnap) => {
+            const data = {id: docSnap.id, ...docSnap.data()};
 
-      // Zod 验证
-      const parsed = CompetitionSchema.safeParse(data);
-      if (!parsed.success) {
-        console.warn(`Invalid competition data for ID ${docSnap.id}:`, parsed.error.format());
-        return null;
-      }
+            // Zod 验证
+            const parsed = CompetitionSchema.safeParse(data);
+            if (!parsed.success) {
+                console.warn(`Invalid competition data for ID ${docSnap.id}:`, parsed.error.format());
+                return null;
+            }
 
-      return parsed.data;
-    })
-    .filter(Boolean) as Competition[];
+            return parsed.data;
+        })
+        .filter(Boolean) as Competition[];
 }
 
 export async function addCompetition(data: Omit<Competition, "id">): Promise<string> {
-  // 验证数据结构
-  CompetitionSchema.omit({ id: true }).parse(data);
+    // 验证数据结构
+    CompetitionSchema.omit({id: true}).parse(data);
 
-  const docRef = await addDoc(collectionRef, data);
-  return docRef.id;
+    const docRef = await addDoc(collectionRef, data);
+    return docRef.id;
 }

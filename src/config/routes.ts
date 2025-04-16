@@ -1,3 +1,4 @@
+import type * as React from "react";
 import Home from "../pages/Home/Home";
 import Athletes from "../pages/Athletes/Athletes";
 import Tournaments from "../pages/Tournaments/Tournaments";
@@ -7,18 +8,18 @@ import Cycle from "../pages/Records/Cycle/Cycle";
 import Double from "../pages/Records/Double/Double";
 
 export interface Route {
-  path: string;
-  component: React.ComponentType;
+    path: string;
+    component: React.ComponentType;
 }
 
 const routes: Route[] = [
-  { path: "/", component: Home },
-  { path: "/athletes", component: Athletes },
-  { path: "/tournaments", component: Tournaments },
-  { path: "/records/3-3-3", component: page_3_3_3 },
-  { path: "/records/3-6-3", component: page_3_6_3 },
-  { path: "/records/Cycle", component: Cycle },
-  { path: "/records/Double", component: Double },
+    {path: "/", component: Home},
+    {path: "/athletes", component: Athletes},
+    {path: "/tournaments", component: Tournaments},
+    {path: "/records/3-3-3", component: page_3_3_3},
+    {path: "/records/3-6-3", component: page_3_6_3},
+    {path: "/records/Cycle", component: Cycle},
+    {path: "/records/Double", component: Double},
 ];
 
 export default routes;

@@ -1,8 +1,7 @@
-import * as React from 'react';
-
+import type * as React from "react";
 
 const Double: React.FC = () => {
-  return <div>Double</div>;
+    return <div>Double</div>;
 };
 
 export default Double;
