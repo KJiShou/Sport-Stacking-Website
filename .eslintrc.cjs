@@ -12,6 +12,7 @@ module.exports = {
     parserOptions: {
         ecmaFeatures: {
             jsx: true,
+            tsx: true, // Enable TypeScript support
         },
         ecmaVersion: 12,
         sourceType: "module",
