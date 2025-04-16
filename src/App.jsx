@@ -1,11 +1,9 @@
-// import { useState } from 'react'
-//import { Button } from '@arco-design/web-react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import '@arco-design/web-react/dist/css/arco.css';
-import { Navbar, Footer } from './components/index';
-import { DeviceInspector } from './hooks/DeviceInspector/DeviceInspector';
-import { Layout } from '@arco-design/web-react';
-import routes from './config/routes';
+import {BrowserRouter as Router, Routes, Route} from "react-router-dom";
+import "@arco-design/web-react/dist/css/arco.css";
+import {Navbar, Footer} from "./components/layout";
+import {DeviceInspector} from "./utils/DeviceInspector";
+import {Layout} from "@arco-design/web-react";
+import routes from "./config/routes";
 
 const App = () => {
     const Content = Layout.Content;
@@ -16,12 +14,8 @@ const App = () => {
                 <Navbar />
                 <Content className={`pt-24`}>
                     <Routes>
-                        {routes.map((route, index) => (
-                            <Route
-                                key={index}
-                                path={route.path}
-                                element={<route.component />}
-                            />
+                        {routes.map((route) => (
+                            <Route key={route.path} path={route.path} element={<route.component />} />
                         ))}
                     </Routes>
                 </Content>

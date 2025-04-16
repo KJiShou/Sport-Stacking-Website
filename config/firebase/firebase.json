@@ -1,0 +1,9 @@
+{
+  "hosting": {
+    "site": "sport-stacking-website",
+    "public": "src/dist",
+    "predeploy": ["yarn build"],
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [{ "source": "/**", "destination": "/index.html" }]
+  }
+}
