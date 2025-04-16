@@ -1,3 +1,3 @@
-import { postcssConfig } from './config/index.js';
+import {postcssConfig} from "./config/index.js";
 
 export default postcssConfig;

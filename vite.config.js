@@ -1,3 +1,3 @@
-import { viteConfig } from './config/index.js';
+import {viteConfig} from "./config/index.js";
 
 export default viteConfig;

@@ -1,6 +1,6 @@
 import {db} from "./config";
 import {collection, addDoc, getDocs} from "firebase/firestore";
-import { CompetitionSchema } from "../../schema";
+import {CompetitionSchema} from "../../schema";
 
 // Function to add an athlete to Firestore
 export const addAthlete = async (athlete) => {
