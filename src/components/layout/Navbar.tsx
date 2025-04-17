@@ -1,8 +1,9 @@
-import type * as React from "react";
+import * as React from "react";
 
-import {Layout, Menu, Avatar} from "@arco-design/web-react";
+import {Layout, Menu, Avatar, Modal, Button} from "@arco-design/web-react";
 import {IconHome, IconCalendar, IconUser} from "@arco-design/web-react/icon";
 import {useNavigate, useLocation} from "react-router-dom";
+import LoginForm from "../common/Login";
 
 interface MenuItem {
     key: string;
@@ -15,6 +16,8 @@ const Navbar: React.FC = () => {
     const Header = Layout.Header;
     const navigate = useNavigate();
     const location = useLocation();
+
+    const [visible, setVisible] = React.useState(false);
 
     const handleNavigation = (key: string): void => {
         navigate(key);
@@ -63,11 +66,26 @@ const Navbar: React.FC = () => {
                     ))}
                 </SubMenu>
             </Menu>
-            <div className="flex items-center m-10 cursor-pointer">
-                <Avatar style={{backgroundColor: "#3370ff"}} className="">
+            <div className="flex items-center m-10 cursor-pointer" onClick={() => setVisible(true)}>
+                {/* <Avatar style={{backgroundColor: "#3370ff"}} className="">
                     <IconUser />
-                </Avatar>
+                </Avatar> */}
+                <Button onClick={() => setVisible(true)} type="primary">
+                    Login
+                </Button>
             </div>
+            <Modal
+                title="Login"
+                visible={visible}
+                onCancel={() => {
+                    setVisible(false);
+                }}
+                footer={null}
+                autoFocus={false}
+                focusLock={true}
+            >
+                <LoginForm />
+            </Modal>
         </Header>
     );
 };
