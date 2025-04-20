@@ -6,6 +6,7 @@ import {Navbar, Footer} from "./components/layout";
 import {DeviceInspector} from "./utils/DeviceInspector";
 import {Layout} from "@arco-design/web-react";
 import routes from "./config/routes";
+import ProtectedRoute from "./components/common/ProtectedRoute";
 
 const App: React.FC = () => {
     const Content = Layout.Content;
@@ -15,13 +16,15 @@ const App: React.FC = () => {
             <DeviceInspector />
             <Layout className="max-h-full h-full max-w-full w-full">
                 <Navbar />
-                <Content className="pt-24">
-                    <Routes>
-                        {routes.map((route) => (
-                            <Route key={route.path} path={route.path} element={<route.component />} />
-                        ))}
-                    </Routes>
-                </Content>
+                <ProtectedRoute>
+                    <Content className="pt-24">
+                        <Routes>
+                            {routes.map((route) => (
+                                <Route key={route.path} path={route.path} element={<route.component />} />
+                            ))}
+                        </Routes>
+                    </Content>
+                </ProtectedRoute>
                 <Footer />
             </Layout>
         </Router>
