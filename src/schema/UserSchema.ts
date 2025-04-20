@@ -1,8 +1,11 @@
 import {z} from "zod";
 
-export const UserSchema = z.object({
+export const FirestoreUserSchema = z.object({
+    id: z.string(),
     name: z.string(),
-    IC: z.string(),
+    IC: z.string().regex(/^\d{12}$/, {
+        message: "IC must be 12 digits like 123546121234",
+    }),
     email: z.string().email(),
     birthdate: z.date(),
     gender: z.enum(["male", "female", "other"]),
@@ -13,4 +16,4 @@ export const UserSchema = z.object({
     best_times: z.record(z.string(), z.number()).optional(),
 });
 
-export type User = z.infer<typeof UserSchema>;
+export type FirestoreUser = z.infer<typeof FirestoreUserSchema>;

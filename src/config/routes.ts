@@ -6,6 +6,7 @@ import page_3_3_3 from "../pages/Records/3-3-3/3-3-3";
 import page_3_6_3 from "../pages/Records/3-6-3/3-6-3";
 import Cycle from "../pages/Records/Cycle/Cycle";
 import Double from "../pages/Records/Double/Double";
+import RegisterPage from "../pages/User/Register/RegisterPage";
 
 export interface Route {
     path: string;
@@ -20,6 +21,7 @@ const routes: Route[] = [
     {path: "/records/3-6-3", component: page_3_6_3},
     {path: "/records/Cycle", component: Cycle},
     {path: "/records/Double", component: Double},
+    {path: "/register", component: RegisterPage},
 ];
 
 export default routes;

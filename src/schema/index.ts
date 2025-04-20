@@ -7,8 +7,8 @@ export {
 } from "./CompetitionSchema";
 export type {Competition} from "./CompetitionSchema";
 
-export {UserSchema} from "./UserSchema";
-export type {User} from "./UserSchema";
+export {FirestoreUserSchema} from "./UserSchema";
+export type {FirestoreUser} from "./UserSchema";
 
 export {RoleSchema} from "./RoleSchema";
 export type {Role} from "./RoleSchema";
