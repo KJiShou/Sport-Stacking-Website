@@ -52,17 +52,17 @@ const LoginForm = ({onClose}: {onClose?: () => void}) => {
 
             if (userSnap.exists()) {
                 Message.success("Logged in with Google");
-                if (onClose) onClose();
                 navigate("/");
+                if (onClose) onClose();
             } else {
                 Message.info("Please complete your registration");
-                if (onClose) onClose();
                 navigate("/register", {
                     state: {
                         email: result.user.email ?? "",
                         fromGoogle: true,
                     },
                 });
+                if (onClose) onClose();
             }
         } catch (err: unknown) {
             Message.error(err instanceof Error ? err.message : "Unexpected error.");

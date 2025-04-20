@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from "react";
+import React, {useEffect, useState, useRef} from "react";
 import {useLocation} from "react-router-dom";
 import {Form, Input, Button, Message, DatePicker, Typography, Select, Upload} from "@arco-design/web-react";
 import {IconEmail, IconLock, IconUser} from "@arco-design/web-react/icon";
@@ -10,6 +10,7 @@ import type {FirestoreUser} from "../../../schema";
 import {useAuthContext} from "../../../context/AuthContext";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import type {User} from "firebase/auth";
+import firebase from "firebase/compat/app";
 
 const {Title} = Typography;
 
@@ -77,18 +78,15 @@ const RegisterPage = () => {
     const navigate = useNavigate();
     const [selectedCountry, setSelectedCountry] = useState("Malaysia");
     const {user, firebaseUser} = useAuthContext();
-    const [isRegistering, setIsRegistering] = useState(false);
     const location = useLocation();
     const isFromGoogle = location.state?.fromGoogle === true;
 
     useEffect(() => {
         if (firebaseUser && isFromGoogle) {
-            setIsRegistering(true);
-            form.setFieldValue("email", firebaseUser.email || "");
-            const photoURL = firebaseUser.photoURL;
-            if (photoURL) {
-                form.setFieldValue("image_url", photoURL);
-            }
+            form.setFieldsValue({
+                email: firebaseUser.email || "",
+                image_url: firebaseUser.photoURL || "",
+            });
         }
     }, [firebaseUser, isFromGoogle]);
 
@@ -97,30 +95,6 @@ const RegisterPage = () => {
             navigate("/");
         }
     }, [firebaseUser, isFromGoogle, navigate]);
-
-    useEffect(() => {
-        const handleBeforeUnload = async () => {
-            if (firebaseUser?.providerData?.[0]?.providerId === "google.com") {
-                await logout();
-            }
-        };
-
-        const handleVisibilityChange = async () => {
-            if (document.visibilityState === "hidden") {
-                if (firebaseUser?.providerData?.[0]?.providerId === "google.com") {
-                    await logout();
-                }
-            }
-        };
-
-        window.addEventListener("beforeunload", handleBeforeUnload);
-        document.addEventListener("visibilitychange", handleVisibilityChange);
-
-        return () => {
-            window.removeEventListener("beforeunload", handleBeforeUnload);
-            document.removeEventListener("visibilitychange", handleVisibilityChange);
-        };
-    }, [firebaseUser]);
 
     const linkEmailPassword = async (email: string, password: string, user: User) => {
         const credential = EmailAuthProvider.credential(email, password);
@@ -216,11 +190,17 @@ const RegisterPage = () => {
             </Title>
 
             <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
+                <Form.Item noStyle field="image_url">
+                    <Input type="hidden" />
+                </Form.Item>
+
+                {/* 下面这块依旧用 shouldUpdate 监听 image_url 变化 */}
                 <Form.Item label="Avatar (optional)" shouldUpdate={(prev, curr) => prev.image_url !== curr.image_url}>
                     {() => {
-                        const imageUrl = form.getFieldValue("image_url") as string | undefined;
-
-                        return (
+                        const imageUrl = form.getFieldValue("image_url") as string;
+                        return imageUrl ? (
+                            <img src={imageUrl} alt="avatar" className="w-24 h-24 rounded-full object-cover" />
+                        ) : (
                             <Upload
                                 listType="picture-card"
                                 accept="image/*"
@@ -234,13 +214,9 @@ const RegisterPage = () => {
                                     reader.readAsDataURL(file as File);
                                 }}
                             >
-                                {imageUrl ? (
-                                    <img src={imageUrl} alt="avatar" className="w-24 h-24 rounded-full object-cover" />
-                                ) : (
-                                    <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center text-sm text-gray-500">
-                                        Upload
-                                    </div>
-                                )}
+                                <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center text-sm text-gray-500">
+                                    Upload
+                                </div>
                             </Upload>
                         );
                     }}
@@ -250,7 +226,6 @@ const RegisterPage = () => {
                         prefix={<IconEmail />}
                         placeholder="example@mail.com"
                         disabled={!!firebaseUser?.providerData?.[0]?.providerId?.includes("google")}
-                        value={firebaseUser?.email ?? ""}
                     />
                 </Form.Item>
 

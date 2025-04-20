@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react";
+import {useEffect, useState, useRef} from "react";
 import type * as React from "react";
 import {BrowserRouter as Router, Routes, Route} from "react-router-dom";
 import "@arco-design/web-react/dist/css/arco.css";
@@ -14,29 +14,37 @@ import {logout} from "./services/firebase/authService";
 const App: React.FC = () => {
     const Content = Layout.Content;
 
-    const AutoLogoutIfIncompleteGoogleRegister = () => {
-        const {firebaseUser, user} = useAuthContext();
-        const location = useLocation();
+    const AutoLogoutOnLeaveRegister = () => {
+        const {firebaseUser, loading} = useAuthContext();
+        const {pathname} = useLocation();
         const navigate = useNavigate();
+        const prevPathRef = useRef<string>(pathname);
 
         useEffect(() => {
-            const isGoogleUser = firebaseUser?.providerData?.[0]?.providerId === "google.com";
-            const isUnregistered = firebaseUser?.providerData?.[1]?.providerId !== "password";
-            const notInRegisterPage = location.pathname !== "/register";
-
-            if (isGoogleUser && isUnregistered && notInRegisterPage) {
-                logout().then(() => {
-                    navigate("/"); // optional redirect
-                });
+            if (!firebaseUser || loading) {
+                prevPathRef.current = pathname;
+                return;
             }
-        }, [firebaseUser, user, location.pathname]);
+
+            const providers = firebaseUser.providerData.map((p) => p.providerId);
+            const isGoogleOnly = providers.includes("google.com") && !providers.includes("password");
+
+            const wasOnRegister = prevPathRef.current === "/register" || prevPathRef.current.startsWith("/register/");
+            const isNowOffRegister = !(pathname === "/register" || pathname.startsWith("/register/"));
+
+            if (isGoogleOnly && wasOnRegister && isNowOffRegister) {
+                logout().then(() => navigate("/"));
+            }
+
+            prevPathRef.current = pathname;
+        }, [firebaseUser, loading, pathname, navigate]);
 
         return null;
     };
 
     return (
         <Router>
-            <AutoLogoutIfIncompleteGoogleRegister />
+            <AutoLogoutOnLeaveRegister />
             <DeviceInspector />
             <Layout className="max-h-full h-full max-w-full w-full">
                 <Navbar />
