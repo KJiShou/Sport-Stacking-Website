@@ -132,7 +132,7 @@ const Navbar: React.FC = () => {
                 footer={null}
                 autoFocus={false}
                 focusLock={true}
-                className={`w-full max-w-[95vw] md:max-w-[80vw] lg:max-w-[60vw]`}
+                className={`max-w-[95vw] md:max-w-[80vw] lg:max-w-[60vw]`}
             >
                 <LoginForm onClose={() => setVisible(false)} />
             </Modal>
