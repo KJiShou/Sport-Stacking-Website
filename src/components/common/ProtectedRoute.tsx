@@ -5,7 +5,7 @@ import {useAuthContext} from "../../context/AuthContext";
 import {Spin} from "@arco-design/web-react";
 
 const ProtectedRoute = ({children}: {children: ReactNode}) => {
-    const {user, loading} = useAuthContext();
+    const {firebaseUser, loading} = useAuthContext();
 
     if (loading) {
         return (

@@ -1,16 +1,19 @@
 import React, {useEffect, useState} from "react";
-import {Form, Input, Button, Message, DatePicker, Typography, Select} from "@arco-design/web-react";
+import {useLocation} from "react-router-dom";
+import {Form, Input, Button, Message, DatePicker, Typography, Select, Upload} from "@arco-design/web-react";
 import {IconEmail, IconLock, IconUser} from "@arco-design/web-react/icon";
 import type {SelectProps} from "@arco-design/web-react";
 import dayjs from "dayjs";
-import {register} from "../../services/firebase/authService";
+import {register, registerWithGoogle, logout} from "../../../services/firebase/authService";
 import {useNavigate} from "react-router-dom";
-import type {User} from "../../schema/UserSchema";
-import {useAuthContext} from "../../context/AuthContext";
+import type {FirestoreUser} from "../../../schema";
+import {useAuthContext} from "../../../context/AuthContext";
+import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
+import type {User} from "firebase/auth";
 
 const {Title} = Typography;
 
-type RegisterFormData = Omit<User, "id"> & {confirmPassword: string};
+type RegisterFormData = Omit<FirestoreUser, "id"> & {password: string; confirmPassword: string};
 
 const countries = [
     {label: "Malaysia", value: "Malaysia"},
@@ -73,13 +76,61 @@ const RegisterPage = () => {
     const [form] = Form.useForm<RegisterFormData>();
     const navigate = useNavigate();
     const [selectedCountry, setSelectedCountry] = useState("Malaysia");
-    const {user} = useAuthContext();
+    const {user, firebaseUser} = useAuthContext();
+    const [isRegistering, setIsRegistering] = useState(false);
+    const location = useLocation();
+    const isFromGoogle = location.state?.fromGoogle === true;
 
     useEffect(() => {
-        if (user) {
+        if (firebaseUser && isFromGoogle) {
+            setIsRegistering(true);
+            form.setFieldValue("email", firebaseUser.email || "");
+            const photoURL = firebaseUser.photoURL;
+            if (photoURL) {
+                form.setFieldValue("image_url", photoURL);
+            }
+        }
+    }, [firebaseUser, isFromGoogle]);
+
+    useEffect(() => {
+        if (firebaseUser && !isFromGoogle) {
             navigate("/");
         }
-    }, [user, navigate]);
+    }, [firebaseUser, isFromGoogle, navigate]);
+
+    useEffect(() => {
+        const handleBeforeUnload = async () => {
+            if (firebaseUser?.providerData?.[0]?.providerId === "google.com") {
+                await logout();
+            }
+        };
+
+        const handleVisibilityChange = async () => {
+            if (document.visibilityState === "hidden") {
+                if (firebaseUser?.providerData?.[0]?.providerId === "google.com") {
+                    await logout();
+                }
+            }
+        };
+
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        return () => {
+            window.removeEventListener("beforeunload", handleBeforeUnload);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
+    }, [firebaseUser]);
+
+    const linkEmailPassword = async (email: string, password: string, user: User) => {
+        const credential = EmailAuthProvider.credential(email, password);
+        try {
+            await linkWithCredential(user, credential);
+        } catch (err) {
+            console.error("Failed to link credentials:", err);
+            throw err;
+        }
+    };
 
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, state} = values;
@@ -91,19 +142,35 @@ const RegisterPage = () => {
 
         setLoading(true);
         try {
-            await register({
-                email,
-                password,
-                name,
-                IC,
-                birthdate,
-                gender,
-                country,
-                state,
-                roles: [],
-                image_url: "https://default.image",
-                best_times: {},
-            });
+            if (!(isFromGoogle && firebaseUser)) {
+                await register({
+                    email,
+                    password,
+                    name,
+                    IC,
+                    birthdate,
+                    gender,
+                    country,
+                    state,
+                    roles: [],
+                    image_url: "https://default.image",
+                    best_times: {},
+                });
+            } else {
+                if (isFromGoogle && firebaseUser) {
+                    await linkEmailPassword(email, password, firebaseUser);
+                }
+                await registerWithGoogle(firebaseUser, {
+                    IC,
+                    name,
+                    birthdate,
+                    gender,
+                    country,
+                    state,
+                    roles: [],
+                    best_times: {},
+                });
+            }
 
             Message.success("Registration successful!");
             navigate("/");
@@ -149,8 +216,42 @@ const RegisterPage = () => {
             </Title>
 
             <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
+                <Form.Item label="Avatar (optional)" shouldUpdate={(prev, curr) => prev.image_url !== curr.image_url}>
+                    {() => {
+                        const imageUrl = form.getFieldValue("image_url") as string | undefined;
+
+                        return (
+                            <Upload
+                                listType="picture-card"
+                                accept="image/*"
+                                showUploadList={false}
+                                customRequest={({file, onSuccess}) => {
+                                    const reader = new FileReader();
+                                    reader.onload = () => {
+                                        form.setFieldValue("image_url", reader.result as string);
+                                        onSuccess?.();
+                                    };
+                                    reader.readAsDataURL(file as File);
+                                }}
+                            >
+                                {imageUrl ? (
+                                    <img src={imageUrl} alt="avatar" className="w-24 h-24 rounded-full object-cover" />
+                                ) : (
+                                    <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center text-sm text-gray-500">
+                                        Upload
+                                    </div>
+                                )}
+                            </Upload>
+                        );
+                    }}
+                </Form.Item>
                 <Form.Item field="email" label="Email" rules={[{required: true, type: "email", message: "Enter a valid email"}]}>
-                    <Input prefix={<IconEmail />} placeholder="example@mail.com" />
+                    <Input
+                        prefix={<IconEmail />}
+                        placeholder="example@mail.com"
+                        disabled={!!firebaseUser?.providerData?.[0]?.providerId?.includes("google")}
+                        value={firebaseUser?.email ?? ""}
+                    />
                 </Form.Item>
 
                 <Form.Item field="name" label="Full Name" rules={[{required: true, message: "Enter your full name"}]}>

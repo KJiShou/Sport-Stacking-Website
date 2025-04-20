@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import {Layout, Menu, Avatar, Modal, Button, Dropdown} from "@arco-design/web-react";
+import {Layout, Menu, Avatar, Modal, Button, Dropdown, Message} from "@arco-design/web-react";
 import {IconHome, IconCalendar, IconUser, IconExport} from "@arco-design/web-react/icon";
 import {useNavigate, useLocation} from "react-router-dom";
 import LoginForm from "../common/Login";
@@ -20,17 +20,17 @@ const Navbar: React.FC = () => {
     const location = useLocation();
 
     const [visible, setVisible] = React.useState(false);
-    const {user} = useAuthContext();
+    const {firebaseUser} = useAuthContext();
     const isRegisterPage = location.pathname === "/register";
     const handleNavigation = (key: string): void => {
         navigate(key);
     };
 
     React.useEffect(() => {
-        if (user != null) {
+        if (firebaseUser != null) {
             setVisible(false);
         }
-    }, [user]);
+    }, [firebaseUser]);
 
     const recordsMenuItems: MenuItem[] = [
         {key: "/records/cycle", label: "Cycle"},
@@ -77,7 +77,7 @@ const Navbar: React.FC = () => {
             </Menu>
             {!isRegisterPage && (
                 <div className="flex items-center m-10 cursor-pointer">
-                    {user ? (
+                    {firebaseUser ? (
                         <Dropdown
                             droplist={
                                 <Menu>
@@ -90,6 +90,7 @@ const Navbar: React.FC = () => {
                                         onClick={async () => {
                                             await logout();
                                             setVisible(false);
+                                            Message.success("Logout Successful");
                                             navigate("/");
                                         }}
                                     >
@@ -104,7 +105,15 @@ const Navbar: React.FC = () => {
                             trigger="click"
                         >
                             <Avatar style={{backgroundColor: "#3370ff"}} className="cursor-pointer">
-                                <IconUser />
+                                {firebaseUser?.photoURL ? (
+                                    <img
+                                        src={firebaseUser.photoURL}
+                                        alt="avatar"
+                                        className="w-24 h-24 rounded-full object-cover"
+                                    />
+                                ) : (
+                                    <IconUser />
+                                )}
                             </Avatar>
                         </Dropdown>
                     ) : (
@@ -123,6 +132,7 @@ const Navbar: React.FC = () => {
                 footer={null}
                 autoFocus={false}
                 focusLock={true}
+                className={`w-full max-w-[95vw] md:max-w-[80vw] lg:max-w-[60vw]`}
             >
                 <LoginForm onClose={() => setVisible(false)} />
             </Modal>
