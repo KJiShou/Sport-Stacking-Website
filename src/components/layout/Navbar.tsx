@@ -21,6 +21,8 @@ const Navbar: React.FC = () => {
 
     const [visible, setVisible] = React.useState(false);
     const {firebaseUser} = useAuthContext();
+    const providers = firebaseUser?.providerData.map((p) => p.providerId);
+    const hasPasswordLinked = providers?.includes("password");
     const isRegisterPage = location.pathname === "/register";
     const handleNavigation = (key: string): void => {
         navigate(key);
@@ -77,7 +79,7 @@ const Navbar: React.FC = () => {
             </Menu>
             {!isRegisterPage && (
                 <div className="flex items-center m-10 cursor-pointer">
-                    {firebaseUser ? (
+                    {firebaseUser && hasPasswordLinked ? (
                         <Dropdown
                             droplist={
                                 <Menu>
