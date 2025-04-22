@@ -20,7 +20,7 @@ const Navbar: React.FC = () => {
     const location = useLocation();
 
     const [visible, setVisible] = React.useState(false);
-    const {firebaseUser} = useAuthContext();
+    const {firebaseUser, user} = useAuthContext();
     const providers = firebaseUser?.providerData.map((p) => p.providerId);
     const hasPasswordLinked = providers?.includes("password");
     const isRegisterPage = location.pathname === "/register";
@@ -40,7 +40,6 @@ const Navbar: React.FC = () => {
         {key: "/records/3-3-3", label: "3-3-3"},
         {key: "/records/double", label: "Double"},
     ];
-
     return (
         <Header className="fixed h-24 flex z-20 w-full flex-row justify-between bg-white">
             <div className="logo" />
@@ -79,7 +78,7 @@ const Navbar: React.FC = () => {
             </Menu>
             {!isRegisterPage && (
                 <div className="flex items-center m-10 cursor-pointer">
-                    {firebaseUser && hasPasswordLinked ? (
+                    {user && hasPasswordLinked ? (
                         <Dropdown
                             droplist={
                                 <Menu>
@@ -107,12 +106,8 @@ const Navbar: React.FC = () => {
                             trigger="click"
                         >
                             <Avatar style={{backgroundColor: "#3370ff"}} className="cursor-pointer">
-                                {firebaseUser?.photoURL ? (
-                                    <img
-                                        src={firebaseUser.photoURL}
-                                        alt="avatar"
-                                        className="w-24 h-24 rounded-full object-cover"
-                                    />
+                                {user.image_url ? (
+                                    <img src={user.image_url} alt="avatar" className="w-24 h-24 rounded-full object-cover" />
                                 ) : (
                                     <IconUser />
                                 )}

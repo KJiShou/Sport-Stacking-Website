@@ -1,5 +1,6 @@
-import {db} from "./config";
+import {db, storage} from "./config";
 import {collection, addDoc, getDocs} from "firebase/firestore";
+import {ref, uploadBytes, getDownloadURL} from "firebase/storage";
 import {Athlete} from "../../types";
 
 import {CompetitionSchema, type Competition} from "@/schema";
