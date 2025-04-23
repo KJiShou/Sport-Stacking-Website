@@ -1,27 +1,27 @@
-import React, { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Form, Input, Button, Message, DatePicker, Typography, Select, Upload } from "@arco-design/web-react";
-import { IconEmail, IconLock, IconUser } from "@arco-design/web-react/icon";
-import type { SelectProps } from "@arco-design/web-react";
+import React, {useEffect, useState} from "react";
+import {useLocation, useNavigate} from "react-router-dom";
+import {Form, Input, Button, Message, DatePicker, Typography, Select, Upload} from "@arco-design/web-react";
+import {IconEmail, IconLock, IconUser} from "@arco-design/web-react/icon";
+import type {SelectProps} from "@arco-design/web-react";
 import dayjs from "dayjs";
-import { register, registerWithGoogle } from "../../../services/firebase/authService";
-import type { FirestoreUser } from "../../../schema";
-import { useAuthContext } from "../../../context/AuthContext";
-import { EmailAuthProvider, linkWithCredential } from "firebase/auth";
-import type { User } from "firebase/auth";
-import { uploadAvatar } from "../../../services/firebase/storageService";
-import { db } from "../../../services/firebase/config";
-import { doc, getDoc } from "firebase/firestore";
+import {register, registerWithGoogle} from "../../../services/firebase/authService";
+import type {FirestoreUser} from "../../../schema";
+import {useAuthContext} from "../../../context/AuthContext";
+import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
+import type {User} from "firebase/auth";
+import {uploadAvatar} from "../../../services/firebase/storageService";
+import {db} from "../../../services/firebase/config";
+import {doc, getDoc} from "firebase/firestore";
 
-const { Title } = Typography;
+const {Title} = Typography;
 
-type RegisterFormData = Omit<FirestoreUser, "id"> & { password: string; confirmPassword: string };
+type RegisterFormData = Omit<FirestoreUser, "id"> & {password: string; confirmPassword: string};
 
 const countries = [
-    { label: "Malaysia", value: "Malaysia" },
-    { label: "Singapore", value: "Singapore" },
-    { label: "Thailand", value: "Thailand" },
-    { label: "Taiwan", value: "Taiwan" },
+    {label: "Malaysia", value: "Malaysia"},
+    {label: "Singapore", value: "Singapore"},
+    {label: "Thailand", value: "Thailand"},
+    {label: "Taiwan", value: "Taiwan"},
 ];
 
 const statesByCountry: Record<string, SelectProps["options"]> = {
@@ -42,12 +42,12 @@ const statesByCountry: Record<string, SelectProps["options"]> = {
         "Kuala Lumpur",
         "Labuan",
         "Putrajaya",
-    ].map((state) => ({ label: state, value: state })),
+    ].map((state) => ({label: state, value: state})),
 
-    Singapore: [{ label: "Singapore", value: "Singapore" }],
+    Singapore: [{label: "Singapore", value: "Singapore"}],
 
     Thailand: ["Bangkok", "Chiang Mai", "Chiang Rai", "Chonburi", "Khon Kaen", "Phuket", "Pattani", "Rayong", "Songkhla"].map(
-        (state) => ({ label: state, value: state }),
+        (state) => ({label: state, value: state}),
     ),
 
     Taiwan: [
@@ -70,7 +70,7 @@ const statesByCountry: Record<string, SelectProps["options"]> = {
         "Penghu",
         "Kinmen",
         "Lienchiang",
-    ].map((state) => ({ label: state, value: state })),
+    ].map((state) => ({label: state, value: state})),
 };
 
 const RegisterPage = () => {
@@ -78,7 +78,7 @@ const RegisterPage = () => {
     const [form] = Form.useForm<RegisterFormData>();
     const navigate = useNavigate();
     const [selectedCountry, setSelectedCountry] = useState("Malaysia");
-    const { user, firebaseUser, setUser } = useAuthContext();
+    const {user, firebaseUser, setUser} = useAuthContext();
     const location = useLocation();
     const isFromGoogle = location.state?.fromGoogle === true;
 
@@ -103,10 +103,10 @@ const RegisterPage = () => {
                 typeof rawName === "string"
                     ? rawName
                     : Array.isArray(rawName)
-                        ? rawName.join(" ")
-                        : rawName instanceof Date
-                            ? rawName.toISOString()
-                            : JSON.stringify(rawName);
+                      ? rawName.join(" ")
+                      : rawName instanceof Date
+                        ? rawName.toISOString()
+                        : JSON.stringify(rawName);
 
             // now pick your display name
             const display = firebaseUser.displayName ?? nameStr ?? "User";
@@ -133,7 +133,7 @@ const RegisterPage = () => {
     };
 
     const handleSubmit = async (values: RegisterFormData) => {
-        const { email, password, confirmPassword, name, IC, birthdate, country, gender, state, image_url } = values;
+        const {email, password, confirmPassword, name, IC, birthdate, country, gender, state, image_url} = values;
         let avatarUrl = firebaseUser?.photoURL ?? "";
         if (password !== confirmPassword) {
             Message.error("Passwords do not match");
@@ -265,10 +265,10 @@ const RegisterPage = () => {
                                     listType="picture-card"
                                     accept="image/*"
                                     showUploadList={false}
-                                    customRequest={({ file, onSuccess }) => {
+                                    customRequest={({file, onSuccess}) => {
                                         const MAX_SIZE = 10 * 1024 * 1024;
 
-                                        if ((file).size > MAX_SIZE) {
+                                        if (file.size > MAX_SIZE) {
                                             // 100MB
 
                                             Message.error("File size exceeds 10MB limit");
@@ -302,7 +302,7 @@ const RegisterPage = () => {
                     }}
                 </Form.Item>
 
-                <Form.Item field="email" label="Email" rules={[{ required: true, type: "email", message: "Enter a valid email" }]}>
+                <Form.Item field="email" label="Email" rules={[{required: true, type: "email", message: "Enter a valid email"}]}>
                     <Input
                         prefix={<IconEmail />}
                         placeholder="example@mail.com"
@@ -310,7 +310,7 @@ const RegisterPage = () => {
                     />
                 </Form.Item>
 
-                <Form.Item field="name" label="Full Name" rules={[{ required: true, message: "Enter your full name" }]}>
+                <Form.Item field="name" label="Full Name" rules={[{required: true, message: "Enter your full name"}]}>
                     <Input prefix={<IconUser />} placeholder="Your full name" />
                 </Form.Item>
 
@@ -338,26 +338,26 @@ const RegisterPage = () => {
                         },
                         ...(isICMode
                             ? [
-                                {
-                                    match: /^\d{12}$/,
-                                    message: "IC must be 12 digits like 050101011234",
-                                },
-                            ]
+                                  {
+                                      match: /^\d{12}$/,
+                                      message: "IC must be 12 digits like 050101011234",
+                                  },
+                              ]
                             : []),
                     ]}
                 >
                     <Input placeholder={isICMode ? "e.g. 050101011234" : "e.g. A12345678"} onChange={handleICChange} />
                 </Form.Item>
 
-                <Form.Item field="birthdate" label="Birthdate" rules={[{ required: true, message: "Select your birthdate" }]}>
-                    <DatePicker style={{ width: "100%" }} disabledDate={(current) => current.isAfter(dayjs())} />
+                <Form.Item field="birthdate" label="Birthdate" rules={[{required: true, message: "Select your birthdate"}]}>
+                    <DatePicker style={{width: "100%"}} disabledDate={(current) => current.isAfter(dayjs())} />
                 </Form.Item>
 
-                <Form.Item field="gender" label="Gender" rules={[{ required: true, message: "Select gender" }]}>
+                <Form.Item field="gender" label="Gender" rules={[{required: true, message: "Select gender"}]}>
                     <Select placeholder="Select gender" options={["Male", "Female"]} />
                 </Form.Item>
 
-                <Form.Item field="country" label="Country" rules={[{ required: true, message: "Select country" }]}>
+                <Form.Item field="country" label="Country" rules={[{required: true, message: "Select country"}]}>
                     <Select
                         placeholder="Select your country"
                         options={countries}
@@ -370,23 +370,23 @@ const RegisterPage = () => {
                     />
                 </Form.Item>
 
-                <Form.Item field="state" label="State" rules={[{ required: true, message: "Select state" }]}>
+                <Form.Item field="state" label="State" rules={[{required: true, message: "Select state"}]}>
                     <Select placeholder="Select your state" options={statesByCountry[selectedCountry || ""] || []} />
                 </Form.Item>
 
-                <Form.Item field="password" label="Password" rules={[{ required: true, message: "Enter your password" }]}>
+                <Form.Item field="password" label="Password" rules={[{required: true, message: "Enter your password"}]}>
                     <Input.Password prefix={<IconLock />} placeholder="Create password" />
                 </Form.Item>
 
                 <Form.Item
                     field="confirmPassword"
                     label="Confirm Password"
-                    rules={[{ required: true, message: "Confirm your password" }]}
+                    rules={[{required: true, message: "Confirm your password"}]}
                 >
                     <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
                 </Form.Item>
 
-                <Button type="primary" htmlType="submit" long loading={loading} style={{ marginTop: 16 }}>
+                <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
                     Register
                 </Button>
             </Form>

@@ -8,7 +8,20 @@ import {
 } from "firebase/auth";
 import type {User} from "firebase/auth";
 import {db, auth} from "./config";
-import {collection, query, where, getDocs, doc, setDoc, getDoc, increment, runTransaction, DocumentData, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
+import {
+    collection,
+    query,
+    where,
+    getDocs,
+    doc,
+    setDoc,
+    getDoc,
+    increment,
+    runTransaction,
+    DocumentData,
+    QueryDocumentSnapshot,
+    QuerySnapshot,
+} from "firebase/firestore";
 import type {FirestoreUser} from "../../schema";
 
 async function getNextGlobalId(): Promise<string> {
@@ -112,37 +125,34 @@ export const registerWithGoogle = async (
 };
 
 export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
-  // Build a query on the "users" collection where the field "id" equals the passed-in id
-  const q = query(
-    collection(db, "users"),
-    where("id", "==", id)
-  );
+    // Build a query on the "users" collection where the field "id" equals the passed-in id
+    const q = query(collection(db, "users"), where("id", "==", id));
 
-  // Execute the query
-  const snapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+    // Execute the query
+    const snapshot: QuerySnapshot<DocumentData> = await getDocs(q);
 
-  // If there's no matching document, return null
-  if (snapshot.empty) {
-    return null;
-  }
+    // If there's no matching document, return null
+    if (snapshot.empty) {
+        return null;
+    }
 
-  // Take the first matching document
-  const docSnap: QueryDocumentSnapshot<DocumentData> = snapshot.docs[0];
-  const data = docSnap.data();
+    // Take the first matching document
+    const docSnap: QueryDocumentSnapshot<DocumentData> = snapshot.docs[0];
+    const data = docSnap.data();
 
-  // Map Firestore types to your User interface
-  return {
-    id: docSnap.id,
-    global_id: data.global_id ?? null,
-    name: data.name,
-    IC: data.IC,
-    email: data.email,
-    birthdate: data.birthdate.toDate(),  // convert Firestore Timestamp
-    gender: data.gender,
-    country: data.country,
-    state: data.state,
-    image_url: data.image_url,
-    roles: data.roles,
-    best_times: data.best_times,
-  };
+    // Map Firestore types to your User interface
+    return {
+        id: docSnap.id,
+        global_id: data.global_id ?? null,
+        name: data.name,
+        IC: data.IC,
+        email: data.email,
+        birthdate: data.birthdate.toDate(), // convert Firestore Timestamp
+        gender: data.gender,
+        country: data.country,
+        state: data.state,
+        image_url: data.image_url,
+        roles: data.roles,
+        best_times: data.best_times,
+    };
 }

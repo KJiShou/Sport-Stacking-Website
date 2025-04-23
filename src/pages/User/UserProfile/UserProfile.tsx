@@ -1,18 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import {
-    Card,
-    Spin,
-    Statistic,
-    Avatar,
-    Typography,
-    Table,
-} from "@arco-design/web-react";
-import { IconUser } from "@arco-design/web-react/icon";
-import type { FirestoreUser } from "../../../schema";
-import { fetchUserByID } from "../../../services/firebase/authService";
+import React, {useEffect, useState} from "react";
+import {useParams} from "react-router-dom";
+import {Card, Spin, Statistic, Avatar, Typography, Table} from "@arco-design/web-react";
+import {IconUser} from "@arco-design/web-react/icon";
+import type {FirestoreUser} from "../../../schema";
+import {fetchUserByID} from "../../../services/firebase/authService";
 
-const { Title, Text } = Typography;
+const {Title, Text} = Typography;
 
 interface AllTimeStat {
     event: string;
@@ -32,8 +25,7 @@ interface RecordItem {
 export default function RegisterPage() {
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [loading, setLoading] = useState(true);
-    const { id } = useParams<{ id: string }>();
-
+    const {id} = useParams<{id: string}>();
 
     useEffect(() => {
         if (!id) {
@@ -58,7 +50,7 @@ export default function RegisterPage() {
 
     // 构建统计数据示例
     const allTimeStats: AllTimeStat[] = [
-        { event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-" },
+        {event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"},
         // TODO: 按需添加其他项目并计算排名
     ];
     const onlineBest: OnlineBest[] = [];
@@ -67,18 +59,16 @@ export default function RegisterPage() {
     return (
         <div>
             <div className={`p-6 `}>
-                {loading && <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-sm">
-                    <Spin tip="Loading..." size={40} />
-                </div>}
+                {loading && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-sm">
+                        <Spin tip="Loading..." size={40} />
+                    </div>
+                )}
                 <div className="max-w-2xl mx-auto space-y-6">
                     {/* 基本信息卡片 */}
                     <Card className="text-center">
                         <Avatar className="mx-auto w-24 h-24 rounded-full overflow-hidden">
-                            <img
-                                src={user?.image_url}
-                                alt={user?.name}
-                                className="w-full h-full object-cover"
-                            />
+                            <img src={user?.image_url} alt={user?.name} className="w-full h-full object-cover" />
                         </Avatar>
                         <Title heading={4} className="mt-4">
                             {user?.name}
@@ -105,13 +95,13 @@ export default function RegisterPage() {
                         <Table
                             data={allTimeStats}
                             columns={[
-                                { title: "Event", dataIndex: "event" },
+                                {title: "Event", dataIndex: "event"},
                                 {
                                     title: "Time (sec)",
                                     dataIndex: "time",
                                     render: (val) => val.toFixed(3),
                                 },
-                                { title: "Rank", dataIndex: "rank" },
+                                {title: "Rank", dataIndex: "rank"},
                             ]}
                             pagination={false}
                         />
