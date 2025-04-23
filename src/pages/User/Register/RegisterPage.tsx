@@ -1,19 +1,17 @@
-import React, {useEffect, useState, useRef} from "react";
-import {useLocation} from "react-router-dom";
+import React, {useEffect, useState} from "react";
+import {useLocation, useNavigate} from "react-router-dom";
 import {Form, Input, Button, Message, DatePicker, Typography, Select, Upload} from "@arco-design/web-react";
 import {IconEmail, IconLock, IconUser} from "@arco-design/web-react/icon";
 import type {SelectProps} from "@arco-design/web-react";
 import dayjs from "dayjs";
-import {register, registerWithGoogle, logout} from "../../../services/firebase/authService";
-import {useNavigate} from "react-router-dom";
+import {register, registerWithGoogle} from "../../../services/firebase/authService";
 import type {FirestoreUser} from "../../../schema";
 import {useAuthContext} from "../../../context/AuthContext";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import type {User} from "firebase/auth";
-import firebase from "firebase/compat/app";
-import {uploadAvatar} from "../../../services/firebase/uploadAvatar";
-import {db, auth, storage} from "../../../services/firebase/config";
-import {collection, query, where, getDocs, doc, setDoc, getDoc} from "firebase/firestore";
+import {uploadAvatar} from "../../../services/firebase/storageService";
+import {db} from "../../../services/firebase/config";
+import {doc, getDoc} from "firebase/firestore";
 
 const {Title} = Typography;
 
@@ -86,18 +84,37 @@ const RegisterPage = () => {
 
     useEffect(() => {
         if (firebaseUser && isFromGoogle) {
-            form.setFieldsValue({
-                email: firebaseUser.email || "",
-                image_url: firebaseUser.photoURL || "",
-            });
-            const photoURL = firebaseUser.photoURL;
-            if (photoURL?.startsWith("http")) {
-                form.setFieldValue("image_url", photoURL);
-            } else {
-                form.setFieldValue("image_url", "https://ui-avatars.com/api/?name=User");
+            // 1) try Firestore’s saved image_url first
+            const saved = user?.image_url;
+            if (saved) {
+                form.setFieldValue("image_url", saved);
+                return;
             }
+            if (firebaseUser.photoURL) {
+                // 2) fallback to auth.photoURL if it exists
+                form.setFieldValue("image_url", firebaseUser.photoURL);
+                return;
+            }
+            // pull the raw value out...
+            const rawName = form.getFieldValue("name");
+
+            // coerce to a real string
+            const nameStr =
+                typeof rawName === "string"
+                    ? rawName
+                    : Array.isArray(rawName)
+                      ? rawName.join(" ")
+                      : rawName instanceof Date
+                        ? rawName.toISOString()
+                        : JSON.stringify(rawName);
+
+            // now pick your display name
+            const display = firebaseUser.displayName ?? nameStr ?? "User";
+
+            // and this is safe
+            form.setFieldValue("image_url", `https://ui-avatars.com/api/?name=${encodeURIComponent(display)}`);
         }
-    }, [firebaseUser, isFromGoogle]);
+    }, [firebaseUser, isFromGoogle, user]);
 
     useEffect(() => {
         if (firebaseUser && !isFromGoogle) {
@@ -117,7 +134,7 @@ const RegisterPage = () => {
 
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, state, image_url} = values;
-        let avatarUrl = firebaseUser?.photoURL || "https://default.image";
+        let avatarUrl = firebaseUser?.photoURL ?? "";
         if (password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
@@ -129,7 +146,7 @@ const RegisterPage = () => {
                 const blob = await (await fetch(image_url)).blob();
 
                 const file = new File([blob], "avatar.png", {
-                    type: blob.type || "image/png", // ✅ very important
+                    type: blob.type ?? "image/png",
                 });
 
                 avatarUrl = await uploadAvatar(file, firebaseUser?.uid ?? email);
@@ -145,30 +162,28 @@ const RegisterPage = () => {
                     country,
                     state,
                     roles: [],
-                    image_url: avatarUrl || "https://default.image",
+                    image_url: avatarUrl || "",
                     best_times: {},
                 });
-            } else {
-                if (isFromGoogle && firebaseUser) {
-                    await registerWithGoogle(
-                        firebaseUser,
-                        {
-                            IC,
-                            name,
-                            birthdate,
-                            gender,
-                            country,
-                            state,
-                            roles: [],
-                            best_times: {},
-                        },
-                        avatarUrl,
-                    );
-                    await linkEmailPassword(email, password, firebaseUser);
-                    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-                    if (userDoc.exists()) {
-                        setUser(userDoc.data() as FirestoreUser); // 可暴露 setUser
-                    }
+            } else if (isFromGoogle && firebaseUser) {
+                await registerWithGoogle(
+                    firebaseUser,
+                    {
+                        IC,
+                        name,
+                        birthdate,
+                        gender,
+                        country,
+                        state,
+                        roles: [],
+                        best_times: {},
+                    },
+                    avatarUrl,
+                );
+                await linkEmailPassword(email, password, firebaseUser);
+                const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+                if (userDoc.exists()) {
+                    setUser(userDoc.data() as FirestoreUser);
                 }
             }
 
@@ -191,7 +206,7 @@ const RegisterPage = () => {
         form.setFieldValue("IC", val);
         if (!isICMode) return;
 
-        const match = val.match(/^(\d{2})(\d{2})(\d{2})\d{6}$/);
+        const match = RegExp(/^(\d{2})(\d{2})(\d{2})\d{6}$/).exec(val);
         if (match) {
             const yy = match[1];
             const mm = match[2];
@@ -234,9 +249,14 @@ const RegisterPage = () => {
                                     <img
                                         src={imageUrl}
                                         alt="avatar"
-                                        className="w-24 h-24 object-cover rounded-full"
                                         onError={(e) => {
-                                            (e.target as HTMLImageElement).src = "https://ui-avatars.com/api/?name=User";
+                                            // only fallback if *no* firebaseUser.photoURL at all
+                                            if (!firebaseUser?.photoURL) {
+                                                const nameField = form.getFieldValue("name");
+                                                // coerce to a string no matter what type it was
+                                                (e.target as HTMLImageElement).src =
+                                                    `https://ui-avatars.com/api/?name=${encodeURIComponent(String(nameField ?? "User"))}`;
+                                            }
                                         }}
                                     />
                                 </div>
@@ -248,7 +268,7 @@ const RegisterPage = () => {
                                     customRequest={({file, onSuccess}) => {
                                         const MAX_SIZE = 10 * 1024 * 1024;
 
-                                        if ((file as File).size > MAX_SIZE) {
+                                        if (file.size > MAX_SIZE) {
                                             // 100MB
 
                                             Message.error("File size exceeds 10MB limit");
@@ -260,7 +280,7 @@ const RegisterPage = () => {
                                             form.setFieldValue("image_url", reader.result as string);
                                             onSuccess?.();
                                         };
-                                        reader.readAsDataURL(file as File);
+                                        reader.readAsDataURL(file);
                                     }}
                                 >
                                     <Button size="mini">Upload New</Button>

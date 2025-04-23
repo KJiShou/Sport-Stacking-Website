@@ -113,7 +113,7 @@ const Navbar: React.FC = () => {
                         <Dropdown
                             droplist={
                                 <Menu>
-                                    <Menu.Item key="profile" onClick={() => navigate("/profile")}>
+                                    <Menu.Item key="profile" onClick={() => navigate(`/users/${user.id}`)}>
                                         <IconUser className="mr-2" />
                                         Profile
                                     </Menu.Item>
