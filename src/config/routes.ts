@@ -7,6 +7,7 @@ import page_3_6_3 from "../pages/Records/3-6-3/3-6-3";
 import Cycle from "../pages/Records/Cycle/Cycle";
 import Double from "../pages/Records/Double/Double";
 import RegisterPage from "../pages/User/Register/RegisterPage";
+import UserProfile from "../pages/User/UserProfile/UserProfile";
 
 export interface Route {
     path: string;
@@ -22,6 +23,7 @@ const routes: Route[] = [
     {path: "/records/Cycle", component: Cycle},
     {path: "/records/Double", component: Double},
     {path: "/register", component: RegisterPage},
+    {path: "/users/:id", component: UserProfile},
 ];
 
 export default routes;

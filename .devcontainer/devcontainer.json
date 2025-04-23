@@ -20,11 +20,33 @@
         "dsznajder.es7-react-js-snippets",
         "eamodio.gitlens",
         "bradlc.vscode-tailwindcss",
-        "ms-azuretools.vscode-docker"
+        "ms-azuretools.vscode-docker",
+        "steoates.autoimport"
       ],
       "settings": {
+        // 开启自动导入提示
+        "typescript.suggest.autoImports": true,
+        "javascript.suggest.autoImports": true,
+
+        // 补全里带上项目依赖的符号
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": false
+        },
+
+        // "autoimport.autoComplete": true
+        "autoimport.autoComplete": true,
+        "autoimport.filesToScan": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.js", "src/**/*.jsx"],
         "editor.formatOnSave": true,
-        "editor.defaultFormatter": "biomejs.biome",
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "vscode.typescript-language-features",
+          "editor.formatOnSave": true
+        },
+        "[javascriptreact]": {
+          "editor.defaultFormatter": "vscode.typescript-language-features",
+          "editor.formatOnSave": true
+        },
         "[javascript]": {
           "editor.defaultFormatter": "biomejs.biome"
         },
@@ -35,7 +57,8 @@
           "editor.defaultFormatter": "biomejs.biome"
         },
         "editor.codeActionsOnSave": {
-          "source.fixAll.eslint": true
+          "source.fixAll.eslint": true,
+          "source.organizeImports": true
         },
         "editor.tabSize": 4,
         "files.autoSave": "onFocusChange",
