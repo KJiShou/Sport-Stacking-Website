@@ -76,7 +76,7 @@ export const registerWithGoogle = async (
         throw new Error("This user is already registered.");
     }
 
-    const imageUrl = imageFile || firebaseUser.photoURL || "https://default.image.url";
+    const imageUrl = imageFile || firebaseUser.photoURL;
 
     // ✅ 3. Prepare new user
     const userDoc = {

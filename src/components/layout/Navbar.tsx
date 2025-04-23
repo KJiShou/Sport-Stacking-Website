@@ -1,16 +1,47 @@
 import * as React from "react";
 
-import {Layout, Menu, Avatar, Modal, Button, Dropdown, Message} from "@arco-design/web-react";
+import {Layout, Menu, Avatar, Modal, Button, Dropdown, Message, Spin} from "@arco-design/web-react";
 import {IconHome, IconCalendar, IconUser, IconExport} from "@arco-design/web-react/icon";
 import {useNavigate, useLocation} from "react-router-dom";
 import LoginForm from "../common/Login";
 import {useAuthContext} from "../../context/AuthContext";
 import {logout} from "../../services/firebase/authService";
+import {useState} from "react";
 
 interface MenuItem {
     key: string;
     label: string;
 }
+
+const AvatarWithLoading = ({src}: {src: string}) => {
+    const [loading, setLoading] = useState(true);
+
+    return (
+        <div className="relative inline-block">
+            {loading && (
+                <div className="absolute inset-0 flex items-center justify-center z-10 bg-white/80 rounded-full">
+                    <Spin size={16} />
+                </div>
+            )}
+
+            <Avatar
+                size={40}
+                className="rounded-full overflow-hidden"
+                style={{
+                    visibility: loading ? "hidden" : "visible",
+                }}
+            >
+                <img
+                    src={src}
+                    alt="avatar"
+                    onLoad={() => setLoading(false)}
+                    onError={() => setLoading(false)}
+                    className="w-full h-full object-cover rounded-full"
+                />
+            </Avatar>
+        </div>
+    );
+};
 
 const Navbar: React.FC = () => {
     const MenuItem = Menu.Item;
@@ -105,13 +136,15 @@ const Navbar: React.FC = () => {
                             position="br"
                             trigger="click"
                         >
-                            <Avatar style={{backgroundColor: "#3370ff"}} className="cursor-pointer">
+                            <div className="cursor-pointer">
                                 {user.image_url ? (
-                                    <img src={user.image_url} alt="avatar" className="w-24 h-24 rounded-full object-cover" />
+                                    <AvatarWithLoading src={user.image_url} />
                                 ) : (
-                                    <IconUser />
+                                    <Avatar style={{backgroundColor: "#3370ff"}}>
+                                        <IconUser />
+                                    </Avatar>
                                 )}
-                            </Avatar>
+                            </div>
                         </Dropdown>
                     ) : (
                         <Button onClick={() => setVisible(true)} type="primary">

@@ -11,12 +11,16 @@ interface AuthContextType {
     user: FirestoreUser | null;
     loading: boolean;
     firebaseUser: User | null;
+    setUser: React.Dispatch<React.SetStateAction<FirestoreUser | null>>;
 }
 
 const AuthContext = createContext<AuthContextType>({
     user: null,
     loading: true,
     firebaseUser: null,
+    setUser: () => {
+        // default no-op function
+    },
 });
 
 export const AuthProvider = ({children}: {children: React.ReactNode}) => {
@@ -51,7 +55,7 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
         return () => unsubscribe();
     }, []);
 
-    return <AuthContext.Provider value={{user, loading, firebaseUser}}>{children}</AuthContext.Provider>;
+    return <AuthContext.Provider value={{user, loading, firebaseUser, setUser}}>{children}</AuthContext.Provider>;
 };
 
 export const useAuthContext = () => useContext(AuthContext);

@@ -12,6 +12,8 @@ import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import type {User} from "firebase/auth";
 import firebase from "firebase/compat/app";
 import {uploadAvatar} from "../../../services/firebase/uploadAvatar";
+import {db, auth, storage} from "../../../services/firebase/config";
+import {collection, query, where, getDocs, doc, setDoc, getDoc} from "firebase/firestore";
 
 const {Title} = Typography;
 
@@ -78,7 +80,7 @@ const RegisterPage = () => {
     const [form] = Form.useForm<RegisterFormData>();
     const navigate = useNavigate();
     const [selectedCountry, setSelectedCountry] = useState("Malaysia");
-    const {user, firebaseUser} = useAuthContext();
+    const {user, firebaseUser, setUser} = useAuthContext();
     const location = useLocation();
     const isFromGoogle = location.state?.fromGoogle === true;
 
@@ -115,7 +117,7 @@ const RegisterPage = () => {
 
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, state, image_url} = values;
-        let avatarUrl = "https://default.image";
+        let avatarUrl = firebaseUser?.photoURL || "https://default.image";
         if (password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
@@ -163,6 +165,10 @@ const RegisterPage = () => {
                         avatarUrl,
                     );
                     await linkEmailPassword(email, password, firebaseUser);
+                    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+                    if (userDoc.exists()) {
+                        setUser(userDoc.data() as FirestoreUser); // 可暴露 setUser
+                    }
                 }
             }
 
