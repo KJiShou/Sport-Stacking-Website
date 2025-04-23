@@ -15,7 +15,7 @@ const App: React.FC = () => {
     const Content = Layout.Content;
 
     const AutoLogoutOnLeaveRegister = () => {
-        const {firebaseUser, loading} = useAuthContext();
+        const {firebaseUser, loading, user} = useAuthContext();
         const {pathname} = useLocation();
         const navigate = useNavigate();
         const prevPathRef = useRef<string>(pathname);
@@ -32,7 +32,7 @@ const App: React.FC = () => {
             const wasOnRegister = prevPathRef.current === "/register" || prevPathRef.current.startsWith("/register/");
             const isNowOffRegister = !(pathname === "/register" || pathname.startsWith("/register/"));
 
-            if (isGoogleOnly && wasOnRegister && isNowOffRegister) {
+            if (!loading && isGoogleOnly && wasOnRegister && isNowOffRegister) {
                 logout().then(() => navigate("/"));
             }
 

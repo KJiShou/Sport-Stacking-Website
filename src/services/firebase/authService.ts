@@ -7,7 +7,8 @@ import {
     GoogleAuthProvider,
 } from "firebase/auth";
 import type {User} from "firebase/auth";
-import {db, auth} from "./config";
+import {ref, uploadBytes, getDownloadURL} from "firebase/storage";
+import {db, auth, storage} from "./config";
 import {collection, query, where, getDocs, doc, setDoc, getDoc} from "firebase/firestore";
 import type {FirestoreUser} from "../../schema";
 
@@ -49,7 +50,11 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
     await setDoc(doc(db, "users", uid), newUser);
 };
 
-export const registerWithGoogle = async (firebaseUser: User, extraData: Omit<FirestoreUser, "id" | "email" | "image_url">) => {
+export const registerWithGoogle = async (
+    firebaseUser: User,
+    extraData: Omit<FirestoreUser, "id" | "email" | "image_url">,
+    imageFile?: string,
+) => {
     if (!firebaseUser.email) {
         throw new Error("Google account does not have an email");
     }
@@ -71,13 +76,15 @@ export const registerWithGoogle = async (firebaseUser: User, extraData: Omit<Fir
         throw new Error("This user is already registered.");
     }
 
+    const imageUrl = imageFile || firebaseUser.photoURL;
+
     // ✅ 3. Prepare new user
-    const newUser: FirestoreUser = {
-        id: uid,
+    const userDoc = {
+        id: firebaseUser.uid,
         email: firebaseUser.email,
-        image_url: firebaseUser.photoURL || "https://default.image", // default fallback
+        image_url: imageUrl, // 👈 store the new image URL
         ...extraData,
     };
 
-    await setDoc(userRef, newUser);
+    await setDoc(userRef, userDoc);
 };

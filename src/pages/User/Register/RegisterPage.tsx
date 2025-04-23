@@ -11,6 +11,9 @@ import {useAuthContext} from "../../../context/AuthContext";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import type {User} from "firebase/auth";
 import firebase from "firebase/compat/app";
+import {uploadAvatar} from "../../../services/firebase/uploadAvatar";
+import {db, auth, storage} from "../../../services/firebase/config";
+import {collection, query, where, getDocs, doc, setDoc, getDoc} from "firebase/firestore";
 
 const {Title} = Typography;
 
@@ -77,7 +80,7 @@ const RegisterPage = () => {
     const [form] = Form.useForm<RegisterFormData>();
     const navigate = useNavigate();
     const [selectedCountry, setSelectedCountry] = useState("Malaysia");
-    const {user, firebaseUser} = useAuthContext();
+    const {user, firebaseUser, setUser} = useAuthContext();
     const location = useLocation();
     const isFromGoogle = location.state?.fromGoogle === true;
 
@@ -87,6 +90,12 @@ const RegisterPage = () => {
                 email: firebaseUser.email || "",
                 image_url: firebaseUser.photoURL || "",
             });
+            const photoURL = firebaseUser.photoURL;
+            if (photoURL?.startsWith("http")) {
+                form.setFieldValue("image_url", photoURL);
+            } else {
+                form.setFieldValue("image_url", "https://ui-avatars.com/api/?name=User");
+            }
         }
     }, [firebaseUser, isFromGoogle]);
 
@@ -107,8 +116,8 @@ const RegisterPage = () => {
     };
 
     const handleSubmit = async (values: RegisterFormData) => {
-        const {email, password, confirmPassword, name, IC, birthdate, country, gender, state} = values;
-
+        const {email, password, confirmPassword, name, IC, birthdate, country, gender, state, image_url} = values;
+        let avatarUrl = firebaseUser?.photoURL || "https://default.image";
         if (password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
@@ -116,6 +125,15 @@ const RegisterPage = () => {
 
         setLoading(true);
         try {
+            if (image_url?.startsWith("data:")) {
+                const blob = await (await fetch(image_url)).blob();
+
+                const file = new File([blob], "avatar.png", {
+                    type: blob.type || "image/png", // ✅ very important
+                });
+
+                avatarUrl = await uploadAvatar(file, firebaseUser?.uid ?? email);
+            }
             if (!(isFromGoogle && firebaseUser)) {
                 await register({
                     email,
@@ -127,23 +145,31 @@ const RegisterPage = () => {
                     country,
                     state,
                     roles: [],
-                    image_url: "https://default.image",
+                    image_url: avatarUrl || "https://default.image",
                     best_times: {},
                 });
             } else {
                 if (isFromGoogle && firebaseUser) {
+                    await registerWithGoogle(
+                        firebaseUser,
+                        {
+                            IC,
+                            name,
+                            birthdate,
+                            gender,
+                            country,
+                            state,
+                            roles: [],
+                            best_times: {},
+                        },
+                        avatarUrl,
+                    );
                     await linkEmailPassword(email, password, firebaseUser);
+                    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+                    if (userDoc.exists()) {
+                        setUser(userDoc.data() as FirestoreUser); // 可暴露 setUser
+                    }
                 }
-                await registerWithGoogle(firebaseUser, {
-                    IC,
-                    name,
-                    birthdate,
-                    gender,
-                    country,
-                    state,
-                    roles: [],
-                    best_times: {},
-                });
             }
 
             Message.success("Registration successful!");
@@ -194,33 +220,68 @@ const RegisterPage = () => {
                     <Input type="hidden" />
                 </Form.Item>
 
-                {/* 下面这块依旧用 shouldUpdate 监听 image_url 变化 */}
-                <Form.Item label="Avatar (optional)" shouldUpdate={(prev, curr) => prev.image_url !== curr.image_url}>
+                <Form.Item
+                    className="flex flex-col items-center gap-2"
+                    label="Avatar (optional)"
+                    shouldUpdate={(prev, curr) => prev.image_url !== curr.image_url}
+                >
                     {() => {
                         const imageUrl = form.getFieldValue("image_url") as string;
-                        return imageUrl ? (
-                            <img src={imageUrl} alt="avatar" className="w-24 h-24 rounded-full object-cover" />
-                        ) : (
-                            <Upload
-                                listType="picture-card"
-                                accept="image/*"
-                                showUploadList={false}
-                                customRequest={({file, onSuccess}) => {
-                                    const reader = new FileReader();
-                                    reader.onload = () => {
-                                        form.setFieldValue("image_url", reader.result as string);
-                                        onSuccess?.();
-                                    };
-                                    reader.readAsDataURL(file as File);
-                                }}
-                            >
-                                <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center text-sm text-gray-500">
-                                    Upload
+
+                        return (
+                            <div className="flex flex-col items-center gap-2">
+                                <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                                    <img
+                                        src={imageUrl}
+                                        alt="avatar"
+                                        className="w-24 h-24 object-cover rounded-full"
+                                        onError={(e) => {
+                                            (e.target as HTMLImageElement).src = "https://ui-avatars.com/api/?name=User";
+                                        }}
+                                    />
                                 </div>
-                            </Upload>
+
+                                <Upload
+                                    listType="picture-card"
+                                    accept="image/*"
+                                    showUploadList={false}
+                                    customRequest={({file, onSuccess}) => {
+                                        const MAX_SIZE = 10 * 1024 * 1024;
+
+                                        if ((file as File).size > MAX_SIZE) {
+                                            // 100MB
+
+                                            Message.error("File size exceeds 10MB limit");
+                                            return;
+                                        }
+
+                                        const reader = new FileReader();
+                                        reader.onload = () => {
+                                            form.setFieldValue("image_url", reader.result as string);
+                                            onSuccess?.();
+                                        };
+                                        reader.readAsDataURL(file as File);
+                                    }}
+                                >
+                                    <Button size="mini">Upload New</Button>
+                                </Upload>
+
+                                {firebaseUser?.photoURL && (
+                                    <Button
+                                        size="mini"
+                                        type="text"
+                                        onClick={() => {
+                                            form.setFieldValue("image_url", firebaseUser.photoURL as string);
+                                        }}
+                                    >
+                                        Reset to Google Avatar
+                                    </Button>
+                                )}
+                            </div>
                         );
                     }}
                 </Form.Item>
+
                 <Form.Item field="email" label="Email" rules={[{required: true, type: "email", message: "Enter a valid email"}]}>
                     <Input
                         prefix={<IconEmail />}
