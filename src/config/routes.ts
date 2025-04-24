@@ -8,7 +8,6 @@ import Cycle from "../pages/Records/Cycle/Cycle";
 import Double from "../pages/Records/Double/Double";
 import RegisterPage from "../pages/User/Register/RegisterPage";
 import UserProfile from "../pages/User/UserProfile/UserProfile";
-import EditProfilePage from "../pages/User/UserProfile/EditUserProfile";
 
 export interface Route {
     path: string;
@@ -16,16 +15,15 @@ export interface Route {
 }
 
 const routes: Route[] = [
-    { path: "/", component: Home },
-    { path: "/athletes", component: Athletes },
-    { path: "/tournaments", component: Tournaments },
-    { path: "/records/3-3-3", component: page_3_3_3 },
-    { path: "/records/3-6-3", component: page_3_6_3 },
-    { path: "/records/Cycle", component: Cycle },
-    { path: "/records/Double", component: Double },
-    { path: "/register", component: RegisterPage },
-    { path: "/users/:id", component: UserProfile },
-    { path: "/users/edit/:id", component: EditProfilePage },
+    {path: "/", component: Home},
+    {path: "/athletes", component: Athletes},
+    {path: "/tournaments", component: Tournaments},
+    {path: "/records/3-3-3", component: page_3_3_3},
+    {path: "/records/3-6-3", component: page_3_6_3},
+    {path: "/records/Cycle", component: Cycle},
+    {path: "/records/Double", component: Double},
+    {path: "/register", component: RegisterPage},
+    {path: "/users/:id", component: UserProfile},
 ];
 
 export default routes;

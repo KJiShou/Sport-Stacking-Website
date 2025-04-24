@@ -1,1 +1,1 @@
-declare module '*.avif';
+declare module "*.avif";

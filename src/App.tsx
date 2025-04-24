@@ -1,24 +1,24 @@
-import { useEffect, useState, useRef } from "react";
+import {useEffect, useState, useRef} from "react";
 import type * as React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import {BrowserRouter as Router, Routes, Route} from "react-router-dom";
 import "@arco-design/web-react/dist/css/arco.css";
-import { Navbar, Footer } from "./components/layout";
-import { DeviceInspector } from "./utils/DeviceInspector";
-import { Layout } from "@arco-design/web-react";
+import {Navbar, Footer} from "./components/layout";
+import {DeviceInspector} from "./utils/DeviceInspector";
+import {Layout} from "@arco-design/web-react";
 import routes from "./config/routes";
 import ProtectedRoute from "./components/common/ProtectedRoute";
-import { useLocation, useNavigate } from "react-router-dom";
-import { useAuthContext } from "./context/AuthContext";
-import { logout } from "./services/firebase/authService";
-import { Helmet } from "react-helmet"
+import {useLocation, useNavigate} from "react-router-dom";
+import {useAuthContext} from "./context/AuthContext";
+import {logout} from "./services/firebase/authService";
+import {Helmet} from "react-helmet";
 import image from "./assets/icon.avif";
 
 const App: React.FC = () => {
     const Content = Layout.Content;
 
     const AutoLogoutOnLeaveRegister = () => {
-        const { firebaseUser, loading, user } = useAuthContext();
-        const { pathname } = useLocation();
+        const {firebaseUser, loading, user} = useAuthContext();
+        const {pathname} = useLocation();
         const navigate = useNavigate();
         const prevPathRef = useRef<string>(pathname);
 
@@ -47,11 +47,7 @@ const App: React.FC = () => {
     return (
         <Router>
             <Helmet>
-                <link
-                    rel="icon"
-                    type="image/avif"
-                    href={image}
-                />
+                <link rel="icon" type="image/avif" href={image} />
             </Helmet>
             <AutoLogoutOnLeaveRegister />
             <DeviceInspector />

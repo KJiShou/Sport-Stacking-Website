@@ -1,13 +1,28 @@
-import { Avatar, Card, Spin, Statistic, Table, Typography, Button, Select, Form, Upload, Tabs, Input, Cascader, Message } from "@arco-design/web-react";
-import { IconCamera, IconUser } from "@arco-design/web-react/icon";
-import { useEffect, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
-import type { FirestoreUser } from "../../../schema";
-import { fetchUserByID, updateUserProfile } from "../../../services/firebase/authService";
+import {
+    Avatar,
+    Card,
+    Spin,
+    Statistic,
+    Table,
+    Typography,
+    Button,
+    Select,
+    Form,
+    Upload,
+    Tabs,
+    Input,
+    Cascader,
+    Message,
+} from "@arco-design/web-react";
+import {IconCamera, IconUser} from "@arco-design/web-react/icon";
+import {useEffect, useState} from "react";
+import {Navigate, useNavigate, useParams} from "react-router-dom";
+import type {FirestoreUser} from "../../../schema";
+import {fetchUserByID, updateUserProfile} from "../../../services/firebase/authService";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
-import { AvatarUploader } from "../../../components/common/AvatarUploader";
+import {AvatarUploader} from "../../../components/common/AvatarUploader";
 
-const { Title, Text } = Typography;
+const {Title, Text} = Typography;
 
 interface AllTimeStat {
     event: string;
@@ -27,7 +42,7 @@ interface RecordItem {
 export default function RegisterPage() {
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [loading, setLoading] = useState(true);
-    const { id } = useParams<{ id: string }>();
+    const {id} = useParams<{id: string}>();
     const navigate = useNavigate();
     const [isEditMode, setIsEditMode] = useState(false);
     const [form] = Form.useForm();
@@ -50,8 +65,8 @@ export default function RegisterPage() {
                     nickname: data?.name,
                     country: data?.country,
                     location: [data?.country, data?.state],
-                    address: data?.organizer ?? '',
-                    profile: '',
+                    address: data?.organizer ?? "",
+                    profile: "",
                 });
             } catch (err) {
                 console.error(err);
@@ -64,27 +79,32 @@ export default function RegisterPage() {
 
     // 构建统计数据示例
     const allTimeStats: AllTimeStat[] = [
-        { event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-" },
+        {event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"},
         // TODO: 按需添加其他项目并计算排名
     ];
     const onlineBest: OnlineBest[] = [];
     const records: RecordItem[] = [];
 
-    const handleSubmit = async (values: any) => {
-        if (!user) return;
+    const handleSubmit = async (values: {
+        nickname: string;
+        country: string;
+        location: [string, string];
+        address: string;
+    }) => {
         setLoading(true);
         try {
-            await updateUserProfile(id!, {
+            if (!id) return;
+            await updateUserProfile(id, {
                 name: values.nickname,
                 country: values.country,
                 state: values.location[1],
                 organizer: values.address,
                 // other profile updates
             });
-            Message.success('Profile updated successfully');
+            Message.success("Profile updated successfully");
         } catch (err) {
             console.error(err);
-            Message.error('Failed to update profile');
+            Message.error("Failed to update profile");
         } finally {
             setLoading(false);
             setIsEditMode(false);
@@ -101,10 +121,7 @@ export default function RegisterPage() {
                 )}
                 {isEditMode ? (
                     <div className={`w-full `}>
-                        <AvatarUploader
-                            user={user!}
-                            setUser={setUser}
-                        />
+                        {user && <AvatarUploader user={user} setUser={setUser} />}
                         <div>
                             <Title heading={4}>{user?.name}</Title>
                             <Text type="secondary">Account ID: {user?.global_id}</Text>
@@ -132,7 +149,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Nick name"
                                         field="nickname"
-                                        rules={[{ required: true, message: 'Please enter your nickname' }]}
+                                        rules={[{required: true, message: "Please enter your nickname"}]}
                                     >
                                         <Input placeholder="Please enter your nickname" />
                                     </Form.Item>
@@ -140,7 +157,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Country / Region"
                                         field="country"
-                                        rules={[{ required: true, message: 'Please select a country/region' }]}
+                                        rules={[{required: true, message: "Please select a country/region"}]}
                                     >
                                         <Select placeholder="Please select a country/region">
                                             {/* TODO: populate options dynamically */}
@@ -153,7 +170,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Your location"
                                         field="location"
-                                        rules={[{ required: true, message: 'Please select your location' }]}
+                                        rules={[{required: true, message: "Please select your location"}]}
                                     >
                                         <Cascader
                                             options={[] /* TODO: fill province-city-district data */}
@@ -179,8 +196,8 @@ export default function RegisterPage() {
                                                         nickname: data?.name,
                                                         country: data?.country,
                                                         location: [data?.country, data?.state],
-                                                        address: data?.organizer ?? '',
-                                                        profile: '',
+                                                        address: data?.organizer ?? "",
+                                                        profile: "",
                                                     });
                                                 } catch (err) {
                                                     console.error(err);
@@ -200,7 +217,8 @@ export default function RegisterPage() {
                                 {/* TODO: Security Settings form */}
                             </TabPane>
                         </Tabs>
-                    </div>) :
+                    </div>
+                ) : (
                     <div className="max-w-2xl mx-auto space-y-6">
                         {/* 基本信息卡片 */}
                         <Card className="text-center">
@@ -216,12 +234,11 @@ export default function RegisterPage() {
                             <Text className="block mt-1 text-sm text-gray-600">
                                 {user?.country} / {user?.state}
                             </Text>
-                            <Text className="block mt-1 text-sm text-gray-600">
-                                {user?.organizer}
-                            </Text>
-
+                            <Text className="block mt-1 text-sm text-gray-600">{user?.organizer}</Text>
                         </Card>
-                        <Button className={`w-full`} type={`primary`} onClick={() => setIsEditMode(true)}>Edit Profile</Button>
+                        <Button className={`w-full`} type={`primary`} onClick={() => setIsEditMode(true)}>
+                            Edit Profile
+                        </Button>
 
                         {/* 最佳成绩 */}
                         <Card>
@@ -237,20 +254,20 @@ export default function RegisterPage() {
                             <Table
                                 data={allTimeStats}
                                 columns={[
-                                    { title: "Event", dataIndex: "event" },
+                                    {title: "Event", dataIndex: "event"},
                                     {
                                         title: "Time (sec)",
                                         dataIndex: "time",
                                         render: (val) => val.toFixed(3),
                                     },
-                                    { title: "Rank", dataIndex: "rank" },
+                                    {title: "Rank", dataIndex: "rank"},
                                 ]}
                                 pagination={false}
                             />
                         </Card>
-
-                    </div>}
+                    </div>
+                )}
             </div>
-        </div >
+        </div>
     );
 }
