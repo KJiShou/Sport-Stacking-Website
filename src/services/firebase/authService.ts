@@ -1,39 +1,41 @@
 // src/services/firebase/authService.ts
+import type { User } from "firebase/auth";
 import {
     createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    signOut,
-    signInWithPopup,
     GoogleAuthProvider,
+    signInWithEmailAndPassword,
+    signInWithPopup,
+    signOut,
 } from "firebase/auth";
-import type {User} from "firebase/auth";
-import {db, auth} from "./config";
 import {
     collection,
-    query,
-    where,
-    getDocs,
     doc,
-    setDoc,
-    getDoc,
-    increment,
-    runTransaction,
     DocumentData,
+    getDoc,
+    getDocs,
+    increment,
+    query,
     QueryDocumentSnapshot,
     QuerySnapshot,
+    runTransaction,
+    setDoc,
+    where,
+    updateDoc,
 } from "firebase/firestore";
-import type {FirestoreUser} from "../../schema";
+import type { FirestoreUser } from "../../schema";
+import { FirestoreUserSchema } from "../../schema";
+import { auth, db } from "./config";
 
 async function getNextGlobalId(): Promise<string> {
     const counterRef = doc(db, "counters", "userCounter");
     const newCount = await runTransaction(db, async (tx) => {
         const snap = await tx.get(counterRef);
         if (!snap.exists()) {
-            tx.set(counterRef, {count: 1});
+            tx.set(counterRef, { count: 1 });
             return 1;
         }
         // 用客户端的 increment 辅助函数自增
-        tx.update(counterRef, {count: increment(1)});
+        tx.update(counterRef, { count: increment(1) });
         // 注意：increment 不会马上返回新值，所以我们手动读取
         const updated = (snap.data().count as number) + 1;
         return updated;
@@ -54,8 +56,8 @@ export const signInWithGoogle = () => {
 };
 
 // Register and create user in Firestore
-export const register = async (userData: Omit<FirestoreUser, "id"> & {password: string}) => {
-    const {email, password, IC, ...rest} = userData;
+export const register = async (userData: Omit<FirestoreUser, "id"> & { password: string }) => {
+    const { email, password, IC, ...rest } = userData;
 
     // ✅ 1. Check if IC already exists
     const q = query(collection(db, "users"), where("IC", "==", IC));
@@ -151,8 +153,24 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
         gender: data.gender,
         country: data.country,
         state: data.state,
+        organizer: data.organizer,
         image_url: data.image_url,
         roles: data.roles,
         best_times: data.best_times,
     };
+}
+
+export async function updateUserProfile(
+    id: string,
+    data: Partial<Omit<FirestoreUser, 'email' | 'IC' | 'id'>>
+): Promise<void> {
+    // 1. 校验：只允许 FirestoreUserSchema 中声明过的字段，并且所有字段都可选
+    const UpdateSchema = FirestoreUserSchema.partial().omit({ email: true, IC: true, id: true });
+    const validated = UpdateSchema.parse(data);
+
+    // 2. 获取文档引用
+    const userRef = doc(db, 'users', id);
+
+    // 3. 执行更新
+    await updateDoc(userRef, validated);
 }

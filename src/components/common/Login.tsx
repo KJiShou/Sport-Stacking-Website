@@ -1,16 +1,16 @@
-import React, {useState, useEffect} from "react";
-import {Form, Input, Button, Message, Typography, Link} from "@arco-design/web-react";
-import {IconEmail, IconLock} from "@arco-design/web-react/icon";
-import {login, signInWithGoogle} from "../../services/firebase/authService";
-import {useNavigate} from "react-router-dom";
-import {useAuthContext} from "../../context/AuthContext";
-import {doc, getDoc} from "firebase/firestore";
-import {db} from "../../services/firebase/config";
+import React, { useState, useEffect } from "react";
+import { Form, Input, Button, Message, Typography, Link } from "@arco-design/web-react";
+import { IconEmail, IconLock } from "@arco-design/web-react/icon";
+import { login, signInWithGoogle } from "../../services/firebase/authService";
+import { useNavigate } from "react-router-dom";
+import { useAuthContext } from "../../context/AuthContext";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../../services/firebase/config";
 
-const {Text} = Typography;
+const { Text } = Typography;
 
-const LoginForm = ({onClose}: {onClose?: () => void}) => {
-    const {firebaseUser} = useAuthContext();
+const LoginForm = ({ onClose }: { onClose?: () => void }) => {
+    const { firebaseUser } = useAuthContext();
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
@@ -21,7 +21,7 @@ const LoginForm = ({onClose}: {onClose?: () => void}) => {
         }
     }, [firebaseUser]);
 
-    const handleLogin = async (values: {email: string; password: string}) => {
+    const handleLogin = async (values: { email: string; password: string }) => {
         setLoading(true);
         try {
             await login(values.email, values.password);
@@ -73,15 +73,15 @@ const LoginForm = ({onClose}: {onClose?: () => void}) => {
 
     return (
         <Form layout="vertical" requiredSymbol={false} onSubmit={handleLogin}>
-            <Form.Item field="email" rules={[{required: true, message: "Please enter your email"}]} label="Email">
+            <Form.Item field="email" rules={[{ required: true, message: "Please enter your email" }]} label="Email">
                 <Input prefix={<IconEmail />} placeholder="example@mail.com" autoComplete="email" />
             </Form.Item>
 
-            <Form.Item field="password" rules={[{required: true, message: "Please enter your password"}]} label="Password">
+            <Form.Item field="password" rules={[{ required: true, message: "Please enter your password" }]} label="Password">
                 <Input.Password prefix={<IconLock />} placeholder="Your password" autoComplete="current-password" />
             </Form.Item>
 
-            <Button htmlType="submit" type="primary" long loading={loading} style={{marginTop: 8}}>
+            <Button htmlType="submit" type="primary" long loading={loading} style={{ marginTop: 8 }}>
                 Log In
             </Button>
 

@@ -1,4 +1,4 @@
-import {z} from "zod";
+import { z } from "zod";
 
 export const FirestoreUserSchema = z.object({
     id: z.string(),
@@ -14,6 +14,7 @@ export const FirestoreUserSchema = z.object({
     state: z.string(),
     image_url: z.string().url(),
     roles: z.array(z.string()), // role ID
+    organizer: z.string().optional().nullable(),
     best_times: z.record(z.string(), z.number()).optional(),
 });
 

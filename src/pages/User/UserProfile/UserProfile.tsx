@@ -1,11 +1,13 @@
-import React, {useEffect, useState} from "react";
-import {useParams} from "react-router-dom";
-import {Card, Spin, Statistic, Avatar, Typography, Table} from "@arco-design/web-react";
-import {IconUser} from "@arco-design/web-react/icon";
-import type {FirestoreUser} from "../../../schema";
-import {fetchUserByID} from "../../../services/firebase/authService";
+import { Avatar, Card, Spin, Statistic, Table, Typography, Button, Select, Form, Upload, Tabs, Input, Cascader, Message } from "@arco-design/web-react";
+import { IconCamera, IconUser } from "@arco-design/web-react/icon";
+import { useEffect, useState } from "react";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
+import type { FirestoreUser } from "../../../schema";
+import { fetchUserByID, updateUserProfile } from "../../../services/firebase/authService";
+import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
+import { AvatarUploader } from "../../../components/common/AvatarUploader";
 
-const {Title, Text} = Typography;
+const { Title, Text } = Typography;
 
 interface AllTimeStat {
     event: string;
@@ -25,7 +27,10 @@ interface RecordItem {
 export default function RegisterPage() {
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [loading, setLoading] = useState(true);
-    const {id} = useParams<{id: string}>();
+    const { id } = useParams<{ id: string }>();
+    const navigate = useNavigate();
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [form] = Form.useForm();
 
     useEffect(() => {
         if (!id) {
@@ -39,6 +44,15 @@ export default function RegisterPage() {
             try {
                 const data = await fetchUserByID(id);
                 setUser(data ?? null);
+                form.setFieldsValue({
+                    email: data?.email,
+                    IC: data?.IC,
+                    nickname: data?.name,
+                    country: data?.country,
+                    location: [data?.country, data?.state],
+                    address: data?.organizer ?? '',
+                    profile: '',
+                });
             } catch (err) {
                 console.error(err);
                 setUser(null);
@@ -50,66 +64,193 @@ export default function RegisterPage() {
 
     // 构建统计数据示例
     const allTimeStats: AllTimeStat[] = [
-        {event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"},
+        { event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-" },
         // TODO: 按需添加其他项目并计算排名
     ];
     const onlineBest: OnlineBest[] = [];
     const records: RecordItem[] = [];
 
+    const handleSubmit = async (values: any) => {
+        if (!user) return;
+        setLoading(true);
+        try {
+            await updateUserProfile(id!, {
+                name: values.nickname,
+                country: values.country,
+                state: values.location[1],
+                organizer: values.address,
+                // other profile updates
+            });
+            Message.success('Profile updated successfully');
+        } catch (err) {
+            console.error(err);
+            Message.error('Failed to update profile');
+        } finally {
+            setLoading(false);
+            setIsEditMode(false);
+        }
+    };
+
     return (
-        <div>
-            <div className={`p-6 `}>
+        <div className={`flex flex-auto h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10`}>
+            <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
                 {loading && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-sm">
                         <Spin tip="Loading..." size={40} />
                     </div>
                 )}
-                <div className="max-w-2xl mx-auto space-y-6">
-                    {/* 基本信息卡片 */}
-                    <Card className="text-center">
-                        <Avatar className="mx-auto w-24 h-24 rounded-full overflow-hidden">
-                            <img src={user?.image_url} alt={user?.name} className="w-full h-full object-cover" />
-                        </Avatar>
-                        <Title heading={4} className="mt-4">
-                            {user?.name}
-                        </Title>
-                        <Text className="flex items-center justify-center gap-1">
-                            <IconUser /> {user?.global_id}
-                        </Text>
-                        <Text className="block mt-1 text-sm text-gray-600">
-                            {user?.country} / {user?.state}
-                        </Text>
-                    </Card>
-
-                    {/* 最佳成绩 */}
-                    <Card>
-                        <Statistic
-                            title="All-around Best Time"
-                            value={user?.best_times?.["all-around"]?.toFixed(3) ?? "-"}
-                            suffix="sec"
+                {isEditMode ? (
+                    <div className={`w-full `}>
+                        <AvatarUploader
+                            user={user!}
+                            setUser={setUser}
                         />
-                    </Card>
+                        <div>
+                            <Title heading={4}>{user?.name}</Title>
+                            <Text type="secondary">Account ID: {user?.global_id}</Text>
+                        </div>
 
-                    {/* 全时统计表 */}
-                    <Card title="All Time Statistics">
-                        <Table
-                            data={allTimeStats}
-                            columns={[
-                                {title: "Event", dataIndex: "event"},
-                                {
-                                    title: "Time (sec)",
-                                    dataIndex: "time",
-                                    render: (val) => val.toFixed(3),
-                                },
-                                {title: "Rank", dataIndex: "rank"},
-                            ]}
-                            pagination={false}
-                        />
-                    </Card>
+                        <Tabs defaultActiveTab="basic" className="mt-6">
+                            <TabPane title="Basic Information" key="basic">
+                                <Form
+                                    requiredSymbol={false}
+                                    className={`flex flex-col items-start`}
+                                    layout="horizontal"
+                                    labelAlign="left"
+                                    form={form}
+                                    onSubmit={handleSubmit}
+                                    autoComplete="off"
+                                >
+                                    <Form.Item label="Email" field="email">
+                                        <Input disabled />
+                                    </Form.Item>
 
-                    {/* TODO: 可继续添加 Online Best, Records 表格 */}
-                </div>
+                                    <Form.Item label="IC" field="IC">
+                                        <Input disabled />
+                                    </Form.Item>
+
+                                    <Form.Item
+                                        label="Nick name"
+                                        field="nickname"
+                                        rules={[{ required: true, message: 'Please enter your nickname' }]}
+                                    >
+                                        <Input placeholder="Please enter your nickname" />
+                                    </Form.Item>
+
+                                    <Form.Item
+                                        label="Country / Region"
+                                        field="country"
+                                        rules={[{ required: true, message: 'Please select a country/region' }]}
+                                    >
+                                        <Select placeholder="Please select a country/region">
+                                            {/* TODO: populate options dynamically */}
+                                            <Select.Option value="Malaysia">Malaysia</Select.Option>
+                                            <Select.Option value="China">China</Select.Option>
+                                            <Select.Option value="USA">USA</Select.Option>
+                                        </Select>
+                                    </Form.Item>
+
+                                    <Form.Item
+                                        label="Your location"
+                                        field="location"
+                                        rules={[{ required: true, message: 'Please select your location' }]}
+                                    >
+                                        <Cascader
+                                            options={[] /* TODO: fill province-city-district data */}
+                                            placeholder="Please select location"
+                                        />
+                                    </Form.Item>
+
+                                    <div className="w-full mx-auto flex flex-col items-center">
+                                        <Button type="primary" long onClick={() => form.submit()}>
+                                            Save
+                                        </Button>
+                                        <Button
+                                            long
+                                            className="mt-4"
+                                            onClick={async () => {
+                                                try {
+                                                    setLoading(true);
+                                                    const data = await fetchUserByID(id ?? "");
+                                                    setUser(data ?? null);
+                                                    form.setFieldsValue({
+                                                        email: data?.email,
+                                                        IC: data?.IC,
+                                                        nickname: data?.name,
+                                                        country: data?.country,
+                                                        location: [data?.country, data?.state],
+                                                        address: data?.organizer ?? '',
+                                                        profile: '',
+                                                    });
+                                                } catch (err) {
+                                                    console.error(err);
+                                                    setUser(null);
+                                                } finally {
+                                                    setLoading(false);
+                                                }
+                                            }}
+                                        >
+                                            Reset
+                                        </Button>
+                                    </div>
+                                </Form>
+                            </TabPane>
+
+                            <TabPane title="Security Settings" key="security">
+                                {/* TODO: Security Settings form */}
+                            </TabPane>
+                        </Tabs>
+                    </div>) :
+                    <div className="max-w-2xl mx-auto space-y-6">
+                        {/* 基本信息卡片 */}
+                        <Card className="text-center">
+                            <Avatar className="mx-auto w-24 h-24 rounded-full overflow-hidden">
+                                <img src={user?.image_url} alt={user?.name} className="w-full h-full object-cover" />
+                            </Avatar>
+                            <Title heading={4} className="mt-4">
+                                {user?.name}
+                            </Title>
+                            <Text className="flex items-center justify-center gap-1">
+                                <IconUser /> {user?.global_id}
+                            </Text>
+                            <Text className="block mt-1 text-sm text-gray-600">
+                                {user?.country} / {user?.state}
+                            </Text>
+                            <Text className="block mt-1 text-sm text-gray-600">
+                                {user?.organizer}
+                            </Text>
+
+                        </Card>
+                        <Button className={`w-full`} type={`primary`} onClick={() => setIsEditMode(true)}>Edit Profile</Button>
+
+                        {/* 最佳成绩 */}
+                        <Card>
+                            <Statistic
+                                title="All-around Best Time"
+                                value={user?.best_times?.["all-around"]?.toFixed(3) ?? "-"}
+                                suffix="sec"
+                            />
+                        </Card>
+
+                        {/* 全时统计表 */}
+                        <Card title="All Time Statistics">
+                            <Table
+                                data={allTimeStats}
+                                columns={[
+                                    { title: "Event", dataIndex: "event" },
+                                    {
+                                        title: "Time (sec)",
+                                        dataIndex: "time",
+                                        render: (val) => val.toFixed(3),
+                                    },
+                                    { title: "Rank", dataIndex: "rank" },
+                                ]}
+                                pagination={false}
+                            />
+                        </Card>
+
+                    </div>}
             </div>
-        </div>
+        </div >
     );
 }
