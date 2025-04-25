@@ -15,18 +15,18 @@ import {
     Message,
     DatePicker,
 } from "@arco-design/web-react";
-import { IconCamera, IconUser } from "@arco-design/web-react/icon";
-import { useEffect, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
-import type { FirestoreUser } from "../../../schema";
-import { changeUserPassword, fetchUserByID, updateUserProfile } from "../../../services/firebase/authService";
+import {IconCamera, IconUser} from "@arco-design/web-react/icon";
+import {useEffect, useState} from "react";
+import {Navigate, useNavigate, useParams} from "react-router-dom";
+import type {FirestoreUser} from "../../../schema";
+import {changeUserPassword, fetchUserByID, updateUserProfile} from "../../../services/firebase/authService";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
-import { AvatarUploader } from "../../../components/common/AvatarUploader";
-import { countries } from "../../../schema/Country";
+import {AvatarUploader} from "../../../components/common/AvatarUploader";
+import {countries} from "../../../schema/Country";
 import dayjs from "dayjs";
-import { useAuthContext } from "../../../context/AuthContext";
+import {useAuthContext} from "../../../context/AuthContext";
 
-const { Title, Text } = Typography;
+const {Title, Text} = Typography;
 
 interface AllTimeStat {
     event: string;
@@ -46,14 +46,14 @@ interface RecordItem {
 export default function RegisterPage() {
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [loading, setLoading] = useState(true);
-    const { id } = useParams<{ id: string }>();
+    const {id} = useParams<{id: string}>();
     const navigate = useNavigate();
     const [isEditMode, setIsEditMode] = useState(false);
     const [form] = Form.useForm();
     const [secForm] = Form.useForm();
     const [isImageLoading, setIsImageLoading] = useState(true);
     const [secLoading, setSecLoading] = useState(false);
-    const { user: authUser } = useAuthContext();
+    const {user: authUser} = useAuthContext();
 
     useEffect(() => {
         if (authUser?.id !== id) {
@@ -93,7 +93,7 @@ export default function RegisterPage() {
 
     // 构建统计数据示例
     const allTimeStats: AllTimeStat[] = [
-        { event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-" },
+        {event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"},
         // TODO: 按需添加其他项目并计算排名
     ];
     const onlineBest: OnlineBest[] = [];
@@ -123,7 +123,7 @@ export default function RegisterPage() {
         }
     };
 
-    const handleSecuritySubmit = async (values: { currentPassword: string, newPassword: string, confirmPassword: string }) => {
+    const handleSecuritySubmit = async (values: {currentPassword: string; newPassword: string; confirmPassword: string}) => {
         setSecLoading(true);
         if (values.newPassword !== values.confirmPassword) {
             Message.error("New passwords do not match");
@@ -140,7 +140,6 @@ export default function RegisterPage() {
             } else {
                 Message.error("Failed to change password");
             }
-
         } finally {
             setSecLoading(false);
         }
@@ -184,7 +183,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Name"
                                         field="name"
-                                        rules={[{ required: true, message: "Please enter your name" }]}
+                                        rules={[{required: true, message: "Please enter your name"}]}
                                     >
                                         <Input placeholder="Please enter your name" />
                                     </Form.Item>
@@ -192,22 +191,22 @@ export default function RegisterPage() {
                                     <Form.Item
                                         field="birthdate"
                                         label="Birthdate"
-                                        rules={[{ required: true, message: "Select your birthdate" }]}
+                                        rules={[{required: true, message: "Select your birthdate"}]}
                                     >
                                         <DatePicker
-                                            style={{ width: "100%" }}
+                                            style={{width: "100%"}}
                                             disabledDate={(current) => current.isAfter(dayjs())}
                                         />
                                     </Form.Item>
 
-                                    <Form.Item field="gender" label="Gender" rules={[{ required: true, message: "Select gender" }]}>
+                                    <Form.Item field="gender" label="Gender" rules={[{required: true, message: "Select gender"}]}>
                                         <Select placeholder="Select gender" options={["Male", "Female"]} />
                                     </Form.Item>
 
                                     <Form.Item
                                         label="Country / State"
                                         field="country"
-                                        rules={[{ required: true, message: "Please select a country/region" }]}
+                                        rules={[{required: true, message: "Please select a country/region"}]}
                                     >
                                         <Cascader
                                             showSearch
@@ -226,7 +225,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Organizer"
                                         field="organizer"
-                                        rules={[{ required: false, message: "Please enter your organizer" }]}
+                                        rules={[{required: false, message: "Please enter your organizer"}]}
                                     >
                                         <Input placeholder="Please enter your organizer" />
                                     </Form.Item>
@@ -277,21 +276,21 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Current Password"
                                         field="currentPassword"
-                                        rules={[{ required: true, message: "Enter current password" }]}
+                                        rules={[{required: true, message: "Enter current password"}]}
                                     >
                                         <Input.Password placeholder="Current Password" />
                                     </Form.Item>
                                     <Form.Item
                                         label="New Password"
                                         field="newPassword"
-                                        rules={[{ required: true, message: "Enter new password" }]}
+                                        rules={[{required: true, message: "Enter new password"}]}
                                     >
                                         <Input.Password placeholder="New Password" />
                                     </Form.Item>
                                     <Form.Item
                                         label="Confirm Password"
                                         field="confirmPassword"
-                                        rules={[{ required: true, message: "Confirm new password" }]}
+                                        rules={[{required: true, message: "Confirm new password"}]}
                                     >
                                         <Input.Password placeholder="Confirm Password" />
                                     </Form.Item>
@@ -319,8 +318,9 @@ export default function RegisterPage() {
                                     alt={user?.name}
                                     onLoad={() => setIsImageLoading(false)}
                                     onError={() => setIsImageLoading(false)}
-                                    className={`w-full h-full object-cover transition-opacity duration-300 ${isImageLoading ? "opacity-0" : "opacity-100"
-                                        }`}
+                                    className={`w-full h-full object-cover transition-opacity duration-300 ${
+                                        isImageLoading ? "opacity-0" : "opacity-100"
+                                    }`}
                                 />
                             </Avatar>
                             <Title heading={4} className="mt-4">
@@ -352,13 +352,13 @@ export default function RegisterPage() {
                             <Table
                                 data={allTimeStats}
                                 columns={[
-                                    { title: "Event", dataIndex: "event" },
+                                    {title: "Event", dataIndex: "event"},
                                     {
                                         title: "Time (sec)",
                                         dataIndex: "time",
                                         render: (val) => val.toFixed(3),
                                     },
-                                    { title: "Rank", dataIndex: "rank" },
+                                    {title: "Rank", dataIndex: "rank"},
                                 ]}
                                 pagination={false}
                             />
