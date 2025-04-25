@@ -1,24 +1,24 @@
-import {useEffect, useState, useRef} from "react";
+import { useEffect, useState, useRef } from "react";
 import type * as React from "react";
-import {BrowserRouter as Router, Routes, Route} from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import "@arco-design/web-react/dist/css/arco.css";
-import {Navbar, Footer} from "./components/layout";
-import {DeviceInspector} from "./utils/DeviceInspector";
-import {Layout} from "@arco-design/web-react";
+import { Navbar, Footer } from "./components/layout";
+import { DeviceInspector } from "./utils/DeviceInspector";
+import { Layout } from "@arco-design/web-react";
 import routes from "./config/routes";
 import ProtectedRoute from "./components/common/ProtectedRoute";
-import {useLocation, useNavigate} from "react-router-dom";
-import {useAuthContext} from "./context/AuthContext";
-import {logout} from "./services/firebase/authService";
-import {Helmet} from "react-helmet";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useAuthContext } from "./context/AuthContext";
+import { logout } from "./services/firebase/authService";
+import { Helmet } from "react-helmet";
 import image from "./assets/icon.avif";
 
 const App: React.FC = () => {
     const Content = Layout.Content;
 
     const AutoLogoutOnLeaveRegister = () => {
-        const {firebaseUser, loading, user} = useAuthContext();
-        const {pathname} = useLocation();
+        const { firebaseUser, loading, user } = useAuthContext();
+        const { pathname } = useLocation();
         const navigate = useNavigate();
         const prevPathRef = useRef<string>(pathname);
 
@@ -51,10 +51,12 @@ const App: React.FC = () => {
             </Helmet>
             <AutoLogoutOnLeaveRegister />
             <DeviceInspector />
-            <Layout className="max-h-full h-full max-w-full w-full">
-                <Navbar />
+            <Layout className="max-w-full w-full h-screen">
+                <Navbar /> {/* 固定顶部 */}
+
                 <ProtectedRoute>
-                    <Content className="pt-24">
+                    {/* 只有 Content 可滚动 */}
+                    <Content className="pt-24 overflow-y-auto h-[calc(100vh-6rem)]">
                         <Routes>
                             {routes.map((route) => (
                                 <Route key={route.path} path={route.path} element={<route.component />} />
@@ -62,6 +64,7 @@ const App: React.FC = () => {
                         </Routes>
                     </Content>
                 </ProtectedRoute>
+
                 <Footer />
             </Layout>
         </Router>

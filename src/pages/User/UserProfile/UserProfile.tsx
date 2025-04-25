@@ -14,16 +14,16 @@ import {
     Cascader,
     Message,
 } from "@arco-design/web-react";
-import {IconCamera, IconUser} from "@arco-design/web-react/icon";
-import {useEffect, useState} from "react";
-import {Navigate, useNavigate, useParams} from "react-router-dom";
-import type {FirestoreUser} from "../../../schema";
-import {fetchUserByID, updateUserProfile} from "../../../services/firebase/authService";
+import { IconCamera, IconUser } from "@arco-design/web-react/icon";
+import { useEffect, useState } from "react";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
+import type { FirestoreUser } from "../../../schema";
+import { fetchUserByID, updateUserProfile } from "../../../services/firebase/authService";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
-import {AvatarUploader} from "../../../components/common/AvatarUploader";
-import {countries} from "../../../schema/Country";
+import { AvatarUploader } from "../../../components/common/AvatarUploader";
+import { countries } from "../../../schema/Country";
 
-const {Title, Text} = Typography;
+const { Title, Text } = Typography;
 
 interface AllTimeStat {
     event: string;
@@ -43,10 +43,11 @@ interface RecordItem {
 export default function RegisterPage() {
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [loading, setLoading] = useState(true);
-    const {id} = useParams<{id: string}>();
+    const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [isEditMode, setIsEditMode] = useState(false);
     const [form] = Form.useForm();
+    const [isImageLoading, setIsImageLoading] = useState(true);
 
     useEffect(() => {
         if (!id) {
@@ -78,7 +79,7 @@ export default function RegisterPage() {
 
     // 构建统计数据示例
     const allTimeStats: AllTimeStat[] = [
-        {event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"},
+        { event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-" },
         // TODO: 按需添加其他项目并计算排名
     ];
     const onlineBest: OnlineBest[] = [];
@@ -146,7 +147,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Nick name"
                                         field="nickname"
-                                        rules={[{required: true, message: "Please enter your nickname"}]}
+                                        rules={[{ required: true, message: "Please enter your nickname" }]}
                                     >
                                         <Input placeholder="Please enter your nickname" />
                                     </Form.Item>
@@ -154,7 +155,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Country / State"
                                         field="country"
-                                        rules={[{required: true, message: "Please select a country/region"}]}
+                                        rules={[{ required: true, message: "Please select a country/region" }]}
                                     >
                                         <Cascader
                                             showSearch
@@ -173,7 +174,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Organizer"
                                         field="organizer"
-                                        rules={[{required: false, message: "Please enter your organizer"}]}
+                                        rules={[{ required: false, message: "Please enter your organizer" }]}
                                     >
                                         <Input placeholder="Please enter your organizer" />
                                     </Form.Item>
@@ -222,8 +223,20 @@ export default function RegisterPage() {
                     <div className="max-w-2xl mx-auto space-y-6">
                         {/* 基本信息卡片 */}
                         <Card className="text-center">
-                            <Avatar className="mx-auto w-24 h-24 rounded-full overflow-hidden">
-                                <img src={user?.image_url} alt={user?.name} className="w-full h-full object-cover" />
+                            <Avatar className="mx-auto w-24 h-24 rounded-full overflow-hidden relative">
+                                {isImageLoading && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-10">
+                                        <Spin size={24} />
+                                    </div>
+                                )}
+                                <img
+                                    src={user?.image_url}
+                                    alt={user?.name}
+                                    onLoad={() => setIsImageLoading(false)}
+                                    onError={() => setIsImageLoading(false)}
+                                    className={`w-full h-full object-cover transition-opacity duration-300 ${isImageLoading ? 'opacity-0' : 'opacity-100'
+                                        }`}
+                                />
                             </Avatar>
                             <Title heading={4} className="mt-4">
                                 {user?.name}
@@ -254,13 +267,13 @@ export default function RegisterPage() {
                             <Table
                                 data={allTimeStats}
                                 columns={[
-                                    {title: "Event", dataIndex: "event"},
+                                    { title: "Event", dataIndex: "event" },
                                     {
                                         title: "Time (sec)",
                                         dataIndex: "time",
                                         render: (val) => val.toFixed(3),
                                     },
-                                    {title: "Rank", dataIndex: "rank"},
+                                    { title: "Rank", dataIndex: "rank" },
                                 ]}
                                 pagination={false}
                             />
