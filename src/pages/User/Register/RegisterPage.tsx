@@ -1,30 +1,42 @@
-import type { SelectProps } from "@arco-design/web-react";
-import { Button, DatePicker, Form, Input, Message, Select, Typography, Upload, Cascader, Avatar, Spin } from "@arco-design/web-react";
-import { IconEmail, IconLock, IconUser, IconCamera } from "@arco-design/web-react/icon";
+import type {SelectProps} from "@arco-design/web-react";
+import {
+    Button,
+    DatePicker,
+    Form,
+    Input,
+    Message,
+    Select,
+    Typography,
+    Upload,
+    Cascader,
+    Avatar,
+    Spin,
+} from "@arco-design/web-react";
+import {IconEmail, IconLock, IconUser, IconCamera} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
-import type { User } from "firebase/auth";
-import { EmailAuthProvider, linkWithCredential } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { useAuthContext } from "../../../context/AuthContext";
-import type { FirestoreUser } from "../../../schema";
-import { register, registerWithGoogle } from "../../../services/firebase/authService";
-import { db } from "../../../services/firebase/config";
-import { uploadAvatar } from "../../../services/firebase/storageService";
-import { countries } from "../../../schema/Country";
-import { AvatarUploader } from "../../../components/common/AvatarUploader";
+import type {User} from "firebase/auth";
+import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
+import {doc, getDoc} from "firebase/firestore";
+import {useEffect, useState} from "react";
+import {useLocation, useNavigate} from "react-router-dom";
+import {useAuthContext} from "../../../context/AuthContext";
+import type {FirestoreUser} from "../../../schema";
+import {register, registerWithGoogle} from "../../../services/firebase/authService";
+import {db} from "../../../services/firebase/config";
+import {uploadAvatar} from "../../../services/firebase/storageService";
+import {countries} from "../../../schema/Country";
+import {AvatarUploader} from "../../../components/common/AvatarUploader";
 
-const { Title } = Typography;
+const {Title} = Typography;
 
-type RegisterFormData = Omit<FirestoreUser, "id"> & { password: string; confirmPassword: string };
+type RegisterFormData = Omit<FirestoreUser, "id"> & {password: string; confirmPassword: string};
 
 const RegisterPage = () => {
     const [loading, setLoading] = useState(false);
     const [form] = Form.useForm<RegisterFormData>();
     const navigate = useNavigate();
     const [selectedCountry, setSelectedCountry] = useState("Malaysia");
-    const { user, firebaseUser, setUser } = useAuthContext();
+    const {user, firebaseUser, setUser} = useAuthContext();
     const [uploading, setUploading] = useState(false);
     const location = useLocation();
     const isFromGoogle = location.state?.fromGoogle === true;
@@ -54,7 +66,7 @@ const RegisterPage = () => {
     };
 
     const handleSubmit = async (values: RegisterFormData) => {
-        const { email, password, confirmPassword, name, IC, birthdate, country, gender, state, image_url, organizer } = values;
+        const {email, password, confirmPassword, name, IC, birthdate, country, gender, state, image_url, organizer} = values;
         let avatarUrl = firebaseUser?.photoURL ?? "";
         if (password !== confirmPassword) {
             Message.error("Passwords do not match");
@@ -169,12 +181,11 @@ const RegisterPage = () => {
 
                             return (
                                 <div className="flex flex-col items-center gap-2">
-
                                     <Upload
                                         listType="picture-card"
                                         accept="image/*"
                                         showUploadList={false}
-                                        customRequest={({ file, onSuccess }) => {
+                                        customRequest={({file, onSuccess}) => {
                                             const MAX_SIZE = 10 * 1024 * 1024;
 
                                             if (file.size > MAX_SIZE) {
@@ -224,7 +235,7 @@ const RegisterPage = () => {
                     <Form.Item
                         field="email"
                         label="Email"
-                        rules={[{ required: true, type: "email", message: "Enter a valid email" }]}
+                        rules={[{required: true, type: "email", message: "Enter a valid email"}]}
                     >
                         <Input
                             prefix={<IconEmail />}
@@ -233,7 +244,7 @@ const RegisterPage = () => {
                         />
                     </Form.Item>
 
-                    <Form.Item field="name" label="Full Name" rules={[{ required: true, message: "Enter your full name" }]}>
+                    <Form.Item field="name" label="Full Name" rules={[{required: true, message: "Enter your full name"}]}>
                         <Input prefix={<IconUser />} placeholder="Your full name" />
                     </Form.Item>
 
@@ -261,40 +272,40 @@ const RegisterPage = () => {
                             },
                             ...(isICMode
                                 ? [
-                                    {
-                                        match: /^\d{12}$/,
-                                        message: "IC must be 12 digits like 050101011234",
-                                    },
-                                ]
+                                      {
+                                          match: /^\d{12}$/,
+                                          message: "IC must be 12 digits like 050101011234",
+                                      },
+                                  ]
                                 : []),
                         ]}
                     >
                         <Input placeholder={isICMode ? "e.g. 050101011234" : "e.g. A12345678"} onChange={handleICChange} />
                     </Form.Item>
 
-                    <Form.Item field="birthdate" label="Birthdate" rules={[{ required: true, message: "Select your birthdate" }]}>
-                        <DatePicker style={{ width: "100%" }} disabledDate={(current) => current.isAfter(dayjs())} />
+                    <Form.Item field="birthdate" label="Birthdate" rules={[{required: true, message: "Select your birthdate"}]}>
+                        <DatePicker style={{width: "100%"}} disabledDate={(current) => current.isAfter(dayjs())} />
                     </Form.Item>
 
-                    <Form.Item field="gender" label="Gender" rules={[{ required: true, message: "Select gender" }]}>
+                    <Form.Item field="gender" label="Gender" rules={[{required: true, message: "Select gender"}]}>
                         <Select placeholder="Select gender" options={["Male", "Female"]} />
                     </Form.Item>
 
                     <Form.Item
                         label="Country / State"
                         field="country"
-                        rules={[{ required: true, message: "Please select a country/region" }]}
+                        rules={[{required: true, message: "Please select a country/region"}]}
                     >
                         <Cascader
                             showSearch
                             changeOnSelect
                             allowClear
                             filterOption={(input, node) => {
-                                return node.label.toLowerCase().includes(input.toLowerCase())
+                                return node.label.toLowerCase().includes(input.toLowerCase());
                             }}
                             options={countries}
                             placeholder="Please select location"
-                            expandTrigger='hover'
+                            expandTrigger="hover"
                             value={[user?.country ?? "", user?.state ?? ""]}
                         />
                     </Form.Item>
@@ -302,24 +313,24 @@ const RegisterPage = () => {
                     <Form.Item
                         label="Organizer"
                         field="organizer"
-                        rules={[{ required: true, message: "Please enter the organizer name" }]}
+                        rules={[{required: true, message: "Please enter the organizer name"}]}
                     >
                         <Input placeholder="Enter organizer name" />
                     </Form.Item>
 
-                    <Form.Item field="password" label="Password" rules={[{ required: true, message: "Enter your password" }]}>
+                    <Form.Item field="password" label="Password" rules={[{required: true, message: "Enter your password"}]}>
                         <Input.Password prefix={<IconLock />} placeholder="Create password" />
                     </Form.Item>
 
                     <Form.Item
                         field="confirmPassword"
                         label="Confirm Password"
-                        rules={[{ required: true, message: "Confirm your password" }]}
+                        rules={[{required: true, message: "Confirm your password"}]}
                     >
                         <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
                     </Form.Item>
 
-                    <Button type="primary" htmlType="submit" long loading={loading} style={{ marginTop: 16 }}>
+                    <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
                         Register
                     </Button>
                 </Form>

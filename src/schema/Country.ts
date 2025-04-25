@@ -1,4 +1,4 @@
-import { allCountries } from "country-region-data";
+import {allCountries} from "country-region-data";
 
 export const countries = allCountries.map((country) => ({
     value: country[0],

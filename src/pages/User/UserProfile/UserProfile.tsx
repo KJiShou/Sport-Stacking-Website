@@ -14,16 +14,16 @@ import {
     Cascader,
     Message,
 } from "@arco-design/web-react";
-import { IconCamera, IconUser } from "@arco-design/web-react/icon";
-import { useEffect, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
-import type { FirestoreUser } from "../../../schema";
-import { fetchUserByID, updateUserProfile } from "../../../services/firebase/authService";
+import {IconCamera, IconUser} from "@arco-design/web-react/icon";
+import {useEffect, useState} from "react";
+import {Navigate, useNavigate, useParams} from "react-router-dom";
+import type {FirestoreUser} from "../../../schema";
+import {fetchUserByID, updateUserProfile} from "../../../services/firebase/authService";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
-import { AvatarUploader } from "../../../components/common/AvatarUploader";
-import { countries } from "../../../schema/Country";
+import {AvatarUploader} from "../../../components/common/AvatarUploader";
+import {countries} from "../../../schema/Country";
 
-const { Title, Text } = Typography;
+const {Title, Text} = Typography;
 
 interface AllTimeStat {
     event: string;
@@ -43,7 +43,7 @@ interface RecordItem {
 export default function RegisterPage() {
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [loading, setLoading] = useState(true);
-    const { id } = useParams<{ id: string }>();
+    const {id} = useParams<{id: string}>();
     const navigate = useNavigate();
     const [isEditMode, setIsEditMode] = useState(false);
     const [form] = Form.useForm();
@@ -66,7 +66,6 @@ export default function RegisterPage() {
                     nickname: data?.name,
                     country: [data?.country ?? "", data?.state ?? ""],
                     organizer: data?.organizer ?? "",
-
                 });
             } catch (err) {
                 console.error(err);
@@ -79,7 +78,7 @@ export default function RegisterPage() {
 
     // 构建统计数据示例
     const allTimeStats: AllTimeStat[] = [
-        { event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-" },
+        {event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"},
         // TODO: 按需添加其他项目并计算排名
     ];
     const onlineBest: OnlineBest[] = [];
@@ -147,7 +146,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Nick name"
                                         field="nickname"
-                                        rules={[{ required: true, message: "Please enter your nickname" }]}
+                                        rules={[{required: true, message: "Please enter your nickname"}]}
                                     >
                                         <Input placeholder="Please enter your nickname" />
                                     </Form.Item>
@@ -155,18 +154,18 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Country / State"
                                         field="country"
-                                        rules={[{ required: true, message: "Please select a country/region" }]}
+                                        rules={[{required: true, message: "Please select a country/region"}]}
                                     >
                                         <Cascader
                                             showSearch
                                             changeOnSelect
                                             allowClear
                                             filterOption={(input, node) => {
-                                                return node.label.toLowerCase().includes(input.toLowerCase())
+                                                return node.label.toLowerCase().includes(input.toLowerCase());
                                             }}
                                             options={countries}
                                             placeholder="Please select location"
-                                            expandTrigger='hover'
+                                            expandTrigger="hover"
                                             value={[user?.country ?? "", user?.state ?? ""]}
                                         />
                                     </Form.Item>
@@ -174,7 +173,7 @@ export default function RegisterPage() {
                                     <Form.Item
                                         label="Organizer"
                                         field="organizer"
-                                        rules={[{ required: false, message: "Please enter your organizer" }]}
+                                        rules={[{required: false, message: "Please enter your organizer"}]}
                                     >
                                         <Input placeholder="Please enter your organizer" />
                                     </Form.Item>
@@ -255,13 +254,13 @@ export default function RegisterPage() {
                             <Table
                                 data={allTimeStats}
                                 columns={[
-                                    { title: "Event", dataIndex: "event" },
+                                    {title: "Event", dataIndex: "event"},
                                     {
                                         title: "Time (sec)",
                                         dataIndex: "time",
                                         render: (val) => val.toFixed(3),
                                     },
-                                    { title: "Rank", dataIndex: "rank" },
+                                    {title: "Rank", dataIndex: "rank"},
                                 ]}
                                 pagination={false}
                             />
