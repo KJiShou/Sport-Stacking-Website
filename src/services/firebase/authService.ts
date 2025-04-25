@@ -1,28 +1,20 @@
 // src/services/firebase/authService.ts
+import type {User} from "firebase/auth";
 import {
     createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    signOut,
-    signInWithPopup,
+    EmailAuthProvider,
     GoogleAuthProvider,
+    reauthenticateWithCredential,
+    signInWithEmailAndPassword,
+    signInWithPopup,
+    signOut,
+    updatePassword,
 } from "firebase/auth";
-import type {User} from "firebase/auth";
-import {db, auth} from "./config";
-import {
-    collection,
-    query,
-    where,
-    getDocs,
-    doc,
-    setDoc,
-    getDoc,
-    increment,
-    runTransaction,
-    DocumentData,
-    QueryDocumentSnapshot,
-    QuerySnapshot,
-} from "firebase/firestore";
+import type {DocumentData, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
+import {collection, doc, getDoc, getDocs, increment, query, runTransaction, setDoc, where, updateDoc} from "firebase/firestore";
 import type {FirestoreUser} from "../../schema";
+import {FirestoreUserSchema} from "../../schema";
+import {auth, db} from "./config";
 
 async function getNextGlobalId(): Promise<string> {
     const counterRef = doc(db, "counters", "userCounter");
@@ -151,8 +143,41 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
         gender: data.gender,
         country: data.country,
         state: data.state,
+        organizer: data.organizer,
         image_url: data.image_url,
         roles: data.roles,
         best_times: data.best_times,
     };
+}
+
+export async function updateUserProfile(id: string, data: Partial<Omit<FirestoreUser, "email" | "IC" | "id">>): Promise<void> {
+    // 1. 校验：只允许 FirestoreUserSchema 中声明过的字段，并且所有字段都可选
+    const UpdateSchema = FirestoreUserSchema.partial().omit({email: true, IC: true, id: true});
+    const validated = UpdateSchema.parse(data);
+
+    // 2. 获取文档引用
+    const userRef = doc(db, "users", id);
+
+    // 3. 执行更新
+    await updateDoc(userRef, validated);
+}
+
+export async function changeUserPassword(currentPassword: string, newPassword: string): Promise<void> {
+    const user = auth.currentUser;
+
+    if (!user || !user.email) {
+        throw new Error("No authenticated user found.");
+    }
+
+    try {
+        // Step 1: Reauthenticate
+        const credential = EmailAuthProvider.credential(user.email, currentPassword);
+        await reauthenticateWithCredential(user, credential);
+
+        // Step 2: Update password
+        await updatePassword(user, newPassword);
+    } catch (error) {
+        console.error("Failed to change password:", error);
+        throw error;
+    }
 }

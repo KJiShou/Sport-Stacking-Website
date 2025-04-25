@@ -10,6 +10,8 @@ import ProtectedRoute from "./components/common/ProtectedRoute";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "./context/AuthContext";
 import {logout} from "./services/firebase/authService";
+import {Helmet} from "react-helmet";
+import image from "./assets/icon.avif";
 
 const App: React.FC = () => {
     const Content = Layout.Content;
@@ -44,12 +46,16 @@ const App: React.FC = () => {
 
     return (
         <Router>
+            <Helmet>
+                <link rel="icon" type="image/avif" href={image} />
+            </Helmet>
             <AutoLogoutOnLeaveRegister />
             <DeviceInspector />
-            <Layout className="max-h-full h-full max-w-full w-full">
-                <Navbar />
+            <Layout className="max-w-full w-full h-screen">
+                <Navbar /> {/* 固定顶部 */}
                 <ProtectedRoute>
-                    <Content className="pt-24">
+                    {/* 只有 Content 可滚动 */}
+                    <Content className="pt-24 overflow-y-auto h-[calc(100vh-6rem)]">
                         <Routes>
                             {routes.map((route) => (
                                 <Route key={route.path} path={route.path} element={<route.component />} />

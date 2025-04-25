@@ -72,7 +72,7 @@ const Navbar: React.FC = () => {
         {key: "/records/double", label: "Double"},
     ];
     return (
-        <Header className="fixed h-24 flex z-20 w-full flex-row justify-between bg-white">
+        <div className="fixed top-0 left-0 z-50 w-full h-24 flex items-center justify-between px-6 py-4 bg-[var(--color-bg-2)] border-b border-[var(--color-border)]">
             <div className="logo" />
             <Menu
                 defaultOpenKeys={["1"]}
@@ -166,7 +166,7 @@ const Navbar: React.FC = () => {
             >
                 <LoginForm onClose={() => setVisible(false)} />
             </Modal>
-        </Header>
+        </div>
     );
 };
 
