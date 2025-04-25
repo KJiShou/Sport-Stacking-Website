@@ -2,10 +2,13 @@
 import type {User} from "firebase/auth";
 import {
     createUserWithEmailAndPassword,
+    EmailAuthProvider,
     GoogleAuthProvider,
+    reauthenticateWithCredential,
     signInWithEmailAndPassword,
     signInWithPopup,
     signOut,
+    updatePassword,
 } from "firebase/auth";
 import type {DocumentData, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
 import {collection, doc, getDoc, getDocs, increment, query, runTransaction, setDoc, where, updateDoc} from "firebase/firestore";
@@ -157,4 +160,24 @@ export async function updateUserProfile(id: string, data: Partial<Omit<Firestore
 
     // 3. 执行更新
     await updateDoc(userRef, validated);
+}
+
+export async function changeUserPassword(currentPassword: string, newPassword: string): Promise<void> {
+    const user = auth.currentUser;
+
+    if (!user || !user.email) {
+        throw new Error("No authenticated user found.");
+    }
+
+    try {
+        // Step 1: Reauthenticate
+        const credential = EmailAuthProvider.credential(user.email, currentPassword);
+        await reauthenticateWithCredential(user, credential);
+
+        // Step 2: Update password
+        await updatePassword(user, newPassword);
+    } catch (error) {
+        console.error("Failed to change password:", error);
+        throw error;
+    }
 }
