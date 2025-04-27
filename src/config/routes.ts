@@ -8,6 +8,7 @@ import Cycle from "../pages/Records/Cycle/Cycle";
 import Double from "../pages/Records/Double/Double";
 import RegisterPage from "../pages/User/Register/RegisterPage";
 import UserProfile from "../pages/User/UserProfile/UserProfile";
+import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 
 export interface Route {
     path: string;
@@ -24,6 +25,7 @@ const routes: Route[] = [
     {path: "/records/Double", component: Double},
     {path: "/register", component: RegisterPage},
     {path: "/users/:id", component: UserProfile},
+    {path: "/admins", component: AdminPermissionsPage},
 ];
 
 export default routes;

@@ -14,17 +14,21 @@ import {
     Cascader,
     Message,
     DatePicker,
+    Descriptions,
+    Grid,
+    Switch,
 } from "@arco-design/web-react";
 import {IconCamera, IconUser} from "@arco-design/web-react/icon";
 import {useEffect, useState} from "react";
-import {Navigate, useNavigate, useParams} from "react-router-dom";
-import type {FirestoreUser} from "../../../schema";
+import {Navigate, useNavigate, useParams, useSearchParams} from "react-router-dom";
+import type {FirestoreUser, FirestoreUserSchema} from "../../../schema";
 import {changeUserPassword, fetchUserByID, updateUserProfile} from "../../../services/firebase/authService";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
 import {AvatarUploader} from "../../../components/common/AvatarUploader";
 import {countries} from "../../../schema/Country";
 import dayjs from "dayjs";
 import {useAuthContext} from "../../../context/AuthContext";
+import {z} from "zod";
 
 const {Title, Text} = Typography;
 
@@ -54,11 +58,34 @@ export default function RegisterPage() {
     const [isImageLoading, setIsImageLoading] = useState(true);
     const [secLoading, setSecLoading] = useState(false);
     const {user: authUser} = useAuthContext();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const {Row, Col} = Grid;
+
+    let descData = [
+        {label: "Email", value: user?.email ?? "-"},
+        {label: "IC", value: user?.IC ?? "-"},
+        {label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}`},
+        {label: "Organizer", value: user?.organizer ?? "-"},
+        {
+            label: "Birthdate",
+            value: user?.birthdate ? dayjs(user.birthdate).format("YYYY-MM-DD") : "-",
+            span: 2,
+        },
+    ];
+    type RoleKey = keyof NonNullable<z.infer<typeof FirestoreUserSchema>["roles"]>;
+
+    const permissionList: {key: RoleKey; label: string}[] = [
+        {key: "edit_competition", label: "Edit Competition"},
+        {key: "record_competition", label: "Record Competition"},
+        {key: "modify_admin", label: "Modify Admin"},
+        {key: "verify_record", label: "Verify Record"},
+    ];
 
     useEffect(() => {
         if (authUser?.id !== id) {
             navigate("/");
         }
+        setIsEditMode(searchParams.get("isEditMode") === "true");
     }, []);
 
     useEffect(() => {
@@ -77,11 +104,22 @@ export default function RegisterPage() {
                     email: data?.email,
                     IC: data?.IC,
                     name: data?.name,
-                    country: [data?.country ?? "", data?.state ?? ""],
+                    country: data?.country,
                     organizer: data?.organizer ?? "",
                     gender: data?.gender,
                     birthdate: data?.birthdate,
                 });
+                descData = [
+                    {label: "Email", value: user?.email ?? "-"},
+                    {label: "IC", value: user?.IC ?? "-"},
+                    {label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}`},
+                    {label: "Organizer", value: user?.organizer ?? "-"},
+                    {
+                        label: "Birthdate",
+                        value: user?.birthdate ? dayjs(user.birthdate).format("YYYY-MM-DD") : "-",
+                        span: 2,
+                    },
+                ];
             } catch (err) {
                 console.error(err);
                 setUser(null);
@@ -109,8 +147,7 @@ export default function RegisterPage() {
             if (!id) return;
             await updateUserProfile(id, {
                 name: values.name,
-                country: values.country[0],
-                state: values.country[1],
+                country: values.country,
                 organizer: values.organizer,
             });
             Message.success("Profile updated successfully");
@@ -146,226 +183,255 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className={`flex flex-auto h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10`}>
-            <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
-                {loading && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-sm">
-                        <Spin tip="Loading..." size={40} />
-                    </div>
-                )}
+        <div className="h-full w-full">
+            <Spin tip="Loading..." size={40} loading={loading} className="h-full w-full">
                 {isEditMode ? (
-                    <div className={`w-full `}>
-                        {user && <AvatarUploader user={user} setUser={setUser} />}
-                        <div>
-                            <Title heading={4}>{user?.name}</Title>
-                            <Text type="secondary">Account ID: {user?.global_id}</Text>
-                        </div>
+                    <div className={`flex flex-auto h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10`}>
+                        <div
+                            className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}
+                        >
+                            <div className={`w-full `}>
+                                {user && <AvatarUploader user={user} setUser={setUser} />}
+                                <div>
+                                    <Title heading={4}>{user?.name}</Title>
+                                    <Text type="secondary">Account ID: {user?.global_id}</Text>
+                                </div>
 
-                        <Tabs defaultActiveTab="basic" className="mt-6">
-                            <TabPane title="Basic Information" key="basic">
-                                <Form
-                                    requiredSymbol={false}
-                                    className={`flex flex-col items-start`}
-                                    layout="horizontal"
-                                    labelAlign="left"
-                                    form={form}
-                                    onSubmit={handleSubmit}
-                                    autoComplete="off"
-                                >
-                                    <Form.Item label="Email" field="email">
-                                        <Input disabled />
-                                    </Form.Item>
-
-                                    <Form.Item label="IC" field="IC">
-                                        <Input disabled />
-                                    </Form.Item>
-
-                                    <Form.Item
-                                        label="Name"
-                                        field="name"
-                                        rules={[{required: true, message: "Please enter your name"}]}
-                                    >
-                                        <Input placeholder="Please enter your name" />
-                                    </Form.Item>
-
-                                    <Form.Item
-                                        field="birthdate"
-                                        label="Birthdate"
-                                        rules={[{required: true, message: "Select your birthdate"}]}
-                                    >
-                                        <DatePicker
-                                            style={{width: "100%"}}
-                                            disabledDate={(current) => current.isAfter(dayjs())}
-                                        />
-                                    </Form.Item>
-
-                                    <Form.Item field="gender" label="Gender" rules={[{required: true, message: "Select gender"}]}>
-                                        <Select placeholder="Select gender" options={["Male", "Female"]} />
-                                    </Form.Item>
-
-                                    <Form.Item
-                                        label="Country / State"
-                                        field="country"
-                                        rules={[{required: true, message: "Please select a country/region"}]}
-                                    >
-                                        <Cascader
-                                            showSearch
-                                            changeOnSelect
-                                            allowClear
-                                            filterOption={(input, node) => {
-                                                return node.label.toLowerCase().includes(input.toLowerCase());
-                                            }}
-                                            options={countries}
-                                            placeholder="Please select location"
-                                            expandTrigger="hover"
-                                            value={[user?.country ?? "", user?.state ?? ""]}
-                                        />
-                                    </Form.Item>
-
-                                    <Form.Item
-                                        label="Organizer"
-                                        field="organizer"
-                                        rules={[{required: false, message: "Please enter your organizer"}]}
-                                    >
-                                        <Input placeholder="Please enter your organizer" />
-                                    </Form.Item>
-
-                                    <div className="w-full mx-auto flex flex-col items-center">
-                                        <Button type="primary" long onClick={() => form.submit()}>
-                                            Save
-                                        </Button>
-                                        <Button
-                                            long
-                                            className="mt-4"
-                                            onClick={async () => {
-                                                try {
-                                                    setLoading(true);
-                                                    const data = await fetchUserByID(id ?? "");
-                                                    setUser(data ?? null);
-                                                    form.setFieldsValue({
-                                                        email: data?.email,
-                                                        IC: data?.IC,
-                                                        name: data?.name,
-                                                        country: [data?.country ?? "", data?.state ?? ""],
-                                                        organizer: data?.organizer ?? "",
-                                                        gender: data?.gender,
-                                                        birthdate: data?.birthdate,
-                                                    });
-                                                } catch (err) {
-                                                    console.error(err);
-                                                    setUser(null);
-                                                } finally {
-                                                    setLoading(false);
-                                                }
-                                            }}
+                                <Tabs defaultActiveTab="basic" className="mt-6">
+                                    <TabPane title="Basic Information" key="basic">
+                                        <Form
+                                            requiredSymbol={false}
+                                            className={`flex flex-col items-start`}
+                                            layout="horizontal"
+                                            labelAlign="left"
+                                            form={form}
+                                            onSubmit={handleSubmit}
+                                            autoComplete="off"
                                         >
-                                            Reset
-                                        </Button>
-                                    </div>
-                                </Form>
-                            </TabPane>
+                                            <Form.Item label="Email" field="email">
+                                                <Input disabled />
+                                            </Form.Item>
 
-                            <TabPane title="Security Settings" key="security">
-                                <Form
-                                    form={secForm}
-                                    layout="vertical"
-                                    onSubmit={handleSecuritySubmit}
-                                    autoComplete="off"
-                                    requiredSymbol={false}
-                                >
-                                    <Form.Item
-                                        label="Current Password"
-                                        field="currentPassword"
-                                        rules={[{required: true, message: "Enter current password"}]}
-                                    >
-                                        <Input.Password placeholder="Current Password" />
-                                    </Form.Item>
-                                    <Form.Item
-                                        label="New Password"
-                                        field="newPassword"
-                                        rules={[{required: true, message: "Enter new password"}]}
-                                    >
-                                        <Input.Password placeholder="New Password" />
-                                    </Form.Item>
-                                    <Form.Item
-                                        label="Confirm Password"
-                                        field="confirmPassword"
-                                        rules={[{required: true, message: "Confirm new password"}]}
-                                    >
-                                        <Input.Password placeholder="Confirm Password" />
-                                    </Form.Item>
-                                    <div className="w-full mx-auto flex flex-col items-center">
-                                        <Button type="primary" long htmlType="submit" loading={secLoading}>
-                                            Change Password
-                                        </Button>
-                                    </div>
-                                </Form>
-                            </TabPane>
-                        </Tabs>
+                                            <Form.Item label="IC" field="IC">
+                                                <Input disabled />
+                                            </Form.Item>
+
+                                            <Form.Item
+                                                label="Name"
+                                                field="name"
+                                                rules={[{required: true, message: "Please enter your name"}]}
+                                            >
+                                                <Input placeholder="Please enter your name" />
+                                            </Form.Item>
+
+                                            <Form.Item
+                                                field="birthdate"
+                                                label="Birthdate"
+                                                rules={[{required: true, message: "Select your birthdate"}]}
+                                            >
+                                                <DatePicker
+                                                    style={{width: "100%"}}
+                                                    disabledDate={(current) => current.isAfter(dayjs())}
+                                                />
+                                            </Form.Item>
+
+                                            <Form.Item
+                                                field="gender"
+                                                label="Gender"
+                                                rules={[{required: true, message: "Select gender"}]}
+                                            >
+                                                <Select placeholder="Select gender" options={["Male", "Female"]} />
+                                            </Form.Item>
+
+                                            <Form.Item
+                                                label="Country / State"
+                                                field="country"
+                                                rules={[{required: true, message: "Please select a country/region"}]}
+                                            >
+                                                <Cascader
+                                                    showSearch
+                                                    changeOnSelect
+                                                    allowClear
+                                                    filterOption={(input, node) => {
+                                                        return node.label.toLowerCase().includes(input.toLowerCase());
+                                                    }}
+                                                    options={countries}
+                                                    placeholder="Please select location"
+                                                    expandTrigger="hover"
+                                                    value={user?.country}
+                                                />
+                                            </Form.Item>
+
+                                            <Form.Item
+                                                label="Organizer"
+                                                field="organizer"
+                                                rules={[{required: false, message: "Please enter your organizer"}]}
+                                            >
+                                                <Input placeholder="Please enter your organizer" />
+                                            </Form.Item>
+
+                                            <div className="w-full mx-auto flex flex-col items-center">
+                                                <Button
+                                                    type="primary"
+                                                    long
+                                                    onClick={() => {
+                                                        form.submit();
+                                                        setSearchParams({isEditMode: "false"});
+                                                    }}
+                                                >
+                                                    Save
+                                                </Button>
+                                                <Button
+                                                    long
+                                                    className="mt-4"
+                                                    onClick={async () => {
+                                                        try {
+                                                            setLoading(true);
+                                                            const data = await fetchUserByID(id ?? "");
+                                                            setUser(data ?? null);
+                                                            form.setFieldsValue({
+                                                                email: data?.email,
+                                                                IC: data?.IC,
+                                                                name: data?.name,
+                                                                country: data?.country,
+                                                                organizer: data?.organizer ?? "",
+                                                                gender: data?.gender,
+                                                                birthdate: data?.birthdate,
+                                                            });
+                                                        } catch (err) {
+                                                            console.error(err);
+                                                            setUser(null);
+                                                        } finally {
+                                                            setLoading(false);
+                                                        }
+                                                    }}
+                                                >
+                                                    Reset
+                                                </Button>
+                                            </div>
+                                        </Form>
+                                    </TabPane>
+
+                                    <TabPane title="Security Settings" key="security">
+                                        <Form
+                                            form={secForm}
+                                            layout="vertical"
+                                            onSubmit={handleSecuritySubmit}
+                                            autoComplete="off"
+                                            requiredSymbol={false}
+                                        >
+                                            <Form.Item
+                                                label="Current Password"
+                                                field="currentPassword"
+                                                rules={[{required: true, message: "Enter current password"}]}
+                                            >
+                                                <Input.Password placeholder="Current Password" />
+                                            </Form.Item>
+                                            <Form.Item
+                                                label="New Password"
+                                                field="newPassword"
+                                                rules={[{required: true, message: "Enter new password"}]}
+                                            >
+                                                <Input.Password placeholder="New Password" />
+                                            </Form.Item>
+                                            <Form.Item
+                                                label="Confirm Password"
+                                                field="confirmPassword"
+                                                rules={[{required: true, message: "Confirm new password"}]}
+                                            >
+                                                <Input.Password placeholder="Confirm Password" />
+                                            </Form.Item>
+                                            <div className="w-full mx-auto flex flex-col items-center">
+                                                <Button type="primary" long htmlType="submit" loading={secLoading}>
+                                                    Change Password
+                                                </Button>
+                                            </div>
+                                        </Form>
+                                    </TabPane>
+                                </Tabs>
+                            </div>
+                        </div>
                     </div>
                 ) : (
-                    <div className="max-w-2xl mx-auto space-y-6">
-                        {/* 基本信息卡片 */}
-                        <Card className="text-center">
-                            <Avatar className="mx-auto w-24 h-24 rounded-full overflow-hidden relative">
-                                {isImageLoading && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-10">
-                                        <Spin size={24} />
-                                    </div>
-                                )}
+                    <div className="flex flex-col md:flex-row h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+                        {/* 左边：基本信息卡片 */}
+                        <div className="bg-white flex flex-col w-full md:w-1/3 h-full gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                            <Avatar className="mx-auto w-48 h-48 rounded-full overflow-hidden relative">
+                                {isImageLoading && <Spin size={24} />}
                                 <img
                                     src={user?.image_url}
                                     alt={user?.name}
                                     onLoad={() => setIsImageLoading(false)}
                                     onError={() => setIsImageLoading(false)}
-                                    className={`w-full h-full object-cover transition-opacity duration-300 ${
-                                        isImageLoading ? "opacity-0" : "opacity-100"
-                                    }`}
+                                    className={`w-full h-full object-cover transition-opacity duration-300 ${isImageLoading ? "opacity-0" : "opacity-100"}`}
                                 />
                             </Avatar>
-                            <Title heading={4} className="mt-4">
-                                {user?.name}
-                            </Title>
+                            <Text className="flex items-center justify-center gap-1 text-4xl font-bold mt-2">{user?.name}</Text>
                             <Text className="flex items-center justify-center gap-1">
                                 <IconUser /> {user?.global_id}
                             </Text>
-                            <Text className="block mt-1 text-sm text-gray-600">
-                                {user?.country} / {user?.state}
-                            </Text>
-                            <Text className="block mt-1 text-sm text-gray-600">{user?.organizer}</Text>
-                        </Card>
-                        <Button className={`w-full`} type={`primary`} onClick={() => setIsEditMode(true)}>
-                            Edit Profile
-                        </Button>
+                            <Descriptions className={"w-full h-full py-8 px-4"} border column={1} data={descData} />
+                            <Button
+                                className="w-full"
+                                type="primary"
+                                onClick={() => {
+                                    setIsEditMode(true);
+                                    setSearchParams({isEditMode: "true"});
+                                }}
+                            >
+                                Edit Profile
+                            </Button>
+                        </div>
 
-                        {/* 最佳成绩 */}
-                        <Card>
-                            <Statistic
-                                title="All-around Best Time"
-                                value={user?.best_times?.["all-around"]?.toFixed(3) ?? "-"}
-                                suffix="sec"
-                            />
-                        </Card>
+                        {/* 右边：包一层，让它整体高度统一 */}
+                        {!user?.roles ? (
+                            <div className="flex flex-col w-full md:w-2/3 h-full gap-6">
+                                <div className="flex flex-col h-full gap-6">
+                                    {/* 最佳成绩卡片 */}
+                                    <div className="bg-white flex flex-col w-full h-1/2 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                                        <Statistic
+                                            title="All-around Best Time"
+                                            value={user?.best_times?.["all-around"]?.toFixed(3) ?? "-"}
+                                            suffix="sec"
+                                        />
+                                    </div>
 
-                        {/* 全时统计表 */}
-                        <Card title="All Time Statistics">
-                            <Table
-                                data={allTimeStats}
-                                columns={[
-                                    {title: "Event", dataIndex: "event"},
-                                    {
-                                        title: "Time (sec)",
-                                        dataIndex: "time",
-                                        render: (val) => val.toFixed(3),
-                                    },
-                                    {title: "Rank", dataIndex: "rank"},
-                                ]}
-                                pagination={false}
-                            />
-                        </Card>
+                                    {/* 全时统计表卡片 */}
+                                    <div className="bg-white flex flex-col w-full flex-1 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                                        <Title>All Time Statistics</Title>
+                                        <Table
+                                            data={allTimeStats}
+                                            columns={[
+                                                {title: "Event", dataIndex: "event"},
+                                                {
+                                                    title: "Time (sec)",
+                                                    dataIndex: "time",
+                                                    render: (val) => val.toFixed(3),
+                                                },
+                                                {title: "Rank", dataIndex: "rank"},
+                                            ]}
+                                            pagination={false}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-white flex flex-col w-full flex-1 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                                <Row gutter={[16, 16]}>
+                                    {permissionList.map(({key, label}) => (
+                                        <Col xs={24} sm={12} key={key}>
+                                            <div className="flex items-center justify-between px-4 py-2 border rounded">
+                                                <span>{label}</span>
+                                                <Switch checked={user.roles?.[key] ?? false} disabled />
+                                            </div>
+                                        </Col>
+                                    ))}
+                                </Row>
+                            </div>
+                        )}
                     </div>
                 )}
-            </div>
+            </Spin>
         </div>
     );
 }

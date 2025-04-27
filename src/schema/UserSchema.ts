@@ -9,11 +9,18 @@ export const FirestoreUserSchema = z.object({
     }),
     email: z.string().email(),
     birthdate: z.date(),
-    gender: z.enum(["male", "female", "other"]),
-    country: z.string(),
-    state: z.string(),
+    gender: z.enum(["Male", "Female"]),
+    country: z.array(z.string(), z.string()),
     image_url: z.string().url(),
-    roles: z.array(z.string()), // role ID
+    roles: z
+        .object({
+            edit_competition: z.boolean(),
+            record_competition: z.boolean(),
+            modify_admin: z.boolean(),
+            verify_record: z.boolean(),
+        })
+        .optional()
+        .nullable(),
     organizer: z.string().optional().nullable(),
     best_times: z.record(z.string(), z.number()).optional(),
 });

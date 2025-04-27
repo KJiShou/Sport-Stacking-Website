@@ -11,7 +11,19 @@ import {
     updatePassword,
 } from "firebase/auth";
 import type {DocumentData, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
-import {collection, doc, getDoc, getDocs, increment, query, runTransaction, setDoc, where, updateDoc} from "firebase/firestore";
+import {
+    collection,
+    doc,
+    getDoc,
+    getDocs,
+    increment,
+    query,
+    runTransaction,
+    setDoc,
+    where,
+    updateDoc,
+    Timestamp,
+} from "firebase/firestore";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
 import {auth, db} from "./config";
@@ -116,6 +128,30 @@ export const registerWithGoogle = async (
     await setDoc(userRef, userDoc);
 };
 
+export async function fetchAllUsers(): Promise<FirestoreUser[]> {
+    const colRef = collection(db, "users");
+    const snap = await getDocs(colRef);
+
+    return snap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+            id: docSnap.id,
+            global_id: data.global_id,
+            name: data.name,
+            IC: data.IC,
+            email: data.email,
+            // convert Firestore Timestamp → JS Date if needed
+            birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
+            gender: data.gender,
+            country: data.country,
+            image_url: data.image_url,
+            roles: data.roles ?? null,
+            organizer: data.organizer ?? null,
+            best_times: data.best_times ?? {},
+        } as FirestoreUser;
+    });
+}
+
 export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
     // Build a query on the "users" collection where the field "id" equals the passed-in id
     const q = query(collection(db, "users"), where("id", "==", id));
@@ -142,7 +178,6 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
         birthdate: data.birthdate.toDate(), // convert Firestore Timestamp
         gender: data.gender,
         country: data.country,
-        state: data.state,
         organizer: data.organizer,
         image_url: data.image_url,
         roles: data.roles,
@@ -160,6 +195,12 @@ export async function updateUserProfile(id: string, data: Partial<Omit<Firestore
 
     // 3. 执行更新
     await updateDoc(userRef, validated);
+}
+
+export async function updateUserRoles(userId: string, roles: FirestoreUser["roles"]): Promise<void> {
+    const userRef = doc(db, "users", userId);
+    // merge only the roles object
+    await updateDoc(userRef, {roles});
 }
 
 export async function changeUserPassword(currentPassword: string, newPassword: string): Promise<void> {

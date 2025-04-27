@@ -37,17 +37,17 @@ const RegisterPage = () => {
     const navigate = useNavigate();
     const [selectedCountry, setSelectedCountry] = useState("Malaysia");
     const {user, firebaseUser, setUser} = useAuthContext();
-    const [uploading, setUploading] = useState(false);
     const location = useLocation();
     const isFromGoogle = location.state?.fromGoogle === true;
+    const [avatarPreview, setAvatarPreview] = useState<string>(firebaseUser?.photoURL ?? "");
 
     useEffect(() => {
-        if (firebaseUser && isFromGoogle) {
-            const avatarUrl = firebaseUser.photoURL;
-            // and this is safe
-            form.setFieldValue("image_url", avatarUrl);
+        if (isFromGoogle && firebaseUser?.photoURL) {
+            setAvatarPreview(firebaseUser.photoURL);
+            form.setFieldValue("image_url", firebaseUser.photoURL);
+            form.setFieldValue("email", firebaseUser.email ?? "");
         }
-    }, [firebaseUser, isFromGoogle, user]);
+    }, [isFromGoogle, firebaseUser, form]);
 
     useEffect(() => {
         if (firebaseUser && !isFromGoogle) {
@@ -66,7 +66,7 @@ const RegisterPage = () => {
     };
 
     const handleSubmit = async (values: RegisterFormData) => {
-        const {email, password, confirmPassword, name, IC, birthdate, country, gender, state, image_url, organizer} = values;
+        const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, organizer} = values;
         let avatarUrl = firebaseUser?.photoURL ?? "";
         if (password !== confirmPassword) {
             Message.error("Passwords do not match");
@@ -93,9 +93,8 @@ const RegisterPage = () => {
                     birthdate,
                     gender,
                     country,
-                    state,
                     organizer,
-                    roles: [],
+                    roles: null,
                     image_url: avatarUrl || "",
                     best_times: {},
                 });
@@ -108,9 +107,8 @@ const RegisterPage = () => {
                         birthdate,
                         gender,
                         country,
-                        state,
                         organizer,
-                        roles: [],
+                        roles: null,
                         best_times: {},
                     },
                     avatarUrl,
@@ -177,7 +175,7 @@ const RegisterPage = () => {
                         shouldUpdate={(prev, curr) => prev.image_url !== curr.image_url}
                     >
                         {() => {
-                            const imageUrl = form.getFieldValue("image_url") as string;
+                            const imageUrl = form.getFieldValue("image_url");
 
                             return (
                                 <div className="flex flex-col items-center gap-2">
@@ -198,6 +196,7 @@ const RegisterPage = () => {
                                             const reader = new FileReader();
                                             reader.onload = () => {
                                                 form.setFieldValue("image_url", reader.result as string);
+                                                setAvatarPreview(reader.result as string);
                                                 onSuccess?.();
                                             };
                                             reader.readAsDataURL(file);
@@ -210,8 +209,11 @@ const RegisterPage = () => {
                                                 triggerIcon={<IconCamera />}
                                                 triggerType="mask"
                                             >
-                                                {uploading && <Spin size={24} className="absolute inset-0 bg-white/50" />}
-                                                <img className="w-full h-full object-cover" src={imageUrl} alt={user?.name} />
+                                                <img
+                                                    className="w-full h-full object-cover"
+                                                    src={imageUrl as string}
+                                                    alt={user?.name}
+                                                />
                                             </Avatar>
                                         </div>
                                     </Upload>
@@ -306,7 +308,7 @@ const RegisterPage = () => {
                             options={countries}
                             placeholder="Please select location"
                             expandTrigger="hover"
-                            value={[user?.country ?? "", user?.state ?? ""]}
+                            value={user?.country}
                         />
                     </Form.Item>
 
