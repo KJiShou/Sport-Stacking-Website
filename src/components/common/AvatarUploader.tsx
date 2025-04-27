@@ -34,6 +34,7 @@ export function AvatarUploader({user, setUser}: Props) {
                     Message.error("avatar upload failed");
                 } finally {
                     setUploading(false);
+                    window.location.reload();
                 }
             }}
         >
@@ -44,7 +45,7 @@ export function AvatarUploader({user, setUser}: Props) {
                     triggerIcon={<IconCamera />}
                     triggerType="mask"
                 >
-                    {uploading && <Spin size={24} className="absolute inset-0 bg-white/50" />}
+                    {uploading && <Spin size={24} />}
                     <img className="w-full h-full object-cover" src={user.image_url} alt={user.name} />
                 </Avatar>
             </div>

@@ -15,6 +15,11 @@ interface MenuItem {
 
 const AvatarWithLoading = ({src}: {src: string}) => {
     const [loading, setLoading] = useState(true);
+    const {firebaseUser, user} = useAuthContext();
+    let image = user?.image_url || src;
+    React.useEffect(() => {
+        image = user?.image_url || src;
+    }, [src, user]);
 
     return (
         <div className="relative inline-block">
@@ -23,16 +28,9 @@ const AvatarWithLoading = ({src}: {src: string}) => {
                     <Spin size={16} />
                 </div>
             )}
-
-            <Avatar
-                size={40}
-                className="rounded-full overflow-hidden"
-                style={{
-                    visibility: loading ? "hidden" : "visible",
-                }}
-            >
+            <Avatar size={40} className="rounded-full overflow-hidden" style={{visibility: loading ? "hidden" : "visible"}}>
                 <img
-                    src={src}
+                    src={image}
                     alt="avatar"
                     onLoad={() => setLoading(false)}
                     onError={() => setLoading(false)}
@@ -106,6 +104,12 @@ const Navbar: React.FC = () => {
                         <MenuItem key={key}>{label}</MenuItem>
                     ))}
                 </SubMenu>
+                {user?.roles?.modify_admin && (
+                    <MenuItem key="/admins">
+                        <IconUser />
+                        Admin
+                    </MenuItem>
+                )}
             </Menu>
             {!isRegisterPage && (
                 <div className="flex items-center m-10 cursor-pointer">
@@ -138,7 +142,7 @@ const Navbar: React.FC = () => {
                         >
                             <div className="cursor-pointer">
                                 {user.image_url ? (
-                                    <AvatarWithLoading src={user.image_url} />
+                                    <AvatarWithLoading src={user.image_url} key={user.image_url} />
                                 ) : (
                                     <Avatar style={{backgroundColor: "#3370ff"}}>
                                         <IconUser />
