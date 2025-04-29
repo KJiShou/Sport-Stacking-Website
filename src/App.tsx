@@ -4,7 +4,7 @@ import {BrowserRouter as Router, Routes, Route} from "react-router-dom";
 import "@arco-design/web-react/dist/css/arco.css";
 import {Navbar, Footer} from "./components/layout";
 import {DeviceInspector} from "./utils/DeviceInspector";
-import {Layout} from "@arco-design/web-react";
+import {ConfigProvider, Layout} from "@arco-design/web-react";
 import routes from "./config/routes";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import {useLocation, useNavigate} from "react-router-dom";
@@ -12,6 +12,7 @@ import {useAuthContext} from "./context/AuthContext";
 import {logout} from "./services/firebase/authService";
 import {Helmet} from "react-helmet";
 import image from "./assets/icon.avif";
+import enUS from "@arco-design/web-react/es/locale/en-US";
 
 const App: React.FC = () => {
     const Content = Layout.Content;
@@ -45,27 +46,29 @@ const App: React.FC = () => {
     };
 
     return (
-        <Router>
-            <Helmet>
-                <link rel="icon" type="image/avif" href={image} />
-            </Helmet>
-            <AutoLogoutOnLeaveRegister />
-            <DeviceInspector />
-            <Layout className="max-w-full w-full h-screen">
-                <Navbar /> {/* 固定顶部 */}
-                <ProtectedRoute>
-                    {/* 只有 Content 可滚动 */}
-                    <Content className="pt-24 overflow-y-auto h-[calc(100vh-6rem)]">
-                        <Routes>
-                            {routes.map((route) => (
-                                <Route key={route.path} path={route.path} element={<route.component />} />
-                            ))}
-                        </Routes>
-                    </Content>
-                </ProtectedRoute>
-                <Footer />
-            </Layout>
-        </Router>
+        <ConfigProvider locale={enUS}>
+            <Router>
+                <Helmet>
+                    <link rel="icon" type="image/avif" href={image} />
+                </Helmet>
+                <AutoLogoutOnLeaveRegister />
+                <DeviceInspector />
+                <Layout className="max-w-full w-full h-screen">
+                    <Navbar /> {/* 固定顶部 */}
+                    <ProtectedRoute>
+                        {/* 只有 Content 可滚动 */}
+                        <Content className="mt-24 overflow-y-auto h-[calc(100vh-6rem)]">
+                            <Routes>
+                                {routes.map((route) => (
+                                    <Route key={route.path} path={route.path} element={<route.component />} />
+                                ))}
+                            </Routes>
+                        </Content>
+                    </ProtectedRoute>
+                    <Footer />
+                </Layout>
+            </Router>
+        </ConfigProvider>
     );
 };
 

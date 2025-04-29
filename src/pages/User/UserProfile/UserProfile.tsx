@@ -28,7 +28,7 @@ import {AvatarUploader} from "../../../components/common/AvatarUploader";
 import {countries} from "../../../schema/Country";
 import dayjs from "dayjs";
 import {useAuthContext} from "../../../context/AuthContext";
-import {z} from "zod";
+import type {z} from "zod";
 
 const {Title, Text} = Typography;
 

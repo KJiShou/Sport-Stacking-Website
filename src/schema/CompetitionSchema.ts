@@ -1,4 +1,6 @@
-import {z} from "zod";
+import {Timestamp} from "firebase/firestore";
+import {nullable, z} from "zod";
+import dayjs, {Dayjs} from "dayjs";
 
 // age_brackets subcollection
 export const AgeBracketSchema = z.object({
@@ -33,17 +35,21 @@ export const FinalCategorySchema = z.object({
 export const CompetitionSchema = z.object({
     id: z.string().optional().nullable(),
     name: z.string(),
-    start_date: z.union([z.date(), z.string()]),
-    end_date: z.union([z.date(), z.string()]),
-    location: z.string(),
-    status: z.enum(["upcoming", "ongoing", "completed"]),
+    start_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
+    end_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
+    country: z.array(z.string(), z.string()),
+    address: z.string(),
 
     age_brackets: z.array(AgeBracketSchema),
     events: z.array(EventSchema),
     final_criteria: z.array(FinalCriteriaSchema),
     final_categories: z.array(FinalCategorySchema),
 
-    max_groups: z.number().optional(),
+    registration_start_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
+    registration_end_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
+    status: z.enum(["Up Coming", "On Going", "Close Registration", "End"]).optional().nullable(),
+    participants: z.number().optional().nullable(),
+    max_participants: z.number().optional().nullable(),
 });
 
 export type Competition = z.infer<typeof CompetitionSchema>;

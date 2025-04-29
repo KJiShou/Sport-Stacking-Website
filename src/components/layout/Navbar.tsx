@@ -87,10 +87,18 @@ const Navbar: React.FC = () => {
                     <IconCalendar />
                     Athletes
                 </MenuItem>
-                <MenuItem key="/tournaments">
-                    <IconCalendar />
-                    Tournaments
-                </MenuItem>
+                <SubMenu
+                    key="tournaments"
+                    title={
+                        <span>
+                            <IconCalendar />
+                            Tournaments
+                        </span>
+                    }
+                >
+                    <MenuItem key="/tournaments?type=current">Current</MenuItem>
+                    <MenuItem key="/tournaments?type=history">History</MenuItem>
+                </SubMenu>
                 <SubMenu
                     key="records"
                     title={
