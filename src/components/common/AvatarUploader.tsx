@@ -45,8 +45,11 @@ export function AvatarUploader({user, setUser}: Props) {
                     triggerIcon={<IconCamera />}
                     triggerType="mask"
                 >
-                    {uploading && <Spin size={24} />}
-                    <img className="w-full h-full object-cover" src={user.image_url} alt={user.name} />
+                    {uploading ? (
+                        <Spin size={24} />
+                    ) : (
+                        <img className="w-full h-full object-cover" src={user.image_url} alt={user.name} />
+                    )}
                 </Avatar>
             </div>
         </Upload>

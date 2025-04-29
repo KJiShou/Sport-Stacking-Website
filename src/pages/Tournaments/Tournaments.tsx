@@ -1,13 +1,24 @@
 import type * as React from "react";
 
-import {useForm, useFieldArray} from "react-hook-form";
-import {z} from "zod";
-import {zodResolver} from "@hookform/resolvers/zod";
-import {type Competition, CompetitionSchema} from "../../schema";
-import {addCompetition} from "../../services/firebase/firestoreService";
+import CompetitionList from "./Component/CompetitionList";
+import {useLocation, useParams} from "react-router-dom";
+
+interface CompetitionListProps {
+    type: "current" | "history";
+}
 
 const Tournaments: React.FC = () => {
-    return <div>tournaments</div>;
+    const location = useLocation();
+    const searchParams = new URLSearchParams(location.search);
+    const type = searchParams.get("type") as CompetitionListProps["type"] | null;
+
+    return (
+        <div
+            className={`flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch `}
+        >
+            <CompetitionList type={type ?? "current"} />
+        </div>
+    );
 };
 
 export default Tournaments;

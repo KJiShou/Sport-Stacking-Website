@@ -2,7 +2,7 @@ import React, {useState, useEffect} from "react";
 import {Form, Input, Button, Message, Typography, Link} from "@arco-design/web-react";
 import {IconEmail, IconLock} from "@arco-design/web-react/icon";
 import {login, signInWithGoogle} from "../../services/firebase/authService";
-import {useNavigate} from "react-router-dom";
+import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
 import {doc, getDoc} from "firebase/firestore";
 import {db} from "../../services/firebase/config";
@@ -13,6 +13,7 @@ const LoginForm = ({onClose}: {onClose?: () => void}) => {
     const {firebaseUser} = useAuthContext();
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
+    const location = useLocation();
 
     useEffect(() => {
         if (firebaseUser) {
@@ -27,7 +28,7 @@ const LoginForm = ({onClose}: {onClose?: () => void}) => {
             await login(values.email, values.password);
             Message.success("Login successful");
             if (onClose) onClose();
-            navigate("/");
+            navigate(`${location.pathname}`);
         } catch (err: unknown) {
             if (err instanceof Error) {
                 console.error("Error:", err.message);
@@ -52,7 +53,7 @@ const LoginForm = ({onClose}: {onClose?: () => void}) => {
 
             if (userSnap.exists()) {
                 Message.success("Logged in with Google");
-                navigate("/");
+                navigate(`${location.pathname}`);
                 if (onClose) onClose();
             } else {
                 Message.info("Please complete your registration");

@@ -9,6 +9,7 @@ import Double from "../pages/Records/Double/Double";
 import RegisterPage from "../pages/User/Register/RegisterPage";
 import UserProfile from "../pages/User/UserProfile/UserProfile";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
+import CreateCompetitionPage from "../pages/Tournaments/CreateTournaments/CreateTournaments";
 
 export interface Route {
     path: string;
@@ -19,6 +20,7 @@ const routes: Route[] = [
     {path: "/", component: Home},
     {path: "/athletes", component: Athletes},
     {path: "/tournaments", component: Tournaments},
+    {path: "/tournaments/create", component: CreateCompetitionPage},
     {path: "/records/3-3-3", component: page_3_3_3},
     {path: "/records/3-6-3", component: page_3_6_3},
     {path: "/records/Cycle", component: Cycle},
