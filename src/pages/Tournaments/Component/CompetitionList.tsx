@@ -1,5 +1,5 @@
-import { db } from "../../../services/firebase/config"; // 你的 firebase 配置文件
-import { collection, getDocs, query, where, orderBy, Timestamp, updateDoc, doc } from "firebase/firestore";
+import {db} from "../../../services/firebase/config"; // 你的 firebase 配置文件
+import {collection, getDocs, query, where, orderBy, Timestamp, updateDoc, doc} from "firebase/firestore";
 import {
     Button,
     Card,
@@ -15,17 +15,17 @@ import {
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import { useEffect, useState } from "react";
-import type { Competition } from "../../../schema"; // 就是你那个 CompetitionSchema infer出来的type
-import { useAuthContext } from "../../../context/AuthContext";
-import { useNavigate } from "react-router-dom";
-import { IconDelete, IconEdit, IconPlus } from "@arco-design/web-react/icon";
-import { countries } from "../../../schema/Country";
-import dayjs, { type Dayjs } from "dayjs";
-import { fetchCompetitionsByType, updateCompetition } from "../../../services/firebase/competitionsService";
-import { reload } from "firebase/auth";
+import {useEffect, useState} from "react";
+import type {Competition} from "../../../schema"; // 就是你那个 CompetitionSchema infer出来的type
+import {useAuthContext} from "../../../context/AuthContext";
+import {useNavigate} from "react-router-dom";
+import {IconDelete, IconEdit, IconPlus} from "@arco-design/web-react/icon";
+import {countries} from "../../../schema/Country";
+import dayjs, {type Dayjs} from "dayjs";
+import {fetchCompetitionsByType, updateCompetition} from "../../../services/firebase/competitionsService";
+import {reload} from "firebase/auth";
 
-const { Title, Paragraph } = Typography;
+const {Title, Paragraph} = Typography;
 type CompetitionFormData = Competition & {
     date_range: [Timestamp | Date, Timestamp | Date];
     registration_date_range: [Timestamp | Date, Timestamp | Date];
@@ -35,16 +35,16 @@ interface CompetitionListProps {
     type: "current" | "history";
 }
 
-export default function CompetitionList({ type }: CompetitionListProps) {
+export default function CompetitionList({type}: CompetitionListProps) {
     const [competitions, setCompetitions] = useState<Competition[]>([]);
     const [loading, setLoading] = useState(true);
-    const { user } = useAuthContext();
+    const {user} = useAuthContext();
     const navigate = useNavigate();
 
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [selectedCompetition, setSelectedCompetition] = useState<Competition | null>(null);
 
-    const { RangePicker } = DatePicker;
+    const {RangePicker} = DatePicker;
     const [form] = Form.useForm();
 
     const fetchCompetitions = async () => {
@@ -239,10 +239,10 @@ export default function CompetitionList({ type }: CompetitionListProps) {
                     status === "Up Coming"
                         ? "blue"
                         : status === "On Going"
-                            ? "green"
-                            : status === "Close Registration"
-                                ? "red"
-                                : "gray";
+                          ? "green"
+                          : status === "Close Registration"
+                            ? "red"
+                            : "gray";
                 return <Tag color={color}>{status}</Tag>;
             },
         },
@@ -286,7 +286,7 @@ export default function CompetitionList({ type }: CompetitionListProps) {
                 rowKey="id"
                 columns={columns}
                 data={competitions}
-                pagination={{ pageSize: 10 }}
+                pagination={{pageSize: 10}}
                 className="my-4"
                 loading={loading}
             />
@@ -300,17 +300,17 @@ export default function CompetitionList({ type }: CompetitionListProps) {
             >
                 {selectedCompetition && (
                     <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
-                        <Form.Item label="Competition Name" field="name" rules={[{ required: true }]}>
+                        <Form.Item label="Competition Name" field="name" rules={[{required: true}]}>
                             <Input placeholder="Enter competition name" />
                         </Form.Item>
 
-                        <Form.Item label="Competition Date Range" field="date_range" rules={[{ required: true }]}>
+                        <Form.Item label="Competition Date Range" field="date_range" rules={[{required: true}]}>
                             <RangePicker
                                 showTime={{
                                     defaultValue: ["08:00", "18:00"],
                                     format: "HH:mm",
                                 }}
-                                style={{ width: "100%" }}
+                                style={{width: "100%"}}
                                 disabledDate={(current) => {
                                     const today = dayjs();
                                     return current?.isBefore(today.add(7, "day"), "day");
@@ -319,44 +319,44 @@ export default function CompetitionList({ type }: CompetitionListProps) {
                             />
                         </Form.Item>
 
-                        <Form.Item label="Country / State" field="country" rules={[{ required: true }]}>
+                        <Form.Item label="Country / State" field="country" rules={[{required: true}]}>
                             <Cascader options={countries} placeholder="Select country/state" />
                         </Form.Item>
 
-                        <Form.Item label="Address" field="address" rules={[{ required: true }]}>
+                        <Form.Item label="Address" field="address" rules={[{required: true}]}>
                             <Input placeholder="Enter address" />
                         </Form.Item>
 
                         <Form.Item
                             label="Registration Date Range"
                             field="registration_date_range"
-                            rules={[{ required: true, message: "Please input registration date" }]}
+                            rules={[{required: true, message: "Please input registration date"}]}
                         >
                             <RangePicker
                                 showTime={{
                                     defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                     format: "HH:mm",
                                 }}
-                                style={{ width: "100%" }}
+                                style={{width: "100%"}}
                                 disabledDate={(current) => current?.isBefore(dayjs(), "day")}
                                 onChange={handleRangeChangeSmart("registration_date_range")}
                             />
                         </Form.Item>
 
                         <Form.Item label="Maximum Participants" field="max_participants">
-                            <InputNumber min={1} style={{ width: "100%" }} placeholder="Enter max number" />
+                            <InputNumber min={1} style={{width: "100%"}} placeholder="Enter max number" />
                         </Form.Item>
 
                         <Form.Item label="Events" className={`flex flex-col gap-4`}>
                             <Form.List field="events">
-                                {(fields, { add, remove }) => (
+                                {(fields, {add, remove}) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <div key={field.key} className="flex gap-4 items-center mb-4">
                                                 {/* Event Code 选择 */}
                                                 <Form.Item
                                                     field={`events.${index}.code`}
-                                                    rules={[{ required: true, message: "Please select event code" }]}
+                                                    rules={[{required: true, message: "Please select event code"}]}
                                                     className={`w-80`}
                                                 >
                                                     <Select placeholder="Select Code">
@@ -369,7 +369,7 @@ export default function CompetitionList({ type }: CompetitionListProps) {
                                                 {/* Type 选择 */}
                                                 <Form.Item
                                                     field={`events.${index}.type`}
-                                                    rules={[{ required: true, message: "Please select type" }]}
+                                                    rules={[{required: true, message: "Please select type"}]}
                                                     className={`w-80`}
                                                 >
                                                     <Select placeholder="Select Type">
@@ -385,7 +385,7 @@ export default function CompetitionList({ type }: CompetitionListProps) {
                                         ))}
 
                                         {/* 新增一项 Event */}
-                                        <Button type={`text`} onClick={() => add({ code: "", type: "" })}>
+                                        <Button type={`text`} onClick={() => add({code: "", type: ""})}>
                                             <IconPlus /> Add Event
                                         </Button>
                                     </>
@@ -395,27 +395,27 @@ export default function CompetitionList({ type }: CompetitionListProps) {
 
                         <Form.Item label="Age Brackets">
                             <Form.List field="age_brackets">
-                                {(fields, { add, remove }) => (
+                                {(fields, {add, remove}) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <div key={field.key} className="flex gap-2 items-center mb-4">
                                                 <Form.Item
                                                     field={`age_brackets.${index}.name`}
-                                                    rules={[{ required: true }]}
+                                                    rules={[{required: true}]}
                                                     className={`w-80`}
                                                 >
                                                     <Input placeholder="Bracket Name" />
                                                 </Form.Item>
                                                 <Form.Item
                                                     field={`age_brackets.${index}.min_age`}
-                                                    rules={[{ required: true }]}
+                                                    rules={[{required: true}]}
                                                     className={`w-80`}
                                                 >
                                                     <InputNumber placeholder="Min Age" />
                                                 </Form.Item>
                                                 <Form.Item
                                                     field={`age_brackets.${index}.max_age`}
-                                                    rules={[{ required: true }]}
+                                                    rules={[{required: true}]}
                                                     className={`w-80`}
                                                 >
                                                     <InputNumber placeholder="Max Age" />
@@ -434,13 +434,13 @@ export default function CompetitionList({ type }: CompetitionListProps) {
                         </Form.Item>
                         <Form.Item label="Final Criteria">
                             <Form.List field="final_criteria">
-                                {(fields, { add, remove }) => (
+                                {(fields, {add, remove}) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <div key={field.key} className="flex gap-4 items-center mb-4">
                                                 <Form.Item
                                                     field={`final_criteria.${index}.type`}
-                                                    rules={[{ required: true, message: "Please select type" }]}
+                                                    rules={[{required: true, message: "Please select type"}]}
                                                     className={`w-80`}
                                                 >
                                                     <Select placeholder="Select Type">
@@ -450,7 +450,7 @@ export default function CompetitionList({ type }: CompetitionListProps) {
                                                 </Form.Item>
                                                 <Form.Item
                                                     field={`final_criteria.${index}.number`}
-                                                    rules={[{ required: true }]}
+                                                    rules={[{required: true}]}
                                                     className={`w-80`}
                                                 >
                                                     <InputNumber placeholder="Top N" />
@@ -469,27 +469,27 @@ export default function CompetitionList({ type }: CompetitionListProps) {
                         </Form.Item>
                         <Form.Item label="Final Categories">
                             <Form.List field="final_categories">
-                                {(fields, { add, remove }) => (
+                                {(fields, {add, remove}) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <div key={field.key} className="flex gap-4 items-center mb-4">
                                                 <Form.Item
                                                     field={`final_categories.${index}.name`}
-                                                    rules={[{ required: true }]}
+                                                    rules={[{required: true}]}
                                                     className={`w-80`}
                                                 >
                                                     <Input placeholder="Category Name" />
                                                 </Form.Item>
                                                 <Form.Item
                                                     field={`final_categories.${index}.start`}
-                                                    rules={[{ required: true }]}
+                                                    rules={[{required: true}]}
                                                     className={`w-80`}
                                                 >
                                                     <InputNumber placeholder="Start Rank" />
                                                 </Form.Item>
                                                 <Form.Item
                                                     field={`final_categories.${index}.end`}
-                                                    rules={[{ required: true }]}
+                                                    rules={[{required: true}]}
                                                     className={`w-80`}
                                                 >
                                                     <InputNumber placeholder="End Rank" />
