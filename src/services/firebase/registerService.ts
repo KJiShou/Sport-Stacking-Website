@@ -1,11 +1,6 @@
-
-import {
-    collection,
-    Timestamp,
-    addDoc,
-} from "firebase/firestore";
-import type { FirestoreUser, Registration } from "../../schema";
-import { db } from "./config";
+import {collection, Timestamp, addDoc} from "firebase/firestore";
+import type {FirestoreUser, Registration} from "../../schema";
+import {db} from "./config";
 
 export async function createRegistration(user: FirestoreUser, data: Omit<Registration, "id">): Promise<string> {
     if (!user?.roles?.edit_competition) {

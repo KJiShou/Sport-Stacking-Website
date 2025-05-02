@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
-import { Table, Input, Button, Modal, Form, Switch, Message, Spin, type TableColumnProps } from "@arco-design/web-react";
-import { fetchAllUsers, updateUserRoles } from "../../services/firebase/authService";
-import type { FirestoreUser } from "../../schema";
-import { useDeviceBreakpoint } from "../../utils/DeviceInspector";
-import { DeviceBreakpoint } from "../../hooks/DeviceInspector/deviceStore";
+import React, {useEffect, useState} from "react";
+import {Table, Input, Button, Modal, Form, Switch, Message, Spin, type TableColumnProps} from "@arco-design/web-react";
+import {fetchAllUsers, updateUserRoles} from "../../services/firebase/authService";
+import type {FirestoreUser} from "../../schema";
+import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
+import {DeviceBreakpoint} from "../../hooks/DeviceInspector/deviceStore";
 
 type RoleFields = {
     edit_competition: boolean;
@@ -123,7 +123,7 @@ export default function AdminPermissionsPage() {
                             allowClear
                             onClear={() => setSearchText("")}
                             onSearch={(val) => setSearchText(val)}
-                            style={{ maxWidth: 300 }}
+                            style={{maxWidth: 300}}
                         />
 
                         {/* Users table */}
@@ -131,7 +131,7 @@ export default function AdminPermissionsPage() {
                             rowKey="id"
                             data={filtered}
                             columns={columns.filter((e) => !!e)}
-                            pagination={{ pageSize: 10 }}
+                            pagination={{pageSize: 10}}
                             pagePosition="bottomCenter"
                         />
 

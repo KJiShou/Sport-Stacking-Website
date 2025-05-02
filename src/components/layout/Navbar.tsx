@@ -1,21 +1,21 @@
 import * as React from "react";
 
-import { Menu, Avatar, Modal, Button, Dropdown, Message, Spin } from "@arco-design/web-react";
-import { IconHome, IconCalendar, IconUser, IconExport } from "@arco-design/web-react/icon";
-import { useNavigate, useLocation } from "react-router-dom";
+import {Menu, Avatar, Modal, Button, Dropdown, Message, Spin} from "@arco-design/web-react";
+import {IconHome, IconCalendar, IconUser, IconExport} from "@arco-design/web-react/icon";
+import {useNavigate, useLocation} from "react-router-dom";
 import LoginForm from "../common/Login";
-import { useAuthContext } from "../../context/AuthContext";
-import { logout } from "../../services/firebase/authService";
-import { useState } from "react";
+import {useAuthContext} from "../../context/AuthContext";
+import {logout} from "../../services/firebase/authService";
+import {useState} from "react";
 
 interface MenuItem {
     key: string;
     label: string;
 }
 
-const AvatarWithLoading = ({ src }: { src: string }) => {
+const AvatarWithLoading = ({src}: {src: string}) => {
     const [loading, setLoading] = useState(true);
-    const { user } = useAuthContext();
+    const {user} = useAuthContext();
     let image = user?.image_url ?? src;
     React.useEffect(() => {
         image = user?.image_url ?? src;
@@ -28,7 +28,7 @@ const AvatarWithLoading = ({ src }: { src: string }) => {
                     <Spin size={16} />
                 </div>
             )}
-            <Avatar size={40} className="rounded-full overflow-hidden" style={{ visibility: loading ? "hidden" : "visible" }}>
+            <Avatar size={40} className="rounded-full overflow-hidden" style={{visibility: loading ? "hidden" : "visible"}}>
                 <img
                     src={image}
                     alt="avatar"
@@ -48,7 +48,7 @@ const Navbar: React.FC = () => {
     const location = useLocation();
 
     const [visible, setVisible] = React.useState(false);
-    const { firebaseUser, user } = useAuthContext();
+    const {firebaseUser, user} = useAuthContext();
     const providers = firebaseUser?.providerData.map((p) => p.providerId);
     const hasPasswordLinked = providers?.includes("password");
     const isRegisterPage = location.pathname === "/register";
@@ -63,10 +63,10 @@ const Navbar: React.FC = () => {
     }, [firebaseUser]);
 
     const recordsMenuItems: MenuItem[] = [
-        { key: "/records/cycle", label: "Cycle" },
-        { key: "/records/3-6-3", label: "3-6-3" },
-        { key: "/records/3-3-3", label: "3-3-3" },
-        { key: "/records/double", label: "Double" },
+        {key: "/records/cycle", label: "Cycle"},
+        {key: "/records/3-6-3", label: "3-6-3"},
+        {key: "/records/3-3-3", label: "3-3-3"},
+        {key: "/records/double", label: "Double"},
     ];
     return (
         <div className="fixed top-0 left-0 z-50 w-full h-24 flex items-center justify-between px-6 py-4 bg-[var(--color-bg-2)] border-b border-[var(--color-border)]">
@@ -75,7 +75,7 @@ const Navbar: React.FC = () => {
                 defaultOpenKeys={["1"]}
                 selectedKeys={[location.pathname]}
                 onClickMenuItem={handleNavigation}
-                style={{ width: "100%" }}
+                style={{width: "100%"}}
                 mode="horizontal"
             >
                 <MenuItem key="/">
@@ -107,7 +107,7 @@ const Navbar: React.FC = () => {
                         </span>
                     }
                 >
-                    {recordsMenuItems.map(({ key, label }) => (
+                    {recordsMenuItems.map(({key, label}) => (
                         <MenuItem key={key}>{label}</MenuItem>
                     ))}
                 </SubMenu>
@@ -151,7 +151,7 @@ const Navbar: React.FC = () => {
                                 {user.image_url ? (
                                     <AvatarWithLoading src={user.image_url} key={user.image_url} />
                                 ) : (
-                                    <Avatar style={{ backgroundColor: "#3370ff" }}>
+                                    <Avatar style={{backgroundColor: "#3370ff"}}>
                                         <IconUser />
                                     </Avatar>
                                 )}

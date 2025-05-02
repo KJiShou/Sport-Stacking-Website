@@ -1,10 +1,10 @@
 // src/context/AuthContext.tsx
 import type React from "react";
-import { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, type User } from "firebase/auth";
-import { auth, db } from "../services/firebase/config";
-import type { FirestoreUser } from "@/schema/UserSchema";
-import { doc, getDoc } from "firebase/firestore";
+import {createContext, useContext, useEffect, useState} from "react";
+import {onAuthStateChanged, type User} from "firebase/auth";
+import {auth, db} from "../services/firebase/config";
+import type {FirestoreUser} from "@/schema/UserSchema";
+import {doc, getDoc} from "firebase/firestore";
 
 interface AuthContextType {
     user: FirestoreUser | null;
@@ -22,7 +22,7 @@ const AuthContext = createContext<AuthContextType>({
     },
 });
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+export const AuthProvider = ({children}: {children: React.ReactNode}) => {
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return () => unsubscribe();
     }, []);
 
-    return <AuthContext.Provider value={{ user, loading, firebaseUser, setUser }}>{children}</AuthContext.Provider>;
+    return <AuthContext.Provider value={{user, loading, firebaseUser, setUser}}>{children}</AuthContext.Provider>;
 };
 
 export const useAuthContext = () => useContext(AuthContext);

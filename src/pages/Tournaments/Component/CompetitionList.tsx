@@ -324,8 +324,6 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
         fetchCompetitions();
     }, [type]);
 
-
-
     return (
         <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
             <div className="relative w-full flex items-center">

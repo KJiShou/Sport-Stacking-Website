@@ -1,19 +1,19 @@
 // src/pages/RegisterCompetitionPage.tsx
 
-import { useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { Timestamp, addDoc, collection } from "firebase/firestore";
-import { fetchCompetitionById } from "../../../services/firebase/competitionsService";
-import type { Competition, Registration } from "../../../schema";
-import { Typography, Spin, Result, Card, Form, Input, Select, Button, Message } from "@arco-design/web-react";
-import dayjs, { type Dayjs } from "dayjs";
-import { db } from "../../../services/firebase/config";
+import {useParams} from "react-router-dom";
+import {useEffect, useState} from "react";
+import {Timestamp, addDoc, collection} from "firebase/firestore";
+import {fetchCompetitionById} from "../../../services/firebase/competitionsService";
+import type {Competition, Registration} from "../../../schema";
+import {Typography, Spin, Result, Card, Form, Input, Select, Button, Message} from "@arco-design/web-react";
+import dayjs, {type Dayjs} from "dayjs";
+import {db} from "../../../services/firebase/config";
 
-const { Title, Paragraph } = Typography;
+const {Title, Paragraph} = Typography;
 const Option = Select.Option;
 
 export default function RegisterCompetitionPage() {
-    const { competitionId } = useParams();
+    const {competitionId} = useParams();
     const [form] = Form.useForm();
     const [competition, setCompetition] = useState<Competition | null>(null);
     const [loading, setLoading] = useState(true);
@@ -37,7 +37,7 @@ export default function RegisterCompetitionPage() {
         return "-";
     };
 
-    const handleRegister = async (values: { name: string; team?: string; event: string[] }) => {
+    const handleRegister = async (values: {name: string; team?: string; event: string[]}) => {
         if (!competitionId || !competition) return;
 
         const now = dayjs();
@@ -112,7 +112,7 @@ export default function RegisterCompetitionPage() {
                 <Card className="shadow-md">
                     <Title heading={5}>Register for Event</Title>
                     <Form form={form} layout="vertical" onSubmit={handleRegister}>
-                        <Form.Item label="Your Name" field="name" rules={[{ required: true }]}>
+                        <Form.Item label="Your Name" field="name" rules={[{required: true}]}>
                             {" "}
                             <Input placeholder="Enter your name" />{" "}
                         </Form.Item>
@@ -120,10 +120,10 @@ export default function RegisterCompetitionPage() {
                             {" "}
                             <Input placeholder="Enter team name if applicable" />{" "}
                         </Form.Item>
-                        <Form.Item label="Select Event(s)" field="event" rules={[{ required: true }]}>
+                        <Form.Item label="Select Event(s)" field="event" rules={[{required: true}]}>
                             <Select
                                 placeholder="Select an item"
-                                style={{ width: 345, marginRight: 20 }}
+                                style={{width: 345, marginRight: 20}}
                                 mode="multiple"
                                 onChange={(value) => {
                                     if (!competition?.events) return;
