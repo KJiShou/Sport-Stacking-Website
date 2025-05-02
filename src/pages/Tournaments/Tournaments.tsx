@@ -1,7 +1,7 @@
 import type * as React from "react";
 
 import CompetitionList from "./Component/CompetitionList";
-import {useLocation, useParams} from "react-router-dom";
+import { useLocation } from "react-router-dom";
 
 interface CompetitionListProps {
     type: "current" | "history";

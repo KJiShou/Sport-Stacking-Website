@@ -1,11 +1,10 @@
 import React from "react";
-import type {ReactNode} from "react";
-import {Navigate} from "react-router-dom";
-import {useAuthContext} from "../../context/AuthContext";
-import {Spin} from "@arco-design/web-react";
+import type { ReactNode } from "react";
+import { useAuthContext } from "../../context/AuthContext";
+import { Spin } from "@arco-design/web-react";
 
-const ProtectedRoute = ({children}: {children: ReactNode}) => {
-    const {firebaseUser, loading} = useAuthContext();
+const ProtectedRoute = ({ children }: { children: ReactNode }) => {
+    const { loading } = useAuthContext();
 
     if (loading) {
         return (

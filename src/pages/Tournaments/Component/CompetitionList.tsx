@@ -37,23 +37,85 @@ interface CompetitionListProps {
 }
 
 export default function CompetitionList({type}: Readonly<CompetitionListProps>) {
-    const [competitions, setCompetitions] = useState<Competition[]>([]);
-    const [loading, setLoading] = useState(true);
     const {user} = useAuthContext();
+    const [form] = Form.useForm();
+    const deviceBreakpoint = useDeviceBreakpoint();
+    const {RangePicker} = DatePicker;
+
+    const [competitions, setCompetitions] = useState<Competition[]>([]);
+    const [selectedCompetition, setSelectedCompetition] = useState<Competition | null>(null);
+    const [ageBrackets, setAgeBrackets] = useState<AgeBracket[]>([]);
+    const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
 
     const [editModalVisible, setEditModalVisible] = useState(false);
-    const [selectedCompetition, setSelectedCompetition] = useState<Competition | null>(null);
-
     const [loginModalVisible, setLoginModalVisible] = useState(false);
-
-    const {RangePicker} = DatePicker;
-    const [form] = Form.useForm();
-
     const [ageBracketModalVisible, setAgeBracketModalVisible] = useState(false);
-    const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
-    const [ageBrackets, setAgeBrackets] = useState<AgeBracket[]>([]);
 
-    const deviceBreakpoint = useDeviceBreakpoint();
+    const [loading, setLoading] = useState(true);
+
+    const columns: (TableColumnProps<(typeof competitions)[number]> | false)[] = [
+        {
+            title: "Name",
+            dataIndex: "name",
+            width: 200,
+        },
+        {
+            title: "Country / State",
+            dataIndex: "country",
+            width: 300,
+            render: (country: string) => {
+                return `${country[0]} / ${country[1]}`;
+            },
+        },
+        {
+            title: "Start Date",
+            dataIndex: "start_date",
+            width: 200,
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+        },
+        deviceBreakpoint > DeviceBreakpoint.md && {
+            title: "End Date",
+            dataIndex: "end_date",
+            width: 200,
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+        },
+        deviceBreakpoint > DeviceBreakpoint.md && {
+            title: "Status",
+            dataIndex: "status",
+            width: 200,
+            render: (status: string) => {
+                let color: string | undefined;
+                if (status === "Up Coming") {
+                    color = "blue";
+                } else if (status === "On Going") {
+                    color = "green";
+                } else if (status === "Close Registration") {
+                    color = "red";
+                } else if (status === "End") {
+                    color = "gray";
+                } else {
+                    color = undefined;
+                }
+                return <Tag color={color}>{status}</Tag>;
+            },
+        },
+        {
+            title: "Action",
+            dataIndex: "action",
+            width: 150,
+            render: (_: string, competition: Competition) =>
+                user?.roles?.edit_competition ? (
+                    <Button type="primary" size="mini" onClick={() => handleEdit(competition)}>
+                        <IconEdit />
+                        Edit
+                    </Button>
+                ) : (
+                    <Button type="primary" size="mini" onClick={() => handleRegister(competition.id ?? "")}>
+                        Register
+                    </Button>
+                ),
+        },
+    ];
 
     const handleEditAgeBrackets = (index: number) => {
         const currentEvents = form.getFieldValue("events") ?? [];
@@ -111,36 +173,6 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
             setLoading(false);
         }
     };
-
-    useEffect(() => {
-        if (selectedCompetition) {
-            form.setFieldsValue({
-                name: selectedCompetition.name,
-                country: selectedCompetition.country,
-                address: selectedCompetition.address,
-                max_participants: selectedCompetition.max_participants,
-                date_range: [
-                    selectedCompetition.start_date instanceof Timestamp
-                        ? dayjs(selectedCompetition.start_date.toDate())
-                        : dayjs(selectedCompetition.start_date),
-                    selectedCompetition.end_date instanceof Timestamp
-                        ? dayjs(selectedCompetition.end_date.toDate())
-                        : dayjs(selectedCompetition.end_date),
-                ],
-                registration_date_range: [
-                    selectedCompetition.registration_start_date instanceof Timestamp
-                        ? dayjs(selectedCompetition.registration_start_date.toDate())
-                        : dayjs(selectedCompetition.registration_start_date),
-                    selectedCompetition.registration_end_date instanceof Timestamp
-                        ? dayjs(selectedCompetition.registration_end_date.toDate())
-                        : dayjs(selectedCompetition.registration_end_date),
-                ],
-                events: selectedCompetition.events,
-                final_criteria: selectedCompetition.final_criteria,
-                final_categories: selectedCompetition.final_categories,
-            });
-        }
-    }, [selectedCompetition, form]);
 
     const handleCompetitionDateChange = (_: string[], dates: Dayjs[]) => {
         if (!dates || dates.length !== 2) return;
@@ -259,72 +291,40 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
     };
 
     useEffect(() => {
+        if (selectedCompetition) {
+            form.setFieldsValue({
+                name: selectedCompetition.name,
+                country: selectedCompetition.country,
+                address: selectedCompetition.address,
+                max_participants: selectedCompetition.max_participants,
+                date_range: [
+                    selectedCompetition.start_date instanceof Timestamp
+                        ? dayjs(selectedCompetition.start_date.toDate())
+                        : dayjs(selectedCompetition.start_date),
+                    selectedCompetition.end_date instanceof Timestamp
+                        ? dayjs(selectedCompetition.end_date.toDate())
+                        : dayjs(selectedCompetition.end_date),
+                ],
+                registration_date_range: [
+                    selectedCompetition.registration_start_date instanceof Timestamp
+                        ? dayjs(selectedCompetition.registration_start_date.toDate())
+                        : dayjs(selectedCompetition.registration_start_date),
+                    selectedCompetition.registration_end_date instanceof Timestamp
+                        ? dayjs(selectedCompetition.registration_end_date.toDate())
+                        : dayjs(selectedCompetition.registration_end_date),
+                ],
+                events: selectedCompetition.events,
+                final_criteria: selectedCompetition.final_criteria,
+                final_categories: selectedCompetition.final_categories,
+            });
+        }
+    }, [selectedCompetition, form]);
+
+    useEffect(() => {
         fetchCompetitions();
     }, [type]);
 
-    const columns: (TableColumnProps<(typeof competitions)[number]> | false)[] = [
-        {
-            title: "Name",
-            dataIndex: "name",
-            width: 200,
-        },
-        {
-            title: "Country / State",
-            dataIndex: "country",
-            width: 300,
-            render: (country: string) => {
-                return `${country[0]} / ${country[1]}`;
-            },
-        },
-        {
-            title: "Start Date",
-            dataIndex: "start_date",
-            width: 200,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
-        },
-        deviceBreakpoint > DeviceBreakpoint.md && {
-            title: "End Date",
-            dataIndex: "end_date",
-            width: 200,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
-        },
-        deviceBreakpoint > DeviceBreakpoint.md && {
-            title: "Status",
-            dataIndex: "status",
-            width: 200,
-            render: (status: string) => {
-                let color: string | undefined;
-                if (status === "Up Coming") {
-                    color = "blue";
-                } else if (status === "On Going") {
-                    color = "green";
-                } else if (status === "Close Registration") {
-                    color = "red";
-                } else if (status === "End") {
-                    color = "gray";
-                } else {
-                    color = undefined;
-                }
-                return <Tag color={color}>{status}</Tag>;
-            },
-        },
-        {
-            title: "Action",
-            dataIndex: "action",
-            width: 150,
-            render: (_: string, competition: Competition) =>
-                user?.roles?.edit_competition ? (
-                    <Button type="primary" size="mini" onClick={() => handleEdit(competition)}>
-                        <IconEdit />
-                        Edit
-                    </Button>
-                ) : (
-                    <Button type="primary" size="mini" onClick={() => handleRegister(competition.id ?? "")}>
-                        Register
-                    </Button>
-                ),
-        },
-    ];
+
 
     return (
         <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>

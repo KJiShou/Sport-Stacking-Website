@@ -1,33 +1,11 @@
-import type {User} from "firebase/auth";
-import {
-    createUserWithEmailAndPassword,
-    EmailAuthProvider,
-    GoogleAuthProvider,
-    reauthenticateWithCredential,
-    signInWithEmailAndPassword,
-    signInWithPopup,
-    signOut,
-    updatePassword,
-} from "firebase/auth";
-import type {DocumentData, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
+
 import {
     collection,
-    doc,
-    getDoc,
-    getDocs,
-    increment,
-    query,
-    runTransaction,
-    setDoc,
-    where,
-    updateDoc,
     Timestamp,
     addDoc,
-    orderBy,
 } from "firebase/firestore";
-import type {Competition, FirestoreUser, Registration} from "../../schema";
-import {FirestoreUserSchema} from "../../schema";
-import {auth, db} from "./config";
+import type { FirestoreUser, Registration } from "../../schema";
+import { db } from "./config";
 
 export async function createRegistration(user: FirestoreUser, data: Omit<Registration, "id">): Promise<string> {
     if (!user?.roles?.edit_competition) {

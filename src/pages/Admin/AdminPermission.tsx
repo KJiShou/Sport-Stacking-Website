@@ -1,9 +1,9 @@
-import React, {useEffect, useState} from "react";
-import {Table, Input, Button, Modal, Form, Switch, Message, Spin, type TableColumnProps} from "@arco-design/web-react";
-import {fetchAllUsers, updateUserRoles} from "../../services/firebase/authService";
-import type {FirestoreUser} from "../../schema";
-import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
-import {DeviceBreakpoint} from "../../hooks/DeviceInspector/deviceStore";
+import React, { useEffect, useState } from "react";
+import { Table, Input, Button, Modal, Form, Switch, Message, Spin, type TableColumnProps } from "@arco-design/web-react";
+import { fetchAllUsers, updateUserRoles } from "../../services/firebase/authService";
+import type { FirestoreUser } from "../../schema";
+import { useDeviceBreakpoint } from "../../utils/DeviceInspector";
+import { DeviceBreakpoint } from "../../hooks/DeviceInspector/deviceStore";
 
 type RoleFields = {
     edit_competition: boolean;
@@ -20,30 +20,9 @@ export default function AdminPermissionsPage() {
 
     const [modalVisible, setModalVisible] = useState(false);
     const [selected, setSelected] = useState<FirestoreUser | null>(null);
+
     const [form] = Form.useForm<RoleFields>();
     const deviceBreakpoint = useDeviceBreakpoint();
-
-    // 1) load all users
-    const load = async () => {
-        setLoading(true);
-        try {
-            const all = await fetchAllUsers();
-            setUsers(all);
-            setFiltered(all);
-        } finally {
-            setLoading(false);
-        }
-    };
-    useEffect(() => {
-        load();
-    }, []);
-
-    // 2) filter when searchText changes
-    useEffect(() => {
-        const text = searchText.trim().toLowerCase();
-        if (!text) return setFiltered(users);
-        setFiltered(users.filter((u) => u.global_id?.toLowerCase().includes(text) || u.name.toLowerCase().includes(text)));
-    }, [searchText, users]);
 
     // 3) table columns
     const columns: (TableColumnProps<(typeof users)[number]> | false)[] = [
@@ -93,6 +72,29 @@ export default function AdminPermissionsPage() {
         },
     ];
 
+    // 1) load all users
+    const load = async () => {
+        setLoading(true);
+        try {
+            const all = await fetchAllUsers();
+            setUsers(all);
+            setFiltered(all);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        load();
+    }, []);
+
+    // 2) filter when searchText changes
+    useEffect(() => {
+        const text = searchText.trim().toLowerCase();
+        if (!text) return setFiltered(users);
+        setFiltered(users.filter((u) => u.global_id?.toLowerCase().includes(text) || u.name.toLowerCase().includes(text)));
+    }, [searchText, users]);
+
     // 4) handle save in modal
     const handleSave = async () => {
         try {
@@ -102,8 +104,9 @@ export default function AdminPermissionsPage() {
             Message.success("Permissions updated");
             setModalVisible(false);
             load(); // refresh table
-        } catch (err) {
-            // validation or update failure
+        } catch (e) {
+            console.error(e);
+            Message.error("Failed to update permissions");
         }
     };
 
@@ -120,7 +123,7 @@ export default function AdminPermissionsPage() {
                             allowClear
                             onClear={() => setSearchText("")}
                             onSearch={(val) => setSearchText(val)}
-                            style={{maxWidth: 300}}
+                            style={{ maxWidth: 300 }}
                         />
 
                         {/* Users table */}
@@ -128,7 +131,7 @@ export default function AdminPermissionsPage() {
                             rowKey="id"
                             data={filtered}
                             columns={columns.filter((e) => !!e)}
-                            pagination={{pageSize: 10}}
+                            pagination={{ pageSize: 10 }}
                             pagePosition="bottomCenter"
                         />
 
