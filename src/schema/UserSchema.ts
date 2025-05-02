@@ -1,3 +1,4 @@
+import {Timestamp} from "firebase/firestore";
 import {z} from "zod";
 
 export const FirestoreUserSchema = z.object({
@@ -23,6 +24,8 @@ export const FirestoreUserSchema = z.object({
         .nullable(),
     organizer: z.string().optional().nullable(),
     best_times: z.record(z.string(), z.number()).optional(),
+    created_at: z.instanceof(Timestamp).optional().nullable(),
+    updated_at: z.instanceof(Timestamp).optional().nullable(),
 });
 
 export type FirestoreUser = z.infer<typeof FirestoreUserSchema>;

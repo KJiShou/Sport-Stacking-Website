@@ -7,15 +7,15 @@ export const AgeBracketSchema = z.object({
     name: z.string(),
     min_age: z.number(),
     max_age: z.number(),
-    code: z.enum(["3-3-3", "3-6-3", "cycle", "all-around"]),
-    type: z.enum(["individual", "team"]),
 });
 
-// events subcollection
+export type AgeBracket = z.infer<typeof AgeBracketSchema>;
+
 export const EventSchema = z.object({
     code: z.enum(["3-3-3", "3-6-3", "cycle"]),
     type: z.enum(["individual", "team"]),
     teamSize: z.number().optional(),
+    age_brackets: z.array(AgeBracketSchema), // 直接放进每个 event
 });
 
 // final_criteria subcollection
@@ -40,7 +40,6 @@ export const CompetitionSchema = z.object({
     country: z.array(z.string(), z.string()),
     address: z.string(),
 
-    age_brackets: z.array(AgeBracketSchema),
     events: z.array(EventSchema),
     final_criteria: z.array(FinalCriteriaSchema),
     final_categories: z.array(FinalCategorySchema),
@@ -50,6 +49,9 @@ export const CompetitionSchema = z.object({
     status: z.enum(["Up Coming", "On Going", "Close Registration", "End"]).optional().nullable(),
     participants: z.number().optional().nullable(),
     max_participants: z.number().optional().nullable(),
+
+    create_at: z.instanceof(Timestamp).optional().nullable(),
+    updated_at: z.instanceof(Timestamp).optional().nullable(),
 });
 
 export type Competition = z.infer<typeof CompetitionSchema>;

@@ -1,43 +1,69 @@
-import {db} from "../../../services/firebase/config";
-import {addDoc, collection, type Timestamp} from "firebase/firestore";
-import {useState} from "react";
-import {Button, Card, Cascader, DatePicker, Form, Input, InputNumber, Message, Select, Typography} from "@arco-design/web-react";
-import dayjs, {type Dayjs} from "dayjs";
-import type {Competition} from "../../../schema";
-import {IconBackward, IconDelete, IconPlus, IconUndo} from "@arco-design/web-react/icon";
-import {useNavigate} from "react-router-dom";
-import {countries} from "../../../schema/Country";
-import {createCompetition} from "../../../services/firebase/competitionsService";
-import {useAuthContext} from "../../../context/AuthContext";
-import firebase from "firebase/compat/app";
+import type { Timestamp } from "firebase/firestore";
+import { useState } from "react";
+import { Button, Cascader, DatePicker, Form, Input, InputNumber, Message, Modal, Select, Typography } from "@arco-design/web-react";
+import dayjs, { type Dayjs } from "dayjs";
+import type { Competition, AgeBracket } from "../../../schema";
+import { IconDelete, IconEdit, IconPlus, IconUndo } from "@arco-design/web-react/icon";
+import { useNavigate } from "react-router-dom";
+import { countries } from "../../../schema/Country";
+import { createCompetition } from "../../../services/firebase/competitionsService";
+import { useAuthContext } from "../../../context/AuthContext";
 
 type CompetitionFormData = Competition & {
     date_range: [Timestamp, Timestamp];
     registration_date_range: [Timestamp, Timestamp];
 };
 
-const {Title} = Typography;
-const {RangePicker} = DatePicker;
+const { Title } = Typography;
+const { RangePicker } = DatePicker;
 const DEFAULT_EVENTS: Competition["events"] = [
-    {code: "3-3-3", type: "individual"},
-    {code: "3-6-3", type: "individual"},
-    {code: "cycle", type: "individual"},
-];
-
-const DEFAULT_AGE_BRACKETS: Competition["age_brackets"] = [
     {
-        name: "Under 10",
-        min_age: 0,
-        max_age: 9,
         code: "3-3-3",
         type: "individual",
+        age_brackets: [
+            {
+                name: "Under 10",
+                min_age: 0,
+                max_age: 9,
+            },
+            {
+                name: "10 and Above",
+                min_age: 10,
+                max_age: 99,
+            },
+        ],
     },
     {
-        name: "10 and Above",
-        min_age: 10,
-        max_age: 99,
-        code: "3-3-3",
+        code: "3-6-3",
         type: "individual",
+        age_brackets: [
+            {
+                name: "Under 10",
+                min_age: 0,
+                max_age: 9,
+            },
+            {
+                name: "10 and Above",
+                min_age: 10,
+                max_age: 99,
+            },
+        ],
+    },
+    {
+        code: "cycle",
+        type: "individual",
+        age_brackets: [
+            {
+                name: "Under 10",
+                min_age: 0,
+                max_age: 9,
+            },
+            {
+                name: "10 and Above",
+                min_age: 10,
+                max_age: 99,
+            },
+        ],
     },
 ];
 
@@ -65,7 +91,56 @@ export default function CreateCompetitionPage() {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
-    const {user, firebaseUser, setUser} = useAuthContext();
+    const { user } = useAuthContext();
+
+    const [ageBracketModalVisible, setAgeBracketModalVisible] = useState(false);
+    const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
+    const [ageBrackets, setAgeBrackets] = useState<AgeBracket[]>([]);
+
+    const handleEditAgeBrackets = (index: number) => {
+        const currentEvents = form.getFieldValue("events") ?? [];
+        setEditingEventIndex(index);
+        setAgeBrackets(currentEvents[index]?.age_brackets ?? []);
+        setAgeBracketModalVisible(true);
+    };
+
+    const makeHandleDeleteBracket = (idx: number) => {
+        return () => {
+            setAgeBrackets((prev) => prev.filter((_, i) => i !== idx));
+        };
+    };
+
+    const handleSaveAgeBrackets = () => {
+        if (editingEventIndex === null) {
+            Message.error("No event selected");
+            return;
+        }
+
+        for (const [i, bracket] of ageBrackets.entries()) {
+            if (!bracket.name || bracket.min_age === null || bracket.max_age === null || bracket.min_age > bracket.max_age) {
+                Message.error(`Please fill in all fields correctly for bracket ${i + 1}.`);
+                return;
+            }
+        }
+
+        const usedAges = new Set<number>();
+        for (const bracket of ageBrackets) {
+            for (let age = bracket.min_age; age <= bracket.max_age; age++) {
+                if (usedAges.has(age)) {
+                    Message.error(`Age conflict detected: Age ${age} appears in multiple brackets.`);
+                    return;
+                }
+                usedAges.add(age);
+            }
+        }
+
+        const currentEvents = [...(form.getFieldValue("events") ?? [])];
+        currentEvents[editingEventIndex].age_brackets = ageBrackets;
+
+        form.setFieldValue("events", currentEvents);
+        setAgeBracketModalVisible(false);
+        setEditingEventIndex(null);
+    };
 
     const handleCompetitionDateChange = (_: string[], dates: Dayjs[]) => {
         if (!dates || dates.length !== 2) return;
@@ -73,7 +148,6 @@ export default function CreateCompetitionPage() {
         const [startDate, endDate] = dates;
 
         const today = dayjs();
-        const competitionStart = startDate;
 
         // 👉 先智能修正 start/end 时间
         const fixedStart =
@@ -119,6 +193,8 @@ export default function CreateCompetitionPage() {
 
         try {
             if (!user) return;
+
+            const fullEvents: Competition["events"] = form.getFieldValue("events");
             await createCompetition(user, {
                 name: values.name,
                 start_date: values.date_range[0],
@@ -128,8 +204,7 @@ export default function CreateCompetitionPage() {
                 registration_start_date: values.registration_date_range[0],
                 registration_end_date: values.registration_date_range[1],
                 max_participants: values.max_participants,
-                age_brackets: values.age_brackets,
-                events: values.events,
+                events: fullEvents,
                 final_criteria: values.final_criteria,
                 final_categories: values.final_categories,
                 status: "Up Coming",
@@ -165,7 +240,6 @@ export default function CreateCompetitionPage() {
                     onSubmit={handleSubmit}
                     initialValues={{
                         events: DEFAULT_EVENTS,
-                        age_brackets: DEFAULT_AGE_BRACKETS,
                         final_criteria: DEFAULT_FINAL_CRITERIA,
                         final_categories: DEFAULT_FINAL_CATEGORIES,
                         max_participants: 100,
@@ -173,7 +247,7 @@ export default function CreateCompetitionPage() {
                     requiredSymbol={false}
                 >
                     {/* Competition Name */}
-                    <Form.Item label="Competition Name" field="name" rules={[{required: true, message: "Please input name"}]}>
+                    <Form.Item label="Competition Name" field="name" rules={[{ required: true, message: "Please input name" }]}>
                         <Input placeholder="Enter competition name" />
                     </Form.Item>
 
@@ -181,14 +255,14 @@ export default function CreateCompetitionPage() {
                     <Form.Item
                         label="Competition Date Range"
                         field="date_range"
-                        rules={[{required: true, message: "Please select date range"}]}
+                        rules={[{ required: true, message: "Please select date range" }]}
                     >
                         <RangePicker
                             showTime={{
                                 defaultValue: ["08:00", "18:00"],
                                 format: "HH:mm",
                             }}
-                            style={{width: "100%"}}
+                            style={{ width: "100%" }}
                             disabledDate={(current) => {
                                 const today = dayjs();
                                 return current?.isBefore(today.add(7, "day"), "day");
@@ -200,7 +274,7 @@ export default function CreateCompetitionPage() {
                     <Form.Item
                         label="Country / State"
                         field="country"
-                        rules={[{required: true, message: "Please select a country/region"}]}
+                        rules={[{ required: true, message: "Please select a country/region" }]}
                     >
                         <Cascader
                             showSearch
@@ -216,7 +290,7 @@ export default function CreateCompetitionPage() {
                     </Form.Item>
 
                     {/* Address */}
-                    <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
+                    <Form.Item label="Address" field="address" rules={[{ required: true, message: "Please input address" }]}>
                         <Input placeholder="Enter address" />
                     </Form.Item>
 
@@ -224,14 +298,14 @@ export default function CreateCompetitionPage() {
                     <Form.Item
                         label="Registration Date Range"
                         field="registration_date_range"
-                        rules={[{required: true, message: "Please input registration date"}]}
+                        rules={[{ required: true, message: "Please input registration date" }]}
                     >
                         <RangePicker
                             showTime={{
                                 defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                 format: "HH:mm",
                             }}
-                            style={{width: "100%"}}
+                            style={{ width: "100%" }}
                             disabledDate={(current) => current?.isBefore(dayjs(), "day")}
                             onChange={handleRangeChangeSmart("registration_date_range")}
                         />
@@ -241,50 +315,51 @@ export default function CreateCompetitionPage() {
                     <Form.Item
                         label="Maximum Participants"
                         field="max_participants"
-                        rules={[{required: true, message: "Please input maximum participants"}]}
+                        rules={[{ required: true, message: "Please input maximum participants" }]}
                     >
-                        <InputNumber min={1} style={{width: "100%"}} placeholder="Enter max number of participants" />
+                        <InputNumber min={1} style={{ width: "100%" }} placeholder="Enter max number of participants" />
                     </Form.Item>
 
-                    <Form.Item label="Events" className={`flex flex-col gap-4`}>
+                    <Form.Item label="Events">
                         <Form.List field="events">
-                            {(fields, {add, remove}) => (
+                            {(fields, { add, remove }) => (
                                 <>
                                     {fields.map((field, index) => (
-                                        <div key={field.key} className="flex gap-4 items-center mb-4">
-                                            {/* Event Code 选择 */}
+                                        <div key={field.key} className="flex items-center gap-2 mb-4">
                                             <Form.Item
                                                 field={`events.${index}.code`}
-                                                rules={[{required: true, message: "Please select event code"}]}
-                                                className={`w-80`}
+                                                className="w-1/4"
+                                                rules={[{ required: true }]}
                                             >
-                                                <Select placeholder="Select Code">
+                                                <Select placeholder="Code">
                                                     <Select.Option value="3-3-3">3-3-3</Select.Option>
                                                     <Select.Option value="3-6-3">3-6-3</Select.Option>
                                                     <Select.Option value="cycle">Cycle</Select.Option>
                                                 </Select>
                                             </Form.Item>
-
-                                            {/* Type 选择 */}
                                             <Form.Item
                                                 field={`events.${index}.type`}
-                                                rules={[{required: true, message: "Please select type"}]}
-                                                className={`w-80`}
+                                                className="w-1/4"
+                                                rules={[{ required: true }]}
                                             >
-                                                <Select placeholder="Select Type">
+                                                <Select placeholder="Type">
                                                     <Select.Option value="individual">Individual</Select.Option>
                                                     <Select.Option value="team">Team</Select.Option>
                                                 </Select>
                                             </Form.Item>
-
+                                            <Button
+                                                type="primary"
+                                                className={`mb-8`}
+                                                onClick={() => handleEditAgeBrackets(index)}
+                                            >
+                                                <IconEdit /> Age Brackets
+                                            </Button>
                                             <Button status="danger" onClick={() => remove(index)} className={`mb-8`}>
                                                 <IconDelete />
                                             </Button>
                                         </div>
                                     ))}
-
-                                    {/* 新增一项 Event */}
-                                    <Button type={`text`} onClick={() => add({code: "", type: ""})}>
+                                    <Button type="text" onClick={() => add({ code: "", type: "", age_brackets: [] })}>
                                         <IconPlus /> Add Event
                                     </Button>
                                 </>
@@ -292,54 +367,125 @@ export default function CreateCompetitionPage() {
                         </Form.List>
                     </Form.Item>
 
-                    <Form.Item label="Age Brackets">
-                        <Form.List field="age_brackets">
-                            {(fields, {add, remove}) => (
-                                <>
-                                    {fields.map((field, index) => (
-                                        <div key={field.key} className="flex gap-2 items-center mb-4">
-                                            <Form.Item
-                                                field={`age_brackets.${index}.name`}
-                                                rules={[{required: true}]}
-                                                className={`w-80`}
-                                            >
-                                                <Input placeholder="Bracket Name" />
-                                            </Form.Item>
-                                            <Form.Item
-                                                field={`age_brackets.${index}.min_age`}
-                                                rules={[{required: true}]}
-                                                className={`w-80`}
-                                            >
-                                                <InputNumber placeholder="Min Age" />
-                                            </Form.Item>
-                                            <Form.Item
-                                                field={`age_brackets.${index}.max_age`}
-                                                rules={[{required: true}]}
-                                                className={`w-80`}
-                                            >
-                                                <InputNumber placeholder="Max Age" />
-                                            </Form.Item>
-                                            <Button status="danger" onClick={() => remove(index)} className={`mb-8`}>
-                                                <IconDelete />
-                                            </Button>
-                                        </div>
-                                    ))}
-                                    <Button type={`text`} onClick={() => add()}>
-                                        <IconPlus /> Add Age Bracket
-                                    </Button>
-                                </>
-                            )}
+                    {/* Age Bracket Modal */}
+                    <Modal
+                        title="Edit Age Brackets"
+                        visible={ageBracketModalVisible}
+                        onCancel={() => setAgeBracketModalVisible(false)}
+                        onOk={handleSaveAgeBrackets}
+                    >
+                        <Form.List field="age_brackets_modal">
+                            {(fields, { add, remove }) => {
+                                return (
+                                    <>
+                                        {ageBrackets.map((bracket, index) => {
+                                            const isMinError = bracket.min_age === null || bracket.min_age > bracket.max_age;
+
+                                            let minAgeHelp: string | undefined;
+                                            if (bracket.min_age === null) {
+                                                minAgeHelp = "Enter min age";
+                                            } else if (bracket.min_age > bracket.max_age) {
+                                                minAgeHelp = "Min age > Max age";
+                                            }
+
+                                            // 2）再计算 Max Age 的校验状态和提示文字
+                                            const isMaxError = bracket.max_age === null || bracket.max_age < bracket.min_age;
+
+                                            let maxAgeHelp: string | undefined;
+                                            if (bracket.max_age === null) {
+                                                maxAgeHelp = "Enter max age";
+                                            } else if (bracket.max_age < bracket.min_age) {
+                                                maxAgeHelp = "Max age < Min age";
+                                            }
+                                            return (
+                                                <div key={bracket.name} className="flex gap-4 mb-4 w-full">
+                                                    <Form.Item
+                                                        label="Bracket Name"
+                                                        required
+                                                        validateStatus={!bracket.name ? "error" : undefined}
+                                                        help={!bracket.name ? "Please enter bracket name" : undefined}
+                                                        className="w-1/3"
+                                                    >
+                                                        <Input
+                                                            value={bracket.name}
+                                                            onChange={(v) => {
+                                                                const updated = [...ageBrackets];
+                                                                updated[index].name = v;
+                                                                setAgeBrackets(updated);
+                                                            }}
+                                                            placeholder="Bracket Name"
+                                                        />
+                                                    </Form.Item>
+                                                    <Form.Item
+                                                        label="Min Age"
+                                                        required
+                                                        validateStatus={isMinError ? "error" : undefined}
+                                                        help={minAgeHelp}
+                                                        className="w-1/4"
+                                                    >
+                                                        <InputNumber
+                                                            value={bracket.min_age}
+                                                            min={0}
+                                                            onChange={(v) => {
+                                                                const updated = [...ageBrackets];
+                                                                updated[index].min_age = v ?? 0;
+                                                                setAgeBrackets(updated);
+                                                            }}
+                                                            placeholder="Min Age"
+                                                        />
+                                                    </Form.Item>
+                                                    <Form.Item
+                                                        label="Max Age"
+                                                        required
+                                                        validateStatus={isMaxError ? "error" : undefined}
+                                                        help={maxAgeHelp}
+                                                        className="w-1/4"
+                                                    >
+                                                        <InputNumber
+                                                            value={bracket.max_age}
+                                                            min={0}
+                                                            onChange={(v) => {
+                                                                const updated = [...ageBrackets];
+                                                                updated[index].max_age = v ?? 0;
+                                                                setAgeBrackets(updated);
+                                                            }}
+                                                            placeholder="Max Age"
+                                                        />
+                                                    </Form.Item>
+                                                    <div className="flex items-end pb-8">
+                                                        <Button status="danger" onClick={makeHandleDeleteBracket(index)}>
+                                                            <IconDelete />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        <Button
+                                            type="text"
+                                            onClick={() =>
+                                                setAgeBrackets([
+                                                    ...ageBrackets,
+                                                    { name: "", min_age: 0, max_age: 0 },
+                                                ])
+                                            }
+                                        >
+                                            <IconPlus /> Add Bracket
+                                        </Button>
+                                    </>
+                                );
+                            }}
                         </Form.List>
-                    </Form.Item>
+                    </Modal>
+
                     <Form.Item label="Final Criteria">
                         <Form.List field="final_criteria">
-                            {(fields, {add, remove}) => (
+                            {(fields, { add, remove }) => (
                                 <>
                                     {fields.map((field, index) => (
                                         <div key={field.key} className="flex gap-4 items-center mb-4">
                                             <Form.Item
                                                 field={`final_criteria.${index}.type`}
-                                                rules={[{required: true, message: "Please select type"}]}
+                                                rules={[{ required: true, message: "Please select type" }]}
                                                 className={`w-80`}
                                             >
                                                 <Select placeholder="Select Type">
@@ -349,7 +495,7 @@ export default function CreateCompetitionPage() {
                                             </Form.Item>
                                             <Form.Item
                                                 field={`final_criteria.${index}.number`}
-                                                rules={[{required: true}]}
+                                                rules={[{ required: true }]}
                                                 className={`w-80`}
                                             >
                                                 <InputNumber placeholder="Top N" />
@@ -368,27 +514,27 @@ export default function CreateCompetitionPage() {
                     </Form.Item>
                     <Form.Item label="Final Categories">
                         <Form.List field="final_categories">
-                            {(fields, {add, remove}) => (
+                            {(fields, { add, remove }) => (
                                 <>
                                     {fields.map((field, index) => (
                                         <div key={field.key} className="flex gap-4 items-center mb-4">
                                             <Form.Item
                                                 field={`final_categories.${index}.name`}
-                                                rules={[{required: true}]}
+                                                rules={[{ required: true }]}
                                                 className={`w-80`}
                                             >
                                                 <Input placeholder="Category Name" />
                                             </Form.Item>
                                             <Form.Item
                                                 field={`final_categories.${index}.start`}
-                                                rules={[{required: true}]}
+                                                rules={[{ required: true }]}
                                                 className={`w-80`}
                                             >
                                                 <InputNumber placeholder="Start Rank" />
                                             </Form.Item>
                                             <Form.Item
                                                 field={`final_categories.${index}.end`}
-                                                rules={[{required: true}]}
+                                                rules={[{ required: true }]}
                                                 className={`w-80`}
                                             >
                                                 <InputNumber placeholder="End Rank" />

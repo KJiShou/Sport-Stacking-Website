@@ -15,6 +15,7 @@ extensions=(
     "wix.vscode-import-cost"
     "dsznajder.es7-react-js-snippets"
     "eamodio.gitlens"
+    "SonarSource.sonarlint-vscode"
 )
 
 # Install each extension
@@ -23,4 +24,4 @@ do
     echo "Installing $extension..."
 done
 
-echo "All extensions have been installed!" 
+echo "All extensions have been installed!"

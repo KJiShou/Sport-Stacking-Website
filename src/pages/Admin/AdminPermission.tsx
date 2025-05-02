@@ -51,7 +51,7 @@ export default function AdminPermissionsPage() {
             title: "Account ID",
             dataIndex: "global_id",
             width: 180,
-            sorter: (a, b) => (a.global_id || "").localeCompare(b.global_id || ""),
+            sorter: (a, b) => (a.global_id ?? "").localeCompare(b.global_id ?? ""),
             defaultSortOrder: "ascend",
         },
         {
@@ -64,7 +64,7 @@ export default function AdminPermissionsPage() {
             title: "Email",
             dataIndex: "email",
             width: 300,
-            sorter: (a, b) => (a.email || "").localeCompare(b.email || ""),
+            sorter: (a, b) => (a.email ?? "").localeCompare(b.email ?? ""),
         },
         {
             title: "Actions",
