@@ -16,9 +16,9 @@ import {
     orderBy,
     Query,
 } from "firebase/firestore";
-import type { Competition, FirestoreUser } from "../../schema";
-import { FirestoreUserSchema } from "../../schema";
-import { auth, db } from "./config";
+import type {Competition, FirestoreUser} from "../../schema";
+import {FirestoreUserSchema} from "../../schema";
+import {auth, db} from "./config";
 
 export async function createCompetition(user: FirestoreUser, data: Omit<Competition, "id">): Promise<string> {
     if (!user?.roles?.edit_competition) {
@@ -117,7 +117,7 @@ export async function fetchCompetitionById(competitionId: string): Promise<Compe
             return null;
         }
 
-        return { ...docSnap.data() } as Competition;
+        return {...docSnap.data()} as Competition;
     } catch (error) {
         console.error("Error fetching competition:", error);
         throw error;
