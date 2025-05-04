@@ -1,4 +1,4 @@
-import type {AgeBracket} from "../../schema";
+import type {AgeBracket} from "@/schema";
 
 export function validateAgeBrackets(brackets: AgeBracket[]): string | null {
     for (const [i, bracket] of brackets.entries()) {
