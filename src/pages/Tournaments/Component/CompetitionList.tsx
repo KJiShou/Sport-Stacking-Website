@@ -1,4 +1,3 @@
-import {Timestamp} from "firebase/firestore";
 import {
     Button,
     Cascader,
@@ -8,29 +7,30 @@ import {
     InputNumber,
     Message,
     Modal,
-    Select,
     Table,
     type TableColumnProps,
     Tag,
     Typography,
 } from "@arco-design/web-react";
+import {IconEdit, IconPlus} from "@arco-design/web-react/icon";
+import dayjs from "dayjs";
+import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
-import type {AgeBracket, Competition} from "../../../schema"; // 就是你那个 CompetitionSchema infer出来的type
-import {useAuthContext} from "../../../context/AuthContext";
-import {IconDelete, IconEdit, IconPlus} from "@arco-design/web-react/icon";
-import {countries} from "../../../schema/Country";
-import dayjs, {type Dayjs} from "dayjs";
-import {fetchCompetitionsByType, updateCompetition} from "../../../services/firebase/competitionsService";
 import LoginForm from "../../../components/common/Login";
+import {useAuthContext} from "../../../context/AuthContext";
+import type {Competition} from "../../../schema"; // 就是你那个 CompetitionSchema infer出来的type
+import {countries} from "../../../schema/Country";
+import {fetchCompetitionsByType, updateCompetition} from "../../../services/firebase/competitionsService";
 
-import {useDeviceBreakpoint} from "../../../utils/DeviceInspector";
-import {DeviceBreakpoint} from "../../../hooks/DeviceInspector/deviceStore";
 import {useSmartDateHandlers} from "../../../hooks/DateHandler/useSmartDateHandlers";
+import {DeviceBreakpoint} from "../../../hooks/DeviceInspector/deviceStore";
+import {useDeviceBreakpoint} from "../../../utils/DeviceInspector";
 import AgeBracketModal from "./AgeBracketModal";
 import EventFields from "./EventField";
-import FinalCriteriaFields from "./FinalCriteriaFields";
 import FinalCategoriesFields from "./FinalCategoriesFields";
-import {validateAgeBrackets} from "../../../utils/validation/validateAgeBrackets";
+import FinalCriteriaFields from "./FinalCriteriaFields";
+import {useAgeBracketEditor} from "./useAgeBracketEditor";
+import {useCompetitionFormPrefill} from "./useCompetitionFormPrefill";
 
 const {Title, Paragraph} = Typography;
 type CompetitionFormData = Competition & {
@@ -50,15 +50,25 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
 
     const {RangePicker} = DatePicker;
 
-    const [competitions, setCompetitions] = useState<Competition[]>([]);
+    const {
+        ageBracketModalVisible,
+        ageBrackets,
+        setAgeBrackets,
+        handleEditAgeBrackets,
+        handleSaveAgeBrackets,
+        makeHandleDeleteBracket,
+        setAgeBracketModalVisible,
+    } = useAgeBracketEditor(form);
+
+    useCompetitionFormPrefill(form);
     const [selectedCompetition, setSelectedCompetition] = useState<Competition | null>(null);
+
+    const [competitions, setCompetitions] = useState<Competition[]>([]);
 
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [loginModalVisible, setLoginModalVisible] = useState(false);
 
     const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
-    const [ageBrackets, setAgeBrackets] = useState<AgeBracket[]>([]);
-    const [ageBracketModalVisible, setAgeBracketModalVisible] = useState(false);
 
     const [loading, setLoading] = useState(true);
 
@@ -125,38 +135,6 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                 ),
         },
     ];
-
-    const handleEditAgeBrackets = (index: number) => {
-        const currentEvents = form.getFieldValue("events") ?? [];
-        setEditingEventIndex(index);
-        setAgeBrackets(currentEvents[index]?.age_brackets ?? []);
-        setAgeBracketModalVisible(true);
-    };
-
-    const handleSaveAgeBrackets = () => {
-        if (editingEventIndex === null) {
-            Message.error("No event selected");
-            return;
-        }
-
-        const errorMessage = validateAgeBrackets(ageBrackets);
-        if (errorMessage) {
-            Message.error(errorMessage);
-            return;
-        }
-
-        const currentEvents = [...(form.getFieldValue("events") ?? [])];
-        currentEvents[editingEventIndex].age_brackets = ageBrackets;
-        form.setFieldValue("events", currentEvents);
-        setAgeBracketModalVisible(false);
-        setEditingEventIndex(null);
-    };
-
-    const makeHandleDeleteBracket = (idx: number) => {
-        return () => {
-            setAgeBrackets((prev) => prev.filter((_, i) => i !== idx));
-        };
-    };
 
     const fetchCompetitions = async () => {
         setLoading(true);

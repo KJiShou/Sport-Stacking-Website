@@ -15,6 +15,8 @@ import FinalCriteriaFields from "../Component/FinalCriteriaFields";
 import FinalCategoriesFields from "../Component/FinalCategoriesFields";
 import {DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES} from "../../../constants/competitionDefaults";
 import {validateAgeBrackets} from "../../../utils/validation/validateAgeBrackets";
+import {useCompetitionFormPrefill} from "../Component/useCompetitionFormPrefill";
+import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
 
 type CompetitionFormData = Competition & {
     date_range: [Timestamp, Timestamp];
@@ -29,44 +31,20 @@ export default function CreateCompetitionPage() {
     const navigate = useNavigate();
     const {user} = useAuthContext();
     const {handleCompetitionDateChange, handleRangeChangeSmart} = useSmartDateHandlers(form);
+    const {
+        ageBracketModalVisible,
+        ageBrackets,
+        setAgeBrackets,
+        handleEditAgeBrackets,
+        handleSaveAgeBrackets,
+        makeHandleDeleteBracket,
+        setAgeBracketModalVisible,
+    } = useAgeBracketEditor(form);
+
+    useCompetitionFormPrefill(form);
 
     const [loading, setLoading] = useState(false);
-    const [ageBracketModalVisible, setAgeBracketModalVisible] = useState(false);
     const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
-    const [ageBrackets, setAgeBrackets] = useState<AgeBracket[]>([]);
-
-    const handleEditAgeBrackets = (index: number) => {
-        const currentEvents = form.getFieldValue("events") ?? [];
-        setEditingEventIndex(index);
-        setAgeBrackets(currentEvents[index]?.age_brackets ?? []);
-        setAgeBracketModalVisible(true);
-    };
-
-    const makeHandleDeleteBracket = (idx: number) => {
-        return () => {
-            setAgeBrackets((prev) => prev.filter((_, i) => i !== idx));
-        };
-    };
-
-    const handleSaveAgeBrackets = () => {
-        if (editingEventIndex === null) {
-            Message.error("No event selected");
-            return;
-        }
-
-        const errorMessage = validateAgeBrackets(ageBrackets);
-        if (errorMessage) {
-            Message.error(errorMessage);
-            return;
-        }
-
-        const currentEvents = [...(form.getFieldValue("events") ?? [])];
-        currentEvents[editingEventIndex].age_brackets = ageBrackets;
-
-        form.setFieldValue("events", currentEvents);
-        setAgeBracketModalVisible(false);
-        setEditingEventIndex(null);
-    };
 
     const handleSubmit = async (values: CompetitionFormData) => {
         setLoading(true);
