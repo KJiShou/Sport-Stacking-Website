@@ -8,6 +8,9 @@ import {useNavigate} from "react-router-dom";
 import {countries} from "../../../schema/Country";
 import {createCompetition} from "../../../services/firebase/competitionsService";
 import {useAuthContext} from "../../../context/AuthContext";
+import {useSmartDateHandlers} from "../../../hooks/DateHandler/useSmartDateHandlers";
+import AgeBracketModal from "../Component/AgeBracketModal";
+import EventFields from "../Component/EventField";
 
 type CompetitionFormData = Competition & {
     date_range: [Timestamp, Timestamp];
@@ -92,6 +95,7 @@ export default function CreateCompetitionPage() {
     const [form] = Form.useForm();
     const navigate = useNavigate();
     const {user} = useAuthContext();
+    const {handleCompetitionDateChange, handleRangeChangeSmart} = useSmartDateHandlers(form);
 
     const [loading, setLoading] = useState(false);
     const [ageBracketModalVisible, setAgeBracketModalVisible] = useState(false);
@@ -141,52 +145,6 @@ export default function CreateCompetitionPage() {
         form.setFieldValue("events", currentEvents);
         setAgeBracketModalVisible(false);
         setEditingEventIndex(null);
-    };
-
-    const handleCompetitionDateChange = (_: string[], dates: Dayjs[]) => {
-        if (!dates || dates.length !== 2) return;
-
-        const [startDate, endDate] = dates;
-
-        const today = dayjs();
-
-        // 👉 先智能修正 start/end 时间
-        const fixedStart =
-            startDate.hour() === 0 && startDate.minute() === 0 && startDate.second() === 0
-                ? startDate.hour(8).minute(0).second(0)
-                : startDate;
-
-        const fixedEnd =
-            endDate.hour() === 0 && endDate.minute() === 0 && endDate.second() === 0
-                ? endDate.hour(18).minute(0).second(0)
-                : endDate;
-
-        const oneMonthBefore = fixedStart.subtract(1, "month");
-        const oneWeekBefore = fixedEnd.subtract(7, "day");
-
-        const registrationStart = oneMonthBefore.isBefore(today) ? today : oneMonthBefore;
-        const registrationEnd = oneWeekBefore;
-
-        form.setFieldValue("date_range", [fixedStart.toDate(), fixedEnd.toDate()]);
-
-        // 👉 只有当 registration_date_range 还没选过的时候才自动 set
-        const currentRegistration = form.getFieldValue("registration_date_range");
-        if (!currentRegistration || currentRegistration.length !== 2) {
-            form.setFieldValue("registration_date_range", [registrationStart.toDate(), registrationEnd.toDate()]);
-        }
-    };
-
-    const handleRangeChangeSmart = (fieldName: string) => (_: string[], dates: Dayjs[]) => {
-        if (!dates || dates.length !== 2) return;
-
-        const [start, end] = dates;
-
-        const fixedStart =
-            start.hour() === 0 && start.minute() === 0 && start.second() === 0 ? start.hour(8).minute(0).second(0) : start;
-
-        const fixedEnd = end.hour() === 0 && end.minute() === 0 && end.second() === 0 ? end.hour(18).minute(0).second(0) : end;
-
-        form.setFieldValue(fieldName, [fixedStart.toDate(), fixedEnd.toDate()]);
     };
 
     const handleSubmit = async (values: CompetitionFormData) => {
@@ -321,157 +279,33 @@ export default function CreateCompetitionPage() {
                         <InputNumber min={1} style={{width: "100%"}} placeholder="Enter max number of participants" />
                     </Form.Item>
 
-                    <Form.Item label="Events">
-                        <Form.List field="events">
-                            {(fields, {add, remove}) => (
-                                <>
-                                    {fields.map((field, index) => (
-                                        <div key={field.key} className="flex items-center gap-2 mb-4">
-                                            <Form.Item
-                                                field={`events.${index}.code`}
-                                                className="w-1/4"
-                                                rules={[{required: true}]}
-                                            >
-                                                <Select placeholder="Code">
-                                                    <Select.Option value="3-3-3">3-3-3</Select.Option>
-                                                    <Select.Option value="3-6-3">3-6-3</Select.Option>
-                                                    <Select.Option value="cycle">Cycle</Select.Option>
-                                                </Select>
-                                            </Form.Item>
-                                            <Form.Item
-                                                field={`events.${index}.type`}
-                                                className="w-1/4"
-                                                rules={[{required: true}]}
-                                            >
-                                                <Select placeholder="Type">
-                                                    <Select.Option value="individual">Individual</Select.Option>
-                                                    <Select.Option value="team">Team</Select.Option>
-                                                </Select>
-                                            </Form.Item>
-                                            <Button
-                                                type="primary"
-                                                className={`mb-8`}
-                                                onClick={() => handleEditAgeBrackets(index)}
-                                            >
-                                                <IconEdit /> Age Brackets
-                                            </Button>
-                                            <Button status="danger" onClick={() => remove(index)} className={`mb-8`}>
-                                                <IconDelete />
-                                            </Button>
-                                        </div>
-                                    ))}
-                                    <Button type="text" onClick={() => add({code: "", type: "", age_brackets: []})}>
-                                        <IconPlus /> Add Event
-                                    </Button>
-                                </>
-                            )}
-                        </Form.List>
-                    </Form.Item>
+                    <Form.List field="events">
+                        {(fields, {add, remove}) => (
+                            <>
+                                {fields.map((field, index) => (
+                                    <EventFields
+                                        key={field.key}
+                                        index={index}
+                                        onEditAgeBrackets={handleEditAgeBrackets}
+                                        onRemove={remove}
+                                    />
+                                ))}
+                                <Button type="text" onClick={() => add({code: "", type: "", age_brackets: []})}>
+                                    <IconPlus /> Add Event
+                                </Button>
+                            </>
+                        )}
+                    </Form.List>
 
                     {/* Age Bracket Modal */}
-                    <Modal
-                        title="Edit Age Brackets"
+                    <AgeBracketModal
                         visible={ageBracketModalVisible}
+                        brackets={ageBrackets}
+                        onChange={setAgeBrackets}
+                        onDeleteBracket={makeHandleDeleteBracket}
                         onCancel={() => setAgeBracketModalVisible(false)}
-                        onOk={handleSaveAgeBrackets}
-                    >
-                        <Form.List field="age_brackets_modal">
-                            {(fields, {add, remove}) => {
-                                return (
-                                    <>
-                                        {ageBrackets.map((bracket, index) => {
-                                            const isMinError = bracket.min_age === null || bracket.min_age > bracket.max_age;
-
-                                            let minAgeHelp: string | undefined;
-                                            if (bracket.min_age === null) {
-                                                minAgeHelp = "Enter min age";
-                                            } else if (bracket.min_age > bracket.max_age) {
-                                                minAgeHelp = "Min age > Max age";
-                                            }
-
-                                            // 2）再计算 Max Age 的校验状态和提示文字
-                                            const isMaxError = bracket.max_age === null || bracket.max_age < bracket.min_age;
-
-                                            let maxAgeHelp: string | undefined;
-                                            if (bracket.max_age === null) {
-                                                maxAgeHelp = "Enter max age";
-                                            } else if (bracket.max_age < bracket.min_age) {
-                                                maxAgeHelp = "Max age < Min age";
-                                            }
-                                            return (
-                                                <div key={bracket.name} className="flex gap-4 mb-4 w-full">
-                                                    <Form.Item
-                                                        label="Bracket Name"
-                                                        required
-                                                        validateStatus={!bracket.name ? "error" : undefined}
-                                                        help={!bracket.name ? "Please enter bracket name" : undefined}
-                                                        className="w-1/3"
-                                                    >
-                                                        <Input
-                                                            value={bracket.name}
-                                                            onChange={(v) => {
-                                                                const updated = [...ageBrackets];
-                                                                updated[index].name = v;
-                                                                setAgeBrackets(updated);
-                                                            }}
-                                                            placeholder="Bracket Name"
-                                                        />
-                                                    </Form.Item>
-                                                    <Form.Item
-                                                        label="Min Age"
-                                                        required
-                                                        validateStatus={isMinError ? "error" : undefined}
-                                                        help={minAgeHelp}
-                                                        className="w-1/4"
-                                                    >
-                                                        <InputNumber
-                                                            value={bracket.min_age}
-                                                            min={0}
-                                                            onChange={(v) => {
-                                                                const updated = [...ageBrackets];
-                                                                updated[index].min_age = v ?? 0;
-                                                                setAgeBrackets(updated);
-                                                            }}
-                                                            placeholder="Min Age"
-                                                        />
-                                                    </Form.Item>
-                                                    <Form.Item
-                                                        label="Max Age"
-                                                        required
-                                                        validateStatus={isMaxError ? "error" : undefined}
-                                                        help={maxAgeHelp}
-                                                        className="w-1/4"
-                                                    >
-                                                        <InputNumber
-                                                            value={bracket.max_age}
-                                                            min={0}
-                                                            onChange={(v) => {
-                                                                const updated = [...ageBrackets];
-                                                                updated[index].max_age = v ?? 0;
-                                                                setAgeBrackets(updated);
-                                                            }}
-                                                            placeholder="Max Age"
-                                                        />
-                                                    </Form.Item>
-                                                    <div className="flex items-end pb-8">
-                                                        <Button status="danger" onClick={makeHandleDeleteBracket(index)}>
-                                                            <IconDelete />
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                        <Button
-                                            type="text"
-                                            onClick={() => setAgeBrackets([...ageBrackets, {name: "", min_age: 0, max_age: 0}])}
-                                        >
-                                            <IconPlus /> Add Bracket
-                                        </Button>
-                                    </>
-                                );
-                            }}
-                        </Form.List>
-                    </Modal>
+                        onSave={handleSaveAgeBrackets}
+                    />
 
                     <Form.Item label="Final Criteria">
                         <Form.List field="final_criteria">

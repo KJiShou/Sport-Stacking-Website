@@ -1,0 +1,35 @@
+import React from "react";
+import {Form, Select, Button} from "@arco-design/web-react";
+import {IconEdit, IconDelete} from "@arco-design/web-react/icon";
+
+interface EventFieldProps {
+    index: number;
+    onEditAgeBrackets: (index: number) => void;
+    onRemove: (index: number) => void;
+}
+
+export default function EventFields({index, onEditAgeBrackets, onRemove}: EventFieldProps) {
+    return (
+        <div className="flex items-center gap-2 mb-4">
+            <Form.Item field={`events.${index}.code`} className="w-1/4" rules={[{required: true}]}>
+                <Select placeholder="Code">
+                    <Select.Option value="3-3-3">3-3-3</Select.Option>
+                    <Select.Option value="3-6-3">3-6-3</Select.Option>
+                    <Select.Option value="cycle">Cycle</Select.Option>
+                </Select>
+            </Form.Item>
+            <Form.Item field={`events.${index}.type`} className="w-1/4" rules={[{required: true}]}>
+                <Select placeholder="Type">
+                    <Select.Option value="individual">Individual</Select.Option>
+                    <Select.Option value="team">Team</Select.Option>
+                </Select>
+            </Form.Item>
+            <Button type="primary" className="mb-8" onClick={() => onEditAgeBrackets(index)}>
+                <IconEdit /> Age Brackets
+            </Button>
+            <Button status="danger" onClick={() => onRemove(index)} className="mb-8">
+                <IconDelete />
+            </Button>
+        </div>
+    );
+}

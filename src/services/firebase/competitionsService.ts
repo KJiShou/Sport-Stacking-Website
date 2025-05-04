@@ -1,8 +1,8 @@
 // src/services/firebase/authService.ts
 
-import {collection, doc, getDoc, getDocs, query, where, updateDoc, Timestamp, addDoc, orderBy, Query} from "firebase/firestore";
-import type {Competition, FirestoreUser} from "../../schema";
-import {db} from "./config";
+import { collection, doc, getDoc, getDocs, query, where, updateDoc, Timestamp, addDoc, orderBy, type Query } from "firebase/firestore";
+import type { Competition, FirestoreUser } from "../../schema";
+import { db } from "./config";
 
 export async function createCompetition(user: FirestoreUser, data: Omit<Competition, "id">): Promise<string> {
     if (!user?.roles?.edit_competition) {
@@ -101,7 +101,7 @@ export async function fetchCompetitionById(competitionId: string): Promise<Compe
             return null;
         }
 
-        return {...docSnap.data()} as Competition;
+        return { ...docSnap.data() } as Competition;
     } catch (error) {
         console.error("Error fetching competition:", error);
         throw error;
