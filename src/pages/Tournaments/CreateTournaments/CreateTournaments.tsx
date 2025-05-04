@@ -1,72 +1,50 @@
-import type {Timestamp} from "firebase/firestore";
-import {useState} from "react";
-import {Button, Cascader, DatePicker, Form, Input, InputNumber, Message, Modal, Select, Typography} from "@arco-design/web-react";
-import dayjs, {type Dayjs} from "dayjs";
-import type {Competition, AgeBracket} from "../../../schema";
-import {IconDelete, IconEdit, IconPlus, IconUndo} from "@arco-design/web-react/icon";
-import {useNavigate} from "react-router-dom";
-import {countries} from "../../../schema/Country";
-import {createCompetition} from "../../../services/firebase/competitionsService";
-import {useAuthContext} from "../../../context/AuthContext";
-import {useSmartDateHandlers} from "../../../hooks/DateHandler/useSmartDateHandlers";
+import type { Timestamp } from "firebase/firestore";
+import { useState } from "react";
+import { Button, Cascader, DatePicker, Form, Input, InputNumber, Message, Modal, Select, Typography } from "@arco-design/web-react";
+import dayjs, { type Dayjs } from "dayjs";
+import type { Competition, AgeBracket } from "../../../schema";
+import { IconDelete, IconEdit, IconPlus, IconUndo } from "@arco-design/web-react/icon";
+import { useNavigate } from "react-router-dom";
+import { countries } from "../../../schema/Country";
+import { createCompetition } from "../../../services/firebase/competitionsService";
+import { useAuthContext } from "../../../context/AuthContext";
+import { useSmartDateHandlers } from "../../../hooks/DateHandler/useSmartDateHandlers";
 import AgeBracketModal from "../Component/AgeBracketModal";
 import EventFields from "../Component/EventField";
 import FinalCriteriaFields from "../Component/FinalCriteriaFields";
 import FinalCategoriesFields from "../Component/FinalCategoriesFields";
-import {DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES} from "../../../constants/competitionDefaults";
-import {validateAgeBrackets} from "../../../utils/validation/validateAgeBrackets";
+import { DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES } from "../../../constants/competitionDefaults";
+import { validateAgeBrackets } from "../../../utils/validation/validateAgeBrackets";
+import { useCompetitionFormPrefill } from "../Component/useCompetitionFormPrefill";
+import { useAgeBracketEditor } from "../Component/useAgeBracketEditor";
 
 type CompetitionFormData = Competition & {
     date_range: [Timestamp, Timestamp];
     registration_date_range: [Timestamp, Timestamp];
 };
 
-const {Title} = Typography;
-const {RangePicker} = DatePicker;
+const { Title } = Typography;
+const { RangePicker } = DatePicker;
 
 export default function CreateCompetitionPage() {
     const [form] = Form.useForm();
     const navigate = useNavigate();
-    const {user} = useAuthContext();
-    const {handleCompetitionDateChange, handleRangeChangeSmart} = useSmartDateHandlers(form);
+    const { user } = useAuthContext();
+    const { handleCompetitionDateChange, handleRangeChangeSmart } = useSmartDateHandlers(form);
+    const {
+        ageBracketModalVisible,
+        ageBrackets,
+        setAgeBrackets,
+        handleEditAgeBrackets,
+        handleSaveAgeBrackets,
+        makeHandleDeleteBracket,
+        setAgeBracketModalVisible,
+    } = useAgeBracketEditor(form);
+
+    useCompetitionFormPrefill(form);
 
     const [loading, setLoading] = useState(false);
-    const [ageBracketModalVisible, setAgeBracketModalVisible] = useState(false);
     const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
-    const [ageBrackets, setAgeBrackets] = useState<AgeBracket[]>([]);
-
-    const handleEditAgeBrackets = (index: number) => {
-        const currentEvents = form.getFieldValue("events") ?? [];
-        setEditingEventIndex(index);
-        setAgeBrackets(currentEvents[index]?.age_brackets ?? []);
-        setAgeBracketModalVisible(true);
-    };
-
-    const makeHandleDeleteBracket = (idx: number) => {
-        return () => {
-            setAgeBrackets((prev) => prev.filter((_, i) => i !== idx));
-        };
-    };
-
-    const handleSaveAgeBrackets = () => {
-        if (editingEventIndex === null) {
-            Message.error("No event selected");
-            return;
-        }
-
-        const errorMessage = validateAgeBrackets(ageBrackets);
-        if (errorMessage) {
-            Message.error(errorMessage);
-            return;
-        }
-
-        const currentEvents = [...(form.getFieldValue("events") ?? [])];
-        currentEvents[editingEventIndex].age_brackets = ageBrackets;
-
-        form.setFieldValue("events", currentEvents);
-        setAgeBracketModalVisible(false);
-        setEditingEventIndex(null);
-    };
 
     const handleSubmit = async (values: CompetitionFormData) => {
         setLoading(true);
@@ -127,7 +105,7 @@ export default function CreateCompetitionPage() {
                     requiredSymbol={false}
                 >
                     {/* Competition Name */}
-                    <Form.Item label="Competition Name" field="name" rules={[{required: true, message: "Please input name"}]}>
+                    <Form.Item label="Competition Name" field="name" rules={[{ required: true, message: "Please input name" }]}>
                         <Input placeholder="Enter competition name" />
                     </Form.Item>
 
@@ -135,14 +113,14 @@ export default function CreateCompetitionPage() {
                     <Form.Item
                         label="Competition Date Range"
                         field="date_range"
-                        rules={[{required: true, message: "Please select date range"}]}
+                        rules={[{ required: true, message: "Please select date range" }]}
                     >
                         <RangePicker
                             showTime={{
                                 defaultValue: ["08:00", "18:00"],
                                 format: "HH:mm",
                             }}
-                            style={{width: "100%"}}
+                            style={{ width: "100%" }}
                             disabledDate={(current) => {
                                 const today = dayjs();
                                 return current?.isBefore(today.add(7, "day"), "day");
@@ -154,7 +132,7 @@ export default function CreateCompetitionPage() {
                     <Form.Item
                         label="Country / State"
                         field="country"
-                        rules={[{required: true, message: "Please select a country/region"}]}
+                        rules={[{ required: true, message: "Please select a country/region" }]}
                     >
                         <Cascader
                             showSearch
@@ -170,7 +148,7 @@ export default function CreateCompetitionPage() {
                     </Form.Item>
 
                     {/* Address */}
-                    <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
+                    <Form.Item label="Address" field="address" rules={[{ required: true, message: "Please input address" }]}>
                         <Input placeholder="Enter address" />
                     </Form.Item>
 
@@ -178,14 +156,14 @@ export default function CreateCompetitionPage() {
                     <Form.Item
                         label="Registration Date Range"
                         field="registration_date_range"
-                        rules={[{required: true, message: "Please input registration date"}]}
+                        rules={[{ required: true, message: "Please input registration date" }]}
                     >
                         <RangePicker
                             showTime={{
                                 defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                 format: "HH:mm",
                             }}
-                            style={{width: "100%"}}
+                            style={{ width: "100%" }}
                             disabledDate={(current) => current?.isBefore(dayjs(), "day")}
                             onChange={handleRangeChangeSmart("registration_date_range")}
                         />
@@ -195,13 +173,13 @@ export default function CreateCompetitionPage() {
                     <Form.Item
                         label="Maximum Participants"
                         field="max_participants"
-                        rules={[{required: true, message: "Please input maximum participants"}]}
+                        rules={[{ required: true, message: "Please input maximum participants" }]}
                     >
-                        <InputNumber min={1} style={{width: "100%"}} placeholder="Enter max number of participants" />
+                        <InputNumber min={1} style={{ width: "100%" }} placeholder="Enter max number of participants" />
                     </Form.Item>
                     <Form.Item label="Events">
                         <Form.List field="events">
-                            {(fields, {add, remove}) => (
+                            {(fields, { add, remove }) => (
                                 <>
                                     {fields.map((field, index) => (
                                         <EventFields
@@ -211,7 +189,7 @@ export default function CreateCompetitionPage() {
                                             onRemove={remove}
                                         />
                                     ))}
-                                    <Button type="text" onClick={() => add({code: "", type: "", age_brackets: []})}>
+                                    <Button type="text" onClick={() => add({ code: "", type: "", age_brackets: [] })}>
                                         <IconPlus /> Add Event
                                     </Button>
                                 </>
@@ -231,7 +209,7 @@ export default function CreateCompetitionPage() {
 
                     <Form.Item label="Final Criteria">
                         <Form.List field="final_criteria">
-                            {(fields, {add, remove}) => (
+                            {(fields, { add, remove }) => (
                                 <>
                                     {fields.map((field, index) => (
                                         <FinalCriteriaFields key={field.key} index={index} onRemove={remove} />
@@ -245,7 +223,7 @@ export default function CreateCompetitionPage() {
                     </Form.Item>
                     <Form.Item label="Final Categories">
                         <Form.List field="final_categories">
-                            {(fields, {add, remove}) => (
+                            {(fields, { add, remove }) => (
                                 <>
                                     {fields.map((field, index) => (
                                         <FinalCategoriesFields key={field.key} index={index} onRemove={remove} />
