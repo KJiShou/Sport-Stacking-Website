@@ -6,6 +6,7 @@ export {
     FinalCategorySchema,
 } from "./CompetitionSchema";
 export type {Competition} from "./CompetitionSchema";
+export type {AgeBracket} from "./CompetitionSchema";
 
 export {FirestoreUserSchema} from "./UserSchema";
 export type {FirestoreUser} from "./UserSchema";

@@ -1,17 +1,4 @@
-import type {SelectProps} from "@arco-design/web-react";
-import {
-    Button,
-    DatePicker,
-    Form,
-    Input,
-    Message,
-    Select,
-    Typography,
-    Upload,
-    Cascader,
-    Avatar,
-    Spin,
-} from "@arco-design/web-react";
+import {Button, DatePicker, Form, Input, Message, Select, Typography, Upload, Cascader, Avatar} from "@arco-design/web-react";
 import {IconEmail, IconLock, IconUser, IconCamera} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import type {User} from "firebase/auth";
@@ -25,35 +12,20 @@ import {register, registerWithGoogle} from "../../../services/firebase/authServi
 import {db} from "../../../services/firebase/config";
 import {uploadAvatar} from "../../../services/firebase/storageService";
 import {countries} from "../../../schema/Country";
-import {AvatarUploader} from "../../../components/common/AvatarUploader";
 
 const {Title} = Typography;
 
 type RegisterFormData = Omit<FirestoreUser, "id"> & {password: string; confirmPassword: string};
 
 const RegisterPage = () => {
-    const [loading, setLoading] = useState(false);
-    const [form] = Form.useForm<RegisterFormData>();
     const navigate = useNavigate();
-    const [selectedCountry, setSelectedCountry] = useState("Malaysia");
-    const {user, firebaseUser, setUser} = useAuthContext();
     const location = useLocation();
+    const {user, firebaseUser, setUser} = useAuthContext();
+    const [form] = Form.useForm<RegisterFormData>();
+    const [loading, setLoading] = useState(false);
+    const [isICMode, setIsICMode] = useState(true);
+
     const isFromGoogle = location.state?.fromGoogle === true;
-    const [avatarPreview, setAvatarPreview] = useState<string>(firebaseUser?.photoURL ?? "");
-
-    useEffect(() => {
-        if (isFromGoogle && firebaseUser?.photoURL) {
-            setAvatarPreview(firebaseUser.photoURL);
-            form.setFieldValue("image_url", firebaseUser.photoURL);
-            form.setFieldValue("email", firebaseUser.email ?? "");
-        }
-    }, [isFromGoogle, firebaseUser, form]);
-
-    useEffect(() => {
-        if (firebaseUser && !isFromGoogle) {
-            navigate("/");
-        }
-    }, [firebaseUser, isFromGoogle, navigate]);
 
     const linkEmailPassword = async (email: string, password: string, user: User) => {
         const credential = EmailAuthProvider.credential(email, password);
@@ -62,6 +34,28 @@ const RegisterPage = () => {
         } catch (err) {
             console.error("Failed to link credentials:", err);
             throw err;
+        }
+    };
+
+    const handleICChange = (val: string) => {
+        form.setFieldValue("IC", val);
+        if (!isICMode) return;
+
+        const match = RegExp(/^(\d{2})(\d{2})(\d{2})\d{6}$/).exec(val);
+        if (match) {
+            const yy = match[1];
+            const mm = match[2];
+            const dd = match[3];
+
+            const fullYear = Number(yy) >= 50 ? `19${yy}` : `20${yy}`;
+            const birthdate = dayjs(`${fullYear}-${mm}-${dd}`);
+            if (birthdate.isValid()) {
+                form.setFieldValue("birthdate", birthdate.toDate());
+            }
+
+            const genderCode = Number(val[val.length - 1]);
+            const gender = genderCode % 2 === 1 ? "Male" : "Female";
+            form.setFieldValue("gender", gender);
         }
     };
 
@@ -133,29 +127,18 @@ const RegisterPage = () => {
         }
     };
 
-    const [isICMode, setIsICMode] = useState(true);
-
-    const handleICChange = (val: string) => {
-        form.setFieldValue("IC", val);
-        if (!isICMode) return;
-
-        const match = RegExp(/^(\d{2})(\d{2})(\d{2})\d{6}$/).exec(val);
-        if (match) {
-            const yy = match[1];
-            const mm = match[2];
-            const dd = match[3];
-
-            const fullYear = Number(yy) >= 50 ? `19${yy}` : `20${yy}`;
-            const birthdate = dayjs(`${fullYear}-${mm}-${dd}`);
-            if (birthdate.isValid()) {
-                form.setFieldValue("birthdate", birthdate.toDate());
-            }
-
-            const genderCode = Number(val[val.length - 1]);
-            const gender = genderCode % 2 === 1 ? "Male" : "Female";
-            form.setFieldValue("gender", gender);
+    useEffect(() => {
+        if (isFromGoogle && firebaseUser?.photoURL) {
+            form.setFieldValue("image_url", firebaseUser.photoURL);
+            form.setFieldValue("email", firebaseUser.email ?? "");
         }
-    };
+    }, [isFromGoogle, firebaseUser, form]);
+
+    useEffect(() => {
+        if (firebaseUser && !isFromGoogle) {
+            navigate("/");
+        }
+    }, [firebaseUser, isFromGoogle, navigate]);
 
     return (
         <div className={`flex flex-auto h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10`}>
@@ -196,7 +179,6 @@ const RegisterPage = () => {
                                             const reader = new FileReader();
                                             reader.onload = () => {
                                                 form.setFieldValue("image_url", reader.result as string);
-                                                setAvatarPreview(reader.result as string);
                                                 onSuccess?.();
                                             };
                                             reader.readAsDataURL(file);

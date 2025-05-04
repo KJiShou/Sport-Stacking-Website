@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import {Layout, Menu, Avatar, Modal, Button, Dropdown, Message, Spin} from "@arco-design/web-react";
+import {Menu, Avatar, Modal, Button, Dropdown, Message, Spin} from "@arco-design/web-react";
 import {IconHome, IconCalendar, IconUser, IconExport} from "@arco-design/web-react/icon";
 import {useNavigate, useLocation} from "react-router-dom";
 import LoginForm from "../common/Login";
@@ -15,10 +15,10 @@ interface MenuItem {
 
 const AvatarWithLoading = ({src}: {src: string}) => {
     const [loading, setLoading] = useState(true);
-    const {firebaseUser, user} = useAuthContext();
-    let image = user?.image_url || src;
+    const {user} = useAuthContext();
+    let image = user?.image_url ?? src;
     React.useEffect(() => {
-        image = user?.image_url || src;
+        image = user?.image_url ?? src;
     }, [src, user]);
 
     return (
@@ -44,7 +44,6 @@ const AvatarWithLoading = ({src}: {src: string}) => {
 const Navbar: React.FC = () => {
     const MenuItem = Menu.Item;
     const SubMenu = Menu.SubMenu;
-    const Header = Layout.Header;
     const navigate = useNavigate();
     const location = useLocation();
 

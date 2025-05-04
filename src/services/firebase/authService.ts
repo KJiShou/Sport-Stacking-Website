@@ -80,6 +80,7 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
         email,
         global_id,
         IC,
+        created_at: Timestamp.now(),
         ...rest,
     };
 
@@ -122,6 +123,7 @@ export const registerWithGoogle = async (
         global_id,
         email: firebaseUser.email,
         image_url: imageUrl,
+        created_at: Timestamp.now(),
         ...extraData,
     };
 
@@ -140,7 +142,6 @@ export async function fetchAllUsers(): Promise<FirestoreUser[]> {
             name: data.name,
             IC: data.IC,
             email: data.email,
-            // convert Firestore Timestamp → JS Date if needed
             birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
             gender: data.gender,
             country: data.country,
@@ -186,21 +187,27 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
 }
 
 export async function updateUserProfile(id: string, data: Partial<Omit<FirestoreUser, "email" | "IC" | "id">>): Promise<void> {
-    // 1. 校验：只允许 FirestoreUserSchema 中声明过的字段，并且所有字段都可选
+    // 1. 校验允许更新的字段
     const UpdateSchema = FirestoreUserSchema.partial().omit({email: true, IC: true, id: true});
     const validated = UpdateSchema.parse(data);
 
-    // 2. 获取文档引用
-    const userRef = doc(db, "users", id);
+    // 2. 附加 updated_at 字段
+    const payload = {
+        ...validated,
+        updated_at: Timestamp.now(),
+    };
 
-    // 3. 执行更新
-    await updateDoc(userRef, validated);
+    // 3. 更新数据库
+    const userRef = doc(db, "users", id);
+    await updateDoc(userRef, payload);
 }
 
 export async function updateUserRoles(userId: string, roles: FirestoreUser["roles"]): Promise<void> {
     const userRef = doc(db, "users", userId);
-    // merge only the roles object
-    await updateDoc(userRef, {roles});
+    await updateDoc(userRef, {
+        roles,
+        updated_at: Timestamp.now(),
+    });
 }
 
 export async function changeUserPassword(currentPassword: string, newPassword: string): Promise<void> {
@@ -217,6 +224,11 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
 
         // Step 2: Update password
         await updatePassword(user, newPassword);
+
+        // Step 3: Optionally update Firestore user profile timestamp
+        await updateDoc(doc(db, "users", user.uid), {
+            updated_at: Timestamp.now(),
+        });
     } catch (error) {
         console.error("Failed to change password:", error);
         throw error;

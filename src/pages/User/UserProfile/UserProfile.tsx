@@ -1,6 +1,5 @@
 import {
     Avatar,
-    Card,
     Spin,
     Statistic,
     Table,
@@ -8,7 +7,6 @@ import {
     Button,
     Select,
     Form,
-    Upload,
     Tabs,
     Input,
     Cascader,
@@ -18,9 +16,9 @@ import {
     Grid,
     Switch,
 } from "@arco-design/web-react";
-import {IconCamera, IconUser} from "@arco-design/web-react/icon";
+import {IconUser} from "@arco-design/web-react/icon";
 import {useEffect, useState} from "react";
-import {Navigate, useNavigate, useParams, useSearchParams} from "react-router-dom";
+import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import type {FirestoreUser, FirestoreUserSchema} from "../../../schema";
 import {changeUserPassword, fetchUserByID, updateUserProfile} from "../../../services/firebase/authService";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
@@ -48,18 +46,18 @@ interface RecordItem {
 }
 
 export default function RegisterPage() {
-    const [user, setUser] = useState<FirestoreUser | null>(null);
-    const [loading, setLoading] = useState(true);
+    const {Row, Col} = Grid;
     const {id} = useParams<{id: string}>();
+    const {user: authUser} = useAuthContext();
     const navigate = useNavigate();
-    const [isEditMode, setIsEditMode] = useState(false);
     const [form] = Form.useForm();
     const [secForm] = Form.useForm();
+    const [user, setUser] = useState<FirestoreUser | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [isEditMode, setIsEditMode] = useState(false);
     const [isImageLoading, setIsImageLoading] = useState(true);
     const [secLoading, setSecLoading] = useState(false);
-    const {user: authUser} = useAuthContext();
     const [searchParams, setSearchParams] = useSearchParams();
-    const {Row, Col} = Grid;
 
     let descData = [
         {label: "Email", value: user?.email ?? "-"},
@@ -130,10 +128,7 @@ export default function RegisterPage() {
     }, [id]);
 
     // 构建统计数据示例
-    const allTimeStats: AllTimeStat[] = [
-        {event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"},
-        // TODO: 按需添加其他项目并计算排名
-    ];
+    const allTimeStats: AllTimeStat[] = [{event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"}];
     const onlineBest: OnlineBest[] = [];
     const records: RecordItem[] = [];
 

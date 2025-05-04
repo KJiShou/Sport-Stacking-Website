@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.select-demo-hide-option-checkbox .arco-checkbox {
+    display: none !important;
+}
+
 :root {
     font-size: 10px;
 

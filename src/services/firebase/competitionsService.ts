@@ -1,34 +1,20 @@
 // src/services/firebase/authService.ts
-import type {User} from "firebase/auth";
-import {
-    createUserWithEmailAndPassword,
-    EmailAuthProvider,
-    GoogleAuthProvider,
-    reauthenticateWithCredential,
-    signInWithEmailAndPassword,
-    signInWithPopup,
-    signOut,
-    updatePassword,
-} from "firebase/auth";
-import type {DocumentData, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
+
 import {
     collection,
     doc,
     getDoc,
     getDocs,
-    increment,
     query,
-    runTransaction,
-    setDoc,
     where,
     updateDoc,
     Timestamp,
     addDoc,
     orderBy,
+    type Query,
 } from "firebase/firestore";
 import type {Competition, FirestoreUser} from "../../schema";
-import {FirestoreUserSchema} from "../../schema";
-import {auth, db} from "./config";
+import {db} from "./config";
 
 export async function createCompetition(user: FirestoreUser, data: Omit<Competition, "id">): Promise<string> {
     if (!user?.roles?.edit_competition) {
@@ -44,11 +30,11 @@ export async function createCompetition(user: FirestoreUser, data: Omit<Competit
         registration_start_date: data.registration_start_date,
         registration_end_date: data.registration_end_date,
         max_participants: data.max_participants,
-        age_brackets: data.age_brackets,
         events: data.events,
         final_criteria: data.final_criteria,
         final_categories: data.final_categories,
         status: "Up Coming",
+        created_at: Timestamp.now(),
     });
 
     return docRef.id;
@@ -74,11 +60,11 @@ export async function updateCompetition(
         registration_start_date: data.registration_start_date,
         registration_end_date: data.registration_end_date,
         max_participants: data.max_participants,
-        age_brackets: data.age_brackets,
         events: data.events,
         final_criteria: data.final_criteria,
         final_categories: data.final_categories,
         status: data.status ?? "Up Coming",
+        updated_at: Timestamp.now(),
     });
 }
 
@@ -87,7 +73,7 @@ export async function fetchCompetitionsByType(type: "current" | "history"): Prom
         const today = new Date();
         const todayTimestamp = Timestamp.fromDate(today);
 
-        let competitionsQuery;
+        let competitionsQuery: Query | null = null;
 
         if (type === "current") {
             competitionsQuery = query(
@@ -113,6 +99,23 @@ export async function fetchCompetitionsByType(type: "current" | "history"): Prom
         })) as Competition[];
     } catch (error) {
         console.error("Failed to fetch competitions:", error);
+        throw error;
+    }
+}
+
+export async function fetchCompetitionById(competitionId: string): Promise<Competition | null> {
+    try {
+        const docRef = doc(db, "competitions", competitionId);
+        const docSnap = await getDoc(docRef);
+
+        if (!docSnap.exists()) {
+            console.info("Competition document not found:", competitionId);
+            return null;
+        }
+
+        return {...docSnap.data()} as Competition;
+    } catch (error) {
+        console.error("Error fetching competition:", error);
         throw error;
     }
 }

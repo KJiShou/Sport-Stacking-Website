@@ -20,30 +20,9 @@ export default function AdminPermissionsPage() {
 
     const [modalVisible, setModalVisible] = useState(false);
     const [selected, setSelected] = useState<FirestoreUser | null>(null);
+
     const [form] = Form.useForm<RoleFields>();
     const deviceBreakpoint = useDeviceBreakpoint();
-
-    // 1) load all users
-    const load = async () => {
-        setLoading(true);
-        try {
-            const all = await fetchAllUsers();
-            setUsers(all);
-            setFiltered(all);
-        } finally {
-            setLoading(false);
-        }
-    };
-    useEffect(() => {
-        load();
-    }, []);
-
-    // 2) filter when searchText changes
-    useEffect(() => {
-        const text = searchText.trim().toLowerCase();
-        if (!text) return setFiltered(users);
-        setFiltered(users.filter((u) => u.global_id?.toLowerCase().includes(text) || u.name.toLowerCase().includes(text)));
-    }, [searchText, users]);
 
     // 3) table columns
     const columns: (TableColumnProps<(typeof users)[number]> | false)[] = [
@@ -51,7 +30,7 @@ export default function AdminPermissionsPage() {
             title: "Account ID",
             dataIndex: "global_id",
             width: 180,
-            sorter: (a, b) => (a.global_id || "").localeCompare(b.global_id || ""),
+            sorter: (a, b) => (a.global_id ?? "").localeCompare(b.global_id ?? ""),
             defaultSortOrder: "ascend",
         },
         {
@@ -64,7 +43,7 @@ export default function AdminPermissionsPage() {
             title: "Email",
             dataIndex: "email",
             width: 300,
-            sorter: (a, b) => (a.email || "").localeCompare(b.email || ""),
+            sorter: (a, b) => (a.email ?? "").localeCompare(b.email ?? ""),
         },
         {
             title: "Actions",
@@ -93,6 +72,29 @@ export default function AdminPermissionsPage() {
         },
     ];
 
+    // 1) load all users
+    const load = async () => {
+        setLoading(true);
+        try {
+            const all = await fetchAllUsers();
+            setUsers(all);
+            setFiltered(all);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        load();
+    }, []);
+
+    // 2) filter when searchText changes
+    useEffect(() => {
+        const text = searchText.trim().toLowerCase();
+        if (!text) return setFiltered(users);
+        setFiltered(users.filter((u) => u.global_id?.toLowerCase().includes(text) || u.name.toLowerCase().includes(text)));
+    }, [searchText, users]);
+
     // 4) handle save in modal
     const handleSave = async () => {
         try {
@@ -102,8 +104,9 @@ export default function AdminPermissionsPage() {
             Message.success("Permissions updated");
             setModalVisible(false);
             load(); // refresh table
-        } catch (err) {
-            // validation or update failure
+        } catch (e) {
+            console.error(e);
+            Message.error("Failed to update permissions");
         }
     };
 

@@ -10,7 +10,7 @@ interface Props {
     setUser: (u: FirestoreUser) => void;
 }
 
-export function AvatarUploader({user, setUser}: Props) {
+export function AvatarUploader({user, setUser}: Readonly<Props>) {
     const [uploading, setUploading] = useState(false);
 
     return (
@@ -21,7 +21,7 @@ export function AvatarUploader({user, setUser}: Props) {
                 try {
                     setUploading(true);
                     // 1. 上传到 Storage，返回下载 URL
-                    const url = await uploadAvatar(file as File, user.id);
+                    const url = await uploadAvatar(file, user.id);
                     // 2. 更新 Firestore
                     await updateUserProfile(user.id, {image_url: url});
                     // 3. 更新本地状态

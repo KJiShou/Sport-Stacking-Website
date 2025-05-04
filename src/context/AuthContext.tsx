@@ -2,10 +2,9 @@
 import type React from "react";
 import {createContext, useContext, useEffect, useState} from "react";
 import {onAuthStateChanged, type User} from "firebase/auth";
-import {auth} from "../services/firebase/config";
+import {auth, db} from "../services/firebase/config";
 import type {FirestoreUser} from "@/schema/UserSchema";
 import {doc, getDoc} from "firebase/firestore";
-import {db} from "../services/firebase/config"; // Make sure db is exported here
 
 interface AuthContextType {
     user: FirestoreUser | null;
