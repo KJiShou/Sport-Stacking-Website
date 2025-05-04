@@ -1,31 +1,31 @@
 import {
     Avatar,
-    Spin,
-    Statistic,
-    Table,
-    Typography,
     Button,
-    Select,
-    Form,
-    Tabs,
-    Input,
     Cascader,
-    Message,
     DatePicker,
     Descriptions,
+    Form,
     Grid,
+    Input,
+    Message,
+    Select,
+    Spin,
+    Statistic,
     Switch,
+    Table,
+    Tabs,
+    Typography,
 } from "@arco-design/web-react";
+import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
 import {IconUser} from "@arco-design/web-react/icon";
+import {AvatarUploader} from "@/components/common/AvatarUploader";
+import {useAuthContext} from "@/context/AuthContext";
+import type {FirestoreUser, FirestoreUserSchema} from "@/schema";
+import {countries} from "@/schema/Country";
+import {changeUserPassword, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
+import dayjs from "dayjs";
 import {useEffect, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
-import type {FirestoreUser, FirestoreUserSchema} from "../../../schema";
-import {changeUserPassword, fetchUserByID, updateUserProfile} from "../../../services/firebase/authService";
-import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
-import {AvatarUploader} from "../../../components/common/AvatarUploader";
-import {countries} from "../../../schema/Country";
-import dayjs from "dayjs";
-import {useAuthContext} from "../../../context/AuthContext";
 import type {z} from "zod";
 
 const {Title, Text} = Typography;

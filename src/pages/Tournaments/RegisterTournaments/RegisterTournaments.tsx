@@ -1,13 +1,13 @@
 // src/pages/RegisterCompetitionPage.tsx
 
-import {useParams} from "react-router-dom";
-import {useEffect, useState} from "react";
-import {Timestamp, addDoc, collection} from "firebase/firestore";
-import {fetchCompetitionById} from "../../../services/firebase/competitionsService";
-import type {Competition, Registration} from "../../../schema";
-import {Typography, Spin, Result, Card, Form, Input, Select, Button, Message} from "@arco-design/web-react";
+import {Button, Card, Form, Input, Message, Result, Select, Spin, Typography} from "@arco-design/web-react";
+import type {Competition} from "@/schema";
+import {fetchCompetitionById} from "@/services/firebase/competitionsService";
+import {db} from "@/services/firebase/config";
 import dayjs, {type Dayjs} from "dayjs";
-import {db} from "../../../services/firebase/config";
+import {Timestamp, addDoc, collection} from "firebase/firestore";
+import {useEffect, useState} from "react";
+import {useParams} from "react-router-dom";
 
 const {Title, Paragraph} = Typography;
 const Option = Select.Option;
