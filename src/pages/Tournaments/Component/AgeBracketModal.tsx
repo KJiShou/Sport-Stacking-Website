@@ -1,8 +1,8 @@
 // src/components/competition/AgeBracketModal.tsx
 import React from "react";
-import { Modal, Form, Input, InputNumber, Button } from "@arco-design/web-react";
-import { IconDelete, IconPlus } from "@arco-design/web-react/icon";
-import type { AgeBracket } from "../../../schema";
+import {Modal, Form, Input, InputNumber, Button} from "@arco-design/web-react";
+import {IconDelete, IconPlus} from "@arco-design/web-react/icon";
+import type {AgeBracket} from "../../../schema";
 
 interface AgeBracketModalProps {
     visible: boolean;
@@ -13,11 +13,11 @@ interface AgeBracketModalProps {
     onDeleteBracket: (index: number) => void;
 }
 
-export default function AgeBracketModal({ visible, brackets, onChange, onCancel, onSave, onDeleteBracket }: AgeBracketModalProps) {
+export default function AgeBracketModal({visible, brackets, onChange, onCancel, onSave, onDeleteBracket}: AgeBracketModalProps) {
     return (
         <Modal title="Edit Age Brackets" visible={visible} onCancel={onCancel} onOk={onSave}>
             <Form.List field="age_brackets_modal">
-                {(fields, { add }) => (
+                {(fields, {add}) => (
                     <>
                         {brackets.map((bracket, index) => {
                             const isMinError = bracket.min_age === null || bracket.min_age > bracket.max_age;
@@ -86,7 +86,7 @@ export default function AgeBracketModal({ visible, brackets, onChange, onCancel,
                                 </div>
                             );
                         })}
-                        <Button type="text" onClick={() => onChange([...brackets, { name: "", min_age: 0, max_age: 0 }])}>
+                        <Button type="text" onClick={() => onChange([...brackets, {name: "", min_age: 0, max_age: 0}])}>
                             <IconPlus /> Add Bracket
                         </Button>
                     </>
