@@ -1,8 +1,8 @@
-import type { AgeBracket } from "../../schema";
+import type {AgeBracket} from "../../schema";
 
 export function validateAgeBrackets(brackets: AgeBracket[]): string | null {
     for (const [i, bracket] of brackets.entries()) {
-        const { name, min_age, max_age } = bracket;
+        const {name, min_age, max_age} = bracket;
         if (!name || min_age == null || max_age == null) {
             return `Please fill in all fields for bracket ${i + 1}.`;
         }

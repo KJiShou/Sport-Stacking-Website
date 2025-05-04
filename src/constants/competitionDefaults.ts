@@ -1,28 +1,28 @@
-import type { Competition } from "../schema";
+import type {Competition} from "../schema";
 
 export const DEFAULT_EVENTS: Competition["events"] = [
     {
         code: "3-3-3",
         type: "individual",
         age_brackets: [
-            { name: "Under 10", min_age: 0, max_age: 9 },
-            { name: "10 and Above", min_age: 10, max_age: 99 },
+            {name: "Under 10", min_age: 0, max_age: 9},
+            {name: "10 and Above", min_age: 10, max_age: 99},
         ],
     },
     {
         code: "3-6-3",
         type: "individual",
         age_brackets: [
-            { name: "Under 10", min_age: 0, max_age: 9 },
-            { name: "10 and Above", min_age: 10, max_age: 99 },
+            {name: "Under 10", min_age: 0, max_age: 9},
+            {name: "10 and Above", min_age: 10, max_age: 99},
         ],
     },
     {
         code: "cycle",
         type: "individual",
         age_brackets: [
-            { name: "Under 10", min_age: 0, max_age: 9 },
-            { name: "10 and Above", min_age: 10, max_age: 99 },
+            {name: "Under 10", min_age: 0, max_age: 9},
+            {name: "10 and Above", min_age: 10, max_age: 99},
         ],
     },
 ];
