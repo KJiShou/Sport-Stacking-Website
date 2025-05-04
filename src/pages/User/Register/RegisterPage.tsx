@@ -1,17 +1,17 @@
-import {Button, DatePicker, Form, Input, Message, Select, Typography, Upload, Cascader, Avatar} from "@arco-design/web-react";
-import {IconEmail, IconLock, IconUser, IconCamera} from "@arco-design/web-react/icon";
+import {Avatar, Button, Cascader, DatePicker, Form, Input, Message, Select, Typography, Upload} from "@arco-design/web-react";
+import {IconCamera, IconEmail, IconLock, IconUser} from "@arco-design/web-react/icon";
+import {useAuthContext} from "@/context/AuthContext";
+import type {FirestoreUser} from "@/schema";
+import {countries} from "@/schema/Country";
+import {register, registerWithGoogle} from "@/services/firebase/authService";
+import {db} from "@/services/firebase/config";
+import {uploadAvatar} from "@/services/firebase/storageService";
 import dayjs from "dayjs";
 import type {User} from "firebase/auth";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import {doc, getDoc} from "firebase/firestore";
 import {useEffect, useState} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
-import {useAuthContext} from "../../../context/AuthContext";
-import type {FirestoreUser} from "../../../schema";
-import {register, registerWithGoogle} from "../../../services/firebase/authService";
-import {db} from "../../../services/firebase/config";
-import {uploadAvatar} from "../../../services/firebase/storageService";
-import {countries} from "../../../schema/Country";
 
 const {Title} = Typography;
 

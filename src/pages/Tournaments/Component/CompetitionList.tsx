@@ -16,15 +16,15 @@ import {IconEdit, IconPlus} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
-import LoginForm from "../../../components/common/Login";
-import {useAuthContext} from "../../../context/AuthContext";
-import type {Competition} from "../../../schema"; // 就是你那个 CompetitionSchema infer出来的type
-import {countries} from "../../../schema/Country";
-import {fetchCompetitionsByType, updateCompetition} from "../../../services/firebase/competitionsService";
+import LoginForm from "@/components/common/Login";
+import {useAuthContext} from "@/context/AuthContext";
+import type {Competition} from "@/schema"; // 就是你那个 CompetitionSchema infer出来的type
+import {countries} from "@/schema/Country";
+import {fetchCompetitionsByType, updateCompetition} from "@/services/firebase/competitionsService";
 
-import {useSmartDateHandlers} from "../../../hooks/DateHandler/useSmartDateHandlers";
-import {DeviceBreakpoint} from "../../../hooks/DeviceInspector/deviceStore";
-import {useDeviceBreakpoint} from "../../../utils/DeviceInspector";
+import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
+import {DeviceBreakpoint} from "@/hooks/DeviceInspector/deviceStore";
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import AgeBracketModal from "./AgeBracketModal";
 import EventFields from "./EventField";
 import FinalCategoriesFields from "./FinalCategoriesFields";

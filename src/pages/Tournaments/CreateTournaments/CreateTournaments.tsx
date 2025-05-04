@@ -1,20 +1,19 @@
 import type {Timestamp} from "firebase/firestore";
 import {useState} from "react";
 import {Button, Cascader, DatePicker, Form, Input, InputNumber, Message, Modal, Select, Typography} from "@arco-design/web-react";
-import dayjs, {type Dayjs} from "dayjs";
-import type {Competition, AgeBracket} from "../../../schema";
-import {IconDelete, IconEdit, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import dayjs from "dayjs";
+import type {Competition} from "@/schema";
+import {IconPlus, IconUndo} from "@arco-design/web-react/icon";
 import {useNavigate} from "react-router-dom";
-import {countries} from "../../../schema/Country";
-import {createCompetition} from "../../../services/firebase/competitionsService";
-import {useAuthContext} from "../../../context/AuthContext";
-import {useSmartDateHandlers} from "../../../hooks/DateHandler/useSmartDateHandlers";
+import {countries} from "@/schema/Country";
+import {createCompetition} from "@/services/firebase/competitionsService";
+import {useAuthContext} from "@/context/AuthContext";
+import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import AgeBracketModal from "../Component/AgeBracketModal";
 import EventFields from "../Component/EventField";
 import FinalCriteriaFields from "../Component/FinalCriteriaFields";
 import FinalCategoriesFields from "../Component/FinalCategoriesFields";
-import {DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES} from "../../../constants/competitionDefaults";
-import {validateAgeBrackets} from "../../../utils/validation/validateAgeBrackets";
+import {DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES} from "@/constants/competitionDefaults";
 import {useCompetitionFormPrefill} from "../Component/useCompetitionFormPrefill";
 import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
 

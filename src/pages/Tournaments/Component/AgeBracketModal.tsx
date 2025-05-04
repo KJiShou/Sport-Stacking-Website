@@ -1,8 +1,7 @@
 // src/components/competition/AgeBracketModal.tsx
-import React from "react";
-import {Modal, Form, Input, InputNumber, Button} from "@arco-design/web-react";
+import {Button, Form, Input, InputNumber, Modal} from "@arco-design/web-react";
 import {IconDelete, IconPlus} from "@arco-design/web-react/icon";
-import type {AgeBracket} from "../../../schema";
+import type {AgeBracket} from "@/schema";
 
 interface AgeBracketModalProps {
     visible: boolean;

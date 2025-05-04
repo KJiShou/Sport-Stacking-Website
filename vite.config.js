@@ -1,7 +1,12 @@
 import {defineConfig} from "vite";
 import react from "@vitejs/plugin-react";
 import {vitePluginForArco} from "@arco-plugins/vite-react";
+import {fileURLToPath} from "url";
+import {dirname} from "path";
+import path from "path";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [
@@ -20,7 +25,7 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            "@": "/src", // Enables '@' as an alias for '/src' directory
+            "@": path.resolve(__dirname, "src"),
         },
     },
     css: {
