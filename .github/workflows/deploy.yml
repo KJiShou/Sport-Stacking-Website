@@ -73,12 +73,3 @@ jobs:
             # Step 9: Build the Project
             - name: 🏗️ Build Project
               run: yarn build
-
-            # Step 10: (Optional) Cache Build Output
-            - name: 💾 Cache build output (optional)
-              uses: actions/cache@v4
-              with:
-                  path: dist
-                  key: ${{ runner.os }}-build-${{ github.sha }}
-                  restore-keys: |
-                      ${{ runner.os }}-build-
