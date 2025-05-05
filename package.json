@@ -7,7 +7,7 @@
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "typecheck": "tsc --noEmit",
     "ts-lint": "tsc --noEmit --pretty",
     "format": "biome format . --write",
