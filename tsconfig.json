@@ -23,8 +23,8 @@
       "@schema/*": ["schema/*"],
       "@hooks/*": ["hooks/*"],
       "@components/*": ["components/*"]
-    },
-},
+    }
+  },
   "include": ["src", "src/main.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

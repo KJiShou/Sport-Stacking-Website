@@ -1,7 +1,7 @@
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import {StrictMode} from "react";
+import {createRoot} from "react-dom/client";
 import App from "./App";
-import { AuthProvider } from "./context/AuthContext";
+import {AuthProvider} from "./context/AuthContext";
 import "./global.scss";
 
 const rootElement = document.getElementById("root");
