@@ -56,6 +56,16 @@ const Navbar: React.FC = () => {
         navigate(key);
     };
 
+    const selectedKey = React.useMemo(() => {
+        if (location.pathname.startsWith("/tournaments")) {
+            return location.pathname + location.search;
+        }
+        if (location.pathname.startsWith("/records")) {
+            return location.pathname;
+        }
+        return location.pathname;
+    }, [location]);
+
     React.useEffect(() => {
         if (firebaseUser != null) {
             setVisible(false);
@@ -73,7 +83,7 @@ const Navbar: React.FC = () => {
             <div className="logo" />
             <Menu
                 defaultOpenKeys={["1"]}
-                selectedKeys={[location.pathname]}
+                selectedKeys={[selectedKey]}
                 onClickMenuItem={handleNavigation}
                 style={{width: "100%"}}
                 mode="horizontal"
