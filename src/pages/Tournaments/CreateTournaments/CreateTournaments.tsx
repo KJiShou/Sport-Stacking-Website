@@ -16,6 +16,7 @@ import FinalCategoriesFields from "../Component/FinalCategoriesFields";
 import {DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES} from "@/constants/competitionDefaults";
 import {useCompetitionFormPrefill} from "../Component/useCompetitionFormPrefill";
 import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
+import LocationPicker, {isValidCountryPath} from "../Component/LocationPicker";
 
 type CompetitionFormData = Competition & {
     date_range: [Timestamp, Timestamp];
@@ -43,13 +44,19 @@ export default function CreateCompetitionPage() {
     useCompetitionFormPrefill(form);
 
     const [loading, setLoading] = useState(false);
-    const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
 
     const handleSubmit = async (values: CompetitionFormData) => {
         setLoading(true);
 
         try {
             if (!user) return;
+
+            const countryPath = values.country;
+            if (!isValidCountryPath(countryPath)) {
+                Message.error("Selected address does not match a valid country/state option. Please adjust manually.");
+                setLoading(false);
+                return;
+            }
 
             const fullEvents: Competition["events"] = form.getFieldValue("events");
             await createCompetition(user, {
@@ -140,6 +147,9 @@ export default function CreateCompetitionPage() {
                             filterOption={(input, node) => {
                                 return node.label.toLowerCase().includes(input.toLowerCase());
                             }}
+                            onChange={(val) => {
+                                form.setFieldValue("country", val);
+                            }}
                             options={countries}
                             placeholder="Please select location"
                             expandTrigger="hover"
@@ -148,7 +158,18 @@ export default function CreateCompetitionPage() {
 
                     {/* Address */}
                     <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
-                        <Input placeholder="Enter address" />
+                        <LocationPicker
+                            value={form.getFieldValue("address")}
+                            onChange={(val) => form.setFieldValue("address", val)}
+                            onCountryChange={(countryPath) => {
+                                if (!isValidCountryPath(countryPath)) {
+                                    Message.warning("This location is not in the selectable list. Please choose manually.");
+                                    form.resetFields(["country"]);
+                                } else {
+                                    form.setFieldValue("country", countryPath);
+                                }
+                            }}
+                        />
                     </Form.Item>
 
                     {/* Registration Date Range */}

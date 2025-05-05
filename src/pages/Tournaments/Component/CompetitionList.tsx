@@ -31,6 +31,7 @@ import FinalCategoriesFields from "./FinalCategoriesFields";
 import FinalCriteriaFields from "./FinalCriteriaFields";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
 import {useCompetitionFormPrefill} from "./useCompetitionFormPrefill";
+import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 
 const {Title, Paragraph} = Typography;
 type CompetitionFormData = Competition & {
@@ -323,12 +324,41 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                             />
                         </Form.Item>
 
-                        <Form.Item label="Country / State" field="country" rules={[{required: true}]}>
-                            <Cascader options={countries} placeholder="Select country/state" />
+                        <Form.Item
+                            label="Country / State"
+                            field="country"
+                            rules={[{required: true, message: "Please select a country/region"}]}
+                        >
+                            <Cascader
+                                showSearch
+                                changeOnSelect
+                                allowClear
+                                filterOption={(input, node) => {
+                                    return node.label.toLowerCase().includes(input.toLowerCase());
+                                }}
+                                onChange={(val) => {
+                                    form.setFieldValue("country", val);
+                                }}
+                                options={countries}
+                                placeholder="Please select location"
+                                expandTrigger="hover"
+                            />
                         </Form.Item>
 
-                        <Form.Item label="Address" field="address" rules={[{required: true}]}>
-                            <Input placeholder="Enter address" />
+                        {/* Address */}
+                        <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
+                            <LocationPicker
+                                value={form.getFieldValue("address")}
+                                onChange={(val) => form.setFieldValue("address", val)}
+                                onCountryChange={(countryPath) => {
+                                    if (!isValidCountryPath(countryPath)) {
+                                        Message.warning("This location is not in the selectable list. Please choose manually.");
+                                        form.resetFields(["country"]);
+                                    } else {
+                                        form.setFieldValue("country", countryPath);
+                                    }
+                                }}
+                            />
                         </Form.Item>
 
                         <Form.Item

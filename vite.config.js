@@ -1,4 +1,4 @@
-import {defineConfig} from "vite";
+import {defineConfig, loadEnv} from "vite";
 import react from "@vitejs/plugin-react";
 import {vitePluginForArco} from "@arco-plugins/vite-react";
 import {fileURLToPath} from "url";
@@ -7,36 +7,40 @@ import path from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-// https://vitejs.dev/config/
-export default defineConfig({
-    plugins: [
-        react(),
-        vitePluginForArco({
-            style: "css",
-        }),
-    ],
-    root: "src",
-    server: {
-        port: 5000, // Sets the server port to 5000
-        host: true, // Allows access from outside the container
-        strictPort: true, // Ensures the server fails if port 5000 is unavailable
-        open: true, // Automatically opens the browser when the server starts
-        cors: true, // Enables CORS support for external API calls
-    },
-    resolve: {
-        alias: {
-            "@": path.resolve(__dirname, "src"),
+
+// ✅ 读取根目录的 .env 文件（不是 src/.env）
+export default defineConfig(({mode}) => {
+    // eslint-disable-next-line no-undef
+    const env = loadEnv(mode, process.cwd()); // 👈 强制从项目根目录加载 .env
+
+    return {
+        plugins: [react(), vitePluginForArco({style: "css"})],
+        server: {
+            port: 5000,
+            host: true,
+            strictPort: true,
+            open: true,
+            cors: true,
         },
-    },
-    css: {
-        preprocessorOptions: {
-            less: {
-                javascriptEnabled: true, // Required for customizing Arco themes with LESS
+        resolve: {
+            alias: {
+                "@": path.resolve(__dirname, "src"),
             },
         },
-    },
-    build: {
-        chunkSizeWarningLimit: 1000, // Increase chunk size limit to avoid warnings for large bundles
-        outDir: "dist",
-    },
+        css: {
+            preprocessorOptions: {
+                less: {
+                    javascriptEnabled: true,
+                },
+            },
+        },
+        build: {
+            chunkSizeWarningLimit: 1000,
+            outDir: "dist",
+        },
+        define: {
+            // ✅ 将变量注入为全局变量，供代码中使用
+            __VITE_GOOGLE_MAPS_API_KEY__: JSON.stringify(env.VITE_GOOGLE_MAPS_API_KEY),
+        },
+    };
 });
