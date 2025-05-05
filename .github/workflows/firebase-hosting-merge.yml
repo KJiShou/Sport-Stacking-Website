@@ -1,49 +1,60 @@
 name: 🚀 Deploy to Firebase Hosting (Production)
 
 on:
-  push:
-    branches:
-      - main
+    push:
+        branches:
+            - main
 
 jobs:
-  build_and_deploy:
-    runs-on: ubuntu-latest
+    build_and_deploy:
+        runs-on: ubuntu-latest
 
-    steps:
-      # Step 1: Checkout Repository
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        steps:
+            # Step 1: Checkout Repository
+            - name: 📥 Checkout repository
+              uses: actions/checkout@v4
 
-      # Step 2: Setup Node.js & Yarn Cache
-      - name: ⚙️ Setup Node.js 20.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: 'yarn'
+            # Step 2: Setup Node.js & Yarn Cache
+            - name: ⚙️ Setup Node.js 20.x
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20.x
+                  cache: 'yarn'
 
-      # Step 3: Install Dependencies
-      - name: 📦 Install Dependencies
-        run: yarn install --immutable
+            # Step 3: Install Dependencies
+            - name: 📦 Install Dependencies
+              run: yarn install --immutable
 
-      # Step 4: Cache Build Output (Optional but improves speed)
-      - name: 💾 Cache build output
-        uses: actions/cache@v4
-        with:
-          path: |
-            dist
-          key: ${{ runner.os }}-vite-build-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-vite-build-
+            # Step 4: Cache Build Output (Optional but improves speed)
+            - name: 💾 Cache build output
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      dist
+                  key: ${{ runner.os }}-vite-build-${{ github.sha }}
+                  restore-keys: |
+                      ${{ runner.os }}-vite-build-
 
-      # Step 5: Build Project
-      - name: 🛠️ Build Project
-        run: yarn build
+            - name: 🔑 Inject Firebase & API Keys to .env
+              run: |
+                  echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}" >> .env
+                  echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}" >> .env
+                  echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}" >> .env
+                  echo "VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}" >> .env
+                  echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}" >> .env
+                  echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}" >> .env
+                  echo "VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}" >> .env
+                  echo "VITE_GOOGLE_MAPS_API_KEY=${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" >> .env
 
-      # Step 6: Deploy to Firebase Hosting (Live)
-      - name: 🚀 Deploy to Firebase Hosting (live)
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPORT_STACKING_WEBSITE }}
-          channelId: live
-          projectId: sport-stacking-website
+            # Step 5: Build Project
+            - name: 🛠️ Build Project
+              run: yarn build
+
+            # Step 6: Deploy to Firebase Hosting (Live)
+            - name: 🚀 Deploy to Firebase Hosting (live)
+              uses: FirebaseExtended/action-hosting-deploy@v0
+              with:
+                  repoToken: ${{ secrets.GITHUB_TOKEN }}
+                  firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPORT_STACKING_WEBSITE }}
+                  channelId: live
+                  projectId: sport-stacking-website
