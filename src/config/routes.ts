@@ -18,18 +18,18 @@ export interface Route {
 }
 
 const routes: Route[] = [
-    {path: "/", component: Home},
-    {path: "/athletes", component: Athletes},
-    {path: "/tournaments", component: Tournaments},
-    {path: "/tournaments/create", component: CreateCompetitionPage},
-    {path: "/tournaments/:competitionId/register", component: RegisterCompetitionPage},
-    {path: "/records/3-3-3", component: page_3_3_3},
-    {path: "/records/3-6-3", component: page_3_6_3},
-    {path: "/records/Cycle", component: Cycle},
-    {path: "/records/Double", component: Double},
-    {path: "/register", component: RegisterPage},
-    {path: "/users/:id", component: UserProfile},
-    {path: "/admins", component: AdminPermissionsPage},
+    { path: "/", component: Home },
+    { path: "/athletes", component: Athletes },
+    { path: "/tournaments", component: Tournaments },
+    { path: "/tournaments/create", component: CreateCompetitionPage },
+    { path: "/tournaments/:competitionId/register", component: RegisterCompetitionPage },
+    { path: "/records/3-3-3", component: page_3_3_3 },
+    { path: "/records/3-6-3", component: page_3_6_3 },
+    { path: "/records/Cycle", component: Cycle },
+    { path: "/records/Double", component: Double },
+    { path: "/register", component: RegisterPage },
+    { path: "/users/:id", component: UserProfile },
+    { path: "/admins", component: AdminPermissionsPage },
 ];
 
 export default routes;

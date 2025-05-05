@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "types": ["vite/client"],
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
@@ -22,8 +23,8 @@
       "@schema/*": ["schema/*"],
       "@hooks/*": ["hooks/*"],
       "@components/*": ["components/*"]
-    }
-  },
-  "include": ["src"],
+    },
+},
+  "include": ["src", "src/main.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
