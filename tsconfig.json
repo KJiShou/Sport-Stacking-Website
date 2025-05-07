@@ -20,9 +20,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@schema/*": ["schema/*"],
-      "@hooks/*": ["hooks/*"],
-      "@components/*": ["components/*"]
+      "@schema/*": ["src/schema/*"],
+      "@hooks/*": ["src/hooks/*"],
+      "@components/*": ["src/components/*"]
     }
   },
   "include": ["src", "src/main.tsx"],

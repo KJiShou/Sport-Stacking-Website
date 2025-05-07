@@ -93,65 +93,63 @@ export default function RegisterCompetitionPage() {
     if (error) return <Result status="error" title="Error" subTitle={error} />;
 
     return (
-        <div className="flex flex-col items-center p-6 md:p-10 gap-4 w-full">
-            <Card className="w-full max-w-4xl shadow-lg">
+        <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+            <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <Title heading={3}>{competition?.name}</Title>
                 <Paragraph>
-                    📍 <b>Location:</b> {competition?.address} ({competition?.country?.join(" / ")})
+                    <b>Location:</b> {competition?.address} ({competition?.country?.join(" / ")})
                 </Paragraph>
                 <Paragraph>
-                    🗓️ <b>Date:</b> {formatDate(competition?.start_date)} - {formatDate(competition?.end_date)}
+                    <b>Date:</b> {formatDate(competition?.start_date)} - {formatDate(competition?.end_date)}
                 </Paragraph>
                 <Paragraph>
-                    👥 <b>Max Participants:</b> {competition?.max_participants ?? "N/A"}
+                    <b>Max Participants:</b> {competition?.max_participants ?? "N/A"}
                 </Paragraph>
-                <Paragraph>📝 Registration is open until: {formatDate(competition?.registration_end_date)}</Paragraph>
-            </Card>
+                <Paragraph>Registration is open until: {formatDate(competition?.registration_end_date)}</Paragraph>
+            </div>
 
-            <div className="w-full max-w-4xl mt-6">
-                <Card className="shadow-md">
-                    <Title heading={5}>Register for Event</Title>
-                    <Form form={form} layout="vertical" onSubmit={handleRegister}>
-                        <Form.Item label="Your Name" field="name" rules={[{required: true}]}>
-                            {" "}
-                            <Input placeholder="Enter your name" />{" "}
-                        </Form.Item>
-                        <Form.Item label="Team Name (optional)" field="team">
-                            {" "}
-                            <Input placeholder="Enter team name if applicable" />{" "}
-                        </Form.Item>
-                        <Form.Item label="Select Event(s)" field="event" rules={[{required: true}]}>
-                            <Select
-                                placeholder="Select an item"
-                                style={{width: 345, marginRight: 20}}
-                                mode="multiple"
-                                onChange={(value) => {
-                                    if (!competition?.events) return;
-                                    const remaining = competition.events.filter(
-                                        (option) => !value.includes(`${option.code}-${option.type}`),
-                                    );
-                                    setOptions(remaining);
-                                }}
-                            >
-                                {options?.map((option) => (
-                                    <Option
-                                        wrapperClassName="select-demo-hide-option-checkbox"
-                                        key={`${option.code}-${option.type}`}
-                                        value={`${option.code}-${option.type}`}
-                                    >
-                                        {option.code} ({option.type})
-                                    </Option>
-                                ))}
-                            </Select>
-                        </Form.Item>
+            <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                <Title heading={5}>Register for Event</Title>
+                <Form form={form} layout="vertical" onSubmit={handleRegister}>
+                    <Form.Item label="Your Name" field="name" rules={[{required: true}]}>
+                        {" "}
+                        <Input placeholder="Enter your name" />{" "}
+                    </Form.Item>
+                    <Form.Item label="Team Name (optional)" field="team">
+                        {" "}
+                        <Input placeholder="Enter team name if applicable" />{" "}
+                    </Form.Item>
+                    <Form.Item label="Select Event(s)" field="event" rules={[{required: true}]}>
+                        <Select
+                            placeholder="Select an item"
+                            style={{width: 345, marginRight: 20}}
+                            mode="multiple"
+                            onChange={(value) => {
+                                if (!competition?.events) return;
+                                const remaining = competition.events.filter(
+                                    (option) => !value.includes(`${option.code}-${option.type}`),
+                                );
+                                setOptions(remaining);
+                            }}
+                        >
+                            {options?.map((option) => (
+                                <Option
+                                    wrapperClassName="select-demo-hide-option-checkbox"
+                                    key={`${option.code}-${option.type}`}
+                                    value={`${option.code}-${option.type}`}
+                                >
+                                    {option.code} ({option.type})
+                                </Option>
+                            ))}
+                        </Select>
+                    </Form.Item>
 
-                        <Form.Item>
-                            <Button type="primary" htmlType="submit">
-                                Register
-                            </Button>
-                        </Form.Item>
-                    </Form>
-                </Card>
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit">
+                            Register
+                        </Button>
+                    </Form.Item>
+                </Form>
             </div>
         </div>
     );

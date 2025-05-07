@@ -2,17 +2,19 @@ import {
     Button,
     Cascader,
     DatePicker,
+    Dropdown,
     Form,
     Input,
     InputNumber,
     Message,
     Modal,
+    Popconfirm,
     Table,
     type TableColumnProps,
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import {IconEdit, IconPlus} from "@arco-design/web-react/icon";
+import {IconDelete, IconEdit, IconMore, IconPlayArrow, IconPlus} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
@@ -20,7 +22,7 @@ import LoginForm from "@/components/common/Login";
 import {useAuthContext} from "@/context/AuthContext";
 import type {Competition} from "@/schema"; // 就是你那个 CompetitionSchema infer出来的type
 import {countries} from "@/schema/Country";
-import {fetchCompetitionsByType, updateCompetition} from "@/services/firebase/competitionsService";
+import {deleteCompetitionById, fetchCompetitionsByType, updateCompetition} from "@/services/firebase/competitionsService";
 
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import {DeviceBreakpoint} from "@/hooks/DeviceInspector/deviceStore";
@@ -32,6 +34,7 @@ import FinalCriteriaFields from "./FinalCriteriaFields";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
 import {useCompetitionFormPrefill} from "./useCompetitionFormPrefill";
 import LocationPicker, {isValidCountryPath} from "./LocationPicker";
+import {useNavigate} from "react-router-dom";
 
 const {Title, Paragraph} = Typography;
 type CompetitionFormData = Competition & {
@@ -46,7 +49,10 @@ interface CompetitionListProps {
 export default function CompetitionList({type}: Readonly<CompetitionListProps>) {
     const {user} = useAuthContext();
     const [form] = Form.useForm();
+    const navigate = useNavigate();
+
     const deviceBreakpoint = useDeviceBreakpoint();
+
     const {handleCompetitionDateChange, handleRangeChangeSmart} = useSmartDateHandlers(form);
 
     const {RangePicker} = DatePicker;
@@ -122,15 +128,45 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
         {
             title: "Action",
             dataIndex: "action",
-            width: 150,
+            width: 200,
             render: (_: string, competition: Competition) =>
                 user?.roles?.edit_competition ? (
-                    <Button type="primary" size="mini" onClick={() => handleEdit(competition)}>
-                        <IconEdit />
-                        Edit
-                    </Button>
+                    <Dropdown.Button
+                        type="primary"
+                        trigger={["click", "hover"]}
+                        droplist={
+                            <div
+                                className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                            >
+                                <Button
+                                    type="text"
+                                    loading={loading}
+                                    className={`text-left`}
+                                    onClick={async () => handleEdit(competition)}
+                                >
+                                    <IconEdit /> Edit
+                                </Button>
+                                <Button
+                                    type="text"
+                                    status="danger"
+                                    loading={loading}
+                                    className={`text-left`}
+                                    onClick={async () => handleDelete(competition)}
+                                >
+                                    <IconDelete /> Delete
+                                </Button>
+                            </div>
+                        }
+                        buttonProps={{
+                            loading: loading,
+                            onClick: () => navigate(``),
+                        }}
+                    >
+                        <IconPlayArrow />
+                        Start
+                    </Dropdown.Button>
                 ) : (
-                    <Button type="primary" size="mini" onClick={() => handleRegister(competition.id ?? "")}>
+                    <Button type="primary" onClick={() => handleRegister(competition.id ?? "")}>
                         Register
                     </Button>
                 ),
@@ -206,6 +242,28 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
     const handleEdit = (competition: Competition) => {
         setSelectedCompetition(competition);
         setEditModalVisible(true);
+    };
+
+    const handleDelete = async (competition: Competition) => {
+        Modal.confirm({
+            title: "Delete Confirmation",
+            content: `Are you sure you want to delete the competition "${competition.name}"?`,
+            okText: "Yes",
+            cancelText: "Cancel",
+            onOk: async () => {
+                try {
+                    setLoading(true);
+                    await deleteCompetitionById(user!, competition?.id ?? "");
+                    Message.success("Competition deleted successfully.");
+                    await fetchCompetitions();
+                } catch (error) {
+                    Message.error("Failed to delete competition.");
+                    console.error(error);
+                } finally {
+                    setLoading(false);
+                }
+            },
+        });
     };
 
     const handleRegister = (competitionId: string) => {
