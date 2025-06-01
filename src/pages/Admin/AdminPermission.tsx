@@ -1,9 +1,9 @@
-import { Button, Form, Input, Message, Modal, Spin, Switch, Table, type TableColumnProps, Tag } from "@arco-design/web-react";
-import { useEffect, useState } from "react";
-import { DeviceBreakpoint } from "../../hooks/DeviceInspector/deviceStore";
-import type { FirestoreUser } from "../../schema";
-import { fetchAllUsers, updateUserRoles } from "../../services/firebase/authService";
-import { useDeviceBreakpoint } from "../../utils/DeviceInspector";
+import {Button, Form, Input, Message, Modal, Spin, Switch, Table, type TableColumnProps, Tag} from "@arco-design/web-react";
+import {useEffect, useState} from "react";
+import {DeviceBreakpoint} from "../../hooks/DeviceInspector/deviceStore";
+import type {FirestoreUser} from "../../schema";
+import {fetchAllUsers, updateUserRoles} from "../../services/firebase/authService";
+import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
 
 type RoleFields = {
     edit_tournament: boolean;
@@ -50,9 +50,7 @@ export default function AdminPermissionsPage() {
             dataIndex: "is_admin",
             width: 100,
             render: (_: string, record: FirestoreUser) => (
-                <Tag color={record.roles ? "red" : "blue"} >
-                    {record.roles ? "Admin" : "User"}
-                </Tag>
+                <Tag color={record.roles ? "red" : "blue"}>{record.roles ? "Admin" : "User"}</Tag>
             ),
             sorter: (a, b) => {
                 const aIsAdmin = !!a.roles;
@@ -138,7 +136,7 @@ export default function AdminPermissionsPage() {
                             allowClear
                             onClear={() => setSearchText("")}
                             onSearch={(val) => setSearchText(val)}
-                            style={{ maxWidth: 300 }}
+                            style={{maxWidth: 300}}
                         />
 
                         {/* Users table */}
@@ -146,7 +144,7 @@ export default function AdminPermissionsPage() {
                             rowKey="id"
                             data={filtered}
                             columns={columns.filter((e) => !!e)}
-                            pagination={{ pageSize: 10 }}
+                            pagination={{pageSize: 10}}
                             pagePosition="bottomCenter"
                         />
 

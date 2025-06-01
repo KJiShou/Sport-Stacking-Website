@@ -1,9 +1,9 @@
 // src/pages/RegisterTournamentPage.tsx
 
-import { useAuthContext } from "@/context/AuthContext";
-import type { Registration, Tournament } from "@/schema";
-import { db } from "@/services/firebase/config";
-import { fetchTournamentById } from "@/services/firebase/tournamentsService";
+import {useAuthContext} from "@/context/AuthContext";
+import type {Registration, Tournament} from "@/schema";
+import {db} from "@/services/firebase/config";
+import {fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
     Button,
     Descriptions,
@@ -17,30 +17,30 @@ import {
     Result,
     Select,
     Tooltip,
-    Typography
+    Typography,
 } from "@arco-design/web-react";
-import { IconExclamationCircle, IconLaunch } from "@arco-design/web-react/icon";
-import dayjs, { type Dayjs } from "dayjs";
+import {IconExclamationCircle, IconLaunch} from "@arco-design/web-react/icon";
+import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
-import { Timestamp, addDoc, collection } from "firebase/firestore";
-import { useEffect, useState, type ReactNode } from "react";
-import { useParams } from "react-router-dom";
+import {Timestamp, addDoc, collection} from "firebase/firestore";
+import {useEffect, useState, type ReactNode} from "react";
+import {useParams} from "react-router-dom";
 dayjs.extend(isSameOrAfter);
-const { Title, Paragraph } = Typography;
+const {Title, Paragraph} = Typography;
 const Option = Select.Option;
 type TeamEntry = [boolean, string];
 
 export default function RegisterTournamentPage() {
-    const { tournamentId } = useParams();
+    const {tournamentId} = useParams();
     const [form] = Form.useForm();
-    const { user } = useAuthContext();
+    const {user} = useAuthContext();
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [options, setOptions] = useState<Tournament["events"]>([]);
     const [availableEvents, setAvailableEvents] = useState<Tournament["events"]>([]);
     const [haveTeam, setHaveTeam] = useState<TeamEntry[]>([]);
-    const [tournamentData, setTournamentData] = useState<{ label?: ReactNode; value?: ReactNode }[]>([]);
+    const [tournamentData, setTournamentData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
 
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
@@ -197,32 +197,32 @@ export default function RegisterTournamentPage() {
                 <Descriptions
                     column={1}
                     title={
-                        <Title style={{ textAlign: "center", width: "100%" }} heading={3}>
+                        <Title style={{textAlign: "center", width: "100%"}} heading={3}>
                             {tournament?.name}
                         </Title>
                     }
                     data={tournamentData}
-                    style={{ marginBottom: 20 }}
-                    labelStyle={{ textAlign: "right", paddingRight: 36 }}
+                    style={{marginBottom: 20}}
+                    labelStyle={{textAlign: "right", paddingRight: 36}}
                 />
             </div>
 
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <Title heading={5}>Register for Event</Title>
                 <Form requiredSymbol={false} form={form} layout="vertical" onSubmit={handleRegister}>
-                    <Form.Item disabled label="ID" field="id" rules={[{ required: true }]}>
+                    <Form.Item disabled label="ID" field="id" rules={[{required: true}]}>
                         <Input disabled placeholder="Enter your ID" />
                     </Form.Item>
-                    <Form.Item label="Name" field="name" rules={[{ required: true }]}>
+                    <Form.Item label="Name" field="name" rules={[{required: true}]}>
                         <Input placeholder="Enter your name" />
                     </Form.Item>
-                    <Form.Item disabled label="Age" field="age" rules={[{ required: true }]}>
+                    <Form.Item disabled label="Age" field="age" rules={[{required: true}]}>
                         <InputNumber disabled placeholder="Enter your age" />
                     </Form.Item>
-                    <Form.Item label="Select Event(s)" field="event" rules={[{ required: true }]}>
+                    <Form.Item label="Select Event(s)" field="event" rules={[{required: true}]}>
                         <Select
                             placeholder="Select an events"
-                            style={{ width: 345, marginRight: 20 }}
+                            style={{width: 345, marginRight: 20}}
                             mode="multiple"
                             onChange={(value) => {
                                 if (!tournament?.events) return;
@@ -260,14 +260,14 @@ export default function RegisterTournamentPage() {
                                             <Form.Item
                                                 field={`teams.${teamLabel}.name`}
                                                 label="Team Name"
-                                                rules={[{ required: true }]}
+                                                rules={[{required: true}]}
                                             >
                                                 <Input placeholder="Please enter team name" />
                                             </Form.Item>
                                             <Form.Item
                                                 field={`teams.${teamLabel}.leader`}
                                                 label={`Team Leader Global ID`}
-                                                rules={[{ required: true }]}
+                                                rules={[{required: true}]}
                                             >
                                                 <InputNumber hideControl placeholder="Please enter team leader global ID" />
                                             </Form.Item>
@@ -278,12 +278,12 @@ export default function RegisterTournamentPage() {
                                                         Team Member
                                                         <Tooltip content="Must Enter Team Member Global ID">
                                                             <IconExclamationCircle
-                                                                style={{ margin: "0 8px", color: "rgb(var(--arcoblue-6))" }}
+                                                                style={{margin: "0 8px", color: "rgb(var(--arcoblue-6))"}}
                                                             />
                                                         </Tooltip>
                                                     </div>
                                                 }
-                                                rules={[{ required: true }]}
+                                                rules={[{required: true}]}
                                             >
                                                 <Select
                                                     mode="multiple"
@@ -297,7 +297,7 @@ export default function RegisterTournamentPage() {
                                                     }}
                                                     placeholder="Input Team Member Global ID"
                                                     allowClear
-                                                    style={{ width: 345, flex: 1 }}
+                                                    style={{width: 345, flex: 1}}
                                                 />
                                             </Form.Item>
                                         </div>

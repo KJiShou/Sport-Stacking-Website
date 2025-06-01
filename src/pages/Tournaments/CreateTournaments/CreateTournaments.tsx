@@ -1,36 +1,48 @@
-import type { Timestamp } from "firebase/firestore";
-import { useState } from "react";
-import { Button, Cascader, DatePicker, Form, Input, InputNumber, Message, Modal, Select, Tooltip, Typography } from "@arco-design/web-react";
+import type {Timestamp} from "firebase/firestore";
+import {useState} from "react";
+import {
+    Button,
+    Cascader,
+    DatePicker,
+    Form,
+    Input,
+    InputNumber,
+    Message,
+    Modal,
+    Select,
+    Tooltip,
+    Typography,
+} from "@arco-design/web-react";
 import dayjs from "dayjs";
-import type { Tournament } from "@/schema";
-import { IconDelete, IconExclamationCircle, IconPlus, IconUndo } from "@arco-design/web-react/icon";
-import { useNavigate } from "react-router-dom";
-import { countries } from "@/schema/Country";
-import { createTournament } from "@/services/firebase/tournamentsService";
-import { useAuthContext } from "@/context/AuthContext";
-import { useSmartDateHandlers } from "@/hooks/DateHandler/useSmartDateHandlers";
+import type {Tournament} from "@/schema";
+import {IconDelete, IconExclamationCircle, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import {useNavigate} from "react-router-dom";
+import {countries} from "@/schema/Country";
+import {createTournament} from "@/services/firebase/tournamentsService";
+import {useAuthContext} from "@/context/AuthContext";
+import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import AgeBracketModal from "../Component/AgeBracketModal";
 import EventFields from "../Component/EventField";
 import FinalCriteriaFields from "../Component/FinalCriteriaFields";
 import FinalCategoriesFields from "../Component/FinalCategoriesFields";
-import { DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES } from "@/constants/tournamentDefaults";
-import { useTournamentFormPrefill } from "../Component/useTournamentFormPrefill";
-import { useAgeBracketEditor } from "../Component/useAgeBracketEditor";
-import LocationPicker, { isValidCountryPath } from "../Component/LocationPicker";
+import {DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES} from "@/constants/tournamentDefaults";
+import {useTournamentFormPrefill} from "../Component/useTournamentFormPrefill";
+import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
+import LocationPicker, {isValidCountryPath} from "../Component/LocationPicker";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp, Timestamp];
     registration_date_range: [Timestamp, Timestamp];
 };
 
-const { Title } = Typography;
-const { RangePicker } = DatePicker;
+const {Title} = Typography;
+const {RangePicker} = DatePicker;
 
 export default function CreateTournamentPage() {
     const [form] = Form.useForm();
     const navigate = useNavigate();
-    const { user } = useAuthContext();
-    const { handleTournamentDateChange, handleRangeChangeSmart } = useSmartDateHandlers(form);
+    const {user} = useAuthContext();
+    const {handleTournamentDateChange, handleRangeChangeSmart} = useSmartDateHandlers(form);
     const {
         ageBracketModalVisible,
         ageBrackets,
@@ -111,7 +123,7 @@ export default function CreateTournamentPage() {
                     requiredSymbol={false}
                 >
                     {/* Tournament Name */}
-                    <Form.Item label="Tournament Name" field="name" rules={[{ required: true, message: "Please input name" }]}>
+                    <Form.Item label="Tournament Name" field="name" rules={[{required: true, message: "Please input name"}]}>
                         <Input placeholder="Enter tournament name" />
                     </Form.Item>
 
@@ -119,14 +131,14 @@ export default function CreateTournamentPage() {
                     <Form.Item
                         label="Tournament Date Range"
                         field="date_range"
-                        rules={[{ required: true, message: "Please select date range" }]}
+                        rules={[{required: true, message: "Please select date range"}]}
                     >
                         <RangePicker
                             showTime={{
                                 defaultValue: ["08:00", "18:00"],
                                 format: "HH:mm",
                             }}
-                            style={{ width: "100%" }}
+                            style={{width: "100%"}}
                             disabledDate={(current) => {
                                 const today = dayjs();
                                 return current?.isBefore(today.add(7, "day"), "day");
@@ -138,7 +150,7 @@ export default function CreateTournamentPage() {
                     <Form.Item
                         label="Country / State"
                         field="country"
-                        rules={[{ required: true, message: "Please select a country/region" }]}
+                        rules={[{required: true, message: "Please select a country/region"}]}
                     >
                         <Cascader
                             showSearch
@@ -156,12 +168,12 @@ export default function CreateTournamentPage() {
                         />
                     </Form.Item>
                     {/* Venue */}
-                    <Form.Item label="Venue" field="venue" rules={[{ required: true, message: "Please input venue" }]}>
+                    <Form.Item label="Venue" field="venue" rules={[{required: true, message: "Please input venue"}]}>
                         <Input placeholder="Enter venue name" />
                     </Form.Item>
 
                     {/* Address */}
-                    <Form.Item label="Address" field="address" rules={[{ required: true, message: "Please input address" }]}>
+                    <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
                         <LocationPicker
                             value={form.getFieldValue("address")}
                             onChange={(val) => form.setFieldValue("address", val)}
@@ -180,14 +192,14 @@ export default function CreateTournamentPage() {
                     <Form.Item
                         label="Registration Date Range"
                         field="registration_date_range"
-                        rules={[{ required: true, message: "Please input registration date" }]}
+                        rules={[{required: true, message: "Please input registration date"}]}
                     >
                         <RangePicker
                             showTime={{
                                 defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                 format: "HH:mm",
                             }}
-                            style={{ width: "100%" }}
+                            style={{width: "100%"}}
                             disabledDate={(current) => current?.isBefore(dayjs(), "day")}
                             onChange={handleRangeChangeSmart("registration_date_range")}
                         />
@@ -199,20 +211,18 @@ export default function CreateTournamentPage() {
                             <div>
                                 Team Member
                                 <Tooltip content="0 as no limit">
-                                    <IconExclamationCircle
-                                        style={{ margin: "0 8px", color: "rgb(var(--arcoblue-6))" }}
-                                    />
+                                    <IconExclamationCircle style={{margin: "0 8px", color: "rgb(var(--arcoblue-6))"}} />
                                 </Tooltip>
                             </div>
                         }
                         field="max_participants"
-                        rules={[{ required: true, message: "Please input maximum participants" }]}
+                        rules={[{required: true, message: "Please input maximum participants"}]}
                     >
-                        <InputNumber min={0} style={{ width: "100%" }} placeholder="Enter max number of participants" />
+                        <InputNumber min={0} style={{width: "100%"}} placeholder="Enter max number of participants" />
                     </Form.Item>
                     <Form.Item label="Events">
                         <Form.List field="events">
-                            {(fields, { add, remove }) => (
+                            {(fields, {add, remove}) => (
                                 <>
                                     {fields.map((field, index) => (
                                         <EventFields
@@ -229,8 +239,8 @@ export default function CreateTournamentPage() {
                                                 code: "",
                                                 type: "",
                                                 age_brackets: [
-                                                    { name: "Under 10", min_age: 0, max_age: 9 },
-                                                    { name: "10 and Above", min_age: 10, max_age: 99 },
+                                                    {name: "Under 10", min_age: 0, max_age: 9},
+                                                    {name: "10 and Above", min_age: 10, max_age: 99},
                                                 ],
                                             })
                                         }
@@ -251,7 +261,7 @@ export default function CreateTournamentPage() {
                         className={`w-full md:max-w-[80vw] lg:max-w-[60vw]`}
                     >
                         <Form.List field="age_brackets_modal">
-                            {(fields, { add, remove }) => {
+                            {(fields, {add, remove}) => {
                                 return (
                                     <>
                                         {ageBrackets.map((bracket, id) => {
@@ -338,7 +348,7 @@ export default function CreateTournamentPage() {
                                         })}
                                         <Button
                                             type="text"
-                                            onClick={() => setAgeBrackets([...ageBrackets, { name: "", min_age: 0, max_age: 0 }])}
+                                            onClick={() => setAgeBrackets([...ageBrackets, {name: "", min_age: 0, max_age: 0}])}
                                         >
                                             <IconPlus /> Add Bracket
                                         </Button>
@@ -350,7 +360,7 @@ export default function CreateTournamentPage() {
 
                     <Form.Item label="Final Criteria">
                         <Form.List field="final_criteria">
-                            {(fields, { add, remove }) => (
+                            {(fields, {add, remove}) => (
                                 <>
                                     {fields.map((field, index) => (
                                         <FinalCriteriaFields key={field.key} index={index} onRemove={remove} />
@@ -364,7 +374,7 @@ export default function CreateTournamentPage() {
                     </Form.Item>
                     <Form.Item label="Final Categories">
                         <Form.List field="final_categories">
-                            {(fields, { add, remove }) => (
+                            {(fields, {add, remove}) => (
                                 <>
                                     {fields.map((field, index) => (
                                         <FinalCategoriesFields key={field.key} index={index} onRemove={remove} />

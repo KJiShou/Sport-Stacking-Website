@@ -14,8 +14,8 @@ import {
     type Query,
     deleteDoc,
 } from "firebase/firestore";
-import type { Tournament, FirestoreUser } from "../../schema";
-import { db } from "./config";
+import type {Tournament, FirestoreUser} from "../../schema";
+import {db} from "./config";
 
 export async function createTournament(user: FirestoreUser, data: Omit<Tournament, "id">): Promise<string> {
     if (!user?.roles?.edit_tournament) {
@@ -89,11 +89,7 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
     return docRef.id;
 }
 
-export async function updateTournament(
-    user: FirestoreUser,
-    tournamentId: string,
-    data: Omit<Tournament, "id">,
-): Promise<void> {
+export async function updateTournament(user: FirestoreUser, tournamentId: string, data: Omit<Tournament, "id">): Promise<void> {
     if (!user?.roles?.edit_tournament) {
         throw new Error("Unauthorized");
     }
@@ -171,7 +167,7 @@ export async function fetchTournamentById(tournamentId: string): Promise<Tournam
             return null;
         }
 
-        return { ...docSnap.data() } as Tournament;
+        return {...docSnap.data()} as Tournament;
     } catch (error) {
         console.error("Error fetching tournament:", error);
         throw error;

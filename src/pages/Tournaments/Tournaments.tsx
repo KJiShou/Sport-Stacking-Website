@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-import { useLocation } from "react-router-dom";
+import {useLocation} from "react-router-dom";
 import TournamentList from "./Component/TournamentList";
 
 interface TournamentListProps {

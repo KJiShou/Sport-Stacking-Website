@@ -1,5 +1,5 @@
-import type { FormInstance } from "@arco-design/web-react";
-import dayjs, { type Dayjs } from "dayjs";
+import type {FormInstance} from "@arco-design/web-react";
+import dayjs, {type Dayjs} from "dayjs";
 
 export function useSmartDateHandlers(form: FormInstance) {
     const handleTournamentDateChange = (_: string[], dates: Dayjs[]) => {
@@ -48,5 +48,5 @@ export function useSmartDateHandlers(form: FormInstance) {
         form.setFieldValue(fieldName, [fixedStart.toDate(), fixedEnd.toDate()]);
     };
 
-    return { handleTournamentDateChange, handleRangeChangeSmart };
+    return {handleTournamentDateChange, handleRangeChangeSmart};
 }

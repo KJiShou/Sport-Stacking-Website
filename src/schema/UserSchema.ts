@@ -1,5 +1,5 @@
-import { Timestamp } from "firebase/firestore";
-import { z } from "zod";
+import {Timestamp} from "firebase/firestore";
+import {z} from "zod";
 
 export const FirestoreUserSchema = z.object({
     id: z.string(),

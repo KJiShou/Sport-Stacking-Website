@@ -1,5 +1,5 @@
-import { Timestamp } from "firebase/firestore";
-import { z } from "zod";
+import {Timestamp} from "firebase/firestore";
+import {z} from "zod";
 
 // age_brackets subcollection
 export const AgeBracketSchema = z.object({
