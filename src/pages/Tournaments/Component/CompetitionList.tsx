@@ -4,39 +4,42 @@ import {
     DatePicker,
     Dropdown,
     Form,
+    Grid,
     Input,
     InputNumber,
     Message,
     Modal,
     Popconfirm,
+    Popover,
+    Space,
+    Spin,
     Table,
     type TableColumnProps,
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import {IconDelete, IconEdit, IconMore, IconPlayArrow, IconPlus} from "@arco-design/web-react/icon";
+import { IconArrowFall, IconArrowRise, IconDelete, IconEdit, IconMore, IconPlayArrow, IconPlus } from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
-import {Timestamp} from "firebase/firestore";
-import {useEffect, useState} from "react";
+import { Timestamp } from "firebase/firestore";
+import { useEffect, useState } from "react";
 import LoginForm from "@/components/common/Login";
-import {useAuthContext} from "@/context/AuthContext";
-import type {Competition} from "@/schema"; // 就是你那个 CompetitionSchema infer出来的type
-import {countries} from "@/schema/Country";
-import {deleteCompetitionById, fetchCompetitionsByType, updateCompetition} from "@/services/firebase/competitionsService";
+import { useAuthContext } from "@/context/AuthContext";
+import type { Competition } from "@/schema"; // 就是你那个 CompetitionSchema infer出来的type
+import { countries } from "@/schema/Country";
+import { deleteCompetitionById, fetchCompetitionsByType, updateCompetition } from "@/services/firebase/competitionsService";
 
-import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
-import {DeviceBreakpoint} from "@/hooks/DeviceInspector/deviceStore";
-import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import { useSmartDateHandlers } from "@/hooks/DateHandler/useSmartDateHandlers";
+import { DeviceBreakpoint } from "@/hooks/DeviceInspector/deviceStore";
+import { useDeviceBreakpoint } from "@/utils/DeviceInspector";
 import AgeBracketModal from "./AgeBracketModal";
 import EventFields from "./EventField";
 import FinalCategoriesFields from "./FinalCategoriesFields";
 import FinalCriteriaFields from "./FinalCriteriaFields";
-import {useAgeBracketEditor} from "./useAgeBracketEditor";
-import {useCompetitionFormPrefill} from "./useCompetitionFormPrefill";
-import LocationPicker, {isValidCountryPath} from "./LocationPicker";
-import {useNavigate} from "react-router-dom";
+import { useAgeBracketEditor } from "./useAgeBracketEditor";
+import { useCompetitionFormPrefill } from "./useCompetitionFormPrefill";
+import LocationPicker, { isValidCountryPath } from "./LocationPicker";
+import { useNavigate } from "react-router-dom";
 
-const {Title, Paragraph} = Typography;
 type CompetitionFormData = Competition & {
     date_range: [Timestamp | Date, Timestamp | Date];
     registration_date_range: [Timestamp | Date, Timestamp | Date];
@@ -46,16 +49,16 @@ interface CompetitionListProps {
     type: "current" | "history";
 }
 
-export default function CompetitionList({type}: Readonly<CompetitionListProps>) {
-    const {user} = useAuthContext();
+export default function CompetitionList({ type }: Readonly<CompetitionListProps>) {
+    const { user } = useAuthContext();
     const [form] = Form.useForm();
     const navigate = useNavigate();
 
     const deviceBreakpoint = useDeviceBreakpoint();
 
-    const {handleCompetitionDateChange, handleRangeChangeSmart} = useSmartDateHandlers(form);
+    const { handleCompetitionDateChange, handleRangeChangeSmart } = useSmartDateHandlers(form);
 
-    const {RangePicker} = DatePicker;
+    const { RangePicker } = DatePicker;
 
     const {
         ageBracketModalVisible,
@@ -165,10 +168,22 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                         <IconPlayArrow />
                         Start
                     </Dropdown.Button>
-                ) : (
+                ) : competition.registration_end_date > Timestamp.now() ? (
                     <Button type="primary" onClick={() => handleRegister(competition.id ?? "")}>
                         Register
                     </Button>
+                ) : (
+                    <Popover
+                        content={
+                            <span>
+                                <p>This competition has end registration date.</p>
+                            </span>
+                        }
+                    >
+                        <Button type="primary" disabled>
+                            Register
+                        </Button>
+                    </Popover>
                 ),
         },
     ];
@@ -253,7 +268,11 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
             onOk: async () => {
                 try {
                     setLoading(true);
-                    await deleteCompetitionById(user!, competition?.id ?? "");
+                    if (!user) {
+                        Message.error("You must be logged in to delete a competition.");
+                        return;
+                    }
+                    await deleteCompetitionById(user, competition?.id ?? "");
                     Message.success("Competition deleted successfully.");
                     await fetchCompetitions();
                 } catch (error) {
@@ -335,7 +354,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                 rowKey="id"
                 columns={columns.filter((e) => !!e)}
                 data={competitions}
-                pagination={{pageSize: 10}}
+                pagination={{ pageSize: 10 }}
                 className="my-4"
                 loading={loading}
             />
@@ -359,21 +378,21 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                 visible={editModalVisible}
                 onCancel={() => setEditModalVisible(false)}
                 footer={null}
-                className={`my-8`}
+                className={`my-8 w-full md:max-w-[80vw] lg:max-w-[60vw]`}
             >
                 {selectedCompetition && (
-                    <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
-                        <Form.Item label="Competition Name" field="name" rules={[{required: true}]}>
+                    <Form form={form} layout="horizontal" onSubmit={handleSubmit} requiredSymbol={false}>
+                        <Form.Item label="Competition Name" field="name" rules={[{ required: true }]}>
                             <Input placeholder="Enter competition name" />
                         </Form.Item>
 
-                        <Form.Item label="Competition Date Range" field="date_range" rules={[{required: true}]}>
+                        <Form.Item label="Competition Date Range" field="date_range" rules={[{ required: true }]}>
                             <RangePicker
                                 showTime={{
                                     defaultValue: ["08:00", "18:00"],
                                     format: "HH:mm",
                                 }}
-                                style={{width: "100%"}}
+                                style={{ width: "100%" }}
                                 disabledDate={(current) => {
                                     const today = dayjs();
                                     return current?.isBefore(today.add(7, "day"), "day");
@@ -385,7 +404,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                         <Form.Item
                             label="Country / State"
                             field="country"
-                            rules={[{required: true, message: "Please select a country/region"}]}
+                            rules={[{ required: true, message: "Please select a country/region" }]}
                         >
                             <Cascader
                                 showSearch
@@ -404,7 +423,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                         </Form.Item>
 
                         {/* Address */}
-                        <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
+                        <Form.Item label="Address" field="address" rules={[{ required: true, message: "Please input address" }]}>
                             <LocationPicker
                                 value={form.getFieldValue("address")}
                                 onChange={(val) => form.setFieldValue("address", val)}
@@ -422,25 +441,25 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                         <Form.Item
                             label="Registration Date Range"
                             field="registration_date_range"
-                            rules={[{required: true, message: "Please input registration date"}]}
+                            rules={[{ required: true, message: "Please input registration date" }]}
                         >
                             <RangePicker
                                 showTime={{
                                     defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                     format: "HH:mm",
                                 }}
-                                style={{width: "100%"}}
+                                style={{ width: "100%" }}
                                 disabledDate={(current) => current?.isBefore(dayjs(), "day")}
                                 onChange={handleRangeChangeSmart("registration_date_range")}
                             />
                         </Form.Item>
 
                         <Form.Item label="Maximum Participants" field="max_participants">
-                            <InputNumber min={1} style={{width: "100%"}} placeholder="Enter max number" />
+                            <InputNumber min={1} style={{ width: "100%" }} placeholder="Enter max number" />
                         </Form.Item>
                         <Form.Item label="Events">
                             <Form.List field="events">
-                                {(fields, {add, remove}) => (
+                                {(fields, { add, remove }) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <EventFields
@@ -450,7 +469,19 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                                                 onRemove={remove}
                                             />
                                         ))}
-                                        <Button type="text" onClick={() => add({code: "", type: "", age_brackets: []})}>
+                                        <Button
+                                            type="text"
+                                            onClick={() =>
+                                                add({
+                                                    code: "",
+                                                    type: "",
+                                                    age_brackets: [
+                                                        { name: "Under 10", min_age: 0, max_age: 9 },
+                                                        { name: "10 and Above", min_age: 10, max_age: 99 },
+                                                    ],
+                                                })
+                                            }
+                                        >
                                             <IconPlus /> Add Event
                                         </Button>
                                     </>
@@ -458,18 +489,116 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                             </Form.List>
                         </Form.Item>
 
-                        <AgeBracketModal
+                        <Modal
+                            title="Edit Age Brackets"
                             visible={ageBracketModalVisible}
-                            brackets={ageBrackets}
-                            onChange={setAgeBrackets}
-                            onDeleteBracket={makeHandleDeleteBracket}
                             onCancel={() => setAgeBracketModalVisible(false)}
-                            onSave={handleSaveAgeBrackets}
-                        />
+                            onOk={handleSaveAgeBrackets}
+                            className={`w-full md:max-w-[80vw] lg:max-w-[60vw]`}
+                        >
+                            <Form.List field="age_brackets_modal">
+                                {(fields, { add, remove }) => {
+                                    return (
+                                        <>
+                                            {ageBrackets.map((bracket, index) => {
+                                                const isMinError = bracket.min_age === null || bracket.min_age > bracket.max_age;
+
+                                                let minAgeHelp: string | undefined;
+                                                if (bracket.min_age === null) {
+                                                    minAgeHelp = "Enter min age";
+                                                } else if (bracket.min_age > bracket.max_age) {
+                                                    minAgeHelp = "Min age > Max age";
+                                                }
+
+                                                // 2）再计算 Max Age 的校验状态和提示文字
+                                                const isMaxError = bracket.max_age === null || bracket.max_age < bracket.min_age;
+
+                                                let maxAgeHelp: string | undefined;
+                                                if (bracket.max_age === null) {
+                                                    maxAgeHelp = "Enter max age";
+                                                } else if (bracket.max_age < bracket.min_age) {
+                                                    maxAgeHelp = "Max age < Min age";
+                                                }
+                                                return (
+                                                    <div key={`bracket-${index}`} className="flex gap-4 mb-4 w-full">
+                                                        <Form.Item
+                                                            label="Bracket Name"
+                                                            required
+                                                            validateStatus={!bracket.name ? "error" : undefined}
+                                                            help={!bracket.name ? "Please enter bracket name" : undefined}
+                                                            className="w-1/3"
+                                                        >
+                                                            <Input
+                                                                value={bracket.name}
+                                                                onChange={(v) => {
+                                                                    const updated = [...ageBrackets];
+                                                                    updated[index].name = v;
+                                                                    setAgeBrackets(updated);
+                                                                }}
+                                                                placeholder="Bracket Name"
+                                                            />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            label="Min Age"
+                                                            required
+                                                            validateStatus={isMinError ? "error" : undefined}
+                                                            help={minAgeHelp}
+                                                            className="w-1/4"
+                                                        >
+                                                            <InputNumber
+                                                                value={bracket.min_age}
+                                                                min={0}
+                                                                onChange={(v) => {
+                                                                    const updated = [...ageBrackets];
+                                                                    updated[index].min_age = v ?? 0;
+                                                                    setAgeBrackets(updated);
+                                                                }}
+                                                                placeholder="Min Age"
+                                                            />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            label="Max Age"
+                                                            required
+                                                            validateStatus={isMaxError ? "error" : undefined}
+                                                            help={maxAgeHelp}
+                                                            className="w-1/4"
+                                                        >
+                                                            <InputNumber
+                                                                value={bracket.max_age}
+                                                                min={0}
+                                                                onChange={(v) => {
+                                                                    const updated = [...ageBrackets];
+                                                                    updated[index].max_age = v ?? 0;
+                                                                    setAgeBrackets(updated);
+                                                                }}
+                                                                placeholder="Max Age"
+                                                            />
+                                                        </Form.Item>
+                                                        <div className="flex items-end pb-8">
+                                                            <Button status="danger" onClick={makeHandleDeleteBracket(index)}>
+                                                                <IconDelete />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            <Button
+                                                type="text"
+                                                onClick={() =>
+                                                    setAgeBrackets([...ageBrackets, { name: "", min_age: 0, max_age: 0 }])
+                                                }
+                                            >
+                                                <IconPlus /> Add Bracket
+                                            </Button>
+                                        </>
+                                    );
+                                }}
+                            </Form.List>
+                        </Modal>
 
                         <Form.Item label="Final Criteria">
                             <Form.List field="final_criteria">
-                                {(fields, {add, remove}) => (
+                                {(fields, { add, remove }) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <FinalCriteriaFields key={field.key} index={index} onRemove={remove} />
@@ -483,7 +612,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                         </Form.Item>
                         <Form.Item label="Final Categories">
                             <Form.List field="final_categories">
-                                {(fields, {add, remove}) => (
+                                {(fields, { add, remove }) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <FinalCategoriesFields key={field.key} index={index} onRemove={remove} />
@@ -496,9 +625,9 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                             </Form.List>
                         </Form.Item>
 
-                        <Form.Item>
-                            <Button type="primary" htmlType="submit" loading={loading} long>
-                                Save Changes
+                        <Form.Item className={`w-full`} wrapperCol={{ span: 24 }}>
+                            <Button type="primary" htmlType="submit" loading={loading} className={`w-full`}>
+                                {loading ? <Spin /> : "Save Changes"}
                             </Button>
                         </Form.Item>
                     </Form>

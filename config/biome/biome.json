@@ -156,7 +156,10 @@
       "bracketSameLine": false,
       "quoteStyle": "double",
       "attributePosition": "auto"
-    }
+    },
+    "globals": [
+      "google"
+    ]
   },
   "overrides": [
     {

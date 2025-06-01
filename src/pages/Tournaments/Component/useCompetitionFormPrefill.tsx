@@ -1,7 +1,7 @@
-import {FormInstance} from "@arco-design/web-react";
-import type {Competition} from "@/schema";
+import type { FormInstance } from "@arco-design/web-react";
+import type { Competition } from "@/schema";
 import dayjs from "dayjs";
-import {Timestamp} from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
 
 export function useCompetitionFormPrefill(form: FormInstance) {
     return (competition: Competition) => {

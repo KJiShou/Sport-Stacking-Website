@@ -5,6 +5,7 @@ export const RegistrationSchema = z.object({
     id: z.string().optional().nullable(),
     competition_id: z.string(),
     user_id: z.string(),
+    user_name: z.string(),
     age: z.number(),
     events_registered: z.array(z.string()),
     payment_proof_url: z.string().url().optional().nullable(),
