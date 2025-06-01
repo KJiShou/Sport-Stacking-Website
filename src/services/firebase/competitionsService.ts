@@ -12,6 +12,7 @@ import {
     addDoc,
     orderBy,
     type Query,
+    deleteDoc,
 } from "firebase/firestore";
 import type {Competition, FirestoreUser} from "../../schema";
 import {db} from "./config";
@@ -116,6 +117,20 @@ export async function fetchCompetitionById(competitionId: string): Promise<Compe
         return {...docSnap.data()} as Competition;
     } catch (error) {
         console.error("Error fetching competition:", error);
+        throw error;
+    }
+}
+
+export async function deleteCompetitionById(user: FirestoreUser, competitionId: string): Promise<void> {
+    if (!user?.roles?.edit_competition) {
+        throw new Error("Unauthorized: You do not have permission to delete a competition.");
+    }
+
+    try {
+        const competitionRef = doc(db, "competitions", competitionId);
+        await deleteDoc(competitionRef);
+    } catch (error) {
+        console.error("Error deleting competition:", error);
         throw error;
     }
 }
