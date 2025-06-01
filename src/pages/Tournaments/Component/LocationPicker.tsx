@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
-import { Input, Spin } from "@arco-design/web-react";
-import { countries } from "@/schema/Country";
+import React, {useCallback, useEffect, useRef, useState} from "react";
+import {GoogleMap, Marker, useJsApiLoader} from "@react-google-maps/api";
+import {Input, Spin} from "@arco-design/web-react";
+import {countries} from "@/schema/Country";
 
 // 地图容器样式
 const containerStyle = {
@@ -10,7 +10,7 @@ const containerStyle = {
 };
 
 // 默认坐标：吉隆坡
-const defaultPosition = { lat: 3.139, lng: 101.6869 };
+const defaultPosition = {lat: 3.139, lng: 101.6869};
 
 // ✅ 避免 useJsApiLoader 重复加载
 const GOOGLE_LIBRARIES: "places"[] = ["places"];
@@ -55,14 +55,14 @@ function normalizeRegionName(name: string): string {
     return map[name] ?? name;
 }
 
-export default function LocationPicker({ onCountryChange, countryValue, value, onChange }: Props) {
+export default function LocationPicker({onCountryChange, countryValue, value, onChange}: Props) {
     const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
     const [position, setPosition] = useState(defaultPosition);
     const [loading, setLoading] = useState(false);
 
     const geocoderRef = useRef<google.maps.Geocoder>();
 
-    const { isLoaded } = useJsApiLoader({
+    const {isLoaded} = useJsApiLoader({
         googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
         libraries: GOOGLE_LIBRARIES,
     });
@@ -83,10 +83,10 @@ export default function LocationPicker({ onCountryChange, countryValue, value, o
     useEffect(() => {
         if (!countryValue || !geocoderRef.current || !mapInstance) return;
 
-        geocoderRef.current.geocode({ address: countryValue }, (results, status) => {
+        geocoderRef.current.geocode({address: countryValue}, (results, status) => {
             if (status === "OK" && results && results[0]) {
                 const loc = results[0].geometry.location;
-                const newPos = { lat: loc.lat(), lng: loc.lng() };
+                const newPos = {lat: loc.lat(), lng: loc.lng()};
                 setPosition(newPos);
                 mapInstance.panTo(newPos);
             }
@@ -98,11 +98,11 @@ export default function LocationPicker({ onCountryChange, countryValue, value, o
         if (!geocoderRef.current || !value || !isLoaded) return;
 
         setLoading(true);
-        geocoderRef.current.geocode({ address: value }, (results, status) => {
+        geocoderRef.current.geocode({address: value}, (results, status) => {
             setLoading(false);
             if (status === "OK" && results && results[0]) {
                 const loc = results[0].geometry.location;
-                const newPos = { lat: loc.lat(), lng: loc.lng() };
+                const newPos = {lat: loc.lat(), lng: loc.lng()};
                 setPosition(newPos);
                 mapInstance?.panTo(newPos);
             }
@@ -114,9 +114,9 @@ export default function LocationPicker({ onCountryChange, countryValue, value, o
         (lat: number, lng: number) => {
             if (!geocoderRef.current) return;
 
-            const latlng = { lat, lng };
+            const latlng = {lat, lng};
 
-            geocoderRef.current.geocode({ location: latlng }, (results, status) => {
+            geocoderRef.current.geocode({location: latlng}, (results, status) => {
                 if (status === "OK" && results && results[0]) {
                     const result = results[0];
                     onChange(result.formatted_address);

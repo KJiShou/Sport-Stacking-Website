@@ -18,27 +18,27 @@ import {
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import { IconArrowFall, IconArrowRise, IconDelete, IconEdit, IconMore, IconPlayArrow, IconPlus } from "@arco-design/web-react/icon";
+import {IconArrowFall, IconArrowRise, IconDelete, IconEdit, IconMore, IconPlayArrow, IconPlus} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
-import { Timestamp } from "firebase/firestore";
-import { useEffect, useState } from "react";
+import {Timestamp} from "firebase/firestore";
+import {useEffect, useState} from "react";
 import LoginForm from "@/components/common/Login";
-import { useAuthContext } from "@/context/AuthContext";
-import type { Competition } from "@/schema"; // 就是你那个 CompetitionSchema infer出来的type
-import { countries } from "@/schema/Country";
-import { deleteCompetitionById, fetchCompetitionsByType, updateCompetition } from "@/services/firebase/competitionsService";
+import {useAuthContext} from "@/context/AuthContext";
+import type {Competition} from "@/schema"; // 就是你那个 CompetitionSchema infer出来的type
+import {countries} from "@/schema/Country";
+import {deleteCompetitionById, fetchCompetitionsByType, updateCompetition} from "@/services/firebase/competitionsService";
 
-import { useSmartDateHandlers } from "@/hooks/DateHandler/useSmartDateHandlers";
-import { DeviceBreakpoint } from "@/hooks/DeviceInspector/deviceStore";
-import { useDeviceBreakpoint } from "@/utils/DeviceInspector";
+import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
+import {DeviceBreakpoint} from "@/hooks/DeviceInspector/deviceStore";
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import AgeBracketModal from "./AgeBracketModal";
 import EventFields from "./EventField";
 import FinalCategoriesFields from "./FinalCategoriesFields";
 import FinalCriteriaFields from "./FinalCriteriaFields";
-import { useAgeBracketEditor } from "./useAgeBracketEditor";
-import { useCompetitionFormPrefill } from "./useCompetitionFormPrefill";
-import LocationPicker, { isValidCountryPath } from "./LocationPicker";
-import { useNavigate } from "react-router-dom";
+import {useAgeBracketEditor} from "./useAgeBracketEditor";
+import {useCompetitionFormPrefill} from "./useCompetitionFormPrefill";
+import LocationPicker, {isValidCountryPath} from "./LocationPicker";
+import {useNavigate} from "react-router-dom";
 
 type CompetitionFormData = Competition & {
     date_range: [Timestamp | Date, Timestamp | Date];
@@ -49,16 +49,16 @@ interface CompetitionListProps {
     type: "current" | "history";
 }
 
-export default function CompetitionList({ type }: Readonly<CompetitionListProps>) {
-    const { user } = useAuthContext();
+export default function CompetitionList({type}: Readonly<CompetitionListProps>) {
+    const {user} = useAuthContext();
     const [form] = Form.useForm();
     const navigate = useNavigate();
 
     const deviceBreakpoint = useDeviceBreakpoint();
 
-    const { handleCompetitionDateChange, handleRangeChangeSmart } = useSmartDateHandlers(form);
+    const {handleCompetitionDateChange, handleRangeChangeSmart} = useSmartDateHandlers(form);
 
-    const { RangePicker } = DatePicker;
+    const {RangePicker} = DatePicker;
 
     const {
         ageBracketModalVisible,
@@ -354,7 +354,7 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
                 rowKey="id"
                 columns={columns.filter((e) => !!e)}
                 data={competitions}
-                pagination={{ pageSize: 10 }}
+                pagination={{pageSize: 10}}
                 className="my-4"
                 loading={loading}
             />
@@ -382,17 +382,17 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
             >
                 {selectedCompetition && (
                     <Form form={form} layout="horizontal" onSubmit={handleSubmit} requiredSymbol={false}>
-                        <Form.Item label="Competition Name" field="name" rules={[{ required: true }]}>
+                        <Form.Item label="Competition Name" field="name" rules={[{required: true}]}>
                             <Input placeholder="Enter competition name" />
                         </Form.Item>
 
-                        <Form.Item label="Competition Date Range" field="date_range" rules={[{ required: true }]}>
+                        <Form.Item label="Competition Date Range" field="date_range" rules={[{required: true}]}>
                             <RangePicker
                                 showTime={{
                                     defaultValue: ["08:00", "18:00"],
                                     format: "HH:mm",
                                 }}
-                                style={{ width: "100%" }}
+                                style={{width: "100%"}}
                                 disabledDate={(current) => {
                                     const today = dayjs();
                                     return current?.isBefore(today.add(7, "day"), "day");
@@ -404,7 +404,7 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
                         <Form.Item
                             label="Country / State"
                             field="country"
-                            rules={[{ required: true, message: "Please select a country/region" }]}
+                            rules={[{required: true, message: "Please select a country/region"}]}
                         >
                             <Cascader
                                 showSearch
@@ -423,7 +423,7 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
                         </Form.Item>
 
                         {/* Address */}
-                        <Form.Item label="Address" field="address" rules={[{ required: true, message: "Please input address" }]}>
+                        <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
                             <LocationPicker
                                 value={form.getFieldValue("address")}
                                 onChange={(val) => form.setFieldValue("address", val)}
@@ -441,25 +441,25 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
                         <Form.Item
                             label="Registration Date Range"
                             field="registration_date_range"
-                            rules={[{ required: true, message: "Please input registration date" }]}
+                            rules={[{required: true, message: "Please input registration date"}]}
                         >
                             <RangePicker
                                 showTime={{
                                     defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                     format: "HH:mm",
                                 }}
-                                style={{ width: "100%" }}
+                                style={{width: "100%"}}
                                 disabledDate={(current) => current?.isBefore(dayjs(), "day")}
                                 onChange={handleRangeChangeSmart("registration_date_range")}
                             />
                         </Form.Item>
 
                         <Form.Item label="Maximum Participants" field="max_participants">
-                            <InputNumber min={1} style={{ width: "100%" }} placeholder="Enter max number" />
+                            <InputNumber min={1} style={{width: "100%"}} placeholder="Enter max number" />
                         </Form.Item>
                         <Form.Item label="Events">
                             <Form.List field="events">
-                                {(fields, { add, remove }) => (
+                                {(fields, {add, remove}) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <EventFields
@@ -476,8 +476,8 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
                                                     code: "",
                                                     type: "",
                                                     age_brackets: [
-                                                        { name: "Under 10", min_age: 0, max_age: 9 },
-                                                        { name: "10 and Above", min_age: 10, max_age: 99 },
+                                                        {name: "Under 10", min_age: 0, max_age: 9},
+                                                        {name: "10 and Above", min_age: 10, max_age: 99},
                                                     ],
                                                 })
                                             }
@@ -497,7 +497,7 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
                             className={`w-full md:max-w-[80vw] lg:max-w-[60vw]`}
                         >
                             <Form.List field="age_brackets_modal">
-                                {(fields, { add, remove }) => {
+                                {(fields, {add, remove}) => {
                                     return (
                                         <>
                                             {ageBrackets.map((bracket, index) => {
@@ -585,7 +585,7 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
                                             <Button
                                                 type="text"
                                                 onClick={() =>
-                                                    setAgeBrackets([...ageBrackets, { name: "", min_age: 0, max_age: 0 }])
+                                                    setAgeBrackets([...ageBrackets, {name: "", min_age: 0, max_age: 0}])
                                                 }
                                             >
                                                 <IconPlus /> Add Bracket
@@ -598,7 +598,7 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
 
                         <Form.Item label="Final Criteria">
                             <Form.List field="final_criteria">
-                                {(fields, { add, remove }) => (
+                                {(fields, {add, remove}) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <FinalCriteriaFields key={field.key} index={index} onRemove={remove} />
@@ -612,7 +612,7 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
                         </Form.Item>
                         <Form.Item label="Final Categories">
                             <Form.List field="final_categories">
-                                {(fields, { add, remove }) => (
+                                {(fields, {add, remove}) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <FinalCategoriesFields key={field.key} index={index} onRemove={remove} />
@@ -625,7 +625,7 @@ export default function CompetitionList({ type }: Readonly<CompetitionListProps>
                             </Form.List>
                         </Form.Item>
 
-                        <Form.Item className={`w-full`} wrapperCol={{ span: 24 }}>
+                        <Form.Item className={`w-full`} wrapperCol={{span: 24}}>
                             <Button type="primary" htmlType="submit" loading={loading} className={`w-full`}>
                                 {loading ? <Spin /> : "Save Changes"}
                             </Button>

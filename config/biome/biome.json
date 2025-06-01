@@ -157,9 +157,7 @@
       "quoteStyle": "double",
       "attributePosition": "auto"
     },
-    "globals": [
-      "google"
-    ]
+    "globals": ["google"]
   },
   "overrides": [
     {
