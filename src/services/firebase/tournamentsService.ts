@@ -14,16 +14,16 @@ import {
     type Query,
     deleteDoc,
 } from "firebase/firestore";
-import type {Competition, FirestoreUser} from "../../schema";
-import {db} from "./config";
+import type { Tournament, FirestoreUser } from "../../schema";
+import { db } from "./config";
 
-export async function createCompetition(user: FirestoreUser, data: Omit<Competition, "id">): Promise<string> {
-    if (!user?.roles?.edit_competition) {
-        throw new Error("Unauthorized: You do not have permission to create a competition.");
+export async function createTournament(user: FirestoreUser, data: Omit<Tournament, "id">): Promise<string> {
+    if (!user?.roles?.edit_tournament) {
+        throw new Error("Unauthorized: You do not have permission to create a tournament.");
     }
 
     if (!data.name) {
-        throw new Error("Competition name is required.");
+        throw new Error("Tournament name is required.");
     }
 
     if (!data.start_date || !data.end_date) {
@@ -43,7 +43,7 @@ export async function createCompetition(user: FirestoreUser, data: Omit<Competit
     }
 
     if (data.registration_start_date < data.start_date || data.registration_end_date > data.end_date) {
-        throw new Error("Registration dates must be within the competition dates.");
+        throw new Error("Registration dates must be within the tournament dates.");
     }
 
     if (data.max_participants <= 0) {
@@ -70,7 +70,7 @@ export async function createCompetition(user: FirestoreUser, data: Omit<Competit
         throw new Error("Address is required.");
     }
 
-    const docRef = await addDoc(collection(db, "competitions"), {
+    const docRef = await addDoc(collection(db, "tournaments"), {
         name: data.name,
         start_date: data.start_date,
         end_date: data.end_date,
@@ -89,21 +89,21 @@ export async function createCompetition(user: FirestoreUser, data: Omit<Competit
     return docRef.id;
 }
 
-export async function updateCompetition(
+export async function updateTournament(
     user: FirestoreUser,
-    competitionId: string,
-    data: Omit<Competition, "id">,
+    tournamentId: string,
+    data: Omit<Tournament, "id">,
 ): Promise<void> {
-    if (!user?.roles?.edit_competition) {
+    if (!user?.roles?.edit_tournament) {
         throw new Error("Unauthorized");
     }
 
-    const competitionRef = doc(db, "competitions", competitionId);
-    const snap = await getDoc(competitionRef);
-    if (!snap.exists()) throw new Error("Competition not found");
+    const tournamentRef = doc(db, "tournaments", tournamentId);
+    const snap = await getDoc(tournamentRef);
+    if (!snap.exists()) throw new Error("Tournament not found");
 
-    const old = snap.data() as Competition;
-    const toUpdate: Partial<Record<keyof Competition, Competition[keyof Competition]>> = {};
+    const old = snap.data() as Tournament;
+    const toUpdate: Partial<Record<keyof Tournament, Tournament[keyof Tournament]>> = {};
 
     // 对比字段，仅当值有变化（或有值）时才加入更新对象
     (Object.keys(data) as (keyof typeof data)[]).forEach((key) => {
@@ -123,71 +123,71 @@ export async function updateCompetition(
         return;
     }
 
-    await updateDoc(competitionRef, toUpdate);
+    await updateDoc(tournamentRef, toUpdate);
 }
 
-export async function fetchCompetitionsByType(type: "current" | "history"): Promise<Competition[]> {
+export async function fetchTournamentsByType(type: "current" | "history"): Promise<Tournament[]> {
     try {
         const today = new Date();
         const todayTimestamp = Timestamp.fromDate(today);
 
-        let competitionsQuery: Query | null = null;
+        let tournamentsQuery: Query | null = null;
 
         if (type === "current") {
-            competitionsQuery = query(
-                collection(db, "competitions"),
+            tournamentsQuery = query(
+                collection(db, "tournaments"),
                 where("end_date", ">=", todayTimestamp),
                 orderBy("end_date", "asc"),
             );
         } else if (type === "history") {
-            competitionsQuery = query(
-                collection(db, "competitions"),
+            tournamentsQuery = query(
+                collection(db, "tournaments"),
                 where("end_date", "<", todayTimestamp),
                 orderBy("end_date", "desc"),
             );
         } else {
-            throw new Error("Invalid competition type");
+            throw new Error("Invalid tournament type");
         }
 
-        const snapshot = await getDocs(competitionsQuery);
+        const snapshot = await getDocs(tournamentsQuery);
 
         return snapshot.docs.map((doc) => ({
             id: doc.id,
             ...doc.data(),
-        })) as Competition[];
+        })) as Tournament[];
     } catch (error) {
-        console.error("Failed to fetch competitions:", error);
+        console.error("Failed to fetch tournaments:", error);
         throw error;
     }
 }
 
-export async function fetchCompetitionById(competitionId: string): Promise<Competition | null> {
+export async function fetchTournamentById(tournamentId: string): Promise<Tournament | null> {
     try {
-        const docRef = doc(db, "competitions", competitionId);
+        const docRef = doc(db, "tournaments", tournamentId);
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
-            console.info("Competition document not found:", competitionId);
+            console.info("Tournament document not found:", tournamentId);
             return null;
         }
 
-        return {...docSnap.data()} as Competition;
+        return { ...docSnap.data() } as Tournament;
     } catch (error) {
-        console.error("Error fetching competition:", error);
+        console.error("Error fetching tournament:", error);
         throw error;
     }
 }
 
-export async function deleteCompetitionById(user: FirestoreUser, competitionId: string): Promise<void> {
-    if (!user?.roles?.edit_competition) {
-        throw new Error("Unauthorized: You do not have permission to delete a competition.");
+export async function deleteTournamentById(user: FirestoreUser, tournamentId: string): Promise<void> {
+    if (!user?.roles?.edit_tournament) {
+        throw new Error("Unauthorized: You do not have permission to delete a tournament.");
     }
 
     try {
-        const competitionRef = doc(db, "competitions", competitionId);
-        await deleteDoc(competitionRef);
+        const tournamentRef = doc(db, "tournaments", tournamentId);
+        await deleteDoc(tournamentRef);
     } catch (error) {
-        console.error("Error deleting competition:", error);
+        console.error("Error deleting tournament:", error);
         throw error;
     }
 }

@@ -1,3 +1,8 @@
+import { AvatarUploader } from "@/components/common/AvatarUploader";
+import { useAuthContext } from "@/context/AuthContext";
+import type { FirestoreUser, FirestoreUserSchema } from "@/schema";
+import { countries } from "@/schema/Country";
+import { changeUserPassword, fetchUserByID, updateUserProfile } from "@/services/firebase/authService";
 import {
     Avatar,
     Button,
@@ -17,18 +22,14 @@ import {
     Typography,
 } from "@arco-design/web-react";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
-import {IconUser} from "@arco-design/web-react/icon";
-import {AvatarUploader} from "@/components/common/AvatarUploader";
-import {useAuthContext} from "@/context/AuthContext";
-import type {FirestoreUser, FirestoreUserSchema} from "@/schema";
-import {countries} from "@/schema/Country";
-import {changeUserPassword, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
+import { IconUser } from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
-import {useEffect, useState} from "react";
-import {useNavigate, useParams, useSearchParams} from "react-router-dom";
-import type {z} from "zod";
+import { Timestamp } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import type { z } from "zod";
 
-const {Title, Text} = Typography;
+const { Title, Text } = Typography;
 
 interface AllTimeStat {
     event: string;
@@ -46,9 +47,9 @@ interface RecordItem {
 }
 
 export default function RegisterPage() {
-    const {Row, Col} = Grid;
-    const {id} = useParams<{id: string}>();
-    const {user: authUser} = useAuthContext();
+    const { Row, Col } = Grid;
+    const { id } = useParams<{ id: string }>();
+    const { user: authUser } = useAuthContext();
     const navigate = useNavigate();
     const [form] = Form.useForm();
     const [secForm] = Form.useForm();
@@ -60,23 +61,25 @@ export default function RegisterPage() {
     const [searchParams, setSearchParams] = useSearchParams();
 
     let descData = [
-        {label: "Email", value: user?.email ?? "-"},
-        {label: "IC", value: user?.IC ?? "-"},
-        {label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}`},
-        {label: "Organizer", value: user?.organizer ?? "-"},
+        { label: "Email", value: user?.email ?? "-" },
+        { label: "IC", value: user?.IC ?? "-" },
+        { label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}` },
+        { label: "School/University/College", value: user?.school ?? "-" },
         {
             label: "Birthdate",
-            value: user?.birthdate ? dayjs(user.birthdate).format("YYYY-MM-DD") : "-",
+            value: user?.birthdate
+                ? dayjs(user.birthdate instanceof Timestamp ? user.birthdate.toDate() : user.birthdate).format("YYYY-MM-DD")
+                : "-",
             span: 2,
         },
     ];
     type RoleKey = keyof NonNullable<z.infer<typeof FirestoreUserSchema>["roles"]>;
 
-    const permissionList: {key: RoleKey; label: string}[] = [
-        {key: "edit_competition", label: "Edit Competition"},
-        {key: "record_competition", label: "Record Competition"},
-        {key: "modify_admin", label: "Modify Admin"},
-        {key: "verify_record", label: "Verify Record"},
+    const permissionList: { key: RoleKey; label: string }[] = [
+        { key: "edit_tournament", label: "Edit Tournament" },
+        { key: "record_tournament", label: "Record Tournament" },
+        { key: "modify_admin", label: "Modify Admin" },
+        { key: "verify_record", label: "Verify Record" },
     ];
 
     useEffect(() => {
@@ -103,18 +106,20 @@ export default function RegisterPage() {
                     IC: data?.IC,
                     name: data?.name,
                     country: data?.country,
-                    organizer: data?.organizer ?? "",
+                    school: data?.school ?? "",
                     gender: data?.gender,
                     birthdate: data?.birthdate,
                 });
                 descData = [
-                    {label: "Email", value: user?.email ?? "-"},
-                    {label: "IC", value: user?.IC ?? "-"},
-                    {label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}`},
-                    {label: "Organizer", value: user?.organizer ?? "-"},
+                    { label: "Email", value: user?.email ?? "-" },
+                    { label: "IC", value: user?.IC ?? "-" },
+                    { label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}` },
+                    { label: "School/University/College", value: user?.school ?? "-" },
                     {
                         label: "Birthdate",
-                        value: user?.birthdate ? dayjs(user.birthdate).format("YYYY-MM-DD") : "-",
+                        value: user?.birthdate
+                            ? dayjs(user.birthdate instanceof Timestamp ? user.birthdate.toDate() : user.birthdate).format("YYYY-MM-DD")
+                            : "-",
                         span: 2,
                     },
                 ];
@@ -128,14 +133,14 @@ export default function RegisterPage() {
     }, [id]);
 
     // 构建统计数据示例
-    const allTimeStats: AllTimeStat[] = [{event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"}];
+    const allTimeStats: AllTimeStat[] = [{ event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-" }];
     const onlineBest: OnlineBest[] = [];
     const records: RecordItem[] = [];
 
     const handleSubmit = async (values: {
         name: string;
         country: [country: string, state: string];
-        organizer: string;
+        school: string;
     }) => {
         setLoading(true);
         try {
@@ -143,7 +148,7 @@ export default function RegisterPage() {
             await updateUserProfile(id, {
                 name: values.name,
                 country: values.country,
-                organizer: values.organizer,
+                school: values.school,
             });
             Message.success("Profile updated successfully");
         } catch (err) {
@@ -155,7 +160,7 @@ export default function RegisterPage() {
         }
     };
 
-    const handleSecuritySubmit = async (values: {currentPassword: string; newPassword: string; confirmPassword: string}) => {
+    const handleSecuritySubmit = async (values: { currentPassword: string; newPassword: string; confirmPassword: string }) => {
         setSecLoading(true);
         if (values.newPassword !== values.confirmPassword) {
             Message.error("New passwords do not match");
@@ -214,7 +219,7 @@ export default function RegisterPage() {
                                             <Form.Item
                                                 label="Name"
                                                 field="name"
-                                                rules={[{required: true, message: "Please enter your name"}]}
+                                                rules={[{ required: true, message: "Please enter your name" }]}
                                             >
                                                 <Input placeholder="Please enter your name" />
                                             </Form.Item>
@@ -222,10 +227,10 @@ export default function RegisterPage() {
                                             <Form.Item
                                                 field="birthdate"
                                                 label="Birthdate"
-                                                rules={[{required: true, message: "Select your birthdate"}]}
+                                                rules={[{ required: true, message: "Select your birthdate" }]}
                                             >
                                                 <DatePicker
-                                                    style={{width: "100%"}}
+                                                    style={{ width: "100%" }}
                                                     disabledDate={(current) => current.isAfter(dayjs())}
                                                 />
                                             </Form.Item>
@@ -233,7 +238,7 @@ export default function RegisterPage() {
                                             <Form.Item
                                                 field="gender"
                                                 label="Gender"
-                                                rules={[{required: true, message: "Select gender"}]}
+                                                rules={[{ required: true, message: "Select gender" }]}
                                             >
                                                 <Select placeholder="Select gender" options={["Male", "Female"]} />
                                             </Form.Item>
@@ -241,7 +246,7 @@ export default function RegisterPage() {
                                             <Form.Item
                                                 label="Country / State"
                                                 field="country"
-                                                rules={[{required: true, message: "Please select a country/region"}]}
+                                                rules={[{ required: true, message: "Please select a country/region" }]}
                                             >
                                                 <Cascader
                                                     showSearch
@@ -258,11 +263,11 @@ export default function RegisterPage() {
                                             </Form.Item>
 
                                             <Form.Item
-                                                label="Organizer"
-                                                field="organizer"
-                                                rules={[{required: false, message: "Please enter your organizer"}]}
+                                                label="School"
+                                                field="school"
+                                                rules={[{ required: false, message: "Please enter your school" }]}
                                             >
-                                                <Input placeholder="Please enter your organizer" />
+                                                <Input placeholder="Please enter your school" />
                                             </Form.Item>
 
                                             <div className="w-full mx-auto flex flex-col items-center">
@@ -271,7 +276,7 @@ export default function RegisterPage() {
                                                     long
                                                     onClick={() => {
                                                         form.submit();
-                                                        setSearchParams({isEditMode: "false"});
+                                                        setSearchParams({ isEditMode: "false" });
                                                     }}
                                                 >
                                                     Save
@@ -289,7 +294,7 @@ export default function RegisterPage() {
                                                                 IC: data?.IC,
                                                                 name: data?.name,
                                                                 country: data?.country,
-                                                                organizer: data?.organizer ?? "",
+                                                                school: data?.school ?? "",
                                                                 gender: data?.gender,
                                                                 birthdate: data?.birthdate,
                                                             });
@@ -318,21 +323,21 @@ export default function RegisterPage() {
                                             <Form.Item
                                                 label="Current Password"
                                                 field="currentPassword"
-                                                rules={[{required: true, message: "Enter current password"}]}
+                                                rules={[{ required: true, message: "Enter current password" }]}
                                             >
                                                 <Input.Password placeholder="Current Password" />
                                             </Form.Item>
                                             <Form.Item
                                                 label="New Password"
                                                 field="newPassword"
-                                                rules={[{required: true, message: "Enter new password"}]}
+                                                rules={[{ required: true, message: "Enter new password" }]}
                                             >
                                                 <Input.Password placeholder="New Password" />
                                             </Form.Item>
                                             <Form.Item
                                                 label="Confirm Password"
                                                 field="confirmPassword"
-                                                rules={[{required: true, message: "Confirm new password"}]}
+                                                rules={[{ required: true, message: "Confirm new password" }]}
                                             >
                                                 <Input.Password placeholder="Confirm Password" />
                                             </Form.Item>
@@ -371,7 +376,7 @@ export default function RegisterPage() {
                                 type="primary"
                                 onClick={() => {
                                     setIsEditMode(true);
-                                    setSearchParams({isEditMode: "true"});
+                                    setSearchParams({ isEditMode: "true" });
                                 }}
                             >
                                 Edit Profile
@@ -397,13 +402,13 @@ export default function RegisterPage() {
                                         <Table
                                             data={allTimeStats}
                                             columns={[
-                                                {title: "Event", dataIndex: "event"},
+                                                { title: "Event", dataIndex: "event" },
                                                 {
                                                     title: "Time (sec)",
                                                     dataIndex: "time",
                                                     render: (val) => val.toFixed(3),
                                                 },
-                                                {title: "Rank", dataIndex: "rank"},
+                                                { title: "Rank", dataIndex: "rank" },
                                             ]}
                                             pagination={false}
                                         />
@@ -413,7 +418,7 @@ export default function RegisterPage() {
                         ) : (
                             <div className="bg-white flex flex-col w-full flex-1 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                                 <Row gutter={[16, 16]}>
-                                    {permissionList.map(({key, label}) => (
+                                    {permissionList.map(({ key, label }) => (
                                         <Col xs={24} sm={12} key={key}>
                                             <div className="flex items-center justify-between px-4 py-2 border rounded">
                                                 <span>{label}</span>

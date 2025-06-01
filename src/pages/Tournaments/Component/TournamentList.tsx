@@ -18,47 +18,47 @@ import {
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import {IconArrowFall, IconArrowRise, IconDelete, IconEdit, IconMore, IconPlayArrow, IconPlus} from "@arco-design/web-react/icon";
+import { IconArrowFall, IconArrowRise, IconDelete, IconEdit, IconMore, IconPlayArrow, IconPlus } from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
-import {Timestamp} from "firebase/firestore";
-import {useEffect, useState} from "react";
+import { Timestamp } from "firebase/firestore";
+import { useEffect, useState } from "react";
 import LoginForm from "@/components/common/Login";
-import {useAuthContext} from "@/context/AuthContext";
-import type {Competition} from "@/schema"; // 就是你那个 CompetitionSchema infer出来的type
-import {countries} from "@/schema/Country";
-import {deleteCompetitionById, fetchCompetitionsByType, updateCompetition} from "@/services/firebase/competitionsService";
+import { useAuthContext } from "@/context/AuthContext";
+import type { Tournament } from "@/schema"; // 就是你那个 TournamentSchema infer出来的type
+import { countries } from "@/schema/Country";
+import { deleteTournamentById, fetchTournamentsByType, updateTournament } from "@/services/firebase/tournamentsService";
 
-import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
-import {DeviceBreakpoint} from "@/hooks/DeviceInspector/deviceStore";
-import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import { useSmartDateHandlers } from "@/hooks/DateHandler/useSmartDateHandlers";
+import { DeviceBreakpoint } from "@/hooks/DeviceInspector/deviceStore";
+import { useDeviceBreakpoint } from "@/utils/DeviceInspector";
 import AgeBracketModal from "./AgeBracketModal";
 import EventFields from "./EventField";
 import FinalCategoriesFields from "./FinalCategoriesFields";
 import FinalCriteriaFields from "./FinalCriteriaFields";
-import {useAgeBracketEditor} from "./useAgeBracketEditor";
-import {useCompetitionFormPrefill} from "./useCompetitionFormPrefill";
-import LocationPicker, {isValidCountryPath} from "./LocationPicker";
-import {useNavigate} from "react-router-dom";
+import { useAgeBracketEditor } from "./useAgeBracketEditor";
+import { useTournamentFormPrefill } from "./useTournamentFormPrefill";
+import LocationPicker, { isValidCountryPath } from "./LocationPicker";
+import { useNavigate } from "react-router-dom";
 
-type CompetitionFormData = Competition & {
+type TournamentFormData = Tournament & {
     date_range: [Timestamp | Date, Timestamp | Date];
     registration_date_range: [Timestamp | Date, Timestamp | Date];
 };
 
-interface CompetitionListProps {
+interface TournamentListProps {
     type: "current" | "history";
 }
 
-export default function CompetitionList({type}: Readonly<CompetitionListProps>) {
-    const {user} = useAuthContext();
+export default function TournamentList({ type }: Readonly<TournamentListProps>) {
+    const { user } = useAuthContext();
     const [form] = Form.useForm();
     const navigate = useNavigate();
 
     const deviceBreakpoint = useDeviceBreakpoint();
 
-    const {handleCompetitionDateChange, handleRangeChangeSmart} = useSmartDateHandlers(form);
+    const { handleTournamentDateChange, handleRangeChangeSmart } = useSmartDateHandlers(form);
 
-    const {RangePicker} = DatePicker;
+    const { RangePicker } = DatePicker;
 
     const {
         ageBracketModalVisible,
@@ -70,10 +70,10 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
         setAgeBracketModalVisible,
     } = useAgeBracketEditor(form);
 
-    useCompetitionFormPrefill(form);
-    const [selectedCompetition, setSelectedCompetition] = useState<Competition | null>(null);
+    useTournamentFormPrefill(form);
+    const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
 
-    const [competitions, setCompetitions] = useState<Competition[]>([]);
+    const [tournaments, setTournaments] = useState<Tournament[]>([]);
 
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [loginModalVisible, setLoginModalVisible] = useState(false);
@@ -82,7 +82,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
 
     const [loading, setLoading] = useState(true);
 
-    const columns: (TableColumnProps<(typeof competitions)[number]> | false)[] = [
+    const columns: (TableColumnProps<(typeof tournaments)[number]> | false)[] = [
         {
             title: "Name",
             dataIndex: "name",
@@ -132,8 +132,8 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
             title: "Action",
             dataIndex: "action",
             width: 200,
-            render: (_: string, competition: Competition) =>
-                user?.roles?.edit_competition ? (
+            render: (_: string, tournament: Tournament) =>
+                user?.roles?.edit_tournament ? (
                     <Dropdown.Button
                         type="primary"
                         trigger={["click", "hover"]}
@@ -145,7 +145,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                                     type="text"
                                     loading={loading}
                                     className={`text-left`}
-                                    onClick={async () => handleEdit(competition)}
+                                    onClick={async () => handleEdit(tournament)}
                                 >
                                     <IconEdit /> Edit
                                 </Button>
@@ -154,7 +154,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                                     status="danger"
                                     loading={loading}
                                     className={`text-left`}
-                                    onClick={async () => handleDelete(competition)}
+                                    onClick={async () => handleDelete(tournament)}
                                 >
                                     <IconDelete /> Delete
                                 </Button>
@@ -168,15 +168,15 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                         <IconPlayArrow />
                         Start
                     </Dropdown.Button>
-                ) : competition.registration_end_date > Timestamp.now() ? (
-                    <Button type="primary" onClick={() => handleRegister(competition.id ?? "")}>
+                ) : tournament.registration_end_date > Timestamp.now() ? (
+                    <Button type="primary" onClick={() => handleRegister(tournament.id ?? "")}>
                         Register
                     </Button>
                 ) : (
                     <Popover
                         content={
                             <span>
-                                <p>This competition has end registration date.</p>
+                                <p>This tournament has end registration date.</p>
                             </span>
                         }
                     >
@@ -188,22 +188,22 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
         },
     ];
 
-    const fetchCompetitions = async () => {
+    const fetchTournaments = async () => {
         setLoading(true);
 
         try {
-            const list = await fetchCompetitionsByType(type);
+            const list = await fetchTournamentsByType(type);
 
-            setCompetitions(list);
+            setTournaments(list);
         } catch (error) {
-            console.error("Failed to fetch competitions:", error);
+            console.error("Failed to fetch tournaments:", error);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleSubmit = async (values: CompetitionFormData) => {
-        if (!selectedCompetition?.id) return;
+    const handleSubmit = async (values: TournamentFormData) => {
+        if (!selectedTournament?.id) return;
         setLoading(true);
 
         try {
@@ -227,8 +227,8 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                     ? Timestamp.fromDate(values.registration_date_range[1])
                     : Timestamp.fromDate(values.registration_date_range[1].toDate());
 
-            const fullEvents: Competition["events"] = form.getFieldValue("events");
-            updateCompetition(user, selectedCompetition.id, {
+            const fullEvents: Tournament["events"] = form.getFieldValue("events");
+            updateTournament(user, selectedTournament.id, {
                 name: values.name,
                 start_date: startDate,
                 end_date: endDate,
@@ -241,42 +241,42 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                 final_criteria: values.final_criteria,
                 final_categories: values.final_categories,
                 status: values.status,
-                participants: selectedCompetition.participants,
+                participants: selectedTournament.participants,
             });
             setEditModalVisible(false);
-            await fetchCompetitions();
+            await fetchTournaments();
 
-            Message.success("Competition updated successfully!");
+            Message.success("Tournament updated successfully!");
         } catch (error) {
             console.error(error);
-            Message.error("Failed to update competition.");
+            Message.error("Failed to update tournament.");
         } finally {
             setLoading(false);
         }
     };
-    const handleEdit = (competition: Competition) => {
-        setSelectedCompetition(competition);
+    const handleEdit = (tournament: Tournament) => {
+        setSelectedTournament(tournament);
         setEditModalVisible(true);
     };
 
-    const handleDelete = async (competition: Competition) => {
+    const handleDelete = async (tournament: Tournament) => {
         Modal.confirm({
             title: "Delete Confirmation",
-            content: `Are you sure you want to delete the competition "${competition.name}"?`,
+            content: `Are you sure you want to delete the tournament "${tournament.name}"?`,
             okText: "Yes",
             cancelText: "Cancel",
             onOk: async () => {
                 try {
                     setLoading(true);
                     if (!user) {
-                        Message.error("You must be logged in to delete a competition.");
+                        Message.error("You must be logged in to delete a tournament.");
                         return;
                     }
-                    await deleteCompetitionById(user, competition?.id ?? "");
-                    Message.success("Competition deleted successfully.");
-                    await fetchCompetitions();
+                    await deleteTournamentById(user, tournament?.id ?? "");
+                    Message.success("Tournament deleted successfully.");
+                    await fetchTournaments();
                 } catch (error) {
-                    Message.error("Failed to delete competition.");
+                    Message.error("Failed to delete tournament.");
                     console.error(error);
                 } finally {
                     setLoading(false);
@@ -285,64 +285,64 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
         });
     };
 
-    const handleRegister = (competitionId: string) => {
+    const handleRegister = (tournamentId: string) => {
         if (!user) {
             setLoginModalVisible(true);
             return;
         }
-        if (!competitionId) {
-            Message.error("Invalid competition ID.");
+        if (!tournamentId) {
+            Message.error("Invalid tournament ID.");
             return;
         }
         // Open the registration page in a new tab
-        window.open(`/tournaments/${competitionId}/register`, "_blank");
+        window.open(`/tournaments/${tournamentId}/register`, "_blank");
     };
 
     useEffect(() => {
-        if (selectedCompetition) {
+        if (selectedTournament) {
             form.setFieldsValue({
-                name: selectedCompetition.name,
-                country: selectedCompetition.country,
-                address: selectedCompetition.address,
-                max_participants: selectedCompetition.max_participants,
+                name: selectedTournament.name,
+                country: selectedTournament.country,
+                address: selectedTournament.address,
+                max_participants: selectedTournament.max_participants,
                 date_range: [
-                    selectedCompetition.start_date instanceof Timestamp
-                        ? dayjs(selectedCompetition.start_date.toDate())
-                        : dayjs(selectedCompetition.start_date),
-                    selectedCompetition.end_date instanceof Timestamp
-                        ? dayjs(selectedCompetition.end_date.toDate())
-                        : dayjs(selectedCompetition.end_date),
+                    selectedTournament.start_date instanceof Timestamp
+                        ? dayjs(selectedTournament.start_date.toDate())
+                        : dayjs(selectedTournament.start_date),
+                    selectedTournament.end_date instanceof Timestamp
+                        ? dayjs(selectedTournament.end_date.toDate())
+                        : dayjs(selectedTournament.end_date),
                 ],
                 registration_date_range: [
-                    selectedCompetition.registration_start_date instanceof Timestamp
-                        ? dayjs(selectedCompetition.registration_start_date.toDate())
-                        : dayjs(selectedCompetition.registration_start_date),
-                    selectedCompetition.registration_end_date instanceof Timestamp
-                        ? dayjs(selectedCompetition.registration_end_date.toDate())
-                        : dayjs(selectedCompetition.registration_end_date),
+                    selectedTournament.registration_start_date instanceof Timestamp
+                        ? dayjs(selectedTournament.registration_start_date.toDate())
+                        : dayjs(selectedTournament.registration_start_date),
+                    selectedTournament.registration_end_date instanceof Timestamp
+                        ? dayjs(selectedTournament.registration_end_date.toDate())
+                        : dayjs(selectedTournament.registration_end_date),
                 ],
-                events: selectedCompetition.events,
-                final_criteria: selectedCompetition.final_criteria,
-                final_categories: selectedCompetition.final_categories,
+                events: selectedTournament.events,
+                final_criteria: selectedTournament.final_criteria,
+                final_categories: selectedTournament.final_categories,
             });
         }
-    }, [selectedCompetition, form]);
+    }, [selectedTournament, form]);
 
     useEffect(() => {
-        fetchCompetitions();
+        fetchTournaments();
     }, [type]);
 
     return (
         <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
             <div className="relative w-full flex items-center">
                 <h1 className="absolute left-1/2 transform -translate-x-1/2 text-4xl font-semibold">
-                    {type === "current" ? "Current Competitions" : "Competition History"}
+                    {type === "current" ? "Current Tournaments" : "Tournaments History"}
                 </h1>
                 <div className="ml-auto">
                     <div className="ml-auto">
-                        {user?.roles?.edit_competition && (
+                        {user?.roles?.edit_tournament && (
                             <a href="/tournaments/create" target="_blank" rel="noopener noreferrer">
-                                <Button type="primary">Create Competition</Button>
+                                <Button type="primary">Create Tournament</Button>
                             </a>
                         )}
                     </div>
@@ -353,8 +353,8 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
             <Table
                 rowKey="id"
                 columns={columns.filter((e) => !!e)}
-                data={competitions}
-                pagination={{pageSize: 10}}
+                data={tournaments}
+                pagination={{ pageSize: 10 }}
                 className="my-4"
                 loading={loading}
             />
@@ -374,37 +374,37 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
             </Modal>
 
             <Modal
-                title="Edit Competition"
+                title="Edit Tournament"
                 visible={editModalVisible}
                 onCancel={() => setEditModalVisible(false)}
                 footer={null}
                 className={`my-8 w-full md:max-w-[80vw] lg:max-w-[60vw]`}
             >
-                {selectedCompetition && (
+                {selectedTournament && (
                     <Form form={form} layout="horizontal" onSubmit={handleSubmit} requiredSymbol={false}>
-                        <Form.Item label="Competition Name" field="name" rules={[{required: true}]}>
-                            <Input placeholder="Enter competition name" />
+                        <Form.Item label="Tournament Name" field="name" rules={[{ required: true }]}>
+                            <Input placeholder="Enter tournament name" />
                         </Form.Item>
 
-                        <Form.Item label="Competition Date Range" field="date_range" rules={[{required: true}]}>
+                        <Form.Item label="Tournament Date Range" field="date_range" rules={[{ required: true }]}>
                             <RangePicker
                                 showTime={{
                                     defaultValue: ["08:00", "18:00"],
                                     format: "HH:mm",
                                 }}
-                                style={{width: "100%"}}
+                                style={{ width: "100%" }}
                                 disabledDate={(current) => {
                                     const today = dayjs();
                                     return current?.isBefore(today.add(7, "day"), "day");
                                 }}
-                                onChange={handleCompetitionDateChange}
+                                onChange={handleTournamentDateChange}
                             />
                         </Form.Item>
 
                         <Form.Item
                             label="Country / State"
                             field="country"
-                            rules={[{required: true, message: "Please select a country/region"}]}
+                            rules={[{ required: true, message: "Please select a country/region" }]}
                         >
                             <Cascader
                                 showSearch
@@ -423,7 +423,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                         </Form.Item>
 
                         {/* Address */}
-                        <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
+                        <Form.Item label="Address" field="address" rules={[{ required: true, message: "Please input address" }]}>
                             <LocationPicker
                                 value={form.getFieldValue("address")}
                                 onChange={(val) => form.setFieldValue("address", val)}
@@ -441,25 +441,25 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                         <Form.Item
                             label="Registration Date Range"
                             field="registration_date_range"
-                            rules={[{required: true, message: "Please input registration date"}]}
+                            rules={[{ required: true, message: "Please input registration date" }]}
                         >
                             <RangePicker
                                 showTime={{
                                     defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                     format: "HH:mm",
                                 }}
-                                style={{width: "100%"}}
+                                style={{ width: "100%" }}
                                 disabledDate={(current) => current?.isBefore(dayjs(), "day")}
                                 onChange={handleRangeChangeSmart("registration_date_range")}
                             />
                         </Form.Item>
 
                         <Form.Item label="Maximum Participants" field="max_participants">
-                            <InputNumber min={1} style={{width: "100%"}} placeholder="Enter max number" />
+                            <InputNumber min={1} style={{ width: "100%" }} placeholder="Enter max number" />
                         </Form.Item>
                         <Form.Item label="Events">
                             <Form.List field="events">
-                                {(fields, {add, remove}) => (
+                                {(fields, { add, remove }) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <EventFields
@@ -476,8 +476,8 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                                                     code: "",
                                                     type: "",
                                                     age_brackets: [
-                                                        {name: "Under 10", min_age: 0, max_age: 9},
-                                                        {name: "10 and Above", min_age: 10, max_age: 99},
+                                                        { name: "Under 10", min_age: 0, max_age: 9 },
+                                                        { name: "10 and Above", min_age: 10, max_age: 99 },
                                                     ],
                                                 })
                                             }
@@ -497,7 +497,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                             className={`w-full md:max-w-[80vw] lg:max-w-[60vw]`}
                         >
                             <Form.List field="age_brackets_modal">
-                                {(fields, {add, remove}) => {
+                                {(fields, { add, remove }) => {
                                     return (
                                         <>
                                             {ageBrackets.map((bracket, index) => {
@@ -585,7 +585,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                                             <Button
                                                 type="text"
                                                 onClick={() =>
-                                                    setAgeBrackets([...ageBrackets, {name: "", min_age: 0, max_age: 0}])
+                                                    setAgeBrackets([...ageBrackets, { name: "", min_age: 0, max_age: 0 }])
                                                 }
                                             >
                                                 <IconPlus /> Add Bracket
@@ -598,7 +598,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
 
                         <Form.Item label="Final Criteria">
                             <Form.List field="final_criteria">
-                                {(fields, {add, remove}) => (
+                                {(fields, { add, remove }) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <FinalCriteriaFields key={field.key} index={index} onRemove={remove} />
@@ -612,7 +612,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                         </Form.Item>
                         <Form.Item label="Final Categories">
                             <Form.List field="final_categories">
-                                {(fields, {add, remove}) => (
+                                {(fields, { add, remove }) => (
                                     <>
                                         {fields.map((field, index) => (
                                             <FinalCategoriesFields key={field.key} index={index} onRemove={remove} />
@@ -625,7 +625,7 @@ export default function CompetitionList({type}: Readonly<CompetitionListProps>) 
                             </Form.List>
                         </Form.Item>
 
-                        <Form.Item className={`w-full`} wrapperCol={{span: 24}}>
+                        <Form.Item className={`w-full`} wrapperCol={{ span: 24 }}>
                             <Button type="primary" htmlType="submit" loading={loading} className={`w-full`}>
                                 {loading ? <Spin /> : "Save Changes"}
                             </Button>

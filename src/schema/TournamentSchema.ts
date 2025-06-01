@@ -1,5 +1,5 @@
-import {Timestamp} from "firebase/firestore";
-import {z} from "zod";
+import { Timestamp } from "firebase/firestore";
+import { z } from "zod";
 
 // age_brackets subcollection
 export const AgeBracketSchema = z.object({
@@ -30,13 +30,14 @@ export const FinalCategorySchema = z.object({
     end: z.number(),
 });
 
-// main competition schema
-export const CompetitionSchema = z.object({
+// main tournament schema
+export const TournamentSchema = z.object({
     id: z.string().optional().nullable(),
     name: z.string(),
     start_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     end_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     country: z.array(z.string(), z.string()),
+    venue: z.string().optional().nullable(),
     address: z.string(),
 
     events: z.array(EventSchema),
@@ -53,4 +54,4 @@ export const CompetitionSchema = z.object({
     updated_at: z.instanceof(Timestamp).optional().nullable(),
 });
 
-export type Competition = z.infer<typeof CompetitionSchema>;
+export type Tournament = z.infer<typeof TournamentSchema>;

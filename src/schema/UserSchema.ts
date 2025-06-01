@@ -1,5 +1,5 @@
-import {Timestamp} from "firebase/firestore";
-import {z} from "zod";
+import { Timestamp } from "firebase/firestore";
+import { z } from "zod";
 
 export const FirestoreUserSchema = z.object({
     id: z.string(),
@@ -15,14 +15,14 @@ export const FirestoreUserSchema = z.object({
     image_url: z.string().url(),
     roles: z
         .object({
-            edit_competition: z.boolean(),
-            record_competition: z.boolean(),
+            edit_tournament: z.boolean(),
+            record_tournament: z.boolean(),
             modify_admin: z.boolean(),
             verify_record: z.boolean(),
         })
         .optional()
         .nullable(),
-    organizer: z.string().optional().nullable(),
+    school: z.string().optional().nullable(),
     best_times: z.record(z.string(), z.number()).optional(),
     created_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),

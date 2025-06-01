@@ -1,56 +1,51 @@
-// src/pages/RegisterCompetitionPage.tsx
+// src/pages/RegisterTournamentPage.tsx
 
+import { useAuthContext } from "@/context/AuthContext";
+import type { Registration, Tournament } from "@/schema";
+import { db } from "@/services/firebase/config";
+import { fetchTournamentById } from "@/services/firebase/tournamentsService";
 import {
     Button,
-    Card,
     Descriptions,
-    DescriptionsProps,
     Divider,
     Empty,
     Form,
-    Grid,
     Input,
     InputNumber,
     Link,
     Message,
     Result,
     Select,
-    Skeleton,
-    Spin,
     Tooltip,
-    Typography,
+    Typography
 } from "@arco-design/web-react";
-import type {AgeBracketSchema, Competition, EventSchema, Registration, RegistrationSchema} from "@/schema";
-import {fetchCompetitionById} from "@/services/firebase/competitionsService";
-import {db} from "@/services/firebase/config";
-import dayjs, {type Dayjs} from "dayjs";
-import {Timestamp, addDoc, collection} from "firebase/firestore";
-import {useEffect, useState, type ReactNode} from "react";
-import {useParams} from "react-router-dom";
-import {IconExclamationCircle, IconLaunch, IconLink} from "@arco-design/web-react/icon";
-import {useAuthContext} from "@/context/AuthContext";
+import { IconExclamationCircle, IconLaunch } from "@arco-design/web-react/icon";
+import dayjs, { type Dayjs } from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import { Timestamp, addDoc, collection } from "firebase/firestore";
+import { useEffect, useState, type ReactNode } from "react";
+import { useParams } from "react-router-dom";
 dayjs.extend(isSameOrAfter);
-const {Title, Paragraph} = Typography;
+const { Title, Paragraph } = Typography;
 const Option = Select.Option;
 type TeamEntry = [boolean, string];
 
-export default function RegisterCompetitionPage() {
-    const {competitionId} = useParams();
+export default function RegisterTournamentPage() {
+    const { tournamentId } = useParams();
     const [form] = Form.useForm();
-    const {user} = useAuthContext();
-    const [competition, setCompetition] = useState<Competition | null>(null);
+    const { user } = useAuthContext();
+    const [tournament, setTournament] = useState<Tournament | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [options, setOptions] = useState<Competition["events"]>([]);
-    const [availableEvents, setAvailableEvents] = useState<Competition["events"]>([]);
+    const [options, setOptions] = useState<Tournament["events"]>([]);
+    const [availableEvents, setAvailableEvents] = useState<Tournament["events"]>([]);
     const [haveTeam, setHaveTeam] = useState<TeamEntry[]>([]);
-    const [competitionData, setCompetitionData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
+    const [tournamentData, setTournamentData] = useState<{ label?: ReactNode; value?: ReactNode }[]>([]);
 
-    const getAgeAtCompetition = (birthdate: Timestamp | string | Date, competitionStart: Timestamp | string | Date) => {
+    const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
 
-        const compStart = competitionStart instanceof Timestamp ? dayjs(competitionStart.toDate()) : dayjs(competitionStart);
+        const compStart = tournamentStart instanceof Timestamp ? dayjs(tournamentStart.toDate()) : dayjs(tournamentStart);
 
         let age = compStart.diff(birth, "year");
 
@@ -81,13 +76,13 @@ export default function RegisterCompetitionPage() {
     };
 
     const handleRegister = async (values: Registration) => {
-        if (!competitionId || !competition) return;
+        if (!tournamentId || !tournament) return;
 
         const now = dayjs();
         const regEnd =
-            competition.registration_end_date instanceof Timestamp
-                ? dayjs(competition.registration_end_date.toDate())
-                : dayjs(competition.registration_end_date);
+            tournament.registration_end_date instanceof Timestamp
+                ? dayjs(tournament.registration_end_date.toDate())
+                : dayjs(tournament.registration_end_date);
 
         if (now.isAfter(regEnd)) {
             Message.error("Registration has closed.");
@@ -97,8 +92,8 @@ export default function RegisterCompetitionPage() {
         setLoading(true);
 
         try {
-            await addDoc(collection(db, `competitions/${competitionId}/registrations`), {
-                competition_id: competitionId,
+            await addDoc(collection(db, `tournaments/${tournamentId}/registrations`), {
+                tournament_id: tournamentId,
                 user_id: user?.global_id,
                 age: form.getFieldValue("age"),
                 user_name: values.user_name,
@@ -120,26 +115,26 @@ export default function RegisterCompetitionPage() {
 
     useEffect(() => {
         const fetch = async () => {
-            if (!competitionId) return;
+            if (!tournamentId) return;
             setLoading(true);
             try {
-                const comp = await fetchCompetitionById(competitionId);
-                const age = user?.birthdate && comp?.start_date ? getAgeAtCompetition(user.birthdate, comp.start_date) : 0;
+                const comp = await fetchTournamentById(tournamentId);
+                const age = user?.birthdate && comp?.start_date ? getAgeAtTournament(user.birthdate, comp.start_date) : 0;
                 const availableEvents = comp?.events.filter((event) =>
                     event.age_brackets?.some((bracket) => age >= bracket.min_age && age <= bracket.max_age),
                 );
                 setAvailableEvents(availableEvents ?? []);
                 if (comp) {
-                    setCompetition(comp);
+                    setTournament(comp);
                     setOptions(availableEvents ?? []);
-                    setCompetitionData([
+                    setTournamentData([
                         {
                             label: "Location",
                             value: (
                                 <Link
                                     onClick={() =>
                                         window.open(
-                                            `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(competition?.address ?? "")}`,
+                                            `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(tournament?.address ?? "")}`,
                                             "_blank",
                                         )
                                     }
@@ -173,14 +168,14 @@ export default function RegisterCompetitionPage() {
                     age: age,
                 });
             } catch (e) {
-                setError("Failed to load competition.");
+                setError("Failed to load tournament.");
                 console.error(e);
             } finally {
                 setLoading(false);
             }
         };
         fetch();
-    }, [competitionId]);
+    }, [tournamentId]);
 
     useEffect(() => {
         const events = form.getFieldValue("event");
@@ -202,35 +197,35 @@ export default function RegisterCompetitionPage() {
                 <Descriptions
                     column={1}
                     title={
-                        <Title style={{textAlign: "center", width: "100%"}} heading={3}>
-                            {competition?.name}
+                        <Title style={{ textAlign: "center", width: "100%" }} heading={3}>
+                            {tournament?.name}
                         </Title>
                     }
-                    data={competitionData}
-                    style={{marginBottom: 20}}
-                    labelStyle={{textAlign: "right", paddingRight: 36}}
+                    data={tournamentData}
+                    style={{ marginBottom: 20 }}
+                    labelStyle={{ textAlign: "right", paddingRight: 36 }}
                 />
             </div>
 
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <Title heading={5}>Register for Event</Title>
                 <Form requiredSymbol={false} form={form} layout="vertical" onSubmit={handleRegister}>
-                    <Form.Item disabled label="ID" field="id" rules={[{required: true}]}>
+                    <Form.Item disabled label="ID" field="id" rules={[{ required: true }]}>
                         <Input disabled placeholder="Enter your ID" />
                     </Form.Item>
-                    <Form.Item label="Name" field="name" rules={[{required: true}]}>
+                    <Form.Item label="Name" field="name" rules={[{ required: true }]}>
                         <Input placeholder="Enter your name" />
                     </Form.Item>
-                    <Form.Item disabled label="Age" field="age" rules={[{required: true}]}>
+                    <Form.Item disabled label="Age" field="age" rules={[{ required: true }]}>
                         <InputNumber disabled placeholder="Enter your age" />
                     </Form.Item>
-                    <Form.Item label="Select Event(s)" field="event" rules={[{required: true}]}>
+                    <Form.Item label="Select Event(s)" field="event" rules={[{ required: true }]}>
                         <Select
                             placeholder="Select an events"
-                            style={{width: 345, marginRight: 20}}
+                            style={{ width: 345, marginRight: 20 }}
                             mode="multiple"
                             onChange={(value) => {
-                                if (!competition?.events) return;
+                                if (!tournament?.events) return;
                                 const remaining = availableEvents.filter(
                                     (option) => !value.includes(`${option.code}-${option.type}`),
                                 );
@@ -265,14 +260,14 @@ export default function RegisterCompetitionPage() {
                                             <Form.Item
                                                 field={`teams.${teamLabel}.name`}
                                                 label="Team Name"
-                                                rules={[{required: true}]}
+                                                rules={[{ required: true }]}
                                             >
                                                 <Input placeholder="Please enter team name" />
                                             </Form.Item>
                                             <Form.Item
                                                 field={`teams.${teamLabel}.leader`}
                                                 label={`Team Leader Global ID`}
-                                                rules={[{required: true}]}
+                                                rules={[{ required: true }]}
                                             >
                                                 <InputNumber hideControl placeholder="Please enter team leader global ID" />
                                             </Form.Item>
@@ -283,12 +278,12 @@ export default function RegisterCompetitionPage() {
                                                         Team Member
                                                         <Tooltip content="Must Enter Team Member Global ID">
                                                             <IconExclamationCircle
-                                                                style={{margin: "0 8px", color: "rgb(var(--arcoblue-6))"}}
+                                                                style={{ margin: "0 8px", color: "rgb(var(--arcoblue-6))" }}
                                                             />
                                                         </Tooltip>
                                                     </div>
                                                 }
-                                                rules={[{required: true}]}
+                                                rules={[{ required: true }]}
                                             >
                                                 <Select
                                                     mode="multiple"
@@ -302,7 +297,7 @@ export default function RegisterCompetitionPage() {
                                                     }}
                                                     placeholder="Input Team Member Global ID"
                                                     allowClear
-                                                    style={{width: 345, flex: 1}}
+                                                    style={{ width: 345, flex: 1 }}
                                                 />
                                             </Form.Item>
                                         </div>
