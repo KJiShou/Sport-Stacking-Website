@@ -42,12 +42,12 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("Registration start date must be before end date.");
     }
 
-    if (data.registration_start_date < data.start_date || data.registration_end_date > data.end_date) {
+    if (data.registration_start_date > data.start_date || data.registration_end_date > data.end_date) {
         throw new Error("Registration dates must be within the tournament dates.");
     }
 
-    if (data.max_participants <= 0) {
-        throw new Error("Max participants must be greater than 0.");
+    if (data.max_participants < 0) {
+        throw new Error("Max participants must be greater than or equal 0.");
     }
 
     if (!data.events || data.events.length === 0) {
@@ -66,6 +66,10 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("Country is required.");
     }
 
+    if (!data.venue) {
+        throw new Error("Venue is required.");
+    }
+
     if (!data.address) {
         throw new Error("Address is required.");
     }
@@ -75,6 +79,7 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         start_date: data.start_date,
         end_date: data.end_date,
         country: data.country,
+        venue: data.venue,
         address: data.address,
         registration_start_date: data.registration_start_date,
         registration_end_date: data.registration_end_date,

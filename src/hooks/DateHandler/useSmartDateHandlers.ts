@@ -21,10 +21,10 @@ export function useSmartDateHandlers(form: FormInstance) {
                 : endDate;
 
         const oneMonthBefore = fixedStart.subtract(1, "month");
-        const oneWeekBefore = fixedEnd.subtract(7, "day");
+        const twoWeekBefore = fixedEnd.subtract(14, "day");
 
         const registrationStart = oneMonthBefore.isBefore(today) ? today : oneMonthBefore;
-        const registrationEnd = oneWeekBefore;
+        const registrationEnd = twoWeekBefore;
 
         form.setFieldValue("date_range", [fixedStart.toDate(), fixedEnd.toDate()]);
 

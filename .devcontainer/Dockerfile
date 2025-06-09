@@ -40,8 +40,4 @@ RUN cp -r /home/node/.config /root/.config
 RUN curl -sS https://starship.rs/install.sh | sh -s -- --yes
 RUN echo 'eval "$(starship init bash)"' >> /root/.bashrc
 
-# Lint and format code during the build
-RUN yarn lint || true
-RUN yarn format || true
-
 RUN yarn add -D editorconfig

@@ -1,44 +1,40 @@
+import LoginForm from "@/components/common/Login";
+import {useAuthContext} from "@/context/AuthContext";
+import type {FirestoreUser, Tournament} from "@/schema"; // 就是你那个 TournamentSchema infer出来的type
+import {countries} from "@/schema/Country";
+import {deleteTournamentById, fetchTournamentsByType, updateTournament} from "@/services/firebase/tournamentsService";
 import {
     Button,
     Cascader,
     DatePicker,
     Dropdown,
     Form,
-    Grid,
     Input,
     InputNumber,
     Message,
     Modal,
-    Popconfirm,
     Popover,
-    Space,
     Spin,
     Table,
     type TableColumnProps,
     Tag,
-    Typography,
+    Tooltip,
 } from "@arco-design/web-react";
-import {IconArrowFall, IconArrowRise, IconDelete, IconEdit, IconMore, IconPlayArrow, IconPlus} from "@arco-design/web-react/icon";
+import {IconDelete, IconEdit, IconExclamationCircle, IconEye, IconPlayArrow, IconPlus} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
-import LoginForm from "@/components/common/Login";
-import {useAuthContext} from "@/context/AuthContext";
-import type {Tournament} from "@/schema"; // 就是你那个 TournamentSchema infer出来的type
-import {countries} from "@/schema/Country";
-import {deleteTournamentById, fetchTournamentsByType, updateTournament} from "@/services/firebase/tournamentsService";
 
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import {DeviceBreakpoint} from "@/hooks/DeviceInspector/deviceStore";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
-import AgeBracketModal from "./AgeBracketModal";
+import {useNavigate} from "react-router-dom";
 import EventFields from "./EventField";
 import FinalCategoriesFields from "./FinalCategoriesFields";
 import FinalCriteriaFields from "./FinalCriteriaFields";
+import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
 import {useTournamentFormPrefill} from "./useTournamentFormPrefill";
-import LocationPicker, {isValidCountryPath} from "./LocationPicker";
-import {useNavigate} from "react-router-dom";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp | Date, Timestamp | Date];
@@ -81,6 +77,10 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
     const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
 
     const [loading, setLoading] = useState(true);
+
+    function hasRegistered(user: FirestoreUser, tournamentId: string): boolean {
+        return (user.registration_records ?? []).some((record) => record.tournament_id === tournamentId);
+    }
 
     const columns: (TableColumnProps<(typeof tournaments)[number]> | false)[] = [
         {
@@ -132,59 +132,97 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
             title: "Action",
             dataIndex: "action",
             width: 200,
-            render: (_: string, tournament: Tournament) =>
-                user?.roles?.edit_tournament ? (
-                    <Dropdown.Button
-                        type="primary"
-                        trigger={["click", "hover"]}
-                        droplist={
-                            <div
-                                className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
-                            >
-                                <Button
-                                    type="text"
-                                    loading={loading}
-                                    className={`text-left`}
-                                    onClick={async () => handleEdit(tournament)}
-                                >
-                                    <IconEdit /> Edit
-                                </Button>
-                                <Button
-                                    type="text"
-                                    status="danger"
-                                    loading={loading}
-                                    className={`text-left`}
-                                    onClick={async () => handleDelete(tournament)}
-                                >
-                                    <IconDelete /> Delete
-                                </Button>
-                            </div>
-                        }
-                        buttonProps={{
-                            loading: loading,
-                            onClick: () => navigate(``),
-                        }}
-                    >
-                        <IconPlayArrow />
-                        Start
-                    </Dropdown.Button>
-                ) : tournament.registration_end_date > Timestamp.now() ? (
-                    <Button type="primary" onClick={() => handleRegister(tournament.id ?? "")}>
-                        Register
-                    </Button>
-                ) : (
-                    <Popover
-                        content={
-                            <span>
-                                <p>This tournament has end registration date.</p>
-                            </span>
-                        }
-                    >
-                        <Button type="primary" disabled>
+            render: (_: string, tournament: Tournament) => {
+                if (!user) {
+                    return (
+                        <Button type="primary" onClick={() => handleRegister(tournament.id ?? "")}>
                             Register
                         </Button>
-                    </Popover>
-                ),
+                    );
+                }
+
+                if (user?.roles?.edit_tournament) {
+                    // 👉 这里是 admin 原逻辑，保持不变
+                    return (
+                        <Dropdown.Button
+                            type="primary"
+                            trigger={["click", "hover"]}
+                            droplist={
+                                <div
+                                    className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                >
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
+                                    >
+                                        <IconEye /> View Registration List
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => handleEdit(tournament)}
+                                    >
+                                        <IconEdit /> Edit
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        status="danger"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => handleDelete(tournament)}
+                                    >
+                                        <IconDelete /> Delete
+                                    </Button>
+                                </div>
+                            }
+                            buttonProps={{
+                                loading: loading,
+                                onClick: () => navigate(``),
+                            }}
+                        >
+                            <IconPlayArrow />
+                            Start
+                        </Dropdown.Button>
+                    );
+                }
+
+                const alreadyRegistered = hasRegistered(user, tournament.id ?? "");
+
+                if (alreadyRegistered) {
+                    return (
+                        <Button
+                            type="primary"
+                            onClick={() => navigate(`/tournaments/${tournament.id}/register/${user.global_id}/view`)}
+                            loading={loading}
+                        >
+                            <IconEye /> View Registration
+                        </Button>
+                    );
+                } else if (tournament.registration_end_date > Timestamp.now()) {
+                    return (
+                        <Button type="primary" onClick={() => handleRegister(tournament.id ?? "")}>
+                            Register
+                        </Button>
+                    );
+                } else {
+                    return (
+                        <Popover
+                            content={
+                                <span>
+                                    <p>This tournament has ended registration.</p>
+                                </span>
+                            }
+                        >
+                            <Button type="primary" disabled>
+                                Register
+                            </Button>
+                        </Popover>
+                    );
+                }
+            },
         },
     ];
 
@@ -233,6 +271,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                 start_date: startDate,
                 end_date: endDate,
                 country: values.country,
+                venue: values.venue,
                 address: values.address,
                 registration_start_date: registrationStartDate,
                 registration_end_date: registrationEndDate,
@@ -303,6 +342,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
             form.setFieldsValue({
                 name: selectedTournament.name,
                 country: selectedTournament.country,
+                vanue: selectedTournament.venue,
                 address: selectedTournament.address,
                 max_participants: selectedTournament.max_participants,
                 date_range: [
@@ -404,7 +444,12 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                         <Form.Item
                             label="Country / State"
                             field="country"
-                            rules={[{required: true, message: "Please select a country/region"}]}
+                            rules={[
+                                {
+                                    required: true,
+                                    message: "Please select a country/region",
+                                },
+                            ]}
                         >
                             <Cascader
                                 showSearch
@@ -422,8 +467,31 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                             />
                         </Form.Item>
 
+                        {/* Venue */}
+                        <Form.Item
+                            label="Venue"
+                            field="venue"
+                            rules={[
+                                {
+                                    required: true,
+                                    message: "Please input venue",
+                                },
+                            ]}
+                        >
+                            <Input placeholder="Enter venue name" />
+                        </Form.Item>
+
                         {/* Address */}
-                        <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
+                        <Form.Item
+                            label="Address"
+                            field="address"
+                            rules={[
+                                {
+                                    required: true,
+                                    message: "Please input address",
+                                },
+                            ]}
+                        >
                             <LocationPicker
                                 value={form.getFieldValue("address")}
                                 onChange={(val) => form.setFieldValue("address", val)}
@@ -441,7 +509,12 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                         <Form.Item
                             label="Registration Date Range"
                             field="registration_date_range"
-                            rules={[{required: true, message: "Please input registration date"}]}
+                            rules={[
+                                {
+                                    required: true,
+                                    message: "Please input registration date",
+                                },
+                            ]}
                         >
                             <RangePicker
                                 showTime={{
@@ -454,8 +527,29 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                             />
                         </Form.Item>
 
-                        <Form.Item label="Maximum Participants" field="max_participants">
-                            <InputNumber min={1} style={{width: "100%"}} placeholder="Enter max number" />
+                        <Form.Item
+                            label={
+                                <div>
+                                    Max Participants
+                                    <Tooltip content="0 as no limit">
+                                        <IconExclamationCircle
+                                            style={{
+                                                margin: "0 8px",
+                                                color: "rgb(var(--arcoblue-6))",
+                                            }}
+                                        />
+                                    </Tooltip>
+                                </div>
+                            }
+                            field="max_participants"
+                            rules={[
+                                {
+                                    required: true,
+                                    message: "Please input maximum participants",
+                                },
+                            ]}
+                        >
+                            <InputNumber min={0} style={{width: "100%"}} placeholder="Enter max number of participants" />
                         </Form.Item>
                         <Form.Item label="Events">
                             <Form.List field="events">
@@ -476,8 +570,16 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                                     code: "",
                                                     type: "",
                                                     age_brackets: [
-                                                        {name: "Under 10", min_age: 0, max_age: 9},
-                                                        {name: "10 and Above", min_age: 10, max_age: 99},
+                                                        {
+                                                            name: "Under 10",
+                                                            min_age: 0,
+                                                            max_age: 9,
+                                                        },
+                                                        {
+                                                            name: "10 and Above",
+                                                            min_age: 10,
+                                                            max_age: 99,
+                                                        },
                                                     ],
                                                 })
                                             }
@@ -520,13 +622,17 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                                     maxAgeHelp = "Max age < Min age";
                                                 }
                                                 return (
-                                                    <div key={`bracket-${index}`} className="flex gap-4 mb-4 w-full">
+                                                    <div
+                                                        key={`bracket-${index}`}
+                                                        className="flex gap-4 mb-4 w-full justify-center"
+                                                    >
                                                         <Form.Item
                                                             label="Bracket Name"
                                                             required
                                                             validateStatus={!bracket.name ? "error" : undefined}
                                                             help={!bracket.name ? "Please enter bracket name" : undefined}
                                                             className="w-1/3"
+                                                            layout="vertical"
                                                         >
                                                             <Input
                                                                 value={bracket.name}
@@ -544,6 +650,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                                             validateStatus={isMinError ? "error" : undefined}
                                                             help={minAgeHelp}
                                                             className="w-1/4"
+                                                            layout="vertical"
                                                         >
                                                             <InputNumber
                                                                 value={bracket.min_age}
@@ -562,6 +669,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                                             validateStatus={isMaxError ? "error" : undefined}
                                                             help={maxAgeHelp}
                                                             className="w-1/4"
+                                                            layout="vertical"
                                                         >
                                                             <InputNumber
                                                                 value={bracket.max_age}
@@ -585,7 +693,15 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                             <Button
                                                 type="text"
                                                 onClick={() =>
-                                                    setAgeBrackets([...ageBrackets, {name: "", min_age: 0, max_age: 0}])
+                                                    setAgeBrackets([
+                                                        ...ageBrackets,
+                                                        {
+                                                            name: "",
+                                                            min_age: 0,
+                                                            max_age: 0,
+                                                            number_of_participants: 0,
+                                                        },
+                                                    ])
                                                 }
                                             >
                                                 <IconPlus /> Add Bracket

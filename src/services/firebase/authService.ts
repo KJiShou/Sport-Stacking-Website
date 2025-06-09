@@ -2,6 +2,7 @@
 import type {User} from "firebase/auth";
 import {
     createUserWithEmailAndPassword,
+    deleteUser,
     EmailAuthProvider,
     GoogleAuthProvider,
     reauthenticateWithCredential,
@@ -13,6 +14,7 @@ import {
 import type {DocumentData, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
 import {
     collection,
+    deleteDoc,
     doc,
     getDoc,
     getDocs,
@@ -26,7 +28,9 @@ import {
 } from "firebase/firestore";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
-import {auth, db} from "./config";
+import {auth, db, storage} from "./config";
+import {deleteObject, ref} from "firebase/storage";
+import type {UserRegistrationRecord} from "../../schema/UserSchema";
 
 async function getNextGlobalId(): Promise<string> {
     const counterRef = doc(db, "counters", "userCounter");
@@ -92,11 +96,13 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
         email,
         global_id,
         IC,
+        registration_records: [],
         created_at: Timestamp.now(),
         ...rest,
     };
 
     await setDoc(doc(db, "users", uid), newUser);
+    return uid;
 };
 
 export const registerWithGoogle = async (
@@ -135,6 +141,7 @@ export const registerWithGoogle = async (
         global_id,
         email: firebaseUser.email,
         image_url: imageUrl,
+        registeration_records: [],
         created_at: Timestamp.now(),
         ...extraData,
     };
@@ -160,6 +167,7 @@ export async function fetchAllUsers(): Promise<FirestoreUser[]> {
             image_url: data.image_url,
             roles: data.roles ?? null,
             school: data.school ?? null,
+            registration_records: data.registration_records ?? [],
             best_times: data.best_times ?? {},
         } as FirestoreUser;
     });
@@ -195,6 +203,7 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
         image_url: data.image_url,
         roles: data.roles,
         best_times: data.best_times,
+        registration_records: data.registration_records ?? [],
     };
 }
 
@@ -224,6 +233,47 @@ export async function updateUserRoles(userId: string, roles: FirestoreUser["role
     });
 }
 
+/**
+ * 增加单条 registration_records（常用）
+ */
+export async function addUserRegistrationRecord(userId: string, newRecord: UserRegistrationRecord): Promise<void> {
+    const userRef = doc(db, "users", userId);
+    const userSnap = await getDoc(userRef);
+
+    if (!userSnap.exists()) {
+        throw new Error("User not found");
+    }
+
+    const userData = userSnap.data();
+    const existingRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
+
+    const validatedRecord: UserRegistrationRecord = {
+        ...newRecord,
+        registration_date:
+            newRecord.registration_date instanceof Timestamp
+                ? newRecord.registration_date
+                : Timestamp.fromDate(newRecord.registration_date),
+        confirmation_date: newRecord.confirmation_date
+            ? newRecord.confirmation_date instanceof Timestamp
+                ? newRecord.confirmation_date
+                : Timestamp.fromDate(newRecord.confirmation_date)
+            : null,
+        created_at: newRecord.created_at
+            ? newRecord.created_at instanceof Timestamp
+                ? newRecord.created_at
+                : Timestamp.fromDate(newRecord.created_at)
+            : Timestamp.now(),
+        updated_at: Timestamp.now(),
+    };
+
+    const updatedRecords = [...existingRecords, validatedRecord];
+
+    await updateDoc(userRef, {
+        registration_records: updatedRecords,
+        updated_at: Timestamp.now(),
+    });
+}
+
 export async function changeUserPassword(currentPassword: string, newPassword: string): Promise<void> {
     const user = auth.currentUser;
 
@@ -245,6 +295,34 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
         });
     } catch (error) {
         console.error("Failed to change password:", error);
+        throw error;
+    }
+}
+
+export async function deleteAccount(userId: string): Promise<void> {
+    try {
+        // 1. 删除 Firestore 里的用户资料
+        await deleteDoc(doc(db, "users", userId));
+
+        // 2. 删除 Firebase Storage 里的 avatar（如果你存储时用 userId 作为文件名）
+        const avatarRef = ref(storage, `avatars/${userId}`);
+        await deleteObject(avatarRef).catch((error) => {
+            if (error.code !== "storage/object-not-found") {
+                throw error;
+            }
+            // 如果头像不存在，也不算 error
+        });
+
+        // 3. 删除 Firebase Authentication 账户（注意：必须当前用户自己执行）
+        const currentUser = auth.currentUser;
+        if (currentUser && currentUser.uid === userId) {
+            await deleteUser(currentUser);
+        } else {
+            console.warn("Auth user mismatch, cannot delete Auth account");
+            throw new Error("Cannot delete Auth account: user mismatch.");
+        }
+    } catch (error) {
+        console.error("Error deleting account:", error);
         throw error;
     }
 }

@@ -6,13 +6,14 @@ export const AgeBracketSchema = z.object({
     name: z.string(),
     min_age: z.number(),
     max_age: z.number(),
+    number_of_participants: z.number().optional().nullable().default(0),
 });
 
 export type AgeBracket = z.infer<typeof AgeBracketSchema>;
 
 export const EventSchema = z.object({
     code: z.enum(["3-3-3", "3-6-3", "cycle"]),
-    type: z.enum(["individual", "team"]),
+    type: z.enum(["individual", "double", "team relay", "parent & child"]),
     teamSize: z.number().optional(),
     age_brackets: z.array(AgeBracketSchema), // 直接放进每个 event
 });

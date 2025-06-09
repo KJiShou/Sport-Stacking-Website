@@ -76,6 +76,7 @@ export default function CreateTournamentPage() {
                 start_date: values.date_range[0],
                 end_date: values.date_range[1],
                 country: values.country,
+                venue: values.venue,
                 address: values.address,
                 registration_start_date: values.registration_date_range[0],
                 registration_end_date: values.registration_date_range[1],
@@ -118,7 +119,7 @@ export default function CreateTournamentPage() {
                         events: DEFAULT_EVENTS,
                         final_criteria: DEFAULT_FINAL_CRITERIA,
                         final_categories: DEFAULT_FINAL_CATEGORIES,
-                        max_participants: 100,
+                        max_participants: 0,
                     }}
                     requiredSymbol={false}
                 >
@@ -209,7 +210,7 @@ export default function CreateTournamentPage() {
                     <Form.Item
                         label={
                             <div>
-                                Team Member
+                                Max Participants
                                 <Tooltip content="0 as no limit">
                                     <IconExclamationCircle style={{margin: "0 8px", color: "rgb(var(--arcoblue-6))"}} />
                                 </Tooltip>
@@ -348,7 +349,12 @@ export default function CreateTournamentPage() {
                                         })}
                                         <Button
                                             type="text"
-                                            onClick={() => setAgeBrackets([...ageBrackets, {name: "", min_age: 0, max_age: 0}])}
+                                            onClick={() =>
+                                                setAgeBrackets([
+                                                    ...ageBrackets,
+                                                    {name: "", min_age: 0, max_age: 0, number_of_participants: 0},
+                                                ])
+                                            }
                                         >
                                             <IconPlus /> Add Bracket
                                         </Button>

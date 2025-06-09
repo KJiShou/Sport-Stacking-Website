@@ -1,6 +1,21 @@
 import {Timestamp} from "firebase/firestore";
 import {z} from "zod";
 
+export const UserRegistrationRecordSchema = z.object({
+    tournament_id: z.string(),
+    events: z.array(z.string()),
+    registration_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
+    status: z.enum(["Pending", "Confirmed", "Rejected"]),
+    confirmation_date: z
+        .union([z.instanceof(Timestamp), z.instanceof(Date)])
+        .optional()
+        .nullable(),
+    rejection_reason: z.string().optional().nullable(),
+    created_at: z.instanceof(Timestamp).optional().nullable(),
+    updated_at: z.instanceof(Timestamp).optional().nullable(),
+});
+export type UserRegistrationRecord = z.infer<typeof UserRegistrationRecordSchema>;
+
 export const FirestoreUserSchema = z.object({
     id: z.string(),
     global_id: z.string().optional().nullable(),
@@ -24,6 +39,7 @@ export const FirestoreUserSchema = z.object({
         .nullable(),
     school: z.string().optional().nullable(),
     best_times: z.record(z.string(), z.number()).optional(),
+    registration_records: z.array(UserRegistrationRecordSchema).optional().nullable(),
     created_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
 });

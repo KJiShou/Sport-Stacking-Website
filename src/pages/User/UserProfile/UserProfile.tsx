@@ -2,7 +2,7 @@ import {AvatarUploader} from "@/components/common/AvatarUploader";
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser, FirestoreUserSchema} from "@/schema";
 import {countries} from "@/schema/Country";
-import {changeUserPassword, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
+import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
 import {
     Avatar,
     Button,
@@ -13,6 +13,7 @@ import {
     Grid,
     Input,
     Message,
+    Modal,
     Select,
     Spin,
     Statistic,
@@ -58,7 +59,36 @@ export default function RegisterPage() {
     const [isEditMode, setIsEditMode] = useState(false);
     const [isImageLoading, setIsImageLoading] = useState(true);
     const [secLoading, setSecLoading] = useState(false);
+    const [deleteLoading, setDeleteLoading] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
+
+    function confirm() {
+        Modal.confirm({
+            title: "Delete Account",
+            content: "Are you sure you want to delete this account? This action cannot be undone.",
+            okButtonProps: {
+                status: "danger",
+            },
+            confirmLoading: deleteLoading,
+            onOk: async () => {
+                try {
+                    setDeleteLoading(true);
+                    if (!user?.id) throw new Error("User ID is not available");
+                    await deleteAccount(user.id);
+                    Message.success({
+                        content: "Account deleted successfully!",
+                    });
+                    navigate("/");
+                } catch (error) {
+                    console.error("Failed to delete account:", error);
+                    Message.error({
+                        content: "Failed to delete account. Please try again later.",
+                    });
+                }
+                setDeleteLoading(false);
+            },
+        });
+    }
 
     let descData = [
         {label: "Email", value: user?.email ?? "-"},
@@ -382,6 +412,9 @@ export default function RegisterPage() {
                                 }}
                             >
                                 Edit Profile
+                            </Button>
+                            <Button className="w-full" type="outline" status="danger" onClick={confirm}>
+                                Delete Account
                             </Button>
                         </div>
 
