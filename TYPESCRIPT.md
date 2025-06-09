@@ -38,7 +38,7 @@ The project defines several common types in `/src/types/index.ts`:
 
 - `Route` - For defining application routes
 - `Athlete` - For athlete data
-- `Record` - For competition records
+- `Record` - For tournament records
 - `MenuItem` - For navigation items
 - And more...
 
@@ -48,19 +48,19 @@ For React components, we typically define props using interfaces:
 
 ```tsx
 interface ButtonProps {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  variant?: 'primary' | 'secondary';
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    variant?: 'primary' | 'secondary';
 }
 
-const Button: React.FC<ButtonProps> = ({ 
-  label, 
-  onClick, 
-  disabled = false, 
-  variant = 'primary' 
+const Button: React.FC<ButtonProps> = ({
+    label,
+    onClick,
+    disabled = false,
+    variant = 'primary',
 }) => {
-  // Component implementation
+    // Component implementation
 };
 ```
 
@@ -71,62 +71,68 @@ const Button: React.FC<ButtonProps> = ({
 2. **Prefer interfaces for object types** - Use interfaces for objects that can be extended, use type aliases for unions, primitives, and tuples.
 
 3. **Use explicit return types for functions** - Especially for non-trivial functions, specify return types:
-   ```typescript
-   function getData(): Promise<Data[]> {
-     // implementation
-   }
-   ```
+
+    ```typescript
+    function getData(): Promise<Data[]> {
+        // implementation
+    }
+    ```
 
 4. **Avoid `any` type** - Use `unknown` instead of `any` when the type is not known
 
 5. **Use React.FC for components** - For components, use the `React.FC` type:
-   ```tsx
-   const MyComponent: React.FC<MyComponentProps> = (props) => {
-     // implementation
-   }
-   ```
+
+    ```tsx
+    const MyComponent: React.FC<MyComponentProps> = (props) => {
+        // implementation
+    };
+    ```
 
 6. **Type all state** - When using React state, always type it:
-   ```tsx
-   const [users, setUsers] = useState<User[]>([]);
-   ```
+
+    ```tsx
+    const [users, setUsers] = useState<User[]>([]);
+    ```
 
 7. **Use nullish coalescing and optional chaining** - Take advantage of modern TypeScript features:
-   ```typescript
-   const name = user?.profile?.name ?? 'Anonymous';
-   ```
+    ```typescript
+    const name = user?.profile?.name ?? 'Anonymous';
+    ```
 
 ## Common TypeScript Patterns in the Project
 
 ### API Calls
+
 ```typescript
 const fetchData = async (): Promise<DataType[]> => {
-  try {
-    const response = await api.get<DataType[]>('/endpoint');
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching data', error);
-    return [];
-  }
+    try {
+        const response = await api.get<DataType[]>('/endpoint');
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching data', error);
+        return [];
+    }
 };
 ```
 
 ### Component Props with Children
+
 ```typescript
 interface LayoutProps {
-  children: React.ReactNode;
-  title?: string;
+    children: React.ReactNode;
+    title?: string;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, title }) => {
-  // Implementation
+    // Implementation
 };
 ```
 
 ### Event Handlers
+
 ```typescript
 const handleChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
-  setValue(event.target.value);
+    setValue(event.target.value);
 };
 ```
 

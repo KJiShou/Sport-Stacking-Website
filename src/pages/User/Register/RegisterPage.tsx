@@ -1,11 +1,23 @@
-import {Avatar, Button, Cascader, DatePicker, Form, Input, Message, Select, Typography, Upload} from "@arco-design/web-react";
-import {IconCamera, IconEmail, IconLock, IconUser} from "@arco-design/web-react/icon";
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
 import {countries} from "@/schema/Country";
 import {register, registerWithGoogle} from "@/services/firebase/authService";
 import {db} from "@/services/firebase/config";
 import {uploadAvatar} from "@/services/firebase/storageService";
+import {
+    Avatar,
+    Button,
+    Cascader,
+    DatePicker,
+    Form,
+    Input,
+    Message,
+    Select,
+    Tooltip,
+    Typography,
+    Upload,
+} from "@arco-design/web-react";
+import {IconCamera, IconEmail, IconExclamationCircle, IconLock, IconUser} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import type {User} from "firebase/auth";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
@@ -60,26 +72,18 @@ const RegisterPage = () => {
     };
 
     const handleSubmit = async (values: RegisterFormData) => {
-        const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, organizer} = values;
+        const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school} = values;
         let avatarUrl = firebaseUser?.photoURL ?? "";
         if (password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
         }
+        let id = "";
 
         setLoading(true);
         try {
-            if (image_url?.startsWith("data:")) {
-                const blob = await (await fetch(image_url)).blob();
-
-                const file = new File([blob], "avatar.png", {
-                    type: blob.type ?? "image/png",
-                });
-
-                avatarUrl = await uploadAvatar(file, firebaseUser?.uid ?? email);
-            }
             if (!(isFromGoogle && firebaseUser)) {
-                await register({
+                id = await register({
                     email,
                     password,
                     name,
@@ -87,7 +91,7 @@ const RegisterPage = () => {
                     birthdate,
                     gender,
                     country,
-                    organizer,
+                    school,
                     roles: null,
                     image_url: avatarUrl || "",
                     best_times: {},
@@ -101,7 +105,7 @@ const RegisterPage = () => {
                         birthdate,
                         gender,
                         country,
-                        organizer,
+                        school,
                         roles: null,
                         best_times: {},
                     },
@@ -113,7 +117,15 @@ const RegisterPage = () => {
                     setUser(userDoc.data() as FirestoreUser);
                 }
             }
+            if (image_url?.startsWith("data:")) {
+                const blob = await (await fetch(image_url)).blob();
 
+                const file = new File([blob], "avatar.png", {
+                    type: blob.type ?? "image/png",
+                });
+
+                avatarUrl = await uploadAvatar(file, firebaseUser?.uid ?? id);
+            }
             Message.success("Registration successful!");
             navigate("/");
         } catch (err: unknown) {
@@ -144,7 +156,12 @@ const RegisterPage = () => {
         <div className={`flex flex-auto h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10`}>
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
                 <Title heading={3} className="text-center mb-6">
-                    Register Account
+                    <div>
+                        Register Participant Account
+                        <Tooltip content="Register for the participant account to participate in the event">
+                            <IconExclamationCircle style={{margin: "0 8px", color: "rgb(var(--arcoblue-6))"}} />
+                        </Tooltip>
+                    </div>
                 </Title>
 
                 <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
@@ -218,7 +235,7 @@ const RegisterPage = () => {
 
                     <Form.Item
                         field="email"
-                        label="Email"
+                        label="Participant Email"
                         rules={[{required: true, type: "email", message: "Enter a valid email"}]}
                     >
                         <Input
@@ -228,7 +245,11 @@ const RegisterPage = () => {
                         />
                     </Form.Item>
 
-                    <Form.Item field="name" label="Full Name" rules={[{required: true, message: "Enter your full name"}]}>
+                    <Form.Item
+                        field="name"
+                        label="Participant Full Name"
+                        rules={[{required: true, message: "Enter your full name"}]}
+                    >
                         <Input prefix={<IconUser />} placeholder="Your full name" />
                     </Form.Item>
 
@@ -236,7 +257,7 @@ const RegisterPage = () => {
                         field="IC"
                         label={
                             <div className="flex justify-between items-center">
-                                <span>{isICMode ? "IC Number" : "Passport Number"}</span>
+                                <span>{isICMode ? "Participant IC Number" : "Participant Passport Number"}</span>
                                 <Button
                                     size="mini"
                                     type="text"
@@ -267,16 +288,20 @@ const RegisterPage = () => {
                         <Input placeholder={isICMode ? "e.g. 050101011234" : "e.g. A12345678"} onChange={handleICChange} />
                     </Form.Item>
 
-                    <Form.Item field="birthdate" label="Birthdate" rules={[{required: true, message: "Select your birthdate"}]}>
+                    <Form.Item
+                        field="birthdate"
+                        label="Participant Birthdate"
+                        rules={[{required: true, message: "Select your birthdate"}]}
+                    >
                         <DatePicker style={{width: "100%"}} disabledDate={(current) => current.isAfter(dayjs())} />
                     </Form.Item>
 
-                    <Form.Item field="gender" label="Gender" rules={[{required: true, message: "Select gender"}]}>
+                    <Form.Item field="gender" label="Participant Gender" rules={[{required: true, message: "Select gender"}]}>
                         <Select placeholder="Select gender" options={["Male", "Female"]} />
                     </Form.Item>
 
                     <Form.Item
-                        label="Country / State"
+                        label="Participant Country / State"
                         field="country"
                         rules={[{required: true, message: "Please select a country/region"}]}
                     >
@@ -295,11 +320,11 @@ const RegisterPage = () => {
                     </Form.Item>
 
                     <Form.Item
-                        label="Organizer"
-                        field="organizer"
-                        rules={[{required: true, message: "Please enter the organizer name"}]}
+                        label="Participant School/University/College"
+                        field="school"
+                        rules={[{required: true, message: "Please enter the School/University/College name"}]}
                     >
-                        <Input placeholder="Enter organizer name" />
+                        <Input placeholder="Enter School/University/College name" />
                     </Form.Item>
 
                     <Form.Item field="password" label="Password" rules={[{required: true, message: "Enter your password"}]}>

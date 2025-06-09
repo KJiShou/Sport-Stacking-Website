@@ -63,7 +63,7 @@ export default function LocationPicker({onCountryChange, countryValue, value, on
     const geocoderRef = useRef<google.maps.Geocoder>();
 
     const {isLoaded} = useJsApiLoader({
-        googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY!,
+        googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
         libraries: GOOGLE_LIBRARIES,
     });
 
@@ -93,7 +93,7 @@ export default function LocationPicker({onCountryChange, countryValue, value, on
         });
     }, [countryValue]);
 
-    // ✅ 用户输入地址时：地址 ➜ 坐标
+    // 用户输入地址时：地址 ➜ 坐标
     useEffect(() => {
         if (!geocoderRef.current || !value || !isLoaded) return;
 
@@ -109,7 +109,7 @@ export default function LocationPicker({onCountryChange, countryValue, value, on
         });
     }, [value, isLoaded]);
 
-    // ✅ 用户点击地图或拖动 marker：坐标 ➜ 地址
+    // 用户点击地图或拖动 marker：坐标 ➜ 地址
     const updateAddressFromCoords = useCallback(
         (lat: number, lng: number) => {
             if (!geocoderRef.current) return;
@@ -135,7 +135,7 @@ export default function LocationPicker({onCountryChange, countryValue, value, on
         [onChange, onCountryChange],
     );
 
-    // ✅ 地图点击行为
+    // 地图点击行为
     const handleMapClick = (e: google.maps.MapMouseEvent) => {
         if (!e.latLng) return;
         const newPos = {
@@ -146,9 +146,7 @@ export default function LocationPicker({onCountryChange, countryValue, value, on
         updateAddressFromCoords(newPos.lat, newPos.lng);
     };
 
-    console.log("position", position);
-
-    // ✅ Marker 拖动行为
+    // Marker 拖动行为
     const handleMarkerDragEnd = (e: google.maps.MapMouseEvent) => {
         if (!e.latLng) return;
         const newPos = {

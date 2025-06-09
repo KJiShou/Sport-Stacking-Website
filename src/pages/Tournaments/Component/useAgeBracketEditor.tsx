@@ -1,6 +1,6 @@
-import {FormInstance, Message} from "@arco-design/web-react";
 import type {AgeBracket} from "@/schema";
 import {validateAgeBrackets} from "@/utils/validation/validateAgeBrackets";
+import {type FormInstance, Message} from "@arco-design/web-react";
 import {useState} from "react";
 
 export function useAgeBracketEditor(form: FormInstance, onBracketsSaved?: (brackets: AgeBracket[], index: number) => void) {
@@ -33,7 +33,6 @@ export function useAgeBracketEditor(form: FormInstance, onBracketsSaved?: (brack
 
         const currentEvents = [...(form.getFieldValue("events") ?? [])];
         currentEvents[editingEventIndex].age_brackets = ageBrackets;
-
         form.setFieldValue("events", currentEvents);
         setAgeBracketModalVisible(false);
         setEditingEventIndex(null);

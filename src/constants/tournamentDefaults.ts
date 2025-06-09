@@ -1,6 +1,6 @@
-import type {Competition} from "../schema";
+import type {Tournament} from "../schema";
 
-export const DEFAULT_EVENTS: Competition["events"] = [
+export const DEFAULT_EVENTS: Tournament["events"] = [
     {
         code: "3-3-3",
         type: "individual",
@@ -25,16 +25,32 @@ export const DEFAULT_EVENTS: Competition["events"] = [
             {name: "10 and Above", min_age: 10, max_age: 99},
         ],
     },
+    {
+        code: "3-6-3",
+        type: "team relay",
+        age_brackets: [
+            {name: "Under 10", min_age: 0, max_age: 9},
+            {name: "10 and Above", min_age: 10, max_age: 99},
+        ],
+    },
+    {
+        code: "cycle",
+        type: "team relay",
+        age_brackets: [
+            {name: "Under 10", min_age: 0, max_age: 9},
+            {name: "10 and Above", min_age: 10, max_age: 99},
+        ],
+    },
 ];
 
-export const DEFAULT_FINAL_CRITERIA: Competition["final_criteria"] = [
+export const DEFAULT_FINAL_CRITERIA: Tournament["final_criteria"] = [
     {
         type: "individual",
         number: 8,
     },
 ];
 
-export const DEFAULT_FINAL_CATEGORIES: Competition["final_categories"] = [
+export const DEFAULT_FINAL_CATEGORIES: Tournament["final_categories"] = [
     {
         name: "Gold Final",
         start: 1,

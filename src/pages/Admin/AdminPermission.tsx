@@ -1,13 +1,13 @@
-import React, {useEffect, useState} from "react";
-import {Table, Input, Button, Modal, Form, Switch, Message, Spin, type TableColumnProps} from "@arco-design/web-react";
-import {fetchAllUsers, updateUserRoles} from "../../services/firebase/authService";
-import type {FirestoreUser} from "../../schema";
-import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
+import {Button, Form, Input, Message, Modal, Spin, Switch, Table, type TableColumnProps, Tag} from "@arco-design/web-react";
+import {useEffect, useState} from "react";
 import {DeviceBreakpoint} from "../../hooks/DeviceInspector/deviceStore";
+import type {FirestoreUser} from "../../schema";
+import {fetchAllUsers, updateUserRoles} from "../../services/firebase/authService";
+import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
 
 type RoleFields = {
-    edit_competition: boolean;
-    record_competition: boolean;
+    edit_tournament: boolean;
+    record_tournament: boolean;
     modify_admin: boolean;
     verify_record: boolean;
 };
@@ -46,6 +46,19 @@ export default function AdminPermissionsPage() {
             sorter: (a, b) => (a.email ?? "").localeCompare(b.email ?? ""),
         },
         {
+            title: "Roles",
+            dataIndex: "is_admin",
+            width: 100,
+            render: (_: string, record: FirestoreUser) => (
+                <Tag color={record.roles ? "red" : "blue"}>{record.roles ? "Admin" : "User"}</Tag>
+            ),
+            sorter: (a, b) => {
+                const aIsAdmin = !!a.roles;
+                const bIsAdmin = !!b.roles;
+                return Number(bIsAdmin) - Number(aIsAdmin);
+            },
+        },
+        {
             title: "Actions",
             dataIndex: "id",
             width: 120,
@@ -57,8 +70,8 @@ export default function AdminPermissionsPage() {
                         setSelected(record);
                         form.setFieldsValue(
                             record.roles ?? {
-                                edit_competition: false,
-                                record_competition: false,
+                                edit_tournament: false,
+                                record_tournament: false,
                                 modify_admin: false,
                                 verify_record: false,
                             },
@@ -149,16 +162,16 @@ export default function AdminPermissionsPage() {
                                 layout="horizontal"
                                 initialValues={
                                     selected?.roles ?? {
-                                        edit_competition: false,
-                                        record_competition: false,
+                                        edit_tournament: false,
+                                        record_tournament: false,
                                         modify_admin: false,
                                         verify_record: false,
                                     }
                                 }
                             >
                                 <Form.Item
-                                    field="edit_competition"
-                                    label="Edit Competition"
+                                    field="edit_tournament"
+                                    label="Edit Tournament"
                                     trigger="onChange"
                                     triggerPropName="checked"
                                 >
@@ -166,8 +179,8 @@ export default function AdminPermissionsPage() {
                                 </Form.Item>
 
                                 <Form.Item
-                                    field="record_competition"
-                                    label="Record Competition"
+                                    field="record_tournament"
+                                    label="Record Tournament"
                                     trigger="onChange"
                                     triggerPropName="checked"
                                 >

@@ -1,4 +1,4 @@
-// src/components/competition/AgeBracketModal.tsx
+// src/components/tournament/AgeBracketModal.tsx
 import {Button, Form, Input, InputNumber, Modal} from "@arco-design/web-react";
 import {IconDelete, IconPlus} from "@arco-design/web-react/icon";
 import type {AgeBracket} from "@/schema";

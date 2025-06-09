@@ -1,3 +1,8 @@
+import {AvatarUploader} from "@/components/common/AvatarUploader";
+import {useAuthContext} from "@/context/AuthContext";
+import type {FirestoreUser, FirestoreUserSchema} from "@/schema";
+import {countries} from "@/schema/Country";
+import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
 import {
     Avatar,
     Button,
@@ -8,6 +13,7 @@ import {
     Grid,
     Input,
     Message,
+    Modal,
     Select,
     Spin,
     Statistic,
@@ -18,12 +24,8 @@ import {
 } from "@arco-design/web-react";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
 import {IconUser} from "@arco-design/web-react/icon";
-import {AvatarUploader} from "@/components/common/AvatarUploader";
-import {useAuthContext} from "@/context/AuthContext";
-import type {FirestoreUser, FirestoreUserSchema} from "@/schema";
-import {countries} from "@/schema/Country";
-import {changeUserPassword, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
 import dayjs from "dayjs";
+import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import type {z} from "zod";
@@ -57,24 +59,55 @@ export default function RegisterPage() {
     const [isEditMode, setIsEditMode] = useState(false);
     const [isImageLoading, setIsImageLoading] = useState(true);
     const [secLoading, setSecLoading] = useState(false);
+    const [deleteLoading, setDeleteLoading] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
+
+    function confirm() {
+        Modal.confirm({
+            title: "Delete Account",
+            content: "Are you sure you want to delete this account? This action cannot be undone.",
+            okButtonProps: {
+                status: "danger",
+            },
+            confirmLoading: deleteLoading,
+            onOk: async () => {
+                try {
+                    setDeleteLoading(true);
+                    if (!user?.id) throw new Error("User ID is not available");
+                    await deleteAccount(user.id);
+                    Message.success({
+                        content: "Account deleted successfully!",
+                    });
+                    navigate("/");
+                } catch (error) {
+                    console.error("Failed to delete account:", error);
+                    Message.error({
+                        content: "Failed to delete account. Please try again later.",
+                    });
+                }
+                setDeleteLoading(false);
+            },
+        });
+    }
 
     let descData = [
         {label: "Email", value: user?.email ?? "-"},
         {label: "IC", value: user?.IC ?? "-"},
         {label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}`},
-        {label: "Organizer", value: user?.organizer ?? "-"},
+        {label: "School/University/College", value: user?.school ?? "-"},
         {
             label: "Birthdate",
-            value: user?.birthdate ? dayjs(user.birthdate).format("YYYY-MM-DD") : "-",
+            value: user?.birthdate
+                ? dayjs(user.birthdate instanceof Timestamp ? user.birthdate.toDate() : user.birthdate).format("YYYY-MM-DD")
+                : "-",
             span: 2,
         },
     ];
     type RoleKey = keyof NonNullable<z.infer<typeof FirestoreUserSchema>["roles"]>;
 
     const permissionList: {key: RoleKey; label: string}[] = [
-        {key: "edit_competition", label: "Edit Competition"},
-        {key: "record_competition", label: "Record Competition"},
+        {key: "edit_tournament", label: "Edit Tournament"},
+        {key: "record_tournament", label: "Record Tournament"},
         {key: "modify_admin", label: "Modify Admin"},
         {key: "verify_record", label: "Verify Record"},
     ];
@@ -103,7 +136,7 @@ export default function RegisterPage() {
                     IC: data?.IC,
                     name: data?.name,
                     country: data?.country,
-                    organizer: data?.organizer ?? "",
+                    school: data?.school ?? "",
                     gender: data?.gender,
                     birthdate: data?.birthdate,
                 });
@@ -111,10 +144,14 @@ export default function RegisterPage() {
                     {label: "Email", value: user?.email ?? "-"},
                     {label: "IC", value: user?.IC ?? "-"},
                     {label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}`},
-                    {label: "Organizer", value: user?.organizer ?? "-"},
+                    {label: "School/University/College", value: user?.school ?? "-"},
                     {
                         label: "Birthdate",
-                        value: user?.birthdate ? dayjs(user.birthdate).format("YYYY-MM-DD") : "-",
+                        value: user?.birthdate
+                            ? dayjs(user.birthdate instanceof Timestamp ? user.birthdate.toDate() : user.birthdate).format(
+                                  "YYYY-MM-DD",
+                              )
+                            : "-",
                         span: 2,
                     },
                 ];
@@ -135,7 +172,7 @@ export default function RegisterPage() {
     const handleSubmit = async (values: {
         name: string;
         country: [country: string, state: string];
-        organizer: string;
+        school: string;
     }) => {
         setLoading(true);
         try {
@@ -143,7 +180,7 @@ export default function RegisterPage() {
             await updateUserProfile(id, {
                 name: values.name,
                 country: values.country,
-                organizer: values.organizer,
+                school: values.school,
             });
             Message.success("Profile updated successfully");
         } catch (err) {
@@ -258,11 +295,11 @@ export default function RegisterPage() {
                                             </Form.Item>
 
                                             <Form.Item
-                                                label="Organizer"
-                                                field="organizer"
-                                                rules={[{required: false, message: "Please enter your organizer"}]}
+                                                label="School"
+                                                field="school"
+                                                rules={[{required: false, message: "Please enter your school"}]}
                                             >
-                                                <Input placeholder="Please enter your organizer" />
+                                                <Input placeholder="Please enter your school" />
                                             </Form.Item>
 
                                             <div className="w-full mx-auto flex flex-col items-center">
@@ -289,7 +326,7 @@ export default function RegisterPage() {
                                                                 IC: data?.IC,
                                                                 name: data?.name,
                                                                 country: data?.country,
-                                                                organizer: data?.organizer ?? "",
+                                                                school: data?.school ?? "",
                                                                 gender: data?.gender,
                                                                 birthdate: data?.birthdate,
                                                             });
@@ -375,6 +412,9 @@ export default function RegisterPage() {
                                 }}
                             >
                                 Edit Profile
+                            </Button>
+                            <Button className="w-full" type="outline" status="danger" onClick={confirm}>
+                                Delete Account
                             </Button>
                         </div>
 

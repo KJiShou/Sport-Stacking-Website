@@ -6,13 +6,14 @@ export const AgeBracketSchema = z.object({
     name: z.string(),
     min_age: z.number(),
     max_age: z.number(),
+    number_of_participants: z.number().optional().nullable().default(0),
 });
 
 export type AgeBracket = z.infer<typeof AgeBracketSchema>;
 
 export const EventSchema = z.object({
     code: z.enum(["3-3-3", "3-6-3", "cycle"]),
-    type: z.enum(["individual", "team"]),
+    type: z.enum(["individual", "double", "team relay", "parent & child"]),
     teamSize: z.number().optional(),
     age_brackets: z.array(AgeBracketSchema), // 直接放进每个 event
 });
@@ -30,18 +31,21 @@ export const FinalCategorySchema = z.object({
     end: z.number(),
 });
 
-// main competition schema
-export const CompetitionSchema = z.object({
+// main tournament schema
+export const TournamentSchema = z.object({
     id: z.string().optional().nullable(),
     name: z.string(),
     start_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     end_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     country: z.array(z.string(), z.string()),
+    venue: z.string().optional().nullable(),
     address: z.string(),
 
     events: z.array(EventSchema),
     final_criteria: z.array(FinalCriteriaSchema),
     final_categories: z.array(FinalCategorySchema),
+    description: z.string().optional().nullable(),
+    agenda: z.string().optional().nullable(),
 
     registration_start_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     registration_end_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
@@ -53,4 +57,4 @@ export const CompetitionSchema = z.object({
     updated_at: z.instanceof(Timestamp).optional().nullable(),
 });
 
-export type Competition = z.infer<typeof CompetitionSchema>;
+export type Tournament = z.infer<typeof TournamentSchema>;

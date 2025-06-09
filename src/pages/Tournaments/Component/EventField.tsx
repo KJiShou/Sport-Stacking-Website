@@ -1,5 +1,5 @@
 import React from "react";
-import {Form, Select, Button} from "@arco-design/web-react";
+import {Form, Select, Button, Checkbox} from "@arco-design/web-react";
 import {IconEdit, IconDelete} from "@arco-design/web-react/icon";
 
 interface EventFieldProps {
@@ -21,7 +21,9 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
             <Form.Item field={`events.${index}.type`} className="w-1/4" rules={[{required: true}]}>
                 <Select placeholder="Type">
                     <Select.Option value="individual">Individual</Select.Option>
-                    <Select.Option value="team">Team</Select.Option>
+                    <Select.Option value="team relay">Team Relay</Select.Option>
+                    <Select.Option value="double">Double</Select.Option>
+                    <Select.Option value="parent_&_child">Parent & Child</Select.Option>
                 </Select>
             </Form.Item>
             <Button type="primary" className="mb-8" onClick={() => onEditAgeBrackets(index)}>

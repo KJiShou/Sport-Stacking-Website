@@ -1,7 +1,7 @@
 import {z} from "zod";
 
 export const RecordSchema = z.object({
-    competition_id: z.string(),
+    tournament_id: z.string(),
     event_code: z.string(),
     type: z.enum(["individual", "team"]),
     athlete_id: z.string().nullable(),

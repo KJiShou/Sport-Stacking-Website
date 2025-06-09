@@ -1,12 +1,11 @@
 export {
-    CompetitionSchema,
     AgeBracketSchema,
     EventSchema,
-    FinalCriteriaSchema,
     FinalCategorySchema,
-} from "./CompetitionSchema";
-export type {Competition} from "./CompetitionSchema";
-export type {AgeBracket} from "./CompetitionSchema";
+    FinalCriteriaSchema,
+    TournamentSchema,
+} from "./TournamentSchema";
+export type {AgeBracket, Tournament} from "./TournamentSchema";
 
 export {FirestoreUserSchema} from "./UserSchema";
 export type {FirestoreUser} from "./UserSchema";

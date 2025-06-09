@@ -31,7 +31,7 @@ export interface Record {
     athleteId: string;
     time: number;
     date: string;
-    competition?: string;
+    tournament?: string;
 }
 
 // MenuItem interface

@@ -1,11 +1,11 @@
 import {db} from "./config";
 import {collection, addDoc, getDocs} from "firebase/firestore";
 
-import {CompetitionSchema, type Competition} from "@/schema";
+import {TournamentSchema, type Tournament} from "@/schema";
 
-const collectionRef = collection(db, "competitions");
+const collectionRef = collection(db, "tournaments");
 
-export async function getCompetitions(): Promise<Competition[]> {
+export async function getTournaments(): Promise<Tournament[]> {
     const snapshot = await getDocs(collectionRef);
 
     return snapshot.docs
@@ -13,20 +13,20 @@ export async function getCompetitions(): Promise<Competition[]> {
             const data = {id: docSnap.id, ...docSnap.data()};
 
             // Zod 验证
-            const parsed = CompetitionSchema.safeParse(data);
+            const parsed = TournamentSchema.safeParse(data);
             if (!parsed.success) {
-                console.warn(`Invalid competition data for ID ${docSnap.id}:`, parsed.error.format());
+                console.warn(`Invalid tournament data for ID ${docSnap.id}:`, parsed.error.format());
                 return null;
             }
 
             return parsed.data;
         })
-        .filter(Boolean) as Competition[];
+        .filter(Boolean) as Tournament[];
 }
 
-export async function addCompetition(data: Omit<Competition, "id">): Promise<string> {
+export async function addTournament(data: Omit<Tournament, "id">): Promise<string> {
     // 验证数据结构
-    CompetitionSchema.omit({id: true}).parse(data);
+    TournamentSchema.omit({id: true}).parse(data);
 
     const docRef = await addDoc(collectionRef, data);
     return docRef.id;

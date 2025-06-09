@@ -1,11 +1,6 @@
 {
-  "name": "React + Node.js Development",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
-  "customizations": {
-    "vscode": {
-      "extensions": [
+    "recommendations": [
+        "aaron-bond.better-comments",
         "biomejs.biome",
         "bradlc.vscode-tailwindcss",
         "burkeholland.simple-react-snippets",
@@ -14,7 +9,12 @@
         "DotJoshJohnson.xml",
         "eamodio.gitlens",
         "ecmel.vscode-html-css",
+        "formulahendry.auto-close-tag",
+        "formulahendry.auto-rename-tag",
+        "github.remotehub",
         "GitHub.vscode-pull-request-github",
+        "ms-vscode-remote.vscode-remote-extensionpack",
+        "ms-vscode.remote-repositories",
         "ms-vscode.vscode-typescript-next",
         "pflannery.vscode-versionlens",
         "redhat.vscode-xml",
@@ -27,15 +27,9 @@
         "tamasfe.even-better-toml",
         "task.vscode-task",
         "tauri-apps.tauri-vscode",
+        "usernamehw.errorlens",
         "VisualStudioExptTeam.vscodeintellicode",
+        "xabikos.javascriptsnippets",
         "yzhang.markdown-all-in-one"
-      ]
-    }
-  },
-  "remoteUser": "root",
-  "postCreateCommand": "yarn install",
-  "forwardPorts": [
-    5000,
-    5173
-  ]
+    ]
 }
