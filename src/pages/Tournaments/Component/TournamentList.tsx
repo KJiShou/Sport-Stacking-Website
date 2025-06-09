@@ -19,6 +19,7 @@ import {
     type TableColumnProps,
     Tag,
     Tooltip,
+    Upload,
 } from "@arco-design/web-react";
 import {IconDelete, IconEdit, IconExclamationCircle, IconEye, IconPlayArrow, IconPlus} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
@@ -35,6 +36,8 @@ import FinalCriteriaFields from "./FinalCriteriaFields";
 import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
 import {useTournamentFormPrefill} from "./useTournamentFormPrefill";
+import MDEditor from "@uiw/react-md-editor";
+import {uploadFile} from "@/services/firebase/storageService";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp | Date, Timestamp | Date];
@@ -201,27 +204,27 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                             <IconEye /> View Registration
                         </Button>
                     );
-                } else if (tournament.registration_end_date > Timestamp.now()) {
+                }
+                if (tournament.registration_end_date > Timestamp.now()) {
                     return (
                         <Button type="primary" onClick={() => handleRegister(tournament.id ?? "")}>
                             Register
                         </Button>
                     );
-                } else {
-                    return (
-                        <Popover
-                            content={
-                                <span>
-                                    <p>This tournament has ended registration.</p>
-                                </span>
-                            }
-                        >
-                            <Button type="primary" disabled>
-                                Register
-                            </Button>
-                        </Popover>
-                    );
                 }
+                return (
+                    <Popover
+                        content={
+                            <span>
+                                <p>This tournament has ended registration.</p>
+                            </span>
+                        }
+                    >
+                        <Button type="primary" disabled>
+                            Register
+                        </Button>
+                    </Popover>
+                );
             },
         },
     ];
@@ -281,6 +284,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                 final_categories: values.final_categories,
                 status: values.status,
                 participants: selectedTournament.participants,
+                description: values.description ?? null,
             });
             setEditModalVisible(false);
             await fetchTournaments();
@@ -342,7 +346,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
             form.setFieldsValue({
                 name: selectedTournament.name,
                 country: selectedTournament.country,
-                vanue: selectedTournament.venue,
+                venue: selectedTournament.venue,
                 address: selectedTournament.address,
                 max_participants: selectedTournament.max_participants,
                 date_range: [
@@ -364,6 +368,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                 events: selectedTournament.events,
                 final_criteria: selectedTournament.final_criteria,
                 final_categories: selectedTournament.final_categories,
+                description: selectedTournament.description ?? "",
             });
         }
     }, [selectedTournament, form]);
@@ -392,7 +397,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
             {/* 表格 */}
             <Table
                 rowKey="id"
-                columns={columns.filter((e) => !!e)}
+                columns={columns.filter((e): e is TableColumnProps<(typeof tournaments)[number]> => !!e)}
                 data={tournaments}
                 pagination={{pageSize: 10}}
                 className="my-4"
@@ -623,7 +628,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                                 }
                                                 return (
                                                     <div
-                                                        key={`bracket-${index}`}
+                                                        key={`bracket-${bracket.name}`}
                                                         className="flex gap-4 mb-4 w-full justify-center"
                                                     >
                                                         <Form.Item
@@ -739,6 +744,49 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                     </>
                                 )}
                             </Form.List>
+                        </Form.Item>
+
+                        <Form.Item label="Description" field="description">
+                            <MDEditor
+                                value={form.getFieldValue("description")}
+                                onChange={(value) => {
+                                    form.setFieldValue("description", value);
+                                }}
+                                height={300}
+                            />
+                        </Form.Item>
+
+                        <Form.Item label="Agenda" field="agenda" rules={[{required: true}]}>
+                            <Upload
+                                className={"w-full flex flex-col items-center justify-center mb-10"}
+                                drag
+                                multiple={false}
+                                limit={1}
+                                accept=".pdf,.doc,.docx"
+                                customRequest={async (option) => {
+                                    const {file, onSuccess, onError, onProgress} = option;
+                                    if (!user?.global_id) {
+                                        onError?.(new Error("User not authenticated"));
+                                        return;
+                                    }
+                                    try {
+                                        setLoading(true);
+                                        const downloadURL = await uploadFile(
+                                            file as File,
+                                            `tournaments/agenda`,
+                                            selectedTournament.id ?? "",
+                                            (progress) => {
+                                                onProgress?.(progress);
+                                            },
+                                        );
+                                        form.setFieldValue("agenda", downloadURL);
+                                        setLoading(false);
+                                        onSuccess?.(file);
+                                    } catch (err) {
+                                        onError?.(err as Error);
+                                    }
+                                }}
+                            />
                         </Form.Item>
 
                         <Form.Item className={`w-full`} wrapperCol={{span: 24}}>

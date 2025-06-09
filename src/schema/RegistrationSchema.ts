@@ -27,6 +27,7 @@ export const RegistrationSchema = z.object({
                     global_id: z.string().optional().nullable(),
                     verified: z.boolean().optional().default(false),
                 }),
+                looking_for_team_members: z.boolean().optional().default(false),
             }),
         )
         .optional()
@@ -56,6 +57,7 @@ export const RegistrationFormSchema = z.object({
                 name: z.string(),
                 member: z.array(z.string().optional().nullable()),
                 leader: z.string().optional().nullable(),
+                looking_for_team_members: z.boolean().optional().default(false),
             }),
         )
         .optional()

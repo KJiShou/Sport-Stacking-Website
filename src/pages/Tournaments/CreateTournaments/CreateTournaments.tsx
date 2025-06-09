@@ -12,6 +12,7 @@ import {
     Select,
     Tooltip,
     Typography,
+    Upload,
 } from "@arco-design/web-react";
 import dayjs from "dayjs";
 import type {Tournament} from "@/schema";
@@ -29,6 +30,8 @@ import {DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES} from "
 import {useTournamentFormPrefill} from "../Component/useTournamentFormPrefill";
 import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
 import LocationPicker, {isValidCountryPath} from "../Component/LocationPicker";
+import MDEditor from "@uiw/react-md-editor";
+import {uploadFile} from "@/services/firebase/storageService";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp, Timestamp];
@@ -84,6 +87,7 @@ export default function CreateTournamentPage() {
                 events: fullEvents,
                 final_criteria: values.final_criteria,
                 final_categories: values.final_categories,
+                description: values.description,
                 status: "Up Coming",
             });
             Message.success("Tournament created successfully!");
@@ -285,7 +289,7 @@ export default function CreateTournamentPage() {
                                                 maxAgeHelp = "Max age < Min age";
                                             }
                                             return (
-                                                <div key={`bracket-${id}`} className="flex gap-4 mb-4 w-full">
+                                                <div key={`bracket-${bracket.name}`} className="flex gap-4 mb-4 w-full">
                                                     <Form.Item
                                                         label="Bracket Name"
                                                         required
@@ -391,6 +395,16 @@ export default function CreateTournamentPage() {
                                 </>
                             )}
                         </Form.List>
+                    </Form.Item>
+
+                    <Form.Item label="Description" field="description">
+                        <MDEditor
+                            value={form.getFieldValue("description")}
+                            onChange={(value) => {
+                                form.setFieldValue("description", value);
+                            }}
+                            height={300}
+                        />
                     </Form.Item>
 
                     {/* Submit Button */}

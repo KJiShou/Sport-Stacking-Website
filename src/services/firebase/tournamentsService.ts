@@ -87,6 +87,8 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         events: data.events,
         final_criteria: data.final_criteria,
         final_categories: data.final_categories,
+        description: data.description ?? null,
+        participants: 0, // 初始参与者数为0
         status: "Up Coming",
         created_at: Timestamp.now(),
     });

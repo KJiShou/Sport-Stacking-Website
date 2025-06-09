@@ -44,6 +44,8 @@ export const TournamentSchema = z.object({
     events: z.array(EventSchema),
     final_criteria: z.array(FinalCriteriaSchema),
     final_categories: z.array(FinalCategorySchema),
+    description: z.string().optional().nullable(),
+    agenda: z.string().optional().nullable(),
 
     registration_start_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     registration_end_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
