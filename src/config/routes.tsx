@@ -1,5 +1,6 @@
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
+import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type * as React from "react";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import Athletes from "../pages/Athletes/Athletes";
@@ -43,6 +44,7 @@ const routes: Route[] = [
     {path: "/register", component: RegisterPage},
     {path: "/users/:id", component: UserProfile},
     {path: "/admins", component: AdminPermissionsPage},
+    {path: "/forgot-password", component: ForgotPasswordPage},
 ];
 
 export default routes;

@@ -143,7 +143,7 @@ export default function AdminPermissionsPage() {
                         <Table
                             rowKey="id"
                             data={filtered}
-                            columns={columns.filter((e) => !!e)}
+                            columns={columns.filter((e): e is TableColumnProps<FirestoreUser> => !!e)}
                             pagination={{pageSize: 10}}
                             pagePosition="bottomCenter"
                         />

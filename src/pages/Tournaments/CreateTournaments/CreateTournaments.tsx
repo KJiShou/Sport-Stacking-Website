@@ -4,7 +4,7 @@ import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {Tournament} from "@/schema";
 import {countries} from "@/schema/Country";
 import {uploadFile} from "@/services/firebase/storageService";
-import {createTournament} from "@/services/firebase/tournamentsService";
+import {createTournament, updateTournament} from "@/services/firebase/tournamentsService";
 import {
     Button,
     Cascader,
@@ -23,7 +23,7 @@ import {IconDelete, IconExclamationCircle, IconPlus, IconUndo} from "@arco-desig
 import MDEditor from "@uiw/react-md-editor";
 import dayjs from "dayjs";
 import type {Timestamp} from "firebase/firestore";
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import AgeBracketModal from "../Component/AgeBracketModal";
 import EventFields from "../Component/EventField";
@@ -66,7 +66,7 @@ export default function CreateTournamentPage() {
         try {
             if (!user) return;
 
-            const countryPath = values.country;
+            const countryPath = values.country ?? [];
             if (!isValidCountryPath(countryPath)) {
                 Message.error("Selected address does not match a valid country/state option. Please adjust manually.");
                 setLoading(false);
@@ -74,7 +74,14 @@ export default function CreateTournamentPage() {
             }
 
             const fullEvents: Tournament["events"] = form.getFieldValue("events");
-            await createTournament(user, {
+
+            const agendaFile = form.getFieldValue("agenda");
+            const logoFile = form.getFieldValue("logo");
+
+            let agendaUrl = "";
+            let logoUrl = "";
+
+            const tournamentId = await createTournament(user, {
                 name: values.name,
                 start_date: values.date_range[0],
                 end_date: values.date_range[1],
@@ -88,7 +95,22 @@ export default function CreateTournamentPage() {
                 final_criteria: values.final_criteria,
                 final_categories: values.final_categories,
                 description: values.description,
+                editor: values.editor,
+                recorder: values.recorder,
                 status: "Up Coming",
+            });
+
+            if (agendaFile instanceof File) {
+                agendaUrl = await uploadFile(agendaFile, `agendas/${tournamentId}`);
+            }
+
+            if (logoFile instanceof File) {
+                logoUrl = await uploadFile(logoFile, `logos/${tournamentId}`);
+            }
+
+            await updateTournament(user, tournamentId, {
+                agenda: agendaUrl || null,
+                logo: logoUrl || null,
             });
             Message.success("Tournament created successfully!");
 
@@ -225,6 +247,23 @@ export default function CreateTournamentPage() {
                     >
                         <InputNumber min={0} style={{width: "100%"}} placeholder="Enter max number of participants" />
                     </Form.Item>
+
+                    <Form.Item
+                        label="Editor ID"
+                        field="editor"
+                        rules={[{required: true, message: "Please input editor global ID"}]}
+                    >
+                        <Input placeholder="Enter editor global ID" />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="Recorder ID"
+                        field="recorder"
+                        rules={[{required: true, message: "Please input recorder global ID"}]}
+                    >
+                        <Input placeholder="Enter recorder global ID" />
+                    </Form.Item>
+
                     <Form.Item label="Events">
                         <Form.List field="events">
                             {(fields, {add, remove}) => (
@@ -404,6 +443,31 @@ export default function CreateTournamentPage() {
                                 form.setFieldValue("description", value);
                             }}
                             height={300}
+                        />
+                    </Form.Item>
+
+                    {/* Agenda Upload (PDF) */}
+                    <Form.Item label="Agenda (PDF)" field="agenda" extra="Only PDF file allowed" rules={[{required: false}]}>
+                        <Upload
+                            accept=".pdf"
+                            limit={1}
+                            onChange={(fileList) => {
+                                const rawFile = fileList?.[0]?.originFile || null;
+                                form.setFieldValue("agenda", rawFile); // ✅ 这里保存的是 File 对象
+                            }}
+                            showUploadList
+                        />
+                    </Form.Item>
+
+                    {/* Logo Upload (Image) */}
+                    <Form.Item label="Tournament Logo" field="logo" extra="PNG or JPG file" rules={[{required: false}]}>
+                        <Upload
+                            accept="image/png,image/jpeg"
+                            limit={1}
+                            onChange={(fileList) => form.setFieldValue("logo", fileList[0]?.originFile || null)}
+                            showUploadList
+                            listType="picture-card"
+                            imagePreview
                         />
                     </Form.Item>
 

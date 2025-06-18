@@ -34,24 +34,39 @@ export const FinalCategorySchema = z.object({
 // main tournament schema
 export const TournamentSchema = z.object({
     id: z.string().optional().nullable(),
-    name: z.string(),
-    start_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
-    end_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
-    country: z.array(z.string(), z.string()),
+    name: z.string().optional().nullable(),
+    start_date: z
+        .union([z.instanceof(Timestamp), z.instanceof(Date)])
+        .optional()
+        .nullable(),
+    end_date: z
+        .union([z.instanceof(Timestamp), z.instanceof(Date)])
+        .optional()
+        .nullable(),
+    country: z.array(z.string(), z.string()).optional().nullable(),
     venue: z.string().optional().nullable(),
-    address: z.string(),
+    address: z.string().optional().nullable(),
 
-    events: z.array(EventSchema),
-    final_criteria: z.array(FinalCriteriaSchema),
-    final_categories: z.array(FinalCategorySchema),
+    events: z.array(EventSchema).optional().nullable(),
+    final_criteria: z.array(FinalCriteriaSchema).optional().nullable(),
+    final_categories: z.array(FinalCategorySchema).optional().nullable(),
     description: z.string().optional().nullable(),
     agenda: z.string().optional().nullable(),
+    logo: z.string().optional().nullable(),
 
-    registration_start_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
-    registration_end_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
+    registration_start_date: z
+        .union([z.instanceof(Timestamp), z.instanceof(Date)])
+        .optional()
+        .nullable(),
+    registration_end_date: z
+        .union([z.instanceof(Timestamp), z.instanceof(Date)])
+        .optional()
+        .nullable(),
     status: z.enum(["Up Coming", "On Going", "Close Registration", "End"]).optional().nullable(),
     participants: z.number().optional().nullable(),
     max_participants: z.number().optional().nullable(),
+    editor: z.string().optional().nullable(),
+    recorder: z.string().optional().nullable(),
 
     create_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),

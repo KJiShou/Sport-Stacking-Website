@@ -20,11 +20,23 @@ import {
     Tag,
     Tooltip,
     Upload,
+    Descriptions,
+    Image,
+    Link,
 } from "@arco-design/web-react";
-import {IconDelete, IconEdit, IconExclamationCircle, IconEye, IconPlayArrow, IconPlus} from "@arco-design/web-react/icon";
+import {
+    IconCalendar,
+    IconDelete,
+    IconEdit,
+    IconExclamationCircle,
+    IconEye,
+    IconLaunch,
+    IconPlayArrow,
+    IconPlus,
+} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
-import {useEffect, useState} from "react";
+import {type ReactNode, useEffect, useState} from "react";
 
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import {DeviceBreakpoint} from "@/hooks/DeviceInspector/deviceStore";
@@ -38,6 +50,10 @@ import FinalCriteriaFields from "./FinalCriteriaFields";
 import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
 import {useTournamentFormPrefill} from "./useTournamentFormPrefill";
+import type {UploadItem} from "@arco-design/web-react/es/Upload";
+import {set} from "zod";
+import Title from "@arco-design/web-react/es/Typography/title";
+import {formatDate} from "@/utils/Date/formatDate";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp | Date, Timestamp | Date];
@@ -73,13 +89,19 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
     const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
 
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
+    const [tournamentData, setTournamentData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
 
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [loginModalVisible, setLoginModalVisible] = useState(false);
+    const [viewModalVisible, setViewModalVisible] = useState(false);
+    const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
 
     const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
 
     const [loading, setLoading] = useState(true);
+
+    const [agendaUploadList, setAgendaUploadList] = useState<UploadItem[]>([]);
+    const [logoUploadList, setLogoUploadList] = useState<UploadItem[]>([]);
 
     function hasRegistered(user: FirestoreUser, tournamentId: string): boolean {
         return (user.registration_records ?? []).some((record) => record.tournament_id === tournamentId);
@@ -144,8 +166,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                     );
                 }
 
-                if (user?.roles?.edit_tournament) {
-                    // 👉 这里是 admin 原逻辑，保持不变
+                if (user?.roles?.edit_tournament || user?.global_id === tournament?.editor) {
                     return (
                         <Dropdown.Button
                             type="primary"
@@ -205,11 +226,35 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                         </Button>
                     );
                 }
+                if (!tournament.registration_start_date || !tournament.registration_end_date) {
+                    return;
+                }
                 if (tournament.registration_end_date > Timestamp.now()) {
                     return (
-                        <Button type="primary" onClick={() => handleRegister(tournament.id ?? "")}>
+                        <Dropdown.Button
+                            type="primary"
+                            trigger={["click", "hover"]}
+                            buttonProps={{
+                                loading: loading,
+                                onClick: () => handleRegister(tournament.id ?? ""),
+                            }}
+                            droplist={
+                                <div
+                                    className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                >
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => handleView(tournament)}
+                                    >
+                                        <IconEye /> View Tournament
+                                    </Button>
+                                </div>
+                            }
+                        >
                             Register
-                        </Button>
+                        </Dropdown.Button>
                     );
                 }
                 return (
@@ -269,6 +314,20 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                     : Timestamp.fromDate(values.registration_date_range[1].toDate());
 
             const fullEvents: Tournament["events"] = form.getFieldValue("events");
+
+            const agendaFile = form.getFieldValue("agenda");
+            const logoFile = form.getFieldValue("logo");
+
+            let agendaUrl = selectedTournament?.agenda ?? "";
+            let logoUrl = selectedTournament?.logo ?? "";
+
+            // 只有是 File 的才上传
+            if (agendaFile instanceof File) {
+                agendaUrl = await uploadFile(agendaFile, `agendas/${selectedTournament.id}`);
+            }
+            if (logoFile instanceof File) {
+                logoUrl = await uploadFile(logoFile, `logos/${selectedTournament.id}`);
+            }
             updateTournament(user, selectedTournament.id, {
                 name: values.name,
                 start_date: startDate,
@@ -284,7 +343,11 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                 final_categories: values.final_categories,
                 status: values.status,
                 participants: selectedTournament.participants,
+                editor: values.editor,
+                recorder: values.recorder,
                 description: values.description ?? null,
+                agenda: agendaUrl,
+                logo: logoUrl,
             });
             setEditModalVisible(false);
             await fetchTournaments();
@@ -300,6 +363,68 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
     const handleEdit = (tournament: Tournament) => {
         setSelectedTournament(tournament);
         setEditModalVisible(true);
+    };
+
+    const handleView = (tournament: Tournament) => {
+        setSelectedTournament(tournament);
+        setViewModalVisible(true);
+        setTournamentData([
+            {
+                label: "Location",
+                value: (
+                    <Link
+                        onClick={() =>
+                            window.open(
+                                `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(tournament?.address ?? "")}`,
+                                "_blank",
+                            )
+                        }
+                        hoverable={false}
+                    >
+                        {tournament?.address} ({tournament?.country?.join(" / ")}) <IconLaunch />
+                    </Link>
+                ),
+            },
+            {
+                label: "Venue",
+                value: <div>{tournament?.venue}</div>,
+            },
+            {
+                label: "Date",
+                value: (
+                    <div>
+                        {formatDate(tournament?.start_date)} - {formatDate(tournament?.end_date)}
+                    </div>
+                ),
+            },
+            {
+                label: "Max Participants",
+                value: <div>{tournament?.max_participants === 0 ? "No Limit" : tournament?.max_participants}</div>,
+            },
+            {
+                label: "Registration is open until",
+                value: <div>{formatDate(tournament?.registration_end_date)}</div>,
+            },
+            {
+                label: "Description",
+                value: (
+                    <Button onClick={() => setDescriptionModalVisible(true)} type="text">
+                        <IconExclamationCircle />
+                        view description
+                    </Button>
+                ),
+            },
+            {
+                label: "Agenda",
+                value: tournament?.agenda ? (
+                    <Button type="text" onClick={() => window.open(`${tournament?.agenda}`, "_blank")}>
+                        <IconCalendar /> View Agenda
+                    </Button>
+                ) : (
+                    "-"
+                ),
+            },
+        ]);
     };
 
     const handleDelete = async (tournament: Tournament) => {
@@ -343,12 +468,39 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
 
     useEffect(() => {
         if (selectedTournament) {
+            setAgendaUploadList(
+                selectedTournament.agenda
+                    ? [
+                          {
+                              uid: "agenda-url",
+                              name: "Agenda.pdf",
+                              url: selectedTournament.agenda,
+                              status: "done",
+                          },
+                      ]
+                    : [],
+            );
+
+            setLogoUploadList(
+                selectedTournament.logo
+                    ? [
+                          {
+                              uid: "logo-url",
+                              name: "Logo.png",
+                              url: selectedTournament.logo,
+                              status: "done",
+                          },
+                      ]
+                    : [],
+            );
             form.setFieldsValue({
                 name: selectedTournament.name,
                 country: selectedTournament.country,
                 venue: selectedTournament.venue,
                 address: selectedTournament.address,
                 max_participants: selectedTournament.max_participants,
+                editor: selectedTournament.editor,
+                recorder: selectedTournament.recorder,
                 date_range: [
                     selectedTournament.start_date instanceof Timestamp
                         ? dayjs(selectedTournament.start_date.toDate())
@@ -369,6 +521,8 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                 final_criteria: selectedTournament.final_criteria,
                 final_categories: selectedTournament.final_categories,
                 description: selectedTournament.description ?? "",
+                agenda: selectedTournament.agenda ?? null,
+                logo: selectedTournament.logo ?? null,
             });
         }
     }, [selectedTournament, form]);
@@ -556,6 +710,23 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                         >
                             <InputNumber min={0} style={{width: "100%"}} placeholder="Enter max number of participants" />
                         </Form.Item>
+
+                        <Form.Item
+                            label="Editor ID"
+                            field="editor"
+                            rules={[{required: true, message: "Please input editor global ID"}]}
+                        >
+                            <Input placeholder="Enter editor global ID" />
+                        </Form.Item>
+
+                        <Form.Item
+                            label="Recorder ID"
+                            field="recorder"
+                            rules={[{required: true, message: "Please input recorder global ID"}]}
+                        >
+                            <Input placeholder="Enter recorder global ID" />
+                        </Form.Item>
+
                         <Form.Item label="Events">
                             <Form.List field="events">
                                 {(fields, {add, remove}) => (
@@ -756,36 +927,61 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                             />
                         </Form.Item>
 
-                        <Form.Item label="Agenda" field="agenda" rules={[{required: true}]}>
+                        {/* Agenda Upload (PDF) */}
+                        <Form.Item label="Agenda (PDF)" field="agenda" extra="Only PDF file allowed" rules={[{required: false}]}>
                             <Upload
-                                className={"w-full flex flex-col items-center justify-center mb-10"}
-                                drag
-                                multiple={false}
+                                accept=".pdf"
                                 limit={1}
-                                accept=".pdf,.doc,.docx"
-                                customRequest={async (option) => {
-                                    const {file, onSuccess, onError, onProgress} = option;
-                                    if (!user?.global_id) {
-                                        onError?.(new Error("User not authenticated"));
+                                fileList={agendaUploadList}
+                                onChange={(fileList) => {
+                                    if (fileList.length === 0) {
+                                        form.setFieldValue("agenda", null);
+                                        setAgendaUploadList([]);
                                         return;
                                     }
-                                    try {
-                                        setLoading(true);
-                                        const downloadURL = await uploadFile(
-                                            file as File,
-                                            `tournaments/agenda`,
-                                            selectedTournament.id ?? "",
-                                            (progress) => {
-                                                onProgress?.(progress);
-                                            },
-                                        );
-                                        form.setFieldValue("agenda", downloadURL);
-                                        setLoading(false);
-                                        onSuccess?.(file);
-                                    } catch (err) {
-                                        onError?.(err as Error);
-                                    }
+
+                                    const rawFile = fileList[0]?.originFile || undefined;
+                                    form.setFieldValue("agenda", rawFile);
+                                    setAgendaUploadList([
+                                        {
+                                            uid: "agenda-file",
+                                            name: rawFile?.name,
+                                            originFile: rawFile,
+                                            status: "done",
+                                        },
+                                    ]);
                                 }}
+                                showUploadList
+                            />
+                        </Form.Item>
+
+                        {/* Logo Upload (Image) */}
+                        <Form.Item label="Tournament Logo" field="logo" extra="PNG or JPG file" rules={[{required: false}]}>
+                            <Upload
+                                accept="image/png,image/jpeg"
+                                limit={1}
+                                fileList={logoUploadList}
+                                onChange={(fileList) => {
+                                    if (fileList.length === 0) {
+                                        form.setFieldValue("logo", null);
+                                        setLogoUploadList([]);
+                                        return;
+                                    }
+
+                                    const rawFile = fileList[0]?.originFile || undefined;
+                                    form.setFieldValue("logo", rawFile);
+                                    setLogoUploadList([
+                                        {
+                                            uid: "logo-file",
+                                            name: rawFile?.name,
+                                            originFile: rawFile,
+                                            status: "done",
+                                        },
+                                    ]);
+                                }}
+                                showUploadList
+                                listType="picture-card"
+                                imagePreview
                             />
                         </Form.Item>
 
@@ -796,6 +992,38 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                         </Form.Item>
                     </Form>
                 )}
+            </Modal>
+
+            <Modal
+                title="View Tournament"
+                visible={viewModalVisible}
+                onCancel={() => setViewModalVisible(false)}
+                footer={null}
+                className={`my-8 w-full md:max-w-[80vw] lg:max-w-[60vw]`}
+            >
+                <div className={`flex flex-col items-center`}>
+                    <Image src={`${selectedTournament?.logo}`} alt="logo" width={200} />
+                    <Descriptions
+                        column={1}
+                        title={
+                            <Title style={{textAlign: "center", width: "100%"}} heading={3}>
+                                {selectedTournament?.name}
+                            </Title>
+                        }
+                        data={tournamentData}
+                        style={{marginBottom: 20}}
+                        labelStyle={{textAlign: "right", paddingRight: 36}}
+                    />
+                    <Modal
+                        title="Tournament Description"
+                        visible={descriptionModalVisible}
+                        onCancel={() => setDescriptionModalVisible(false)}
+                        footer={null}
+                        className={`m-10 w-1/2`}
+                    >
+                        <MDEditor.Markdown source={selectedTournament?.description ?? ""} />
+                    </Modal>
+                </div>
             </Modal>
         </div>
     );

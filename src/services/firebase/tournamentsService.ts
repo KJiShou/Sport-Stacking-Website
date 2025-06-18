@@ -88,6 +88,10 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         final_criteria: data.final_criteria,
         final_categories: data.final_categories,
         description: data.description ?? null,
+        agenda: data.agenda ?? null,
+        logo: data.logo ?? null,
+        editor: data.editor ?? "",
+        recorder: data.recorder ?? "",
         participants: 0, // 初始参与者数为0
         status: "Up Coming",
         created_at: Timestamp.now(),
@@ -97,7 +101,7 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
 }
 
 export async function updateTournament(user: FirestoreUser, tournamentId: string, data: Omit<Tournament, "id">): Promise<void> {
-    if (!user?.roles?.edit_tournament) {
+    if (!user?.roles?.edit_tournament || !(user.global_id === data.editor || user.global_id === data.recorder)) {
         throw new Error("Unauthorized");
     }
 
@@ -109,14 +113,14 @@ export async function updateTournament(user: FirestoreUser, tournamentId: string
     const toUpdate: Partial<Record<keyof Tournament, Tournament[keyof Tournament]>> = {};
 
     // 对比字段，仅当值有变化（或有值）时才加入更新对象
-    (Object.keys(data) as (keyof typeof data)[]).forEach((key) => {
+    for (const key of Object.keys(data) as (keyof typeof data)[]) {
         const newVal = data[key];
         const oldVal = old[key];
         // 简单比较，可根据需要做深度比较
         if (newVal !== undefined && JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
             toUpdate[key] = newVal;
         }
-    });
+    }
 
     // 每次都更新一下 status 和 updated_at
     toUpdate.status = data.status ?? old.status ?? "Up Coming";
