@@ -1,6 +1,6 @@
+import {Result, Spin, Typography} from "@arco-design/web-react";
 import {getAuth} from "firebase/auth";
 import {useEffect, useState} from "react";
-import {Result, Spin, Typography} from "@arco-design/web-react";
 
 const {Title, Paragraph} = Typography;
 

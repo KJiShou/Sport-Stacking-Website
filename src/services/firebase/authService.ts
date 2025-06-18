@@ -1,18 +1,19 @@
 // src/services/firebase/authService.ts
 import type {User} from "firebase/auth";
 import {
-    createUserWithEmailAndPassword,
-    deleteUser,
     EmailAuthProvider,
     GoogleAuthProvider,
+    createUserWithEmailAndPassword,
+    deleteUser,
     reauthenticateWithCredential,
     signInWithEmailAndPassword,
     signInWithPopup,
     signOut,
     updatePassword,
 } from "firebase/auth";
-import {type DocumentData, getFirestore, type QueryDocumentSnapshot, type QuerySnapshot} from "firebase/firestore";
+import {type DocumentData, type QueryDocumentSnapshot, type QuerySnapshot, getFirestore} from "firebase/firestore";
 import {
+    Timestamp,
     collection,
     deleteDoc,
     doc,
@@ -22,15 +23,14 @@ import {
     query,
     runTransaction,
     setDoc,
-    Timestamp,
     updateDoc,
     where,
 } from "firebase/firestore";
+import {deleteObject, ref} from "firebase/storage";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
-import {auth, db, storage} from "./config";
-import {deleteObject, ref} from "firebase/storage";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
+import {auth, db, storage} from "./config";
 
 async function getNextGlobalId(): Promise<string> {
     const counterRef = doc(db, "counters", "userCounter");

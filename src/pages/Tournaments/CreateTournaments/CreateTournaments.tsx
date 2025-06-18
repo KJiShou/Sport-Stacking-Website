@@ -1,5 +1,10 @@
-import type {Timestamp} from "firebase/firestore";
-import {useState} from "react";
+import {DEFAULT_EVENTS, DEFAULT_FINAL_CATEGORIES, DEFAULT_FINAL_CRITERIA} from "@/constants/tournamentDefaults";
+import {useAuthContext} from "@/context/AuthContext";
+import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
+import type {Tournament} from "@/schema";
+import {countries} from "@/schema/Country";
+import {uploadFile} from "@/services/firebase/storageService";
+import {createTournament} from "@/services/firebase/tournamentsService";
 import {
     Button,
     Cascader,
@@ -14,24 +19,19 @@ import {
     Typography,
     Upload,
 } from "@arco-design/web-react";
-import dayjs from "dayjs";
-import type {Tournament} from "@/schema";
 import {IconDelete, IconExclamationCircle, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import MDEditor from "@uiw/react-md-editor";
+import dayjs from "dayjs";
+import type {Timestamp} from "firebase/firestore";
+import {useState} from "react";
 import {useNavigate} from "react-router-dom";
-import {countries} from "@/schema/Country";
-import {createTournament} from "@/services/firebase/tournamentsService";
-import {useAuthContext} from "@/context/AuthContext";
-import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import AgeBracketModal from "../Component/AgeBracketModal";
 import EventFields from "../Component/EventField";
-import FinalCriteriaFields from "../Component/FinalCriteriaFields";
 import FinalCategoriesFields from "../Component/FinalCategoriesFields";
-import {DEFAULT_EVENTS, DEFAULT_FINAL_CRITERIA, DEFAULT_FINAL_CATEGORIES} from "@/constants/tournamentDefaults";
-import {useTournamentFormPrefill} from "../Component/useTournamentFormPrefill";
-import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
+import FinalCriteriaFields from "../Component/FinalCriteriaFields";
 import LocationPicker, {isValidCountryPath} from "../Component/LocationPicker";
-import MDEditor from "@uiw/react-md-editor";
-import {uploadFile} from "@/services/firebase/storageService";
+import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
+import {useTournamentFormPrefill} from "../Component/useTournamentFormPrefill";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp, Timestamp];

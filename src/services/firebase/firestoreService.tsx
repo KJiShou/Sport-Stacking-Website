@@ -1,7 +1,7 @@
+import {addDoc, collection, getDocs} from "firebase/firestore";
 import {db} from "./config";
-import {collection, addDoc, getDocs} from "firebase/firestore";
 
-import {TournamentSchema, type Tournament} from "@/schema";
+import {type Tournament, TournamentSchema} from "@/schema";
 
 const collectionRef = collection(db, "tournaments");
 

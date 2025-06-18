@@ -1,5 +1,5 @@
 import {useAtomValue} from "jotai";
-import {deviceNetworkStatusAtom, deviceBreakpointAtom, deviceOrientationAtom, deviceLanguageAtom} from "./deviceStore";
+import {deviceBreakpointAtom, deviceLanguageAtom, deviceNetworkStatusAtom, deviceOrientationAtom} from "./deviceStore";
 
 export const useDeviceNetworkStatus = () => useAtomValue(deviceNetworkStatusAtom);
 

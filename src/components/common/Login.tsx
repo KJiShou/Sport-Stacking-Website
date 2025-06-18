@@ -1,10 +1,10 @@
-import React, {useState, useEffect} from "react";
-import {Form, Input, Button, Message, Typography, Link} from "@arco-design/web-react";
+import {Button, Form, Input, Link, Message, Typography} from "@arco-design/web-react";
 import {IconEmail, IconLock} from "@arco-design/web-react/icon";
-import {login, signInWithGoogle} from "../../services/firebase/authService";
+import {doc, getDoc} from "firebase/firestore";
+import React, {useState, useEffect} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
-import {doc, getDoc} from "firebase/firestore";
+import {login, signInWithGoogle} from "../../services/firebase/authService";
 import {db} from "../../services/firebase/config";
 
 const {Text} = Typography;

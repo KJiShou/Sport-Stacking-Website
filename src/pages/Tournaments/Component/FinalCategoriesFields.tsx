@@ -1,5 +1,5 @@
 // components/FinalCategoriesFields.tsx
-import {Form, Input, InputNumber, Button} from "@arco-design/web-react";
+import {Button, Form, Input, InputNumber} from "@arco-design/web-react";
 import {IconDelete} from "@arco-design/web-react/icon";
 
 interface Props {

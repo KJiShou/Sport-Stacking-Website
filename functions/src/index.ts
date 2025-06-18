@@ -1,11 +1,11 @@
-import type {Registration} from "./../../src/schema/RegistrationSchema.js";
-import {onRequest} from "firebase-functions/v2/https";
-import {getAuth} from "firebase-admin/auth";
 import sgMail from "@sendgrid/mail";
-import {defineSecret} from "firebase-functions/params";
-import {getApps, initializeApp} from "firebase-admin/app";
-import {getFirestore} from "firebase-admin/firestore";
 import cors from "cors";
+import {getApps, initializeApp} from "firebase-admin/app";
+import {getAuth} from "firebase-admin/auth";
+import {getFirestore} from "firebase-admin/firestore";
+import {defineSecret} from "firebase-functions/params";
+import {onRequest} from "firebase-functions/v2/https";
+import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 const corsHandler = cors({origin: true});
 
 const SENDGRID_API_KEY = defineSecret("SENDGRID_API_KEY");

@@ -32,7 +32,7 @@ import MDEditor from "@uiw/react-md-editor";
 import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import {Timestamp} from "firebase/firestore";
-import {useEffect, useState, type ReactNode} from "react";
+import {type ReactNode, useEffect, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 dayjs.extend(isSameOrAfter);
 const {Title, Paragraph} = Typography;

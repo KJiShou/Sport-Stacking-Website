@@ -1,9 +1,9 @@
-import React, {useState} from "react";
-import {Avatar, Upload, Message, Spin} from "@arco-design/web-react";
+import {Avatar, Message, Spin, Upload} from "@arco-design/web-react";
 import {IconCamera} from "@arco-design/web-react/icon";
-import {uploadAvatar} from "../../services/firebase/storageService";
-import {updateUserProfile} from "../../services/firebase/authService";
+import React, {useState} from "react";
 import type {FirestoreUser} from "../../schema";
+import {updateUserProfile} from "../../services/firebase/authService";
+import {uploadAvatar} from "../../services/firebase/storageService";
 
 interface Props {
     user: FirestoreUser;
