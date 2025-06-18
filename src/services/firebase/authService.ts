@@ -1,18 +1,19 @@
 // src/services/firebase/authService.ts
 import type {User} from "firebase/auth";
 import {
-    createUserWithEmailAndPassword,
-    deleteUser,
     EmailAuthProvider,
     GoogleAuthProvider,
+    createUserWithEmailAndPassword,
+    deleteUser,
     reauthenticateWithCredential,
     signInWithEmailAndPassword,
     signInWithPopup,
     signOut,
     updatePassword,
 } from "firebase/auth";
-import type {DocumentData, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
+import {type DocumentData, type QueryDocumentSnapshot, type QuerySnapshot, getFirestore} from "firebase/firestore";
 import {
+    Timestamp,
     collection,
     deleteDoc,
     doc,
@@ -22,15 +23,14 @@ import {
     query,
     runTransaction,
     setDoc,
-    Timestamp,
     updateDoc,
     where,
 } from "firebase/firestore";
+import {deleteObject, ref} from "firebase/storage";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
-import {auth, db, storage} from "./config";
-import {deleteObject, ref} from "firebase/storage";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
+import {auth, db, storage} from "./config";
 
 async function getNextGlobalId(): Promise<string> {
     const counterRef = doc(db, "counters", "userCounter");
@@ -207,6 +207,13 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
     };
 }
 
+export async function getUserByGlobalId(globalId: string) {
+    const db = getFirestore();
+    const q = query(collection(db, "users"), where("global_id", "==", globalId));
+    const snap = await getDocs(q);
+    return snap.docs[0]?.data() as {email: string} | undefined;
+}
+
 export async function updateUserProfile(id: string, data: Partial<Omit<FirestoreUser, "email" | "IC" | "id">>): Promise<void> {
     // 1. 校验允许更新的字段
     const UpdateSchema = FirestoreUserSchema.partial().omit({email: true, IC: true, id: true});
@@ -225,10 +232,9 @@ export async function updateUserProfile(id: string, data: Partial<Omit<Firestore
 
 export async function updateUserRoles(userId: string, roles: FirestoreUser["roles"]): Promise<void> {
     const userRef = doc(db, "users", userId);
-    console.log(roles);
-    roles = extractActiveRoles(roles);
+    const temp_roles = extractActiveRoles(roles);
     await updateDoc(userRef, {
-        roles,
+        temp_roles,
         updated_at: Timestamp.now(),
     });
 }

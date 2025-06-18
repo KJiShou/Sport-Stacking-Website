@@ -1,20 +1,20 @@
 // src/services/firebase/authService.ts
 
 import {
+    type Query,
+    Timestamp,
+    addDoc,
     collection,
+    deleteDoc,
     doc,
     getDoc,
     getDocs,
-    query,
-    where,
-    updateDoc,
-    Timestamp,
-    addDoc,
     orderBy,
-    type Query,
-    deleteDoc,
+    query,
+    updateDoc,
+    where,
 } from "firebase/firestore";
-import type {Tournament, FirestoreUser} from "../../schema";
+import type {FirestoreUser, Tournament} from "../../schema";
 import {db} from "./config";
 
 export async function createTournament(user: FirestoreUser, data: Omit<Tournament, "id">): Promise<string> {

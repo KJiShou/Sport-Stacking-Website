@@ -1,6 +1,6 @@
+import {Button, Checkbox, Form, Select} from "@arco-design/web-react";
+import {IconDelete, IconEdit} from "@arco-design/web-react/icon";
 import React from "react";
-import {Form, Select, Button, Checkbox} from "@arco-design/web-react";
-import {IconEdit, IconDelete} from "@arco-design/web-react/icon";
 
 interface EventFieldProps {
     index: number;

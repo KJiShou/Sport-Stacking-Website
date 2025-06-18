@@ -1,5 +1,5 @@
-import type {FormInstance} from "@arco-design/web-react";
 import type {Tournament} from "@/schema";
+import type {FormInstance} from "@arco-design/web-react";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 

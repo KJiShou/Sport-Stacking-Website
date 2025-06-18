@@ -28,7 +28,9 @@ import {useEffect, useState} from "react";
 
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import {DeviceBreakpoint} from "@/hooks/DeviceInspector/deviceStore";
+import {uploadFile} from "@/services/firebase/storageService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import MDEditor from "@uiw/react-md-editor";
 import {useNavigate} from "react-router-dom";
 import EventFields from "./EventField";
 import FinalCategoriesFields from "./FinalCategoriesFields";
@@ -36,8 +38,6 @@ import FinalCriteriaFields from "./FinalCriteriaFields";
 import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
 import {useTournamentFormPrefill} from "./useTournamentFormPrefill";
-import MDEditor from "@uiw/react-md-editor";
-import {uploadFile} from "@/services/firebase/storageService";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp | Date, Timestamp | Date];

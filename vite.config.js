@@ -1,9 +1,9 @@
-import {defineConfig, loadEnv} from "vite";
-import react from "@vitejs/plugin-react";
-import {vitePluginForArco} from "@arco-plugins/vite-react";
-import {fileURLToPath} from "node:url";
 import {dirname} from "node:path";
 import path from "node:path";
+import {fileURLToPath} from "node:url";
+import {vitePluginForArco} from "@arco-plugins/vite-react";
+import react from "@vitejs/plugin-react";
+import {defineConfig, loadEnv} from "vite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

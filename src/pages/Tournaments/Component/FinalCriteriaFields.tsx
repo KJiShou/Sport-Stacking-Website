@@ -1,5 +1,5 @@
 // components/FinalCriteriaFields.tsx
-import {Form, InputNumber, Select, Button} from "@arco-design/web-react";
+import {Button, Form, InputNumber, Select} from "@arco-design/web-react";
 import {IconDelete} from "@arco-design/web-react/icon";
 
 interface Props {

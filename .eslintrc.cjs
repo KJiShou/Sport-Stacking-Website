@@ -1,21 +1,12 @@
-module.exports =
-{
-    "root": true,
-    "env": {
-      "browser": true,
-      "es2021": true
+module.exports = {
+    root: true,
+    env: {
+        browser: true,
+        es2021: true,
     },
-    "extends": [
-      "eslint:recommended",
-      "plugin:react/recommended",
-      "plugin:@typescript-eslint/recommended",
-      "prettier"
-    ],
-    "parser": "@typescript-eslint/parser",
-    "plugins": [
-      "react",
-      "@typescript-eslint"
-    ],
+    extends: ["eslint:recommended", "plugin:react/recommended", "plugin:@typescript-eslint/recommended", "prettier"],
+    parser: "@typescript-eslint/parser",
+    plugins: ["react", "@typescript-eslint"],
     rules: {
         // 基础安全性、正确性
         "no-unused-vars": "off",
@@ -65,4 +56,4 @@ module.exports =
         // prettier 规则整合
         "prettier/prettier": "error",
     },
-  }
+};

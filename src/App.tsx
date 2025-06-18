@@ -1,18 +1,18 @@
-import {useEffect, useState, useRef} from "react";
+import {useEffect, useRef, useState} from "react";
 import type * as React from "react";
-import {BrowserRouter as Router, Routes, Route} from "react-router-dom";
+import {Route, BrowserRouter as Router, Routes} from "react-router-dom";
 import "@arco-design/web-react/dist/css/arco.css";
-import {Navbar, Footer} from "./components/layout";
-import {DeviceInspector} from "./utils/DeviceInspector";
 import {ConfigProvider, Layout} from "@arco-design/web-react";
-import routes from "./config/routes";
-import ProtectedRoute from "./components/common/ProtectedRoute";
+import enUS from "@arco-design/web-react/es/locale/en-US";
+import {Helmet} from "react-helmet";
 import {useLocation, useNavigate} from "react-router-dom";
+import image from "./assets/icon.avif";
+import ProtectedRoute from "./components/common/ProtectedRoute";
+import {Footer, Navbar} from "./components/layout";
+import routes from "./config/routes";
 import {useAuthContext} from "./context/AuthContext";
 import {logout} from "./services/firebase/authService";
-import {Helmet} from "react-helmet";
-import image from "./assets/icon.avif";
-import enUS from "@arco-design/web-react/es/locale/en-US";
+import {DeviceInspector} from "./utils/DeviceInspector";
 
 const App: React.FC = () => {
     const Content = Layout.Content;
