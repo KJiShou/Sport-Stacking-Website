@@ -3,81 +3,85 @@ name: ⚙️ CI - Lint, Format, Build
 run-name: 🚀 Deploy triggered by @${{ github.actor }}
 
 on:
-    push:
-        branches: [main, dev]
-    pull_request:
-        branches: [main, dev]
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
 
 jobs:
-    lint_and_build:
-        name: Lint & Build on ${{ github.ref_name }}
-        runs-on: ubuntu-latest
-        environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+  lint_and_build:
+    name: Lint & Build on ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
-        steps:
-            # Step 1: Checkout Code
-            - name: 📥 Checkout Code
-              uses: actions/checkout@v4
+    steps:
+      # Step 1: Checkout Code
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
 
-            # Step 2: Setup Node.js + Yarn
-            - name: ⚙️ Setup Node.js 20.x
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 20.x
-                  cache: yarn
+      # Step 2: Setup Node.js + Corepack + Yarn
+      - name: ⚙️ Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: yarn
 
-            # Step 3: Enable Corepack (if using Yarn 3+)
-            - name: Enable Corepack
-              run: corepack enable
+      - name: 🛠 Enable Corepack
+        run: corepack enable
 
-            # Step 4: Cache Yarn Modules
-            - name: 📦 Get yarn cache directory
-              id: yarn-cache-dir-path
-              run: echo "yarn-dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+      - name: 🎯 Use Yarn 4.6.0
+        run: corepack prepare yarn@4.6.0 --activate
 
-            - name: 🗃️ Cache yarn modules
-              uses: actions/cache@v4
-              with:
-                  path: ${{ steps.yarn-cache-dir-path.outputs.yarn-dir }}
-                  key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-                  restore-keys: |
-                      ${{ runner.os }}-yarn-
+      # Step 3: Cache Yarn Modules
+      - name: 📦 Get yarn cache directory
+        id: yarn-cache-dir-path
+        run: echo "yarn-dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
 
-            # Step 5: Install Dependencies
-            - name: 📦 Install dependencies
-              run: yarn install --immutable
+      - name: 🗃️ Cache yarn modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.yarn-dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
 
-            # Step 6: Format Code with Biome
-            - name: 🧹 Format Code
-              run: yarn format
+      # Step 4: Install Dependencies
+      - name: 📦 Install dependencies
+        run: yarn install --immutable
 
-            # Step 7: Biome Check (optional but recommended)
-            - name: 🧪 Run Biome check
-              run: yarn check
+      # Step 5: Format Code with Biome
+      - name: 🧹 Format Code
+        run: yarn format
 
-            # Step 8: Lint Code
-            - name: 🔍 Run lint
-              run: yarn lint
+      # Step 6: Biome Check (optional but recommended)
+      - name: 🧪 Run Biome check
+        run: yarn check
 
-            - name: 🔑 Inject Firebase & API Keys to .env
-              run: |
-                  echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}" >> .env
-                  echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}" >> .env
-                  echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}" >> .env
-                  echo "VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}" >> .env
-                  echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}" >> .env
-                  echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}" >> .env
-                  echo "VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}" >> .env
-                  echo "VITE_GOOGLE_MAPS_API_KEY=${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" >> .env
+      # Step 7: Lint Code
+      - name: 🔍 Run lint
+        run: yarn lint
 
-            # Step 9: Build the Project
-            - name: 🏗️ Build Project
-              run: yarn build
+      # Step 8: Inject Firebase & API Keys to .env
+      - name: 🔑 Inject Firebase & API Keys to .env
+        run: |
+          echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}" >> .env
+          echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}" >> .env
+          echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}" >> .env
+          echo "VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}" >> .env
+          echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}" >> .env
+          echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}" >> .env
+          echo "VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}" >> .env
+          echo "VITE_GOOGLE_MAPS_API_KEY=${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" >> .env
 
-            - name: 🚀 Deploy to Firebase Hosting
-              uses: FirebaseExtended/action-hosting-deploy@v0
-              with:
-                repoToken: ${{ secrets.GITHUB_TOKEN }}
-                firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPORT_STACKING_WEBSITE }}
-                channelId: live
-                projectId: sport-stacking-website
+      # Step 9: Build the Project
+      - name: 🏗️ Build Project
+        run: yarn build
+
+      # Step 10: Deploy to Firebase Hosting
+      - name: 🚀 Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPORT_STACKING_WEBSITE }}
+          channelId: live
+          projectId: sport-stacking-website
