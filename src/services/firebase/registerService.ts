@@ -26,12 +26,10 @@ export async function createRegistration(user: FirestoreUser, data: Omit<Registr
 export async function fetchUserRegistration(tournamentId: string, userId: string): Promise<Registration | null> {
     try {
         const regDoc = await getDoc(doc(db, `tournaments/${tournamentId}/registrations`, userId));
-        console.log(5);
         if (regDoc.exists()) {
             return regDoc.data() as Registration;
-        } else {
-            return null;
         }
+        return null;
     } catch (err) {
         console.error("Error fetching user registration:", err);
         throw err;

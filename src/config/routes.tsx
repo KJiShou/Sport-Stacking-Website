@@ -1,4 +1,5 @@
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
+import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
 import type * as React from "react";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import Athletes from "../pages/Athletes/Athletes";
@@ -30,6 +31,10 @@ const routes: Route[] = [
     {
         path: "/tournaments/:tournamentId/register/:global_id/view",
         component: ViewRegisterTournament,
+    },
+    {
+        path: "/verify",
+        component: VerifyPage,
     },
     {path: "/records/3-3-3", component: page_3_3_3},
     {path: "/records/3-6-3", component: page_3_6_3},

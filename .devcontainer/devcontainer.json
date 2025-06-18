@@ -33,7 +33,7 @@
     }
   },
   "remoteUser": "root",
-  "postCreateCommand": "yarn install",
+  "postCreateCommand": "corepack enable && corepack prepare yarn@4.6.0 --activate && yarn install",
   "forwardPorts": [
     5000,
     5173

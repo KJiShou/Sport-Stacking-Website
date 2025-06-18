@@ -4,10 +4,11 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {addUserRegistrationRecord} from "@/services/firebase/authService";
+import {addUserRegistrationRecord, getUserByGlobalId} from "@/services/firebase/authService";
 import {createRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {
     Button,
     Checkbox,
@@ -180,6 +181,33 @@ export default function RegisterTournamentPage() {
                 updated_at: Timestamp.now(),
                 confirmation_date: null,
             };
+
+            for (const team of teams) {
+                const toNotify: string[] = [];
+
+                if (team.leader?.global_id && team.leader.global_id !== user.global_id) {
+                    toNotify.push(team.leader.global_id);
+                }
+
+                for (const member of team.member ?? []) {
+                    if (member.global_id && member.global_id !== user.global_id) {
+                        toNotify.push(member.global_id);
+                    }
+                }
+
+                for (const globalId of toNotify) {
+                    try {
+                        // 🔍 从 Firestore 获取 email
+                        const userSnap = await getUserByGlobalId(globalId);
+                        const email = userSnap?.email;
+                        if (email) {
+                            await sendProtectedEmail(email, tournamentId, user?.id ?? "", globalId);
+                        }
+                    } catch (err) {
+                        console.error(`❌ Failed to send verification to ${globalId}`, err);
+                    }
+                }
+            }
 
             await addUserRegistrationRecord(user.id ?? "", registrationRecord);
 

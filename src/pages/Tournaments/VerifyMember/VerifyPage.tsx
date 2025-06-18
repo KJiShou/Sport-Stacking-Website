@@ -1,0 +1,84 @@
+import {getAuth} from "firebase/auth";
+import {useEffect, useState} from "react";
+import {Result, Spin, Typography} from "@arco-design/web-react";
+
+const {Title, Paragraph} = Typography;
+
+export default function VerifyPage() {
+    const [status, setStatus] = useState<"loading" | "success" | "error" | "unauthorized" | "missing">("loading");
+    const [errorMessage, setErrorMessage] = useState<string>("");
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const tournamentId = params.get("tournamentId");
+        const registrationId = params.get("registrationId");
+        const globalId = params.get("globalId");
+
+        const update = async () => {
+            if (!tournamentId || !registrationId || !globalId) {
+                setStatus("missing");
+                return;
+            }
+
+            const auth = getAuth();
+            const token = await auth.currentUser?.getIdToken();
+            if (!token) {
+                setStatus("unauthorized");
+                return;
+            }
+
+            try {
+                const res = await fetch("https://updateverification-jzbhzqtcdq-uc.a.run.app", {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        tournamentId,
+                        registrationId,
+                        memberGlobalId: globalId,
+                    }),
+                });
+
+                const data = await res.json();
+                if (res.ok) {
+                    setStatus("success");
+                } else {
+                    setErrorMessage(data.error || "Unknown error");
+                    setStatus("error");
+                }
+            } catch (err) {
+                console.error(err);
+                setStatus("error");
+                setErrorMessage("Network or server error.");
+            }
+        };
+
+        update();
+    }, []);
+
+    if (status === "loading") {
+        return (
+            <div style={{padding: "4rem", textAlign: "center"}}>
+                <Spin size={32} tip="Verifying your participation..." />
+            </div>
+        );
+    }
+
+    if (status === "success") {
+        return (
+            <Result status="success" title="Verification Successful!" subTitle="Thank you for confirming your participation." />
+        );
+    }
+
+    if (status === "unauthorized") {
+        return <Result status="error" title="Unauthorized" subTitle="You must be signed in to verify." />;
+    }
+
+    if (status === "missing") {
+        return <Result status="error" title="Invalid Link" subTitle="Verification information is missing from the URL." />;
+    }
+
+    return <Result status="error" title="Verification Failed" subTitle={errorMessage || "Something went wrong."} />;
+}

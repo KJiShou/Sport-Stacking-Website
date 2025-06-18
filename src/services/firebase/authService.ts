@@ -11,7 +11,7 @@ import {
     signOut,
     updatePassword,
 } from "firebase/auth";
-import type {DocumentData, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
+import {type DocumentData, getFirestore, type QueryDocumentSnapshot, type QuerySnapshot} from "firebase/firestore";
 import {
     collection,
     deleteDoc,
@@ -207,6 +207,13 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
     };
 }
 
+export async function getUserByGlobalId(globalId: string) {
+    const db = getFirestore();
+    const q = query(collection(db, "users"), where("global_id", "==", globalId));
+    const snap = await getDocs(q);
+    return snap.docs[0]?.data() as {email: string} | undefined;
+}
+
 export async function updateUserProfile(id: string, data: Partial<Omit<FirestoreUser, "email" | "IC" | "id">>): Promise<void> {
     // 1. 校验允许更新的字段
     const UpdateSchema = FirestoreUserSchema.partial().omit({email: true, IC: true, id: true});
@@ -225,10 +232,9 @@ export async function updateUserProfile(id: string, data: Partial<Omit<Firestore
 
 export async function updateUserRoles(userId: string, roles: FirestoreUser["roles"]): Promise<void> {
     const userRef = doc(db, "users", userId);
-    console.log(roles);
-    roles = extractActiveRoles(roles);
+    const temp_roles = extractActiveRoles(roles);
     await updateDoc(userRef, {
-        roles,
+        temp_roles,
         updated_at: Timestamp.now(),
     });
 }

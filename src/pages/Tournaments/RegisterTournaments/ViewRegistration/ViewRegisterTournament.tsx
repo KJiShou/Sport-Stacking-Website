@@ -123,18 +123,22 @@ export default function ViewTournamentRegistrationPage() {
                                             <Input value={team.name} disabled />
                                         </Form.Item>
 
-                                        <Form.Item label="Team Leader Global ID">
-                                            <Input value={team.leader?.global_id ?? ""} disabled />
+                                        <Form.Item label="Team Leader">
+                                            <Button status={team.leader?.verified ? "success" : "danger"} disabled>
+                                                {team.leader?.global_id ?? "N/A"}
+                                            </Button>
                                         </Form.Item>
 
-                                        <Form.Item label="Team Member">
-                                            <Select
-                                                mode="multiple"
-                                                disabled
-                                                value={team.member?.map((m) => m.global_id ?? "") ?? []}
-                                                style={{width: 345, flex: 1}}
-                                            />
+                                        <Form.Item label="Team Members">
+                                            <div className="flex flex-col gap-2">
+                                                {(team.member ?? []).map((m, i) => (
+                                                    <Button disabled key={m.global_id} status={m.verified ? "success" : "danger"}>
+                                                        {m.global_id ?? "N/A"}
+                                                    </Button>
+                                                ))}
+                                            </div>
                                         </Form.Item>
+
                                         <Form.Item>
                                             <Checkbox checked={team.looking_for_team_members ?? false} disabled>
                                                 Looking for Team Members
