@@ -1,7 +1,7 @@
-import {Form, Input, Button, Message, Typography} from "@arco-design/web-react";
+import {auth} from "@/services/firebase/config"; // ✅ 确保指向你的 firebase `auth`
+import {Button, Form, Input, Message, Typography} from "@arco-design/web-react";
 import {IconEmail} from "@arco-design/web-react/icon";
 import {sendPasswordResetEmail} from "firebase/auth";
-import {auth} from "@/services/firebase/config"; // ✅ 确保指向你的 firebase `auth`
 
 const {Title} = Typography;
 

@@ -1,10 +1,12 @@
 import {useAuthContext} from "@/context/AuthContext";
-import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import type {Registration, Tournament} from "@/schema";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
+import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
-import {Button, type TableColumnProps, Tag, Dropdown, Popconfirm, Message} from "@arco-design/web-react";
+import {Button, Dropdown, Message, Popconfirm, type TableColumnProps, Tag} from "@arco-design/web-react";
 import Table from "@arco-design/web-react/es/Table/table";
+import Title from "@arco-design/web-react/es/Typography/title";
 import {IconDelete, IconEye, IconEyeInvisible, IconUndo} from "@arco-design/web-react/icon";
 import type {Timestamp} from "firebase/firestore";
 import {ref} from "firebase/storage";
@@ -12,8 +14,6 @@ import {useEffect, useRef, useState} from "react";
 import {Link, useLocation, useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 import {set} from "zod";
-import {fetchTournamentById} from "@/services/firebase/tournamentsService";
-import Title from "@arco-design/web-react/es/Typography/title";
 
 export default function RegistrationsListPage() {
     const {tournamentId} = useParams();

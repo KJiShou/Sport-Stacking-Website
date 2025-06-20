@@ -1,4 +1,4 @@
-import {Timestamp, doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc} from "firebase/firestore";
+import {Timestamp, collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc} from "firebase/firestore";
 import type {FirestoreUser, Registration} from "../../schema";
 import {db} from "./config";
 

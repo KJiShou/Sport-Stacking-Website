@@ -1,9 +1,9 @@
 import {Button, Form, Input, Message, Modal, Spin, Switch, Table, type TableColumnProps, Tag} from "@arco-design/web-react";
 import {useEffect, useState} from "react";
-import {DeviceBreakpoint} from "../../utils/DeviceInspector/deviceStore";
 import type {FirestoreUser} from "../../schema";
 import {fetchAllUsers, updateUserRoles} from "../../services/firebase/authService";
 import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
+import {DeviceBreakpoint} from "../../utils/DeviceInspector/deviceStore";
 
 type RoleFields = {
     edit_tournament: boolean;

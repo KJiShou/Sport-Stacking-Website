@@ -7,10 +7,13 @@ import {
     Button,
     Cascader,
     DatePicker,
+    Descriptions,
     Dropdown,
     Form,
+    Image,
     Input,
     InputNumber,
+    Link,
     Message,
     Modal,
     Popover,
@@ -20,9 +23,6 @@ import {
     Tag,
     Tooltip,
     Upload,
-    Descriptions,
-    Image,
-    Link,
 } from "@arco-design/web-react";
 import {
     IconCalendar,
@@ -39,21 +39,21 @@ import {Timestamp} from "firebase/firestore";
 import {type ReactNode, useEffect, useState} from "react";
 
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
-import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {uploadFile} from "@/services/firebase/storageService";
+import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
+import Title from "@arco-design/web-react/es/Typography/title";
+import type {UploadItem} from "@arco-design/web-react/es/Upload";
 import MDEditor from "@uiw/react-md-editor";
 import {useNavigate} from "react-router-dom";
+import {set} from "zod";
 import EventFields from "./EventField";
 import FinalCategoriesFields from "./FinalCategoriesFields";
 import FinalCriteriaFields from "./FinalCriteriaFields";
 import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
 import {useTournamentFormPrefill} from "./useTournamentFormPrefill";
-import type {UploadItem} from "@arco-design/web-react/es/Upload";
-import {set} from "zod";
-import Title from "@arco-design/web-react/es/Typography/title";
-import {formatDate} from "@/utils/Date/formatDate";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp | Date, Timestamp | Date];
