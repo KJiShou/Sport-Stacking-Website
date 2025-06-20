@@ -85,7 +85,10 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
                                 </div>
                             );
                         })}
-                        <Button type="text" onClick={() => onChange([...brackets, {name: "", min_age: 0, max_age: 0}])}>
+                        <Button
+                            type="text"
+                            onClick={() => onChange([...brackets, {name: "", min_age: 0, max_age: 0, number_of_participants: 0}])}
+                        >
                             <IconPlus /> Add Bracket
                         </Button>
                     </>

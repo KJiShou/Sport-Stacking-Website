@@ -152,6 +152,7 @@ export default function ViewTournamentRegistrationPage() {
 
                     <Form.Item label="Payment Proof">
                         <Upload
+                            disabled
                             multiple={false}
                             limit={1}
                             fileList={

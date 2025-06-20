@@ -1,4 +1,6 @@
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
+import EditTournamentRegistrationPage from "@/pages/Tournaments/RegistrationsList/EditRegistration/EditRegistration";
+import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/RegistrationsList";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type * as React from "react";
@@ -28,6 +30,14 @@ const routes: Route[] = [
     {
         path: "/tournaments/:tournamentId/register",
         component: RegisterTournamentPage,
+    },
+    {
+        path: "/tournaments/:tournamentId/registrations",
+        component: RegistrationsListPage,
+    },
+    {
+        path: "/tournaments/:tournamentId/registrations/:registrationId/edit",
+        component: EditTournamentRegistrationPage,
     },
     {
         path: "/tournaments/:tournamentId/register/:global_id/view",

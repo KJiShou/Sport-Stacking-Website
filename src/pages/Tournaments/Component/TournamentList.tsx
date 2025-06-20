@@ -39,7 +39,7 @@ import {Timestamp} from "firebase/firestore";
 import {type ReactNode, useEffect, useState} from "react";
 
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
-import {DeviceBreakpoint} from "@/hooks/DeviceInspector/deviceStore";
+import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {uploadFile} from "@/services/firebase/storageService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import MDEditor from "@uiw/react-md-editor";
