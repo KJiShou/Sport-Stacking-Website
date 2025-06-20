@@ -1,5 +1,8 @@
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
+import EditTournamentRegistrationPage from "@/pages/Tournaments/RegistrationsList/EditRegistration/EditRegistration";
+import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/RegistrationsList";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
+import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type * as React from "react";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import Athletes from "../pages/Athletes/Athletes";
@@ -29,6 +32,14 @@ const routes: Route[] = [
         component: RegisterTournamentPage,
     },
     {
+        path: "/tournaments/:tournamentId/registrations",
+        component: RegistrationsListPage,
+    },
+    {
+        path: "/tournaments/:tournamentId/registrations/:registrationId/edit",
+        component: EditTournamentRegistrationPage,
+    },
+    {
         path: "/tournaments/:tournamentId/register/:global_id/view",
         component: ViewRegisterTournament,
     },
@@ -43,6 +54,7 @@ const routes: Route[] = [
     {path: "/register", component: RegisterPage},
     {path: "/users/:id", component: UserProfile},
     {path: "/admins", component: AdminPermissionsPage},
+    {path: "/forgot-password", component: ForgotPasswordPage},
 ];
 
 export default routes;

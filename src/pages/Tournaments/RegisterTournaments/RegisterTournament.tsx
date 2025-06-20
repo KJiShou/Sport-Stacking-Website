@@ -8,6 +8,7 @@ import {addUserRegistrationRecord, getUserByGlobalId} from "@/services/firebase/
 import {createRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {formatDate} from "@/utils/Date/formatDate";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {
     Button,
@@ -16,6 +17,7 @@ import {
     Divider,
     Empty,
     Form,
+    Image,
     Input,
     InputNumber,
     Link,
@@ -27,7 +29,7 @@ import {
     Typography,
     Upload,
 } from "@arco-design/web-react";
-import {IconExclamationCircle, IconLaunch} from "@arco-design/web-react/icon";
+import {IconCalendar, IconExclamationCircle, IconLaunch} from "@arco-design/web-react/icon";
 import MDEditor from "@uiw/react-md-editor";
 import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
@@ -69,23 +71,6 @@ export default function RegisterTournamentPage() {
         }
 
         return age;
-    };
-
-    const formatDate = (date: Timestamp | Date | Dayjs | string | null | undefined): string => {
-        if (!date) return "-";
-        if (typeof (date as Timestamp).toDate === "function") {
-            return (date as Timestamp).toDate().toLocaleString();
-        }
-        if (dayjs.isDayjs(date)) {
-            return date.format("YYYY-MM-DD HH:mm");
-        }
-        if (date instanceof Date) {
-            return date.toLocaleString();
-        }
-        if (typeof date === "string") {
-            return new Date(date).toLocaleString();
-        }
-        return "-";
     };
 
     const handleRegister = async (values: Registration) => {
@@ -228,10 +213,9 @@ export default function RegisterTournamentPage() {
             try {
                 const comp = await fetchTournamentById(tournamentId);
                 const age = user?.birthdate && comp?.start_date ? getAgeAtTournament(user.birthdate, comp.start_date) : 0;
-                const allAvailableEvents =
-                    comp?.events.filter((event) =>
-                        event.age_brackets?.some((bracket) => age >= bracket.min_age && age <= bracket.max_age),
-                    ) ?? [];
+                const allAvailableEvents = (comp?.events ?? []).filter((event) =>
+                    event.age_brackets?.some((bracket) => age >= bracket.min_age && age <= bracket.max_age),
+                );
 
                 // 找出 required keys
                 const requiredKeys = allAvailableEvents
@@ -293,6 +277,16 @@ export default function RegisterTournamentPage() {
                                 </Button>
                             ),
                         },
+                        {
+                            label: "Agenda",
+                            value: comp?.agenda ? (
+                                <Button type="text" onClick={() => window.open(`${comp?.agenda}`, "_blank")}>
+                                    <IconCalendar /> View Agenda
+                                </Button>
+                            ) : (
+                                "-"
+                            ),
+                        },
                     ]);
                 }
 
@@ -335,6 +329,7 @@ export default function RegisterTournamentPage() {
     return (
         <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                <Image src={`${tournament?.logo}`} alt="logo" width={200} />
                 <Descriptions
                     column={1}
                     title={
@@ -397,7 +392,7 @@ export default function RegisterTournamentPage() {
 
                                 // 你这里做 setOptions 等其他逻辑
                                 if (!tournament?.events) return;
-                                const remaining = availableEvents.filter(
+                                const remaining = (availableEvents ?? []).filter(
                                     (option) => !finalValue.includes(`${option.code}-${option.type}`),
                                 );
                                 setOptions(remaining);

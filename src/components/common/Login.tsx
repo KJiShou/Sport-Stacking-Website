@@ -81,6 +81,16 @@ const LoginForm = ({onClose}: {onClose?: () => void}) => {
             <Form.Item field="password" rules={[{required: true, message: "Please enter your password"}]} label="Password">
                 <Input.Password prefix={<IconLock />} placeholder="Your password" autoComplete="current-password" />
             </Form.Item>
+            <div className="text-right mt-2">
+                <Link
+                    onClick={() => {
+                        if (onClose) onClose();
+                        navigate("/forgot-password");
+                    }}
+                >
+                    Forgot password?
+                </Link>
+            </div>
 
             <Button htmlType="submit" type="primary" long loading={loading} style={{marginTop: 8}}>
                 Log In
