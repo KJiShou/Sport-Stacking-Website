@@ -33,6 +33,7 @@ import {
     IconLaunch,
     IconPlayArrow,
     IconPlus,
+    IconUser,
 } from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
@@ -182,6 +183,14 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                         onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
                                     >
                                         <IconEye /> View Registration List
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => navigate(`/tournaments/${tournament.id}/participants`)}
+                                    >
+                                        <IconUser /> Participant List
                                     </Button>
                                     <Button
                                         type="text"
