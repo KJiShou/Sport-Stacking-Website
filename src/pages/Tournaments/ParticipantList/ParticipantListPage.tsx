@@ -1,14 +1,14 @@
+import type {Registration, Tournament} from "@/schema";
+import {fetchRegistrations} from "@/services/firebase/registerService";
+import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {exportParticipantListToPDF, getCurrentEventData} from "@/utils/PDF/exportCsvToPdf";
+import {Button, Input, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
+import type {TableColumnProps} from "@arco-design/web-react";
+import {nanoid} from "nanoid";
 // src/pages/ParticipantListPage.tsx
 import React, {useState, useRef} from "react";
-import {useParams, useNavigate} from "react-router-dom";
+import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
-import {Tabs, Table, Input, Button, Typography, Message, Tag} from "@arco-design/web-react";
-import type {TableColumnProps} from "@arco-design/web-react";
-import {fetchTournamentById} from "@/services/firebase/tournamentsService";
-import {fetchRegistrations} from "@/services/firebase/registerService";
-import type {Tournament, Registration} from "@/schema";
-import {nanoid} from "nanoid";
-import {exportParticipantListToPDF, getCurrentEventData} from "@/utils/PDF/exportCsvToPdf";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
