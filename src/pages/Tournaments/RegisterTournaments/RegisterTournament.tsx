@@ -145,6 +145,7 @@ export default function RegisterTournamentPage() {
                 user_id: user?.global_id ?? "",
                 user_name: values.user_name,
                 age: form.getFieldValue("age"),
+                phone_number: values.phone_number,
                 events_registered: values.events_registered,
                 payment_proof_url: paymentProofUrl,
                 registration_status: "pending",
@@ -217,18 +218,15 @@ export default function RegisterTournamentPage() {
                     event.age_brackets?.some((bracket) => age >= bracket.min_age && age <= bracket.max_age),
                 );
 
-                // 找出 required keys
+                // 找出 required keys (individual events)
                 const requiredKeys = allAvailableEvents
                     .filter((event) => event.type === "individual")
                     .map((event) => `${event.code}-${event.type}`);
 
-                // 从 availableEvents 里面排除 required 的
-                const remainingEvents = allAvailableEvents.filter(
-                    (event) => !requiredKeys.includes(`${event.code}-${event.type}`),
-                );
+                // 设置所有可用事件，而不是排除required的
+                setAvailableEvents(allAvailableEvents);
+                setOptions(allAvailableEvents);
 
-                setAvailableEvents(remainingEvents); // 👉 这里只留 non-required
-                setOptions(remainingEvents);
                 if (comp) {
                     setTournament(comp);
                     setTournamentData([
@@ -297,7 +295,21 @@ export default function RegisterTournamentPage() {
                     events_registered: requiredKeys, // 一开始强制先选上 required events
                 });
 
-                setRequiredKeys(requiredKeys); // 存起来供 onChange 时使用
+                // 初始化团队状态
+                const initialHaveTeam = requiredKeys.map((event: string) => {
+                    const eventVar = event.split("-");
+                    if (
+                        eventVar[eventVar.length - 1] === "team relay" ||
+                        eventVar[eventVar.length - 1] === "double" ||
+                        eventVar[eventVar.length - 1] === "parent & child"
+                    ) {
+                        return [true, event];
+                    }
+                    return [false, event];
+                });
+                setHaveTeam(initialHaveTeam as TeamEntry[]);
+
+                setRequiredKeys(requiredKeys); // 存起来供后续使用
             } catch (e) {
                 setError("Failed to load tournament.");
                 console.error(e);
@@ -308,22 +320,7 @@ export default function RegisterTournamentPage() {
         fetch();
     }, [tournamentId]);
 
-    useEffect(() => {
-        const events = form.getFieldValue("event");
-        if (!events) return;
-        const tempHaveTeam = events.map((event: string) => {
-            const eventVar = event.split("-");
-            if (
-                eventVar[eventVar.length - 1] === "team relay" ||
-                eventVar[eventVar.length - 1] === "double" ||
-                eventVar[eventVar.length - 1] === "parent & child"
-            ) {
-                return [true, event];
-            }
-            return [false, event];
-        });
-        setHaveTeam(tempHaveTeam);
-    }, [options]);
+    // Remove the problematic useEffect since we handle team updates in onChange
 
     if (error) return <Result status="error" title="Error" subTitle={error} />;
     return (
@@ -364,11 +361,14 @@ export default function RegisterTournamentPage() {
                     <Form.Item disabled label="Age" field="age" rules={[{required: true}]}>
                         <InputNumber disabled placeholder="Enter your age" />
                     </Form.Item>
+                    <Form.Item disabled label="Phone Number" field="phone_number" rules={[{required: true}]}>
+                        <InputNumber disabled placeholder="Enter your phone number" />
+                    </Form.Item>
                     <Form.Item
                         label={
                             <div>
                                 Select Event(s)
-                                <Tooltip content="Individual Events are required.">
+                                <Tooltip content="Individual Events are required and cannot be deselected.">
                                     <IconExclamationCircle
                                         style={{
                                             margin: "0 8px",
@@ -382,31 +382,47 @@ export default function RegisterTournamentPage() {
                         rules={[{required: true}]}
                     >
                         <Select
-                            placeholder="Select an events"
+                            placeholder="Select events"
                             style={{width: 345, marginRight: 20}}
                             mode="multiple"
                             defaultValue={requiredKeys}
                             onChange={(value) => {
-                                // 自动补回必须选的 key
+                                // 确保个人赛事项不能被取消选择
                                 const finalValue = Array.from(new Set([...value, ...requiredKeys]));
 
-                                // 你这里做 setOptions 等其他逻辑
-                                if (!tournament?.events) return;
-                                const remaining = (availableEvents ?? []).filter(
-                                    (option) => !finalValue.includes(`${option.code}-${option.type}`),
-                                );
-                                setOptions(remaining);
+                                // 更新表单值
+                                form.setFieldsValue({events_registered: finalValue});
 
-                                // 更新表单值（如果你有 form 实例可以 setFieldsValue）
-                                form.setFieldsValue({event: finalValue});
+                                // 更新团队事件的状态
+                                const tempHaveTeam = finalValue.map((event: string) => {
+                                    const eventVar = event.split("-");
+                                    if (
+                                        eventVar[eventVar.length - 1] === "team relay" ||
+                                        eventVar[eventVar.length - 1] === "double" ||
+                                        eventVar[eventVar.length - 1] === "parent & child"
+                                    ) {
+                                        return [true, event];
+                                    }
+                                    return [false, event];
+                                });
+                                setHaveTeam(tempHaveTeam as TeamEntry[]);
                             }}
                             notFoundContent={<Empty description="No Available Events" />}
                         >
                             {options?.map((option) => {
                                 const key = `${option.code}-${option.type}`;
+                                const isRequired = requiredKeys.includes(key);
                                 return (
-                                    <Option wrapperClassName="select-demo-hide-option-checkbox" key={key} value={key}>
-                                        {option.code} ({option.type})
+                                    <Option
+                                        key={key}
+                                        value={key}
+                                        disabled={isRequired}
+                                        style={{
+                                            opacity: isRequired ? 0.6 : 1,
+                                            backgroundColor: isRequired ? "#f5f5f5" : "transparent",
+                                        }}
+                                    >
+                                        {option.code} ({option.type}) {isRequired && "(Required)"}
                                     </Option>
                                 );
                             })}

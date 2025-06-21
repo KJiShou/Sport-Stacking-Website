@@ -17,7 +17,7 @@ import {
     Typography,
     Upload,
 } from "@arco-design/web-react";
-import {IconCamera, IconEmail, IconExclamationCircle, IconLock, IconUser} from "@arco-design/web-react/icon";
+import {IconCamera, IconEmail, IconExclamationCircle, IconLock, IconPhone, IconUser} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import type {User} from "firebase/auth";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
@@ -72,7 +72,7 @@ const RegisterPage = () => {
     };
 
     const handleSubmit = async (values: RegisterFormData) => {
-        const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school} = values;
+        const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school, phone_number} = values;
         let avatarUrl = firebaseUser?.photoURL ?? "";
         if (password !== confirmPassword) {
             Message.error("Passwords do not match");
@@ -92,6 +92,7 @@ const RegisterPage = () => {
                     gender,
                     country,
                     school,
+                    phone_number,
                     roles: null,
                     image_url: avatarUrl || "",
                     best_times: {},
@@ -106,6 +107,7 @@ const RegisterPage = () => {
                         gender,
                         country,
                         school,
+                        phone_number,
                         roles: null,
                         best_times: {},
                     },
@@ -298,6 +300,14 @@ const RegisterPage = () => {
 
                     <Form.Item field="gender" label="Participant Gender" rules={[{required: true, message: "Select gender"}]}>
                         <Select placeholder="Select gender" options={["Male", "Female"]} />
+                    </Form.Item>
+
+                    <Form.Item
+                        field="phone_number"
+                        label="Phone Number"
+                        rules={[{required: true, message: "Enter your phone number"}]}
+                    >
+                        <Input prefix={<IconPhone />} placeholder="Your phone number" />
                     </Form.Item>
 
                     <Form.Item

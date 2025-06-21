@@ -60,6 +60,7 @@ export default function ViewTournamentRegistrationPage() {
                     user_name: userReg.user_name,
                     id: userReg.user_id,
                     age: userReg.age,
+                    phone_number: userReg.phone_number,
                     events_registered: userReg.events_registered,
                 });
             } catch (err) {
@@ -93,6 +94,10 @@ export default function ViewTournamentRegistrationPage() {
                     </Form.Item>
 
                     <Form.Item label="Age" field="age">
+                        <InputNumber disabled />
+                    </Form.Item>
+
+                    <Form.Item disabled label="Phone Number" field="phone_number">
                         <InputNumber disabled />
                     </Form.Item>
 

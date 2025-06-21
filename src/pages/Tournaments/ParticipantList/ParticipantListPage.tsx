@@ -8,6 +8,7 @@ import {fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import type {Tournament, Registration} from "@/schema";
 import {nanoid} from "nanoid";
+import {exportParticipantListToPDF, getCurrentEventData} from "@/utils/PDF/exportCsvToPdf";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
@@ -28,6 +29,8 @@ export default function ParticipantListPage() {
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [registrationList, setRegistrationList] = useState<Registration[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
+    const [currentEventTab, setCurrentEventTab] = useState<string>("");
+    const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
     const mountedRef = useRef(false);
 
     const ageMap: Record<string, number> = registrationList.reduce(
@@ -38,12 +41,23 @@ export default function ParticipantListPage() {
         {} as Record<string, number>,
     );
 
+    // Create phone number map for easy lookup
+    const phoneMap: Record<string, string> = registrationList.reduce(
+        (acc, r) => {
+            acc[r.user_id] = r.phone_number || "N/A";
+            return acc;
+        },
+        {} as Record<string, string>,
+    );
+
     const refreshParticipantList = async () => {
         if (!tournamentId) return;
         setLoading(true);
         try {
             const t = await fetchTournamentById(tournamentId);
             setTournament(t);
+            setCurrentEventTab(t?.events?.[0] ? `${t.events[0].code}-${t.events[0].type}` : "");
+            setCurrentBracketTab(t?.events?.[0].age_brackets[0] ? `${t.events[0].age_brackets[0].name}` : "");
             const regs = await fetchRegistrations(tournamentId);
             setRegistrationList(regs.filter((r) => r.registration_status === "approved"));
         } catch {
@@ -58,8 +72,6 @@ export default function ParticipantListPage() {
         mountedRef.current = true;
         refreshParticipantList();
     });
-
-    if (!tournament) return null;
 
     const filterRegistrations = (evtKey: string, isTeam: boolean) => {
         if (isTeam) {
@@ -77,10 +89,42 @@ export default function ParticipantListPage() {
         );
     };
 
+    const handleExportToPDF = () => {
+        const currentData = getCurrentEventData(tournament, currentEventTab, currentBracketTab, registrationList, searchTerm);
+
+        if (!currentData || !tournament) {
+            Message.warning("Please select an event and age bracket to export");
+            return;
+        }
+
+        try {
+            exportParticipantListToPDF({
+                tournament,
+                eventKey: currentEventTab,
+                bracketName: currentBracketTab,
+                registrations: currentData.registrations,
+                ageMap,
+                phoneMap,
+                searchTerm,
+                isTeamEvent: currentData.isTeamEvent,
+            });
+            Message.success("PDF preview opened in new tab!");
+        } catch (error) {
+            Message.error("Failed to generate PDF");
+        }
+    };
+
+    if (!tournament) return null;
+
     const individualColumns: TableColumnProps<Registration>[] = [
         {title: "Global ID", dataIndex: "user_id", width: 150},
         {title: "Name", dataIndex: "user_name", width: 200},
         {title: "Age", dataIndex: "age", width: 100},
+        {
+            title: "Phone Number",
+            width: 150,
+            render: (_, record) => <Text>{record.phone_number || "N/A"}</Text>,
+        },
         {
             title: "Action",
             width: 150,
@@ -107,18 +151,23 @@ export default function ParticipantListPage() {
                             style={{width: 300}}
                             onChange={(val) => setSearchTerm(val.trim())}
                         />
-                        <Button type="primary" onClick={() => window.print()}>
-                            Print / Export
+                        <Button type="primary" onClick={handleExportToPDF}>
+                            Preview PDF
                         </Button>
                     </div>
                 </div>
-                <Tabs type="line" destroyOnHide className="w-full">
+                <Tabs type="line" destroyOnHide className="w-full" onChange={(key) => setCurrentEventTab(key)}>
                     {tournament.events?.map((evt) => {
                         const evtKey = `${evt.code}-${evt.type}`;
                         const isTeamEvent = ["double", "team relay", "parent & child"].includes(evt.type.toLowerCase());
                         return (
                             <TabPane key={evtKey} title={`${evt.code} (${evt.type})`}>
-                                <Tabs type="capsule" tabPosition="top" destroyOnHide>
+                                <Tabs
+                                    type="capsule"
+                                    tabPosition="top"
+                                    destroyOnHide
+                                    onChange={(key) => setCurrentBracketTab(key)}
+                                >
                                     {evt.age_brackets.map((br) => {
                                         const regs = filterRegistrations(evtKey, isTeamEvent);
                                         if (isTeamEvent) {
@@ -158,6 +207,17 @@ export default function ParticipantListPage() {
                                                     width: 300,
                                                     render: (_, record) => (
                                                         <Text>{record.member.map((m) => m.global_id).join(", ")}</Text>
+                                                    ),
+                                                },
+                                                {
+                                                    title: "Leader Phone",
+                                                    width: 150,
+                                                    render: (_, record) => (
+                                                        <Text>
+                                                            {record.leader.global_id
+                                                                ? phoneMap[record.leader.global_id] || "N/A"
+                                                                : "N/A"}
+                                                        </Text>
                                                     ),
                                                 },
                                                 {

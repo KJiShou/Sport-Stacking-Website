@@ -23,7 +23,7 @@ import {
     Typography,
 } from "@arco-design/web-react";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
-import {IconUser} from "@arco-design/web-react/icon";
+import {IconPhone, IconUser} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
@@ -94,6 +94,7 @@ export default function RegisterPage() {
         {label: "Email", value: user?.email ?? "-"},
         {label: "IC", value: user?.IC ?? "-"},
         {label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}`},
+        {label: "Phone Number", value: user?.phone_number ?? "-"},
         {label: "School/University/College", value: user?.school ?? "-"},
         {
             label: "Birthdate",
@@ -139,16 +140,18 @@ export default function RegisterPage() {
                     school: data?.school ?? "",
                     gender: data?.gender,
                     birthdate: data?.birthdate,
+                    phone_number: data?.phone_number ?? "-",
                 });
                 descData = [
-                    {label: "Email", value: user?.email ?? "-"},
-                    {label: "IC", value: user?.IC ?? "-"},
-                    {label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}`},
-                    {label: "School/University/College", value: user?.school ?? "-"},
+                    {label: "Email", value: data?.email ?? "-"},
+                    {label: "IC", value: data?.IC ?? "-"},
+                    {label: "Country / State", value: `${data?.country[0]} / ${data?.country[1]}`},
+                    {label: "Phone Number", value: data?.phone_number ?? "-"},
+                    {label: "School/University/College", value: data?.school ?? "-"},
                     {
                         label: "Birthdate",
-                        value: user?.birthdate
-                            ? dayjs(user.birthdate instanceof Timestamp ? user.birthdate.toDate() : user.birthdate).format(
+                        value: data?.birthdate
+                            ? dayjs(data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate).format(
                                   "YYYY-MM-DD",
                               )
                             : "-",
@@ -173,6 +176,7 @@ export default function RegisterPage() {
         name: string;
         country: [country: string, state: string];
         school: string;
+        phone_number: string;
     }) => {
         setLoading(true);
         try {
@@ -181,6 +185,7 @@ export default function RegisterPage() {
                 name: values.name,
                 country: values.country,
                 school: values.school,
+                phone_number: values.phone_number,
             });
             Message.success("Profile updated successfully");
         } catch (err) {
@@ -276,6 +281,14 @@ export default function RegisterPage() {
                                             </Form.Item>
 
                                             <Form.Item
+                                                label="Phone Number"
+                                                field="phone_number"
+                                                rules={[{required: true, message: "Please enter your phone number"}]}
+                                            >
+                                                <Input prefix={<IconPhone />} placeholder="Please enter your phone number" />
+                                            </Form.Item>
+
+                                            <Form.Item
                                                 label="Country / State"
                                                 field="country"
                                                 rules={[{required: true, message: "Please select a country/region"}]}
@@ -329,6 +342,7 @@ export default function RegisterPage() {
                                                                 school: data?.school ?? "",
                                                                 gender: data?.gender,
                                                                 birthdate: data?.birthdate,
+                                                                phone_number: data?.phone_number,
                                                             });
                                                         } catch (err) {
                                                             console.error(err);
