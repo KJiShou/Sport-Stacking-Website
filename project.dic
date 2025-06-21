@@ -34,6 +34,7 @@ autofetch
 autofocus
 autoimport
 autoscaler
+autotable
 avant
 awss
 awsutil
@@ -50,6 +51,7 @@ billingv
 biomejs
 birr
 bitnamicharts
+bloburl
 boldpay
 boliviano
 bools
@@ -117,6 +119,7 @@ cust
 customtypes
 cyzccqwjjwhg
 dalasi
+dataurlnewwindow
 datepicker
 datetime
 dbaeumer
@@ -401,6 +404,7 @@ ouguiya
 pagable
 paʻanga
 panicf
+papaparse
 parens
 passwordresettoken
 pataca
@@ -466,6 +470,7 @@ recv
 regexes
 regionorganization
 registerables
+regs
 renewables
 repmgr
 revealjs

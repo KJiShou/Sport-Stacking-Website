@@ -1,3 +1,4 @@
+import ParticipantListPage from "@/pages/Tournaments/ParticipantList/ParticipantListPage";
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
 import EditTournamentRegistrationPage from "@/pages/Tournaments/RegistrationsList/EditRegistration/EditRegistration";
 import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/RegistrationsList";
@@ -42,6 +43,10 @@ const routes: Route[] = [
     {
         path: "/tournaments/:tournamentId/register/:global_id/view",
         component: ViewRegisterTournament,
+    },
+    {
+        path: "/tournaments/:tournamentId/participants",
+        component: ParticipantListPage,
     },
     {
         path: "/verify",

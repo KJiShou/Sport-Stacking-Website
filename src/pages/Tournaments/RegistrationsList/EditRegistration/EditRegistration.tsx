@@ -73,6 +73,7 @@ export default function EditTournamentRegistrationPage() {
                 user_id: registration?.user_id ?? "",
                 user_name: values.user_name,
                 age: values.age,
+                phone_number: values.phone_number ?? "",
                 events_registered: registration?.events_registered ?? [],
                 payment_proof_url: tempPaymentProofUrl,
                 registration_status: values?.registration_status ?? "pending",
@@ -116,6 +117,7 @@ export default function EditTournamentRegistrationPage() {
                 user_name: userReg.user_name,
                 id: userReg.user_id,
                 age: userReg.age,
+                phone_number: userReg.phone_number,
                 events_registered: userReg.events_registered,
                 registration_status: userReg.registration_status,
                 rejection_reason: userReg.rejection_reason,
@@ -189,6 +191,10 @@ export default function EditTournamentRegistrationPage() {
 
                         <Form.Item label="Age" field="age">
                             <InputNumber disabled={!edit} />
+                        </Form.Item>
+
+                        <Form.Item label="Phone Number" field="phone_number">
+                            <Input disabled={!edit} />
                         </Form.Item>
 
                         <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>

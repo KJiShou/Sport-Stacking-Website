@@ -24,6 +24,7 @@ export const FirestoreUserSchema = z.object({
         message: "IC must be 12 digits like 123546121234",
     }),
     email: z.string().email(),
+    phone_number: z.string().optional().nullable(),
     birthdate: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     gender: z.enum(["Male", "Female"]),
     country: z.array(z.string(), z.string()),

@@ -200,6 +200,7 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
         gender: data.gender,
         country: data.country,
         school: data.school,
+        phone_number: data.phone_number,
         image_url: data.image_url,
         roles: data.roles,
         best_times: data.best_times,
