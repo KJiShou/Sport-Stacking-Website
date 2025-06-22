@@ -1,14 +1,20 @@
 import type {Registration, Tournament} from "@/schema";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
-import {exportParticipantListToPDF, getCurrentEventData} from "@/utils/PDF/exportCsvToPdf";
-import {Button, Input, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
+import {
+    exportParticipantListToPDF,
+    getCurrentEventData,
+    exportAllBracketsListToPDF,
+    exportMasterListToPDF,
+} from "@/utils/PDF/pdfExport";
+import {Button, Dropdown, Input, Menu, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {nanoid} from "nanoid";
 // src/pages/ParticipantListPage.tsx
 import React, {useState, useRef} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
+import {IconUndo} from "@arco-design/web-react/icon";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
@@ -114,6 +120,24 @@ export default function ParticipantListPage() {
         }
     };
 
+    const handlePreviewMasterList = () => {
+        if (!tournament) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        exportMasterListToPDF(tournament, registrationList, ageMap, phoneMap);
+        Message.success("Master list PDF opened");
+    };
+
+    const handlePreviewAllBrackets = () => {
+        if (!tournament) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        exportAllBracketsListToPDF(tournament, registrationList, ageMap, phoneMap);
+        Message.success("All brackets list PDF opened");
+    };
+
     if (!tournament) return null;
 
     const individualColumns: TableColumnProps<Registration>[] = [
@@ -141,6 +165,9 @@ export default function ParticipantListPage() {
 
     return (
         <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+            <Button type="outline" onClick={() => navigate("/tournaments?type=current")} className={`w-fit pt-2 pb-2`}>
+                <IconUndo /> Go Back
+            </Button>
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <div className="w-full flex justify-between items-center">
                     <Title heading={3}>{tournament.name} Participants</Title>
@@ -151,9 +178,38 @@ export default function ParticipantListPage() {
                             style={{width: 300}}
                             onChange={(val) => setSearchTerm(val.trim())}
                         />
-                        <Button type="primary" onClick={handleExportToPDF}>
+                        <Dropdown.Button
+                            type="primary"
+                            trigger={["click", "hover"]}
+                            droplist={
+                                <div
+                                    className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                >
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => handlePreviewMasterList()}
+                                    >
+                                        Master List
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => handlePreviewAllBrackets()}
+                                    >
+                                        All Event List
+                                    </Button>
+                                </div>
+                            }
+                            buttonProps={{
+                                loading: loading,
+                                onClick: () => handleExportToPDF(),
+                            }}
+                        >
                             Preview PDF
-                        </Button>
+                        </Dropdown.Button>
                     </div>
                 </div>
                 <Tabs type="line" destroyOnHide className="w-full" onChange={(key) => setCurrentEventTab(key)}>
