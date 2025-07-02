@@ -212,6 +212,13 @@ export async function getUserByGlobalId(globalId: string) {
     const db = getFirestore();
     const q = query(collection(db, "users"), where("global_id", "==", globalId));
     const snap = await getDocs(q);
+    return snap.docs[0]?.data() as FirestoreUser | undefined;
+}
+
+export async function getUserEmailByGlobalId(globalId: string) {
+    const db = getFirestore();
+    const q = query(collection(db, "users"), where("global_id", "==", globalId));
+    const snap = await getDocs(q);
     return snap.docs[0]?.data() as {email: string} | undefined;
 }
 
@@ -260,11 +267,6 @@ export async function addUserRegistrationRecord(userId: string, newRecord: UserR
             newRecord.registration_date instanceof Timestamp
                 ? newRecord.registration_date
                 : Timestamp.fromDate(newRecord.registration_date),
-        confirmation_date: newRecord.confirmation_date
-            ? newRecord.confirmation_date instanceof Timestamp
-                ? newRecord.confirmation_date
-                : Timestamp.fromDate(newRecord.confirmation_date)
-            : null,
         created_at: newRecord.created_at
             ? newRecord.created_at instanceof Timestamp
                 ? newRecord.created_at
@@ -275,6 +277,71 @@ export async function addUserRegistrationRecord(userId: string, newRecord: UserR
 
     const updatedRecords = [...existingRecords, validatedRecord];
 
+    await updateDoc(userRef, {
+        registration_records: updatedRecords,
+        updated_at: Timestamp.now(),
+    });
+}
+
+export async function updateUserRegistrationRecord(
+    userId: string,
+    recordId: string,
+    updatedFields: Partial<UserRegistrationRecord>,
+): Promise<void> {
+    const userRef = doc(db, "users", userId);
+    const userSnap = await getDoc(userRef);
+
+    if (!userSnap.exists()) {
+        throw new Error("User not found");
+    }
+
+    const userData = userSnap.data();
+    const existingRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
+
+    // Find the record to update
+    const recordIndex = existingRecords.findIndex((record) => record.tournament_id === recordId);
+
+    if (recordIndex === -1) {
+        throw new Error("Registration record not found");
+    }
+
+    const existingRecord = existingRecords[recordIndex];
+
+    // Validate and convert date fields if they exist in updatedFields
+    const validatedUpdates: Partial<UserRegistrationRecord> = {
+        ...updatedFields,
+    };
+
+    // Handle registration_date conversion
+    if (updatedFields.registration_date) {
+        validatedUpdates.registration_date =
+            updatedFields.registration_date instanceof Timestamp
+                ? updatedFields.registration_date
+                : Timestamp.fromDate(updatedFields.registration_date);
+    }
+
+    // Handle created_at conversion (though this shouldn't typically be updated)
+    if (updatedFields.created_at) {
+        validatedUpdates.created_at =
+            updatedFields.created_at instanceof Timestamp
+                ? updatedFields.created_at
+                : Timestamp.fromDate(updatedFields.created_at);
+    }
+
+    // Always update the updated_at timestamp
+    validatedUpdates.updated_at = Timestamp.now();
+
+    // Create the updated record
+    const updatedRecord: UserRegistrationRecord = {
+        ...existingRecord,
+        ...validatedUpdates,
+    };
+
+    // Replace the record in the array
+    const updatedRecords = [...existingRecords];
+    updatedRecords[recordIndex] = updatedRecord;
+
+    // Update the document
     await updateDoc(userRef, {
         registration_records: updatedRecords,
         updated_at: Timestamp.now(),

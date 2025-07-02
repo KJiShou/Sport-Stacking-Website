@@ -1,3 +1,4 @@
+import {getUserByGlobalId} from "@/services/firebase/authService";
 import {Result, Spin, Typography} from "@arco-design/web-react";
 import {getAuth} from "firebase/auth";
 import {useEffect, useState} from "react";
@@ -26,6 +27,8 @@ export default function VerifyPage() {
                 setStatus("unauthorized");
                 return;
             }
+
+            const x = await getUserByGlobalId(globalId);
 
             try {
                 const res = await fetch("https://updateverification-jzbhzqtcdq-uc.a.run.app", {

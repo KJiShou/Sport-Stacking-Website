@@ -4,7 +4,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {addUserRegistrationRecord, getUserByGlobalId} from "@/services/firebase/authService";
+import {addUserRegistrationRecord, getUserEmailByGlobalId} from "@/services/firebase/authService";
 import {createRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
@@ -146,6 +146,7 @@ export default function RegisterTournamentPage() {
                 user_name: values.user_name,
                 age: form.getFieldValue("age"),
                 phone_number: values.phone_number,
+                organizer: values.organizer ?? "",
                 events_registered: values.events_registered,
                 payment_proof_url: paymentProofUrl,
                 registration_status: "pending",
@@ -158,14 +159,13 @@ export default function RegisterTournamentPage() {
 
             await createRegistration(user, registrationData);
             const registrationRecord: UserRegistrationRecord = {
-                status: "Pending",
+                status: "pending",
                 tournament_id: tournamentId,
                 events: registrationData.events_registered,
                 registration_date: Timestamp.now(),
                 rejection_reason: null,
                 created_at: Timestamp.now(),
                 updated_at: Timestamp.now(),
-                confirmation_date: null,
             };
 
             for (const team of teams) {
@@ -184,7 +184,7 @@ export default function RegisterTournamentPage() {
                 for (const globalId of toNotify) {
                     try {
                         // 🔍 从 Firestore 获取 email
-                        const userSnap = await getUserByGlobalId(globalId);
+                        const userSnap = await getUserEmailByGlobalId(globalId);
                         const email = userSnap?.email;
                         if (email) {
                             await sendProtectedEmail(email, tournamentId, user?.id ?? "", globalId);
@@ -293,6 +293,8 @@ export default function RegisterTournamentPage() {
                     id: user?.global_id,
                     age: age,
                     events_registered: requiredKeys, // 一开始强制先选上 required events
+                    phone_number: user?.phone_number,
+                    organizer: user?.school ?? "",
                 });
 
                 // 初始化团队状态
@@ -362,7 +364,10 @@ export default function RegisterTournamentPage() {
                         <InputNumber disabled placeholder="Enter your age" />
                     </Form.Item>
                     <Form.Item disabled label="Phone Number" field="phone_number" rules={[{required: true}]}>
-                        <InputNumber disabled placeholder="Enter your phone number" />
+                        <Input disabled placeholder="Update your phone number at profile" />
+                    </Form.Item>
+                    <Form.Item disabled label="Organizer" field="organizer" rules={[{required: true}]}>
+                        <Input disabled placeholder="Update your organizer at profile" />
                     </Form.Item>
                     <Form.Item
                         label={

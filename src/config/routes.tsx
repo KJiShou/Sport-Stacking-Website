@@ -2,6 +2,7 @@ import ParticipantListPage from "@/pages/Tournaments/ParticipantList/Participant
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
 import EditTournamentRegistrationPage from "@/pages/Tournaments/RegistrationsList/EditRegistration/EditRegistration";
 import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/RegistrationsList";
+import StartTournamentPage from "@/pages/Tournaments/StartTournament/StartTournamentPage";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type * as React from "react";
@@ -47,6 +48,10 @@ const routes: Route[] = [
     {
         path: "/tournaments/:tournamentId/participants",
         component: ParticipantListPage,
+    },
+    {
+        path: "/tournaments/:tournamentId/start",
+        component: StartTournamentPage,
     },
     {
         path: "/verify",

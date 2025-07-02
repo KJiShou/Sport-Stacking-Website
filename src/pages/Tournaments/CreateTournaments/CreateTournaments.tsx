@@ -1,8 +1,9 @@
-import {DEFAULT_EVENTS, DEFAULT_FINAL_CATEGORIES, DEFAULT_FINAL_CRITERIA} from "@/constants/tournamentDefaults";
+import {DEFAULT_AGE_BRACKET, DEFAULT_EVENTS} from "@/constants/tournamentDefaults";
 import {useAuthContext} from "@/context/AuthContext";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
-import type {Tournament} from "@/schema";
+import type {AgeBracket, Tournament} from "@/schema";
 import {countries} from "@/schema/Country";
+import type {FinalCriteria} from "@/schema/TournamentSchema";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTournament, updateTournament} from "@/services/firebase/tournamentsService";
 import {
@@ -27,8 +28,7 @@ import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import AgeBracketModal from "../Component/AgeBracketModal";
 import EventFields from "../Component/EventField";
-import FinalCategoriesFields from "../Component/FinalCategoriesFields";
-import FinalCriteriaFields from "../Component/FinalCriteriaFields";
+
 import LocationPicker, {isValidCountryPath} from "../Component/LocationPicker";
 import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
 import {useTournamentFormPrefill} from "../Component/useTournamentFormPrefill";
@@ -58,7 +58,44 @@ export default function CreateTournamentPage() {
 
     useTournamentFormPrefill(form);
 
+    // Helper function to get predefined final criteria based on event type
+    const getPredefinedFinalCriteria = (eventType: string) => {
+        switch (eventType) {
+            case "double":
+            case "parent & child":
+                return [{classification: "intermediate" as const, number: 5}];
+            case "team relay":
+                return [{classification: "intermediate" as const, number: 4}];
+            default:
+                return [{classification: "intermediate" as const, number: 10}];
+        }
+    };
     const [loading, setLoading] = useState(false);
+
+    const validateAgeBrackets = (brackets: AgeBracket[]) => {
+        const errors: string[] = [];
+
+        brackets.forEach((bracket, index) => {
+            // Check if bracket has at least one final criteria
+            if (!bracket.final_criteria || bracket.final_criteria.length === 0) {
+                errors.push(`Age bracket "${bracket.name || `Bracket ${index + 1}`}" must have at least one final criteria`);
+                return;
+            }
+
+            // Check for duplicate classifications within the same bracket
+            const classifications = bracket.final_criteria.map((criteria: FinalCriteria) => criteria.classification);
+            const duplicates = classifications.filter((classification, idx) => classifications.indexOf(classification) !== idx);
+
+            if (duplicates.length > 0) {
+                const uniqueDuplicates = [...new Set(duplicates)];
+                errors.push(
+                    `Age bracket "${bracket.name || `Bracket ${index + 1}`}" has duplicate classifications: ${uniqueDuplicates.join(", ")}`,
+                );
+            }
+        });
+
+        return errors;
+    };
 
     const handleSubmit = async (values: TournamentFormData) => {
         setLoading(true);
@@ -92,8 +129,6 @@ export default function CreateTournamentPage() {
                 registration_end_date: values.registration_date_range[1],
                 max_participants: values.max_participants,
                 events: fullEvents,
-                final_criteria: values.final_criteria,
-                final_categories: values.final_categories,
                 description: values.description,
                 editor: values.editor,
                 recorder: values.recorder,
@@ -143,8 +178,6 @@ export default function CreateTournamentPage() {
                     onSubmit={handleSubmit}
                     initialValues={{
                         events: DEFAULT_EVENTS,
-                        final_criteria: DEFAULT_FINAL_CRITERIA,
-                        final_categories: DEFAULT_FINAL_CATEGORIES,
                         max_participants: 0,
                     }}
                     requiredSymbol={false}
@@ -278,16 +311,18 @@ export default function CreateTournamentPage() {
                                     ))}
                                     <Button
                                         type="text"
-                                        onClick={() =>
+                                        onClick={() => {
+                                            // Get the current event to determine the type
+                                            const currentEvents = form.getFieldValue("events") || [];
+                                            const defaultType = "individual"; // fallback
+                                            const predefinedCriteria = getPredefinedFinalCriteria(defaultType);
+
                                             add({
                                                 code: "",
                                                 type: "",
-                                                age_brackets: [
-                                                    {name: "Under 10", min_age: 0, max_age: 9},
-                                                    {name: "10 and Above", min_age: 10, max_age: 99},
-                                                ],
-                                            })
-                                        }
+                                                age_brackets: DEFAULT_AGE_BRACKET,
+                                            });
+                                        }}
                                     >
                                         <IconPlus /> Add Event
                                     </Button>
@@ -318,7 +353,6 @@ export default function CreateTournamentPage() {
                                                 minAgeHelp = "Min age > Max age";
                                             }
 
-                                            // 2）再计算 Max Age 的校验状态和提示文字
                                             const isMaxError = bracket.max_age === null || bracket.max_age < bracket.min_age;
 
                                             let maxAgeHelp: string | undefined;
@@ -327,64 +361,142 @@ export default function CreateTournamentPage() {
                                             } else if (bracket.max_age < bracket.min_age) {
                                                 maxAgeHelp = "Max age < Min age";
                                             }
+
                                             return (
-                                                <div key={`bracket-${bracket.name}`} className="flex gap-4 mb-4 w-full">
-                                                    <Form.Item
-                                                        label="Bracket Name"
-                                                        required
-                                                        validateStatus={!bracket.name ? "error" : undefined}
-                                                        help={!bracket.name ? "Please enter bracket name" : undefined}
-                                                        className="w-1/3"
-                                                    >
-                                                        <Input
-                                                            value={bracket.name}
-                                                            onChange={(v) => {
+                                                <div key={`bracket-${bracket.name}`} className="border p-4 mb-4 rounded">
+                                                    <div className="flex gap-4 mb-4 w-full">
+                                                        <Form.Item
+                                                            label="Bracket Name"
+                                                            required
+                                                            validateStatus={!bracket.name ? "error" : undefined}
+                                                            help={!bracket.name ? "Please enter bracket name" : undefined}
+                                                            className="w-1/3"
+                                                        >
+                                                            <Input
+                                                                value={bracket.name}
+                                                                onChange={(v) => {
+                                                                    const updated = [...ageBrackets];
+                                                                    updated[id].name = v;
+                                                                    setAgeBrackets(updated);
+                                                                }}
+                                                                placeholder="Bracket Name"
+                                                            />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            label="Min Age"
+                                                            required
+                                                            validateStatus={isMinError ? "error" : undefined}
+                                                            help={minAgeHelp}
+                                                            className="w-1/4"
+                                                        >
+                                                            <InputNumber
+                                                                value={bracket.min_age}
+                                                                min={0}
+                                                                onChange={(v) => {
+                                                                    const updated = [...ageBrackets];
+                                                                    updated[id].min_age = v ?? 0;
+                                                                    setAgeBrackets(updated);
+                                                                }}
+                                                                placeholder="Min Age"
+                                                            />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            label="Max Age"
+                                                            required
+                                                            validateStatus={isMaxError ? "error" : undefined}
+                                                            help={maxAgeHelp}
+                                                            className="w-1/4"
+                                                        >
+                                                            <InputNumber
+                                                                value={bracket.max_age}
+                                                                min={0}
+                                                                onChange={(v) => {
+                                                                    const updated = [...ageBrackets];
+                                                                    updated[id].max_age = v ?? 0;
+                                                                    setAgeBrackets(updated);
+                                                                }}
+                                                                placeholder="Max Age"
+                                                            />
+                                                        </Form.Item>
+                                                        <div className="flex items-end pb-8">
+                                                            <Button status="danger" onClick={makeHandleDeleteBracket(id)}>
+                                                                <IconDelete />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Final Criteria for this age bracket */}
+                                                    <div className="mt-4">
+                                                        <h4 className="text-sm font-medium mb-2">
+                                                            Final Criteria for {bracket.name}
+                                                        </h4>
+                                                        {bracket.final_criteria?.map((criteria, criteriaIndex) => (
+                                                            <div key={criteria.classification} className="flex gap-2 mb-2">
+                                                                <Select
+                                                                    value={criteria.classification}
+                                                                    placeholder="Classification"
+                                                                    onChange={(value) => {
+                                                                        const updated = [...ageBrackets];
+                                                                        if (!updated[id].final_criteria) {
+                                                                            updated[id].final_criteria = [];
+                                                                        }
+                                                                        updated[id].final_criteria![
+                                                                            criteriaIndex
+                                                                        ].classification = value;
+                                                                        setAgeBrackets(updated);
+                                                                    }}
+                                                                    style={{width: 150}}
+                                                                >
+                                                                    <Select.Option value="advance">Advanced</Select.Option>
+                                                                    <Select.Option value="intermediate">
+                                                                        Intermediate
+                                                                    </Select.Option>
+                                                                    <Select.Option value="beginner">Beginner</Select.Option>
+                                                                </Select>
+                                                                <InputNumber
+                                                                    value={criteria.number}
+                                                                    placeholder="Number"
+                                                                    min={0}
+                                                                    onChange={(value) => {
+                                                                        const updated = [...ageBrackets];
+                                                                        if (!updated[id].final_criteria) {
+                                                                            updated[id].final_criteria = [];
+                                                                        }
+                                                                        updated[id].final_criteria![criteriaIndex].number =
+                                                                            value ?? 0;
+                                                                        setAgeBrackets(updated);
+                                                                    }}
+                                                                    style={{width: 100}}
+                                                                />
+                                                                <Button
+                                                                    status="danger"
+                                                                    onClick={() => {
+                                                                        const updated = [...ageBrackets];
+                                                                        updated[id].final_criteria?.splice(criteriaIndex, 1);
+                                                                        setAgeBrackets(updated);
+                                                                    }}
+                                                                >
+                                                                    <IconDelete />
+                                                                </Button>
+                                                            </div>
+                                                        ))}
+                                                        <Button
+                                                            type="text"
+                                                            size="small"
+                                                            onClick={() => {
                                                                 const updated = [...ageBrackets];
-                                                                updated[id].name = v;
+                                                                if (!updated[id].final_criteria) {
+                                                                    updated[id].final_criteria = [];
+                                                                }
+                                                                updated[id].final_criteria!.push({
+                                                                    classification: "intermediate",
+                                                                    number: 10,
+                                                                });
                                                                 setAgeBrackets(updated);
                                                             }}
-                                                            placeholder="Bracket Name"
-                                                        />
-                                                    </Form.Item>
-                                                    <Form.Item
-                                                        label="Min Age"
-                                                        required
-                                                        validateStatus={isMinError ? "error" : undefined}
-                                                        help={minAgeHelp}
-                                                        className="w-1/4"
-                                                    >
-                                                        <InputNumber
-                                                            value={bracket.min_age}
-                                                            min={0}
-                                                            onChange={(v) => {
-                                                                const updated = [...ageBrackets];
-                                                                updated[id].min_age = v ?? 0;
-                                                                setAgeBrackets(updated);
-                                                            }}
-                                                            placeholder="Min Age"
-                                                        />
-                                                    </Form.Item>
-                                                    <Form.Item
-                                                        label="Max Age"
-                                                        required
-                                                        validateStatus={isMaxError ? "error" : undefined}
-                                                        help={maxAgeHelp}
-                                                        className="w-1/4"
-                                                    >
-                                                        <InputNumber
-                                                            value={bracket.max_age}
-                                                            min={0}
-                                                            onChange={(v) => {
-                                                                const updated = [...ageBrackets];
-                                                                updated[id].max_age = v ?? 0;
-                                                                setAgeBrackets(updated);
-                                                            }}
-                                                            placeholder="Max Age"
-                                                        />
-                                                    </Form.Item>
-                                                    <div className="flex items-end pb-8">
-                                                        <Button status="danger" onClick={makeHandleDeleteBracket(id)}>
-                                                            <IconDelete />
+                                                            disabled={(bracket.final_criteria?.length ?? 0) >= 3}
+                                                        >
+                                                            <IconPlus /> Add Final Criteria
                                                         </Button>
                                                     </div>
                                                 </div>
@@ -395,7 +507,13 @@ export default function CreateTournamentPage() {
                                             onClick={() =>
                                                 setAgeBrackets([
                                                     ...ageBrackets,
-                                                    {name: "", min_age: 0, max_age: 0, number_of_participants: 0},
+                                                    {
+                                                        name: "",
+                                                        min_age: 0,
+                                                        max_age: 0,
+                                                        number_of_participants: 0,
+                                                        final_criteria: getPredefinedFinalCriteria("individual"),
+                                                    },
                                                 ])
                                             }
                                         >
@@ -406,35 +524,6 @@ export default function CreateTournamentPage() {
                             }}
                         </Form.List>
                     </Modal>
-
-                    <Form.Item label="Final Criteria">
-                        <Form.List field="final_criteria">
-                            {(fields, {add, remove}) => (
-                                <>
-                                    {fields.map((field, index) => (
-                                        <FinalCriteriaFields key={field.key} index={index} onRemove={remove} />
-                                    ))}
-                                    <Button type={`text`} onClick={() => add()}>
-                                        <IconPlus /> Add Final Criteria
-                                    </Button>
-                                </>
-                            )}
-                        </Form.List>
-                    </Form.Item>
-                    <Form.Item label="Final Categories">
-                        <Form.List field="final_categories">
-                            {(fields, {add, remove}) => (
-                                <>
-                                    {fields.map((field, index) => (
-                                        <FinalCategoriesFields key={field.key} index={index} onRemove={remove} />
-                                    ))}
-                                    <Button type={`text`} onClick={() => add()}>
-                                        <IconPlus /> Add Final Category
-                                    </Button>
-                                </>
-                            )}
-                        </Form.List>
-                    </Form.Item>
 
                     <Form.Item label="Description" field="description">
                         <MDEditor
@@ -453,7 +542,7 @@ export default function CreateTournamentPage() {
                             limit={1}
                             onChange={(fileList) => {
                                 const rawFile = fileList?.[0]?.originFile || null;
-                                form.setFieldValue("agenda", rawFile); // ✅ 这里保存的是 File 对象
+                                form.setFieldValue("agenda", rawFile);
                             }}
                             showUploadList
                         />

@@ -54,14 +54,6 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("At least one event is required.");
     }
 
-    if (!data.final_criteria || data.final_criteria.length === 0) {
-        throw new Error("At least one final criteria is required.");
-    }
-
-    if (!data.final_categories || data.final_categories.length === 0) {
-        throw new Error("At least one final category is required.");
-    }
-
     if (!data.country) {
         throw new Error("Country is required.");
     }
@@ -85,8 +77,6 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         registration_end_date: data.registration_end_date,
         max_participants: data.max_participants,
         events: data.events,
-        final_criteria: data.final_criteria,
-        final_categories: data.final_categories,
         description: data.description ?? null,
         agenda: data.agenda ?? null,
         logo: data.logo ?? null,

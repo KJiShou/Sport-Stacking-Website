@@ -1,9 +1,16 @@
 import type {Registration, Tournament} from "@/schema";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
-import {exportParticipantListToPDF, getCurrentEventData} from "@/utils/PDF/exportCsvToPdf";
-import {Button, Input, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
+import {
+    exportAllBracketsListToPDF,
+    exportMasterListToPDF,
+    exportParticipantListToPDF,
+    generateStackingSheetPDF,
+    getCurrentEventData,
+} from "@/utils/PDF/pdfExport";
+import {Button, Dropdown, Input, Menu, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
+import {IconUndo} from "@arco-design/web-react/icon";
 import {nanoid} from "nanoid";
 // src/pages/ParticipantListPage.tsx
 import React, {useState, useRef} from "react";
@@ -84,6 +91,7 @@ export default function ParticipantListPage() {
                 ),
             );
         }
+        console.log(registrationList, evtKey, searchTerm);
         return registrationList.filter(
             (r) => r.events_registered.includes(evtKey) && (r.user_name.includes(searchTerm) || r.user_id.includes(searchTerm)),
         );
@@ -114,6 +122,24 @@ export default function ParticipantListPage() {
         }
     };
 
+    const handlePreviewMasterList = () => {
+        if (!tournament) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        exportMasterListToPDF(tournament, registrationList, ageMap, phoneMap);
+        Message.success("Master list PDF opened");
+    };
+
+    const handlePreviewAllBrackets = () => {
+        if (!tournament) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        exportAllBracketsListToPDF(tournament, registrationList, ageMap, phoneMap);
+        Message.success("All brackets list PDF opened");
+    };
+
     if (!tournament) return null;
 
     const individualColumns: TableColumnProps<Registration>[] = [
@@ -141,6 +167,9 @@ export default function ParticipantListPage() {
 
     return (
         <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+            <Button type="outline" onClick={() => navigate("/tournaments?type=current")} className={`w-fit pt-2 pb-2`}>
+                <IconUndo /> Go Back
+            </Button>
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <div className="w-full flex justify-between items-center">
                     <Title heading={3}>{tournament.name} Participants</Title>
@@ -151,9 +180,64 @@ export default function ParticipantListPage() {
                             style={{width: 300}}
                             onChange={(val) => setSearchTerm(val.trim())}
                         />
-                        <Button type="primary" onClick={handleExportToPDF}>
+                        <Dropdown.Button
+                            type="primary"
+                            trigger={["click", "hover"]}
+                            droplist={
+                                <div
+                                    className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                >
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => handlePreviewMasterList()}
+                                    >
+                                        Master List
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => handlePreviewAllBrackets()}
+                                    >
+                                        All Event List
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => {
+                                            setLoading(true);
+                                            try {
+                                                await generateStackingSheetPDF(
+                                                    tournament,
+                                                    registrationList,
+                                                    ageMap,
+                                                    currentBracketTab,
+                                                    {
+                                                        logoUrl: tournament.logo ?? "",
+                                                    },
+                                                    currentEventTab.split("-")[currentEventTab.split("-").length - 1] || "",
+                                                );
+                                            } catch (error) {
+                                                Message.error("Failed to generate stacking sheet PDF");
+                                            } finally {
+                                                setLoading(false);
+                                            }
+                                        }}
+                                    >
+                                        Time Sheet
+                                    </Button>
+                                </div>
+                            }
+                            buttonProps={{
+                                loading: loading,
+                                onClick: () => handleExportToPDF(),
+                            }}
+                        >
                             Preview PDF
-                        </Button>
+                        </Dropdown.Button>
                     </div>
                 </div>
                 <Tabs type="line" destroyOnHide className="w-full" onChange={(key) => setCurrentEventTab(key)}>
@@ -181,6 +265,7 @@ export default function ParticipantListPage() {
                                                     }
                                                 }
                                             }
+                                            console.log(teamRows);
 
                                             const rowsForBracket = teamRows.filter((record) => {
                                                 const ages: number[] = [];
@@ -206,7 +291,7 @@ export default function ParticipantListPage() {
                                                     title: "Members",
                                                     width: 300,
                                                     render: (_, record) => (
-                                                        <Text>{record.member.map((m) => m.global_id).join(", ")}</Text>
+                                                        <Text>{record.member.map((m) => m.global_id ?? "-").join(", ")}</Text>
                                                     ),
                                                 },
                                                 {
