@@ -3,8 +3,10 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
+import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {fetchRegistrationById, fetchUserRegistration, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
+import {updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
     Button,
@@ -74,6 +76,7 @@ export default function EditTournamentRegistrationPage() {
                 user_name: values.user_name,
                 age: values.age,
                 phone_number: values.phone_number ?? "",
+                organizer: registration?.organizer ?? "",
                 events_registered: registration?.events_registered ?? [],
                 payment_proof_url: tempPaymentProofUrl,
                 registration_status: values?.registration_status ?? "pending",
@@ -83,6 +86,15 @@ export default function EditTournamentRegistrationPage() {
                 updated_at: Timestamp.now(),
             };
             await updateRegistration(registrationData);
+
+            const userRegistrationData: Partial<UserRegistrationRecord> = {
+                status: values?.registration_status ?? "pending",
+                tournament_id: tournamentId ?? "",
+                events: registration?.events_registered ?? [],
+                rejection_reason: values?.registration_status === "rejected" ? rejection_reason : null,
+            };
+
+            await updateUserRegistrationRecord(registration?.id ?? "", tournamentId ?? "", userRegistrationData);
 
             Message.success("Completely save the changes!");
         } catch (err) {
@@ -195,6 +207,27 @@ export default function EditTournamentRegistrationPage() {
 
                         <Form.Item label="Phone Number" field="phone_number">
                             <Input disabled={!edit} />
+                        </Form.Item>
+
+                        <Form.Item label="Organizer" field="organizer">
+                            <Input disabled={!edit} />
+                        </Form.Item>
+
+                        <Form.Item
+                            label="Rejection Reason"
+                            field="rejection_reason"
+                            style={{
+                                display: registration?.registration_status === "rejected" ? "block" : "none",
+                            }}
+                        >
+                            <Input.TextArea
+                                disabled={!edit}
+                                placeholder="Enter rejection reason..."
+                                allowClear
+                                autoSize={{minRows: 2, maxRows: 4}}
+                                showWordLimit
+                                maxLength={500}
+                            />
                         </Form.Item>
 
                         <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>

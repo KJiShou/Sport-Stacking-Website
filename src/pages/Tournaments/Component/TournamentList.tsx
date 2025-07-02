@@ -23,6 +23,11 @@ import {
     Tag,
     Tooltip,
     Upload,
+    Select,
+    Tabs,
+    Card,
+    Divider,
+    Popconfirm,
 } from "@arco-design/web-react";
 import {
     IconCalendar,
@@ -55,17 +60,17 @@ import FinalCriteriaFields from "./FinalCriteriaFields";
 import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
 import {useTournamentFormPrefill} from "./useTournamentFormPrefill";
+import {DEFAULT_AGE_BRACKET} from "@/constants/tournamentDefaults";
+import type {UserRegistrationRecord} from "@/schema/UserSchema";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp | Date, Timestamp | Date];
     registration_date_range: [Timestamp | Date, Timestamp | Date];
 };
 
-interface TournamentListProps {
-    type: "current" | "history";
-}
+export default function TournamentList() {
+    const {TabPane} = Tabs;
 
-export default function TournamentList({type}: Readonly<TournamentListProps>) {
     const {user} = useAuthContext();
     const [form] = Form.useForm();
     const navigate = useNavigate();
@@ -87,9 +92,24 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
     } = useAgeBracketEditor(form);
 
     useTournamentFormPrefill(form);
+
+    // Helper function to get predefined final criteria based on event type
+    const getPredefinedFinalCriteria = (eventType: string) => {
+        switch (eventType) {
+            case "double":
+            case "parent & child":
+                return [{classification: "intermediate" as const, number: 5}];
+            case "team relay":
+                return [{classification: "intermediate" as const, number: 4}];
+            default:
+                return [{classification: "intermediate" as const, number: 10}];
+        }
+    };
     const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
 
-    const [tournaments, setTournaments] = useState<Tournament[]>([]);
+    const [currentTournaments, setCurrentTournaments] = useState<Tournament[]>([]);
+    const [historyTournaments, setHistoryTournaments] = useState<Tournament[]>([]);
+    const [activeTab, setActiveTab] = useState("current");
     const [tournamentData, setTournamentData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
 
     const [editModalVisible, setEditModalVisible] = useState(false);
@@ -108,7 +128,11 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
         return (user.registration_records ?? []).some((record) => record.tournament_id === tournamentId);
     }
 
-    const columns: (TableColumnProps<(typeof tournaments)[number]> | false)[] = [
+    const getUserRegistration = (user: FirestoreUser, tournamentId: string): UserRegistrationRecord | undefined => {
+        return user.registration_records?.find((record) => record.tournament_id === tournamentId);
+    };
+
+    const columns: (TableColumnProps<(typeof currentTournaments)[number]> | false)[] = [
         {
             title: "Name",
             dataIndex: "name",
@@ -138,20 +162,74 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
             title: "Status",
             dataIndex: "status",
             width: 200,
-            render: (status: string) => {
+            render: (status: string, tournament: Tournament) => {
                 let color: string | undefined;
-                if (status === "Up Coming") {
-                    color = "blue";
-                } else if (status === "On Going") {
-                    color = "green";
-                } else if (status === "Close Registration") {
-                    color = "red";
-                } else if (status === "End") {
-                    color = "gray";
-                } else {
-                    color = undefined;
+                let displayText: string = status;
+                let userHasRegistered = false;
+                let registrationStatus: string | undefined;
+                let rejectionReason: string | undefined;
+                let tooltipMessage: string = "";
+
+                if (user) {
+                    userHasRegistered = hasRegistered(user, tournament.id ?? "");
+                    if (userHasRegistered) {
+                        // Get the user's registration details
+                        const userRegistration = getUserRegistration(user, tournament.id ?? "");
+                        registrationStatus = userRegistration?.status; // assuming status field exists
+                        rejectionReason = userRegistration?.rejection_reason ?? ""; // assuming rejectionReason field exists
+                    }
                 }
-                return <Tag color={color}>{status}</Tag>;
+
+                if (userHasRegistered && registrationStatus) {
+                    // Show registration status instead of tournament status
+                    if (registrationStatus === "pending") {
+                        color = "blue";
+                        displayText = "Pending";
+                        tooltipMessage =
+                            "Your registration is pending approval. Please contact us if you need to update your registration details.";
+                    } else if (registrationStatus === "approved") {
+                        color = "green";
+                        displayText = "Approved";
+                        tooltipMessage =
+                            "Your registration has been approved! Contact us if you need to make any changes to your registration.";
+                    } else if (registrationStatus === "rejected") {
+                        color = "red";
+                        displayText = "Rejected";
+                        tooltipMessage =
+                            "Your registration was rejected. Please contact us to discuss your registration or submit a new application.";
+                    }
+                } else {
+                    // Show tournament status for non-registered users
+                    if (status === "Up Coming") {
+                        color = "blue";
+                        tooltipMessage = "Tournament registration is open. Register now to participate!";
+                    } else if (status === "On Going") {
+                        color = "green";
+                        tooltipMessage = "Tournament is currently in progress.";
+                    } else if (status === "Close Registration") {
+                        color = "red";
+                        tooltipMessage = "Registration is closed. Contact us if you missed the deadline.";
+                    } else if (status === "End") {
+                        color = "gray";
+                        tooltipMessage = "Tournament has ended.";
+                    } else {
+                        color = undefined;
+                        tooltipMessage = status;
+                    }
+                }
+
+                return (
+                    <div>
+                        <Tooltip content={tooltipMessage}>
+                            <Tag color={color} style={{cursor: "pointer"}}>
+                                {displayText}
+                            </Tag>
+                        </Tooltip>
+                        {userHasRegistered && registrationStatus === "rejected" && rejectionReason && (
+                            <div className="mt-1 text-xs text-red-500">Reason: {rejectionReason}</div>
+                        )}
+                    </div>
+                );
             },
         },
         {
@@ -169,56 +247,67 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
 
                 if (user?.roles?.edit_tournament || user?.global_id === tournament?.editor) {
                     return (
-                        <Dropdown.Button
-                            type="primary"
-                            trigger={["click", "hover"]}
-                            droplist={
-                                <div
-                                    className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
-                                >
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
-                                    >
-                                        <IconEye /> View Registration List
-                                    </Button>
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={async () => navigate(`/tournaments/${tournament.id}/participants`)}
-                                    >
-                                        <IconUser /> Participant List
-                                    </Button>
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={async () => handleEdit(tournament)}
-                                    >
-                                        <IconEdit /> Edit
-                                    </Button>
-                                    <Button
-                                        type="text"
-                                        status="danger"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={async () => handleDelete(tournament)}
-                                    >
-                                        <IconDelete /> Delete
-                                    </Button>
-                                </div>
-                            }
-                            buttonProps={{
-                                loading: loading,
-                                onClick: () => navigate(``),
+                        <Popconfirm
+                            title="Start Tournament"
+                            content="Are you sure you want to start this tournament?"
+                            onOk={async () => {
+                                navigate(`/tournaments/${tournament.id}/start`);
                             }}
+                            onCancel={() => console.log("Start cancelled")}
+                            okText="Start"
+                            cancelText="Cancel"
+                            okButtonProps={{type: "primary"}}
                         >
-                            <IconPlayArrow />
-                            Start
-                        </Dropdown.Button>
+                            <Dropdown.Button
+                                type="primary"
+                                trigger={["click", "hover"]}
+                                droplist={
+                                    <div
+                                        className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                    >
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
+                                        >
+                                            <IconEye /> View Registration List
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => navigate(`/tournaments/${tournament.id}/participants`)}
+                                        >
+                                            <IconUser /> Participant List
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => handleEdit(tournament)}
+                                        >
+                                            <IconEdit /> Edit
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            status="danger"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => handleDelete(tournament)}
+                                        >
+                                            <IconDelete /> Delete
+                                        </Button>
+                                    </div>
+                                }
+                                buttonProps={{
+                                    loading: loading,
+                                }}
+                            >
+                                <IconPlayArrow />
+                                Start
+                            </Dropdown.Button>
+                        </Popconfirm>
                     );
                 }
 
@@ -285,11 +374,13 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
 
     const fetchTournaments = async () => {
         setLoading(true);
-
         try {
-            const list = await fetchTournamentsByType(type);
-
-            setTournaments(list);
+            const [currentList, historyList] = await Promise.all([
+                fetchTournamentsByType("current"),
+                fetchTournamentsByType("history"),
+            ]);
+            setCurrentTournaments(currentList);
+            setHistoryTournaments(historyList);
         } catch (error) {
             console.error("Failed to fetch tournaments:", error);
         } finally {
@@ -348,8 +439,6 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                 registration_end_date: registrationEndDate,
                 max_participants: values.max_participants,
                 events: fullEvents,
-                final_criteria: values.final_criteria,
-                final_categories: values.final_categories,
                 status: values.status,
                 participants: selectedTournament.participants,
                 editor: values.editor,
@@ -527,8 +616,6 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                         : dayjs(selectedTournament.registration_end_date),
                 ],
                 events: selectedTournament.events,
-                final_criteria: selectedTournament.final_criteria,
-                final_categories: selectedTournament.final_categories,
                 description: selectedTournament.description ?? "",
                 agenda: selectedTournament.agenda ?? null,
                 logo: selectedTournament.logo ?? null,
@@ -538,34 +625,43 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
 
     useEffect(() => {
         fetchTournaments();
-    }, [type]);
+    }, []);
 
     return (
         <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
             <div className="relative w-full flex items-center">
-                <h1 className="absolute left-1/2 transform -translate-x-1/2 text-4xl font-semibold">
-                    {type === "current" ? "Current Tournaments" : "Tournaments History"}
-                </h1>
+                <h1 className="absolute left-1/2 transform -translate-x-1/2 text-4xl font-semibold">Tournament Management</h1>
                 <div className="ml-auto">
-                    <div className="ml-auto">
-                        {user?.roles?.edit_tournament && (
-                            <a href="/tournaments/create" target="_blank" rel="noopener noreferrer">
-                                <Button type="primary">Create Tournament</Button>
-                            </a>
-                        )}
-                    </div>
+                    {user?.roles?.edit_tournament && (
+                        <a href="/tournaments/create" target="_blank" rel="noopener noreferrer">
+                            <Button type="primary">Create Tournament</Button>
+                        </a>
+                    )}
                 </div>
             </div>
 
-            {/* 表格 */}
-            <Table
-                rowKey="id"
-                columns={columns.filter((e): e is TableColumnProps<(typeof tournaments)[number]> => !!e)}
-                data={tournaments}
-                pagination={{pageSize: 10}}
-                className="my-4"
-                loading={loading}
-            />
+            <Tabs activeTab={activeTab} onChange={setActiveTab} type="capsule" className={`w-full`}>
+                <TabPane key="current" title="Current Tournaments">
+                    <Table
+                        rowKey="id"
+                        columns={columns.filter((e): e is TableColumnProps<Tournament> => !!e)}
+                        data={currentTournaments}
+                        pagination={{pageSize: 10}}
+                        className="my-4"
+                        loading={loading}
+                    />
+                </TabPane>
+                <TabPane key="history" title="Tournament History">
+                    <Table
+                        rowKey="id"
+                        columns={columns.filter((e): e is TableColumnProps<Tournament> => !!e)}
+                        data={historyTournaments}
+                        pagination={{pageSize: 10}}
+                        className="my-4"
+                        loading={loading}
+                    />
+                </TabPane>
+            </Tabs>
 
             <Modal
                 title="Login"
@@ -754,18 +850,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                                 add({
                                                     code: "",
                                                     type: "",
-                                                    age_brackets: [
-                                                        {
-                                                            name: "Under 10",
-                                                            min_age: 0,
-                                                            max_age: 9,
-                                                        },
-                                                        {
-                                                            name: "10 and Above",
-                                                            min_age: 10,
-                                                            max_age: 99,
-                                                        },
-                                                    ],
+                                                    age_brackets: DEFAULT_AGE_BRACKET,
                                                 })
                                             }
                                         >
@@ -787,7 +872,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                 {(fields, {add, remove}) => {
                                     return (
                                         <>
-                                            {ageBrackets.map((bracket, index) => {
+                                            {ageBrackets.map((bracket, id) => {
                                                 const isMinError = bracket.min_age === null || bracket.min_age > bracket.max_age;
 
                                                 let minAgeHelp: string | undefined;
@@ -807,69 +892,142 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                                     maxAgeHelp = "Max age < Min age";
                                                 }
                                                 return (
-                                                    <div
-                                                        key={`bracket-${bracket.name}`}
-                                                        className="flex gap-4 mb-4 w-full justify-center"
-                                                    >
-                                                        <Form.Item
-                                                            label="Bracket Name"
-                                                            required
-                                                            validateStatus={!bracket.name ? "error" : undefined}
-                                                            help={!bracket.name ? "Please enter bracket name" : undefined}
-                                                            className="w-1/3"
-                                                            layout="vertical"
-                                                        >
-                                                            <Input
-                                                                value={bracket.name}
-                                                                onChange={(v) => {
+                                                    <div key={`bracket-${bracket.name}`} className="border p-4 mb-4 rounded">
+                                                        <div className="flex gap-4 mb-4 w-full">
+                                                            <Form.Item
+                                                                label="Bracket Name"
+                                                                required
+                                                                validateStatus={!bracket.name ? "error" : undefined}
+                                                                help={!bracket.name ? "Please enter bracket name" : undefined}
+                                                                className="w-1/3"
+                                                                layout="vertical"
+                                                            >
+                                                                <Input
+                                                                    value={bracket.name}
+                                                                    onChange={(v) => {
+                                                                        const updated = [...ageBrackets];
+                                                                        updated[id].name = v;
+                                                                        setAgeBrackets(updated);
+                                                                    }}
+                                                                    placeholder="Bracket Name"
+                                                                />
+                                                            </Form.Item>
+                                                            <Form.Item
+                                                                label="Min Age"
+                                                                required
+                                                                validateStatus={isMinError ? "error" : undefined}
+                                                                help={minAgeHelp}
+                                                                className="w-1/4"
+                                                                layout="vertical"
+                                                            >
+                                                                <InputNumber
+                                                                    value={bracket.min_age}
+                                                                    min={0}
+                                                                    onChange={(v) => {
+                                                                        const updated = [...ageBrackets];
+                                                                        updated[id].min_age = v ?? 0;
+                                                                        setAgeBrackets(updated);
+                                                                    }}
+                                                                    placeholder="Min Age"
+                                                                />
+                                                            </Form.Item>
+                                                            <Form.Item
+                                                                label="Max Age"
+                                                                required
+                                                                validateStatus={isMaxError ? "error" : undefined}
+                                                                help={maxAgeHelp}
+                                                                className="w-1/4"
+                                                                layout="vertical"
+                                                            >
+                                                                <InputNumber
+                                                                    value={bracket.max_age}
+                                                                    min={0}
+                                                                    onChange={(v) => {
+                                                                        const updated = [...ageBrackets];
+                                                                        updated[id].max_age = v ?? 0;
+                                                                        setAgeBrackets(updated);
+                                                                    }}
+                                                                    placeholder="Max Age"
+                                                                />
+                                                            </Form.Item>
+                                                            <div className="flex items-end pb-8">
+                                                                <Button status="danger" onClick={makeHandleDeleteBracket(id)}>
+                                                                    <IconDelete />
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                        {/* Final Criteria for this age bracket */}
+                                                        <div className="mt-4">
+                                                            <h4 className="text-sm font-medium mb-2">
+                                                                Final Criteria for {bracket.name}
+                                                            </h4>
+                                                            {bracket.final_criteria?.map((criteria, criteriaIndex) => (
+                                                                <div key={criteria.classification} className="flex gap-2 mb-2">
+                                                                    <Select
+                                                                        value={criteria.classification}
+                                                                        placeholder="Classification"
+                                                                        onChange={(value) => {
+                                                                            const updated = [...ageBrackets];
+                                                                            if (!updated[id].final_criteria) {
+                                                                                updated[id].final_criteria = [];
+                                                                            }
+                                                                            updated[id].final_criteria![
+                                                                                criteriaIndex
+                                                                            ].classification = value;
+                                                                            setAgeBrackets(updated);
+                                                                        }}
+                                                                        style={{width: 150}}
+                                                                    >
+                                                                        <Select.Option value="advance">Advanced</Select.Option>
+                                                                        <Select.Option value="intermediate">
+                                                                            Intermediate
+                                                                        </Select.Option>
+                                                                        <Select.Option value="beginner">Beginner</Select.Option>
+                                                                    </Select>
+                                                                    <InputNumber
+                                                                        value={criteria.number}
+                                                                        placeholder="Number"
+                                                                        min={0}
+                                                                        onChange={(value) => {
+                                                                            const updated = [...ageBrackets];
+                                                                            if (!updated[id].final_criteria) {
+                                                                                updated[id].final_criteria = [];
+                                                                            }
+                                                                            updated[id].final_criteria![criteriaIndex].number =
+                                                                                value ?? 0;
+                                                                            setAgeBrackets(updated);
+                                                                        }}
+                                                                        style={{width: 100}}
+                                                                    />
+                                                                    <Button
+                                                                        status="danger"
+                                                                        onClick={() => {
+                                                                            const updated = [...ageBrackets];
+                                                                            updated[id].final_criteria?.splice(criteriaIndex, 1);
+                                                                            setAgeBrackets(updated);
+                                                                        }}
+                                                                    >
+                                                                        <IconDelete />
+                                                                    </Button>
+                                                                </div>
+                                                            ))}
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                onClick={() => {
                                                                     const updated = [...ageBrackets];
-                                                                    updated[index].name = v;
+                                                                    if (!updated[id].final_criteria) {
+                                                                        updated[id].final_criteria = [];
+                                                                    }
+                                                                    updated[id].final_criteria!.push({
+                                                                        classification: "intermediate",
+                                                                        number: 10,
+                                                                    });
                                                                     setAgeBrackets(updated);
                                                                 }}
-                                                                placeholder="Bracket Name"
-                                                            />
-                                                        </Form.Item>
-                                                        <Form.Item
-                                                            label="Min Age"
-                                                            required
-                                                            validateStatus={isMinError ? "error" : undefined}
-                                                            help={minAgeHelp}
-                                                            className="w-1/4"
-                                                            layout="vertical"
-                                                        >
-                                                            <InputNumber
-                                                                value={bracket.min_age}
-                                                                min={0}
-                                                                onChange={(v) => {
-                                                                    const updated = [...ageBrackets];
-                                                                    updated[index].min_age = v ?? 0;
-                                                                    setAgeBrackets(updated);
-                                                                }}
-                                                                placeholder="Min Age"
-                                                            />
-                                                        </Form.Item>
-                                                        <Form.Item
-                                                            label="Max Age"
-                                                            required
-                                                            validateStatus={isMaxError ? "error" : undefined}
-                                                            help={maxAgeHelp}
-                                                            className="w-1/4"
-                                                            layout="vertical"
-                                                        >
-                                                            <InputNumber
-                                                                value={bracket.max_age}
-                                                                min={0}
-                                                                onChange={(v) => {
-                                                                    const updated = [...ageBrackets];
-                                                                    updated[index].max_age = v ?? 0;
-                                                                    setAgeBrackets(updated);
-                                                                }}
-                                                                placeholder="Max Age"
-                                                            />
-                                                        </Form.Item>
-                                                        <div className="flex items-end pb-8">
-                                                            <Button status="danger" onClick={makeHandleDeleteBracket(index)}>
-                                                                <IconDelete />
+                                                                disabled={(bracket.final_criteria?.length ?? 0) >= 3}
+                                                            >
+                                                                <IconPlus /> Add Final Criteria
                                                             </Button>
                                                         </div>
                                                     </div>
@@ -885,6 +1043,7 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                                             min_age: 0,
                                                             max_age: 0,
                                                             number_of_participants: 0,
+                                                            final_criteria: getPredefinedFinalCriteria("individual"),
                                                         },
                                                     ])
                                                 }
@@ -896,35 +1055,6 @@ export default function TournamentList({type}: Readonly<TournamentListProps>) {
                                 }}
                             </Form.List>
                         </Modal>
-
-                        <Form.Item label="Final Criteria">
-                            <Form.List field="final_criteria">
-                                {(fields, {add, remove}) => (
-                                    <>
-                                        {fields.map((field, index) => (
-                                            <FinalCriteriaFields key={field.key} index={index} onRemove={remove} />
-                                        ))}
-                                        <Button type={`text`} onClick={() => add()}>
-                                            <IconPlus /> Add Final Criteria
-                                        </Button>
-                                    </>
-                                )}
-                            </Form.List>
-                        </Form.Item>
-                        <Form.Item label="Final Categories">
-                            <Form.List field="final_categories">
-                                {(fields, {add, remove}) => (
-                                    <>
-                                        {fields.map((field, index) => (
-                                            <FinalCategoriesFields key={field.key} index={index} onRemove={remove} />
-                                        ))}
-                                        <Button type={`text`} onClick={() => add()}>
-                                            <IconPlus /> Add Final Category
-                                        </Button>
-                                    </>
-                                )}
-                            </Form.List>
-                        </Form.Item>
 
                         <Form.Item label="Description" field="description">
                             <MDEditor

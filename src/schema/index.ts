@@ -1,7 +1,6 @@
 export {
     AgeBracketSchema,
     EventSchema,
-    FinalCategorySchema,
     FinalCriteriaSchema,
     TournamentSchema,
 } from "./TournamentSchema";

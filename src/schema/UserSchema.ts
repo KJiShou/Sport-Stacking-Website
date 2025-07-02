@@ -5,11 +5,7 @@ export const UserRegistrationRecordSchema = z.object({
     tournament_id: z.string(),
     events: z.array(z.string()),
     registration_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
-    status: z.enum(["Pending", "Confirmed", "Rejected"]),
-    confirmation_date: z
-        .union([z.instanceof(Timestamp), z.instanceof(Date)])
-        .optional()
-        .nullable(),
+    status: z.enum(["pending", "approved", "rejected"]),
     rejection_reason: z.string().optional().nullable(),
     created_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),

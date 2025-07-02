@@ -6,6 +6,7 @@ import {
     getCurrentEventData,
     exportAllBracketsListToPDF,
     exportMasterListToPDF,
+    generateStackingSheetPDF,
 } from "@/utils/PDF/pdfExport";
 import {Button, Dropdown, Input, Menu, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
@@ -90,6 +91,7 @@ export default function ParticipantListPage() {
                 ),
             );
         }
+        console.log(registrationList, evtKey, searchTerm);
         return registrationList.filter(
             (r) => r.events_registered.includes(evtKey) && (r.user_name.includes(searchTerm) || r.user_id.includes(searchTerm)),
         );
@@ -201,6 +203,32 @@ export default function ParticipantListPage() {
                                     >
                                         All Event List
                                     </Button>
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => {
+                                            setLoading(true);
+                                            try {
+                                                await generateStackingSheetPDF(
+                                                    tournament,
+                                                    registrationList,
+                                                    ageMap,
+                                                    currentBracketTab,
+                                                    {
+                                                        logoUrl: tournament.logo ?? "",
+                                                    },
+                                                    currentEventTab.split("-")[currentEventTab.split("-").length - 1] || "",
+                                                );
+                                            } catch (error) {
+                                                Message.error("Failed to generate stacking sheet PDF");
+                                            } finally {
+                                                setLoading(false);
+                                            }
+                                        }}
+                                    >
+                                        Time Sheet
+                                    </Button>
                                 </div>
                             }
                             buttonProps={{
@@ -237,6 +265,7 @@ export default function ParticipantListPage() {
                                                     }
                                                 }
                                             }
+                                            console.log(teamRows);
 
                                             const rowsForBracket = teamRows.filter((record) => {
                                                 const ages: number[] = [];
@@ -262,7 +291,7 @@ export default function ParticipantListPage() {
                                                     title: "Members",
                                                     width: 300,
                                                     render: (_, record) => (
-                                                        <Text>{record.member.map((m) => m.global_id).join(", ")}</Text>
+                                                        <Text>{record.member.map((m) => m.global_id ?? "-").join(", ")}</Text>
                                                     ),
                                                 },
                                                 {
