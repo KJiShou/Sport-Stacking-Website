@@ -203,7 +203,7 @@ export default function RegisterTournamentPage() {
             Message.error("Failed to register.");
         } finally {
             setLoading(false);
-            navigate("/tournaments?type=current");
+            navigate("/tournaments");
         }
     };
 
