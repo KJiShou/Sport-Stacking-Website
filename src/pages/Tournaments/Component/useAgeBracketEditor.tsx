@@ -1,5 +1,5 @@
 import type {AgeBracket} from "@/schema";
-import {FinalCriteria} from "@/schema/TournamentSchema";
+import type {FinalCriteria} from "@/schema/TournamentSchema";
 import {validateAgeBrackets} from "@/utils/validation/validateAgeBrackets";
 import {type FormInstance, Message} from "@arco-design/web-react";
 import {useState} from "react";

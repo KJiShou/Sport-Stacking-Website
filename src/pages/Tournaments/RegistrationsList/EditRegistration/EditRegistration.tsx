@@ -4,9 +4,9 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
+import {updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {fetchRegistrationById, fetchUserRegistration, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
-import {updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
     Button,

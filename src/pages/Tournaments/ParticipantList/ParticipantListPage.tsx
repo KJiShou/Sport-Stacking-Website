@@ -2,20 +2,20 @@ import type {Registration, Tournament} from "@/schema";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
-    exportParticipantListToPDF,
-    getCurrentEventData,
     exportAllBracketsListToPDF,
     exportMasterListToPDF,
+    exportParticipantListToPDF,
     generateStackingSheetPDF,
+    getCurrentEventData,
 } from "@/utils/PDF/pdfExport";
 import {Button, Dropdown, Input, Menu, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
+import {IconUndo} from "@arco-design/web-react/icon";
 import {nanoid} from "nanoid";
 // src/pages/ParticipantListPage.tsx
 import React, {useState, useRef} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
-import {IconUndo} from "@arco-design/web-react/icon";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;

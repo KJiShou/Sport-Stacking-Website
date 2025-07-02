@@ -3,7 +3,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {AgeBracket, Tournament} from "@/schema";
 import {countries} from "@/schema/Country";
-import {FinalCriteria} from "@/schema/TournamentSchema";
+import type {FinalCriteria} from "@/schema/TournamentSchema";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTournament, updateTournament} from "@/services/firebase/tournamentsService";
 import {

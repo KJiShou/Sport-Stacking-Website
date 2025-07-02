@@ -5,9 +5,11 @@ import {countries} from "@/schema/Country";
 import {deleteTournamentById, fetchTournamentsByType, updateTournament} from "@/services/firebase/tournamentsService";
 import {
     Button,
+    Card,
     Cascader,
     DatePicker,
     Descriptions,
+    Divider,
     Dropdown,
     Form,
     Image,
@@ -16,18 +18,16 @@ import {
     Link,
     Message,
     Modal,
+    Popconfirm,
     Popover,
+    Select,
     Spin,
     Table,
     type TableColumnProps,
+    Tabs,
     Tag,
     Tooltip,
     Upload,
-    Select,
-    Tabs,
-    Card,
-    Divider,
-    Popconfirm,
 } from "@arco-design/web-react";
 import {
     IconCalendar,
@@ -44,7 +44,9 @@ import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {type ReactNode, useEffect, useState} from "react";
 
+import {DEFAULT_AGE_BRACKET} from "@/constants/tournamentDefaults";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
+import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {uploadFile} from "@/services/firebase/storageService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
@@ -60,8 +62,6 @@ import FinalCriteriaFields from "./FinalCriteriaFields";
 import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
 import {useTournamentFormPrefill} from "./useTournamentFormPrefill";
-import {DEFAULT_AGE_BRACKET} from "@/constants/tournamentDefaults";
-import type {UserRegistrationRecord} from "@/schema/UserSchema";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp | Date, Timestamp | Date];
@@ -168,7 +168,7 @@ export default function TournamentList() {
                 let userHasRegistered = false;
                 let registrationStatus: string | undefined;
                 let rejectionReason: string | undefined;
-                let tooltipMessage: string = "";
+                let tooltipMessage = "";
 
                 if (user) {
                     userHasRegistered = hasRegistered(user, tournament.id ?? "");
