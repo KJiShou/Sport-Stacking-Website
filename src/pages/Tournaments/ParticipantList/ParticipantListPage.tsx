@@ -1,6 +1,6 @@
-import type {Registration, Tournament} from "@/schema";
+import type {Registration, Team, Tournament} from "@/schema";
 import {fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
     exportAllBracketsListToPDF,
     exportMasterListToPDF,
@@ -21,12 +21,12 @@ const {Title, Text} = Typography;
 const {TabPane} = Tabs;
 
 interface TeamRow {
-    team_id: string;
-    label?: string | null;
+    id: string;
     name: string;
-    member: {global_id?: string | null; verified?: boolean}[];
-    leader: {global_id?: string | null; verified?: boolean};
+    members: {global_id?: string | null; verified?: boolean}[];
+    leader_id: string;
     registrationId: string;
+    events: string[];
 }
 
 export default function ParticipantListPage() {
@@ -35,6 +35,7 @@ export default function ParticipantListPage() {
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [registrationList, setRegistrationList] = useState<Registration[]>([]);
+    const [teamList, setTeamList] = useState<Team[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
@@ -66,7 +67,9 @@ export default function ParticipantListPage() {
             setCurrentEventTab(t?.events?.[0] ? `${t.events[0].code}-${t.events[0].type}` : "");
             setCurrentBracketTab(t?.events?.[0].age_brackets[0] ? `${t.events[0].age_brackets[0].name}` : "");
             const regs = await fetchRegistrations(tournamentId);
+            const teams = await fetchTeamsByTournament(tournamentId);
             setRegistrationList(regs.filter((r) => r.registration_status === "approved"));
+            setTeamList(teams);
         } catch {
             Message.error("Unable to fetch participants");
         } finally {
@@ -81,18 +84,28 @@ export default function ParticipantListPage() {
     });
 
     const filterRegistrations = (evtKey: string, isTeam: boolean) => {
+        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+
         if (isTeam) {
-            return registrationList.filter((r) =>
-                r.teams?.some(
-                    (team) =>
-                        team.team_id === evtKey &&
-                        ((team.leader.global_id?.includes(searchTerm) ?? false) ||
-                            team.member.some((m) => m.global_id?.includes(searchTerm) ?? false)),
-                ),
+            const filteredTeams = teamList.filter(
+                (team) =>
+                    team.events.includes(evtKey) &&
+                    ((team.name?.toLowerCase().includes(lowerCaseSearchTerm) ?? false) ||
+                        team.leader_id.toLowerCase().includes(lowerCaseSearchTerm) ||
+                        team.members?.some((m) => m.global_id?.toLowerCase().includes(lowerCaseSearchTerm) ?? false)),
             );
+
+            const teamUserIds = new Set(
+                filteredTeams.flatMap((team) => [team.leader_id, ...(team.members?.map((m) => m.global_id) ?? [])]),
+            );
+
+            return registrationList.filter((r) => teamUserIds.has(r.user_id));
         }
         return registrationList.filter(
-            (r) => r.events_registered.includes(evtKey) && (r.user_name.includes(searchTerm) || r.user_id.includes(searchTerm)),
+            (r) =>
+                r.events_registered.includes(evtKey) &&
+                (r.user_name.toLowerCase().includes(lowerCaseSearchTerm) ||
+                    r.user_id.toLowerCase().includes(lowerCaseSearchTerm)),
         );
     };
 
@@ -235,7 +248,7 @@ export default function ParticipantListPage() {
                                 onClick: () => handleExportToPDF(),
                             }}
                         >
-                            Preview PDF
+                            Current Name List
                         </Dropdown.Button>
                     </div>
                 </div>
@@ -254,24 +267,19 @@ export default function ParticipantListPage() {
                                     {evt.age_brackets.map((br) => {
                                         const regs = filterRegistrations(evtKey, isTeamEvent);
                                         if (isTeamEvent) {
-                                            const teamRows: TeamRow[] = [];
-                                            for (const r of regs) {
-                                                if (r.teams) {
-                                                    for (const team of r.teams) {
-                                                        if (team.team_id === evtKey) {
-                                                            teamRows.push({...team, registrationId: r.id ?? nanoid()});
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            console.log(teamRows);
+                                            const teamRows: TeamRow[] = teamList
+                                                .filter((team) => team.events.includes(evtKey))
+                                                .map((team) => ({
+                                                    ...team,
+                                                    registrationId: regs.find((r) => r.user_id === team.leader_id)?.id ?? "",
+                                                }));
 
                                             const rowsForBracket = teamRows.filter((record) => {
                                                 const ages: number[] = [];
-                                                if (record.leader.global_id && ageMap[record.leader.global_id] != null) {
-                                                    ages.push(ageMap[record.leader.global_id]);
+                                                if (record.leader_id && ageMap[record.leader_id] != null) {
+                                                    ages.push(ageMap[record.leader_id]);
                                                 }
-                                                for (const m of record.member) {
+                                                for (const m of record.members) {
                                                     if (m.global_id && ageMap[m.global_id] != null) {
                                                         ages.push(ageMap[m.global_id]);
                                                     }
@@ -283,14 +291,14 @@ export default function ParticipantListPage() {
                                                 {
                                                     title: "Team Leader",
                                                     width: 150,
-                                                    render: (_, record) => <Text>{record.leader.global_id ?? "N/A"}</Text>,
+                                                    render: (_, record) => <Text>{record.leader_id ?? "N/A"}</Text>,
                                                 },
                                                 {title: "Team Name", dataIndex: "name", width: 200},
                                                 {
                                                     title: "Members",
                                                     width: 300,
                                                     render: (_, record) => (
-                                                        <Text>{record.member.map((m) => m.global_id ?? "-").join(", ")}</Text>
+                                                        <Text>{record.members.map((m) => m.global_id ?? "-").join(", ")}</Text>
                                                     ),
                                                 },
                                                 {
@@ -298,9 +306,7 @@ export default function ParticipantListPage() {
                                                     width: 150,
                                                     render: (_, record) => (
                                                         <Text>
-                                                            {record.leader.global_id
-                                                                ? phoneMap[record.leader.global_id] || "N/A"
-                                                                : "N/A"}
+                                                            {record.leader_id ? phoneMap[record.leader_id] || "N/A" : "N/A"}
                                                         </Text>
                                                     ),
                                                 },
@@ -309,9 +315,9 @@ export default function ParticipantListPage() {
                                                     width: 150,
                                                     render: (_, record) => {
                                                         const ages: number[] = [];
-                                                        if (record.leader.global_id && ageMap[record.leader.global_id] != null)
-                                                            ages.push(ageMap[record.leader.global_id]);
-                                                        for (const m of record.member) {
+                                                        if (record.leader_id && ageMap[record.leader_id] != null)
+                                                            ages.push(ageMap[record.leader_id]);
+                                                        for (const m of record.members) {
                                                             if (m.global_id && ageMap[m.global_id] != null)
                                                                 ages.push(ageMap[m.global_id]);
                                                         }
@@ -346,7 +352,7 @@ export default function ParticipantListPage() {
                                                         data={rowsForBracket}
                                                         pagination={{pageSize: 5, showTotal: true}}
                                                         loading={loading}
-                                                        rowKey={(rec) => `${rec.registrationId}-${rec.team_id}`}
+                                                        rowKey={(rec) => `${rec.registrationId}-${rec.id}`}
                                                         pagePosition="bottomCenter"
                                                     />
                                                 </TabPane>
