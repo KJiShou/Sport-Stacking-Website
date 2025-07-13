@@ -5,13 +5,11 @@ import {getAuth} from "firebase-admin/auth";
 import {getFirestore} from "firebase-admin/firestore";
 import {defineSecret} from "firebase-functions/params";
 import {onRequest} from "firebase-functions/v2/https";
-import type {Registration} from "./../../src/schema/RegistrationSchema.js";
+import type {Team} from "./../../src/schema/TeamSchema.js";
+import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
 const corsHandler = cors({origin: true});
 
 const SENDGRID_API_KEY = defineSecret("SENDGRID_API_KEY");
-
-type Team = NonNullable<NonNullable<Registration["teams"]>[number]>;
-type TeamMember = Team["member"][number];
 
 if (!getApps().length) {
     initializeApp();
@@ -40,14 +38,14 @@ export const sendEmail = onRequest({secrets: [SENDGRID_API_KEY]}, (req, res) => 
         }
 
         // Step 2: 校验必要参数
-        const {to, tournamentId, registrationId, globalId} = req.body;
-        if (!to || !tournamentId || !registrationId || !globalId) {
+        const {to, tournamentId, teamId, memberId} = req.body;
+        if (!to || !tournamentId || !teamId || !memberId) {
             res.status(400).json({error: "Missing required fields"});
             return;
         }
 
         // Step 3: 构造验证链接
-        const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&registrationId=${registrationId}&globalId=${globalId}`;
+        const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&teamId=${teamId}&memberId=${memberId}`;
         const safeVerifyUrl = verifyUrl.replace(/&/g, "&amp;");
 
         const html = `
@@ -103,42 +101,68 @@ export const updateVerification = onRequest(async (req, res) => {
             return;
         }
 
-        const {tournamentId, registrationId, memberGlobalId} = req.body;
+        const {tournamentId, teamId, memberId} = req.body;
 
-        if (!tournamentId || !registrationId || !memberGlobalId) {
+        if (!tournamentId || !teamId || !memberId) {
             res.status(400).json({error: "Missing fields"});
             return;
         }
 
         try {
-            const regRef = db.collection("tournaments").doc(tournamentId).collection("registrations").doc(registrationId);
-            const regSnap = await regRef.get();
+            const teamRef = db.collection("tournaments").doc(tournamentId).collection("teams").doc(teamId);
+            const teamSnap = await teamRef.get();
 
-            if (!regSnap.exists) {
-                res.status(404).json({error: "Registration not found"});
+            if (!teamSnap.exists) {
+                res.status(404).json({error: "Team not found"});
                 return;
             }
 
-            const data = regSnap.data();
-            const teams = data?.teams ?? [];
+            const teamData = teamSnap.data() as Team;
+            const memberIndex = teamData.members.findIndex((m) => m.global_id === memberId);
 
-            const updatedTeams = teams.map((team: Team) => {
-                // 更新 leader
-                const updatedLeader = team.leader?.global_id === memberGlobalId ? {...team.leader, verified: true} : team.leader;
+            if (memberIndex === -1) {
+                res.status(400).json({error: "You are not a member of this team."});
+                return;
+            }
 
-                // 更新 members
-                const updatedMembers = (team.member ?? []).map((m: TeamMember) =>
-                    m.global_id === memberGlobalId ? {...m, verified: true} : m,
-                );
+            // Update user's personal registration record first
+            const usersRef = db.collection("users");
+            const userQuery = usersRef.where("global_id", "==", memberId);
+            const userSnap = await userQuery.get();
 
-                return {
-                    ...team,
-                    leader: updatedLeader,
-                    member: updatedMembers,
-                };
-            });
+            if (userSnap.empty) {
+                res.status(404).json({error: "User not found"});
+                return;
+            }
 
-            await regRef.update({teams: updatedTeams});
+            const userDoc = userSnap.docs[0];
+            const userData = userDoc.data();
+            const registrationRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
+            const recordIndex = registrationRecords.findIndex((record) => record.tournament_id === tournamentId);
+
+            if (recordIndex === -1) {
+                res.status(400).json({error: "You are not registered for this tournament."});
+                return;
+            }
+
+            const record = registrationRecords[recordIndex];
+            const existingEvents = record.events;
+            const hasConflict = teamData.events.some((event) => existingEvents.includes(event));
+
+            if (hasConflict) {
+                res.status(409).json({error: "You are already registered for one or more of these team events."});
+                return;
+            }
+
+            const updatedEvents = [...new Set([...existingEvents, ...teamData.events])];
+            registrationRecords[recordIndex] = {...record, events: updatedEvents};
+            await userDoc.ref.update({registration_records: registrationRecords});
+
+            // Now, update the team document
+            const updatedMembers = [...teamData.members];
+            updatedMembers[memberIndex].verified = true;
+            await teamRef.update({members: updatedMembers});
+
             res.status(200).json({success: true});
         } catch (err: unknown) {
             console.error("Error updating verification:", err);

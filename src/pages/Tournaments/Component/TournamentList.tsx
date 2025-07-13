@@ -42,11 +42,12 @@ import {
 } from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
-import {type ReactNode, useEffect, useState} from "react";
+import {type ReactNode, useEffect, useRef, useState} from "react";
 
 import {DEFAULT_AGE_BRACKET} from "@/constants/tournamentDefaults";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
+import {fetchUserByID} from "@/services/firebase/authService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
@@ -55,6 +56,7 @@ import Title from "@arco-design/web-react/es/Typography/title";
 import type {UploadItem} from "@arco-design/web-react/es/Upload";
 import MDEditor from "@uiw/react-md-editor";
 import {useNavigate} from "react-router-dom";
+import useMount from "react-use/lib/useMount";
 import {set} from "zod";
 import EventFields from "./EventField";
 import FinalCategoriesFields from "./FinalCategoriesFields";
@@ -71,7 +73,7 @@ type TournamentFormData = Tournament & {
 export default function TournamentList() {
     const {TabPane} = Tabs;
 
-    const {user} = useAuthContext();
+    const {user, setUser, firebaseUser} = useAuthContext();
     const [form] = Form.useForm();
     const navigate = useNavigate();
 
@@ -120,6 +122,7 @@ export default function TournamentList() {
     const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
 
     const [loading, setLoading] = useState(true);
+    const mountedRef = useRef(false);
 
     const [agendaUploadList, setAgendaUploadList] = useState<UploadItem[]>([]);
     const [logoUploadList, setLogoUploadList] = useState<UploadItem[]>([]);
@@ -381,6 +384,10 @@ export default function TournamentList() {
             ]);
             setCurrentTournaments(currentList);
             setHistoryTournaments(historyList);
+            if (firebaseUser?.uid) {
+                const freshUser = await fetchUserByID(firebaseUser.uid);
+                if (freshUser) setUser(freshUser);
+            }
         } catch (error) {
             console.error("Failed to fetch tournaments:", error);
         } finally {
@@ -560,8 +567,7 @@ export default function TournamentList() {
             Message.error("Invalid tournament ID.");
             return;
         }
-        // Open the registration page in a new tab
-        window.open(`/tournaments/${tournamentId}/register`, "_blank");
+        navigate(`/tournaments/${tournamentId}/register`);
     };
 
     useEffect(() => {
@@ -623,9 +629,11 @@ export default function TournamentList() {
         }
     }, [selectedTournament, form]);
 
-    useEffect(() => {
+    useMount(() => {
+        if (mountedRef.current) return;
+        mountedRef.current = true;
         fetchTournaments();
-    }, []);
+    });
 
     return (
         <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
@@ -1016,10 +1024,7 @@ export default function TournamentList() {
                                                                 size="small"
                                                                 onClick={() => {
                                                                     const updated = [...ageBrackets];
-                                                                    if (!updated[id].final_criteria) {
-                                                                        updated[id].final_criteria = [];
-                                                                    }
-                                                                    updated[id].final_criteria!.push({
+                                                                    (updated[id].final_criteria ||= []).push({
                                                                         classification: "intermediate",
                                                                         number: 10,
                                                                     });

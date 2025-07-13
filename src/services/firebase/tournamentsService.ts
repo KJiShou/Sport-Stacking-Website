@@ -14,7 +14,7 @@ import {
     updateDoc,
     where,
 } from "firebase/firestore";
-import type {FirestoreUser, Tournament} from "../../schema";
+import type {FirestoreUser, Team, Tournament} from "../../schema";
 import {db} from "./config";
 
 export async function createTournament(user: FirestoreUser, data: Omit<Tournament, "id">): Promise<string> {
@@ -187,4 +187,25 @@ export async function deleteTournamentById(user: FirestoreUser, tournamentId: st
         console.error("Error deleting tournament:", error);
         throw error;
     }
+}
+
+export async function createTeam(tournamentId: string, teamData: Omit<Team, "id" | "tournament_id">): Promise<string> {
+    const teamsCollectionRef = collection(db, "tournaments", tournamentId, "teams");
+    const docRef = await addDoc(teamsCollectionRef, {
+        ...teamData,
+        tournament_id: tournamentId,
+    });
+    await updateDoc(docRef, {id: docRef.id});
+    return docRef.id;
+}
+
+export async function fetchTeamsByTournament(tournamentId: string): Promise<Team[]> {
+    const teamsCollectionRef = collection(db, "tournaments", tournamentId, "teams");
+    const snapshot = await getDocs(teamsCollectionRef);
+    return snapshot.docs.map((doc) => doc.data() as Team);
+}
+
+export async function updateTeam(tournamentId: string, teamId: string, teamData: Team): Promise<void> {
+    const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+    await updateDoc(teamRef, teamData);
 }

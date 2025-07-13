@@ -91,7 +91,6 @@ export default function ParticipantListPage() {
                 ),
             );
         }
-        console.log(registrationList, evtKey, searchTerm);
         return registrationList.filter(
             (r) => r.events_registered.includes(evtKey) && (r.user_name.includes(searchTerm) || r.user_id.includes(searchTerm)),
         );
@@ -167,7 +166,7 @@ export default function ParticipantListPage() {
 
     return (
         <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-            <Button type="outline" onClick={() => navigate("/tournaments?type=current")} className={`w-fit pt-2 pb-2`}>
+            <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
                 <IconUndo /> Go Back
             </Button>
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">

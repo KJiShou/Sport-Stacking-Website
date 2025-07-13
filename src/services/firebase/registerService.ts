@@ -1,4 +1,4 @@
-import {Timestamp, collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc} from "firebase/firestore";
+import {Timestamp, collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where} from "firebase/firestore";
 import type {FirestoreUser, Registration} from "../../schema";
 import {db} from "./config";
 
@@ -107,8 +107,36 @@ export async function updateRegistration(data: Registration): Promise<void> {
 
 export async function deleteRegistrationById(tournamentId: string, registrationId: string): Promise<void> {
     try {
-        const tournamentRef = doc(db, `tournaments/${tournamentId}/registrations`, registrationId);
-        await deleteDoc(tournamentRef);
+        const registrationRef = doc(db, `tournaments/${tournamentId}/registrations`, registrationId);
+        const regSnap = await getDoc(registrationRef);
+        if (!regSnap.exists()) {
+            throw new Error("Registration not found");
+        }
+        const registrationData = regSnap.data() as Registration;
+        const userId = registrationId;
+
+        // Delete associated teams
+        const teamsRef = collection(db, `tournaments/${tournamentId}/teams`);
+        const q = query(teamsRef, where("leader_id", "==", registrationData.user_id));
+        const querySnapshot = await getDocs(q);
+        for (const doc of querySnapshot.docs) {
+            await deleteDoc(doc.ref);
+        }
+
+        // Delete the registration document
+        await deleteDoc(registrationRef);
+
+        // Remove the registration record from the user's document
+        if (userId) {
+            const userRef = doc(db, "users", userId);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+                const userData = userSnap.data() as FirestoreUser;
+                const updatedRecords =
+                    userData.registration_records?.filter((record) => record.tournament_id !== tournamentId) ?? [];
+                await updateDoc(userRef, {registration_records: updatedRecords});
+            }
+        }
     } catch (error) {
         console.error("Error deleting registration:", error);
         throw error;

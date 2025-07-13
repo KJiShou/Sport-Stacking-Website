@@ -7,7 +7,7 @@ import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {addUserRegistrationRecord, getUserEmailByGlobalId} from "@/services/firebase/authService";
 import {createRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
-import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {createTeam, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {
@@ -73,7 +73,7 @@ export default function RegisterTournamentPage() {
         return age;
     };
 
-    const handleRegister = async (values: Registration) => {
+    const handleRegister = async (values: RegistrationForm) => {
         if (!tournamentId || !tournament) return;
 
         const now = dayjs();
@@ -105,40 +105,25 @@ export default function RegisterTournamentPage() {
                 return;
             }
 
-            const teamsRaw = (values.teams ?? {}) as Record<string, NonNullable<RegistrationForm["teams"]>[number]>;
             type Team = NonNullable<RegistrationForm["teams"]>[number];
+            const teamsRaw = (values.teams ?? {}) as Record<string, Team>;
 
-            for (const [teamId, team] of Object.entries(teamsRaw) as [string, Team][]) {
+            for (const [teamId, team] of Object.entries(teamsRaw)) {
                 const leaderId = team.leader ?? null;
                 const memberIds = (team.member ?? []).map((m) => m).filter((id) => id != null) as string[];
                 if (!team.looking_for_team_members && leaderId && memberIds.includes(leaderId)) {
                     Message.error(`In team "${team.name}", team leader cannot be included in team members.`);
                     setLoading(false);
-                    return;
+                    throw new Error(`Team leader ${leaderId} cannot be a member in team ${teamId}`);
                 }
 
                 const userInTeam = leaderId === user.global_id || memberIds.includes(user.global_id ?? "");
                 if (!team.looking_for_team_members && !userInTeam) {
                     Message.error(`In team "${team.name}", you must be either leader or one of the members.`);
                     setLoading(false);
-                    return;
+                    throw new Error(`User ${user.global_id} is not in team ${teamId}`);
                 }
             }
-
-            const teams: Registration["teams"] = Object.entries(teamsRaw).map(([teamId, teamData]) => ({
-                team_id: teamId,
-                label: teamData.label ?? null,
-                name: teamData.name ?? null,
-                leader: {
-                    global_id: teamData.leader ?? null,
-                    verified: false,
-                },
-                member: (teamData.member ?? []).map((memberId: string | null | undefined) => ({
-                    global_id: memberId ?? null,
-                    verified: false,
-                })),
-                looking_for_team_members: teamData.looking_for_team_members ?? false,
-            }));
 
             const registrationData: Registration = {
                 tournament_id: tournamentId,
@@ -151,13 +136,51 @@ export default function RegisterTournamentPage() {
                 payment_proof_url: paymentProofUrl,
                 registration_status: "pending",
                 rejection_reason: null,
-                teams: teams.length > 0 ? teams : null,
                 final_status: null,
                 created_at: Timestamp.now(),
                 updated_at: Timestamp.now(),
             };
 
-            await createRegistration(user, registrationData);
+            const registrationId = await createRegistration(user, registrationData);
+
+            for (const teamData of Object.values(teamsRaw)) {
+                if (!teamData.name || !teamData.leader) {
+                    continue; // Skip if team name or leader is missing
+                }
+                const members = (teamData.member ?? [])
+                    .map((id) => (id ? {global_id: id, verified: false} : null))
+                    .filter((m): m is {global_id: string; verified: boolean} => m !== null);
+
+                const teamId = await createTeam(tournamentId, {
+                    name: teamData.name,
+                    leader_id: teamData.leader,
+                    members,
+                    events: (teamData.label ?? "").split(",").map((s) => s.trim()),
+                    registration_id: registrationId,
+                });
+
+                const toNotify: string[] = [];
+                if (teamData.leader && teamData.leader !== user.global_id) {
+                    toNotify.push(teamData.leader);
+                }
+                for (const memberId of teamData.member ?? []) {
+                    if (memberId && memberId !== user.global_id) {
+                        toNotify.push(memberId);
+                    }
+                }
+
+                for (const globalId of toNotify) {
+                    try {
+                        const userSnap = await getUserEmailByGlobalId(globalId);
+                        const email = userSnap?.email;
+                        if (email) {
+                            await sendProtectedEmail(email, tournamentId, teamId, globalId);
+                        }
+                    } catch (err) {
+                        console.error(`❌ Failed to send verification to ${globalId}`, err);
+                    }
+                }
+            }
             const registrationRecord: UserRegistrationRecord = {
                 status: "pending",
                 tournament_id: tournamentId,
@@ -168,42 +191,15 @@ export default function RegisterTournamentPage() {
                 updated_at: Timestamp.now(),
             };
 
-            for (const team of teams) {
-                const toNotify: string[] = [];
-
-                if (team.leader?.global_id && team.leader.global_id !== user.global_id) {
-                    toNotify.push(team.leader.global_id);
-                }
-
-                for (const member of team.member ?? []) {
-                    if (member.global_id && member.global_id !== user.global_id) {
-                        toNotify.push(member.global_id);
-                    }
-                }
-
-                for (const globalId of toNotify) {
-                    try {
-                        // 🔍 从 Firestore 获取 email
-                        const userSnap = await getUserEmailByGlobalId(globalId);
-                        const email = userSnap?.email;
-                        if (email) {
-                            await sendProtectedEmail(email, tournamentId, user?.id ?? "", globalId);
-                        }
-                    } catch (err) {
-                        console.error(`❌ Failed to send verification to ${globalId}`, err);
-                    }
-                }
-            }
-
             await addUserRegistrationRecord(user.id ?? "", registrationRecord);
 
             Message.success("Registration successful!");
+            navigate("/tournaments");
         } catch (error) {
             console.error(error);
             Message.error("Failed to register.");
         } finally {
             setLoading(false);
-            navigate("/tournaments?type=current");
         }
     };
 
@@ -366,7 +362,7 @@ export default function RegisterTournamentPage() {
                     <Form.Item disabled label="Phone Number" field="phone_number" rules={[{required: true}]}>
                         <Input disabled placeholder="Update your phone number at profile" />
                     </Form.Item>
-                    <Form.Item disabled label="Organizer" field="organizer" rules={[{required: true}]}>
+                    <Form.Item disabled label="Organizer" field="organizer">
                         <Input disabled placeholder="Update your organizer at profile" />
                     </Form.Item>
                     <Form.Item
@@ -484,11 +480,9 @@ export default function RegisterTournamentPage() {
                                                             field={`teams.${teamLabel}.leader`}
                                                             label="Team Leader Global ID"
                                                             rules={isLooking ? [] : [{required: true}]}
+                                                            initialValue={!isLooking ? (user?.global_id ?? "") : ""}
                                                         >
-                                                            <Input
-                                                                disabled={isLooking}
-                                                                placeholder="Please enter team leader global ID"
-                                                            />
+                                                            <Input disabled placeholder="Please enter team leader global ID" />
                                                         </Form.Item>
                                                     );
                                                 }}
@@ -580,7 +574,21 @@ export default function RegisterTournamentPage() {
                                                 field={`teams.${teamLabel}.looking_for_team_members`}
                                                 triggerPropName="checked"
                                             >
-                                                <Checkbox>Looking for Team Members</Checkbox>
+                                                <Checkbox
+                                                    onChange={() => {
+                                                        if (form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)) {
+                                                            form.setFieldValue(`teams.${teamLabel}.member`, null);
+                                                            form.setFieldValue(`teams.${teamLabel}.leader`, null);
+                                                        } else {
+                                                            form.setFieldValue(
+                                                                `teams.${teamLabel}.leader`,
+                                                                user?.global_id ?? null,
+                                                            );
+                                                        }
+                                                    }}
+                                                >
+                                                    Looking for Team Members
+                                                </Checkbox>
                                             </Form.Item>
                                         </div>
                                     )

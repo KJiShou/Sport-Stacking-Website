@@ -1,6 +1,6 @@
 import {getAuth} from "firebase/auth";
 
-export async function sendProtectedEmail(gmail: string, tournamentId: string, registrationId: string, globalId: string) {
+export async function sendProtectedEmail(gmail: string, tournamentId: string, teamId: string, memberId: string) {
     const auth = getAuth();
     const token = await auth.currentUser?.getIdToken();
 
@@ -13,8 +13,8 @@ export async function sendProtectedEmail(gmail: string, tournamentId: string, re
         body: JSON.stringify({
             to: gmail, // 收件人邮箱
             tournamentId: tournamentId,
-            registrationId: registrationId,
-            globalId: globalId, // 被验证的队员 global ID
+            teamId: teamId,
+            memberId: memberId,
         }),
     });
 
