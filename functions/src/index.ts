@@ -5,7 +5,8 @@ import {getAuth} from "firebase-admin/auth";
 import {getFirestore} from "firebase-admin/firestore";
 import {defineSecret} from "firebase-functions/params";
 import {onRequest} from "firebase-functions/v2/https";
-import type {Team} from "./../../src/schema/TeamSchema.js";
+import type {Registration} from "./../../src/schema/RegistrationSchema.js";
+import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
 const corsHandler = cors({origin: true});
 
@@ -38,14 +39,14 @@ export const sendEmail = onRequest({secrets: [SENDGRID_API_KEY]}, (req, res) => 
         }
 
         // Step 2: 校验必要参数
-        const {to, tournamentId, teamId, memberId} = req.body;
-        if (!to || !tournamentId || !teamId || !memberId) {
+        const {to, tournamentId, registrationId, globalId} = req.body;
+        if (!to || !tournamentId || !registrationId || !globalId) {
             res.status(400).json({error: "Missing required fields"});
             return;
         }
 
         // Step 3: 构造验证链接
-        const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&teamId=${teamId}&memberId=${memberId}`;
+        const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&registrationId=${registrationId}&globalId=${globalId}`;
         const safeVerifyUrl = verifyUrl.replace(/&/g, "&amp;");
 
         const html = `
@@ -109,23 +110,6 @@ export const updateVerification = onRequest(async (req, res) => {
         }
 
         try {
-            const teamRef = db.collection("tournaments").doc(tournamentId).collection("teams").doc(teamId);
-            const teamSnap = await teamRef.get();
-
-            if (!teamSnap.exists) {
-                res.status(404).json({error: "Team not found"});
-                return;
-            }
-
-            const teamData = teamSnap.data() as Team;
-            const memberIndex = teamData.members.findIndex((m) => m.global_id === memberId);
-
-            if (memberIndex === -1) {
-                res.status(400).json({error: "You are not a member of this team."});
-                return;
-            }
-
-            // Update user's personal registration record first
             const usersRef = db.collection("users");
             const userQuery = usersRef.where("global_id", "==", memberId);
             const userSnap = await userQuery.get();
@@ -134,39 +118,98 @@ export const updateVerification = onRequest(async (req, res) => {
                 res.status(404).json({error: "User not found"});
                 return;
             }
+            const userDocRef = userSnap.docs[0].ref;
 
-            const userDoc = userSnap.docs[0];
-            const userData = userDoc.data();
-            const registrationRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
-            const recordIndex = registrationRecords.findIndex((record) => record.tournament_id === tournamentId);
+            await db.runTransaction(async (transaction) => {
+                const teamRef = db.collection("tournaments").doc(tournamentId).collection("teams").doc(teamId);
+                const teamDoc = await transaction.get(teamRef);
+                const userDoc = await transaction.get(userDocRef);
 
-            if (recordIndex === -1) {
-                res.status(400).json({error: "You are not registered for this tournament."});
-                return;
-            }
+                if (!teamDoc.exists) {
+                    throw new Error("Team not found");
+                }
+                if (!userDoc.exists) {
+                    throw new Error("User not found");
+                }
 
-            const record = registrationRecords[recordIndex];
-            const existingEvents = record.events;
-            const hasConflict = teamData.events.some((event) => existingEvents.includes(event));
+                const teamData = teamDoc.data() as Team;
+                const memberIndex = teamData.members.findIndex((m: TeamMember) => m.global_id === memberId);
 
-            if (hasConflict) {
-                res.status(409).json({error: "You are already registered for one or more of these team events."});
-                return;
-            }
+                if (memberIndex === -1) {
+                    throw new Error("You are not a member of this team.");
+                }
 
-            const updatedEvents = [...new Set([...existingEvents, ...teamData.events])];
-            registrationRecords[recordIndex] = {...record, events: updatedEvents};
-            await userDoc.ref.update({registration_records: registrationRecords});
+                if (teamData.members[memberIndex].verified) {
+                    // Member is already verified, so we can just return success.
+                    return;
+                }
 
-            // Now, update the team document
-            const updatedMembers = [...teamData.members];
-            updatedMembers[memberIndex].verified = true;
-            await teamRef.update({members: updatedMembers});
+                const userData = userDoc.data();
+                const registrationRecords: UserRegistrationRecord[] = userData?.registration_records ?? [];
+                const recordIndex = registrationRecords.findIndex((record) => record.tournament_id === tournamentId);
+
+                if (recordIndex === -1) {
+                    throw new Error("You are not registered for this tournament.");
+                }
+
+                const record = registrationRecords[recordIndex];
+                const existingEvents = record.events;
+                const hasConflict = teamData.events.some((event: string) => existingEvents.includes(event));
+
+                if (hasConflict) {
+                    throw new Error("You are already registered for one or more of these team events.");
+                }
+
+                const updatedEvents = [...new Set([...existingEvents, ...teamData.events])];
+                const newRegistrationRecords = [...registrationRecords];
+                newRegistrationRecords[recordIndex] = {...record, events: updatedEvents};
+
+                const updatedMembers = [...teamData.members];
+                updatedMembers[memberIndex].verified = true;
+
+                const regRef = db.collection("tournaments").doc(tournamentId).collection("registrations").doc(userDoc.id);
+                const regSnap = await transaction.get(regRef);
+                if (!regSnap.exists) {
+                    throw new Error("Registration not found");
+                }
+                const registrationData = regSnap.data() as Registration;
+
+                // Update the registration document with the new events
+                const userHasConflict = teamData.events.some((event: string) =>
+                    registrationData.events_registered.includes(event),
+                );
+
+                if (userHasConflict) {
+                    throw new Error("You are already registered for one or more of these team events.");
+                }
+
+                // Update the registration document with the new events
+                await transaction.update(regRef, {
+                    events_registered: [...new Set([...registrationData.events_registered, ...teamData.events])],
+                    updated_at: new Date(),
+                });
+
+                transaction.update(userDocRef, {registration_records: newRegistrationRecords});
+                transaction.update(teamRef, {members: updatedMembers});
+            });
 
             res.status(200).json({success: true});
         } catch (err: unknown) {
             console.error("Error updating verification:", err);
-            res.status(500).json({error: err});
+            const errorMessage = (err as Error).message;
+            if (errorMessage === "Team not found") {
+                res.status(404).json({error: errorMessage});
+            } else if (errorMessage === "User not found") {
+                res.status(404).json({error: errorMessage});
+            } else if (errorMessage === "You are not a member of this team.") {
+                res.status(400).json({error: errorMessage});
+            } else if (errorMessage === "You are not registered for this tournament.") {
+                res.status(400).json({error: errorMessage});
+            } else if (errorMessage === "You are already registered for one or more of these team events.") {
+                res.status(409).json({error: errorMessage});
+            } else {
+                res.status(500).json({error: "An unexpected error occurred during verification."});
+            }
         }
     });
 });
