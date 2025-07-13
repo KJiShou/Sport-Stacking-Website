@@ -3,9 +3,10 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
+import type {Team} from "@/schema/TeamSchema";
 import {fetchUserRegistration, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
-import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
     Button,
     Checkbox,
@@ -16,6 +17,7 @@ import {
     Message,
     Result,
     Select,
+    Spin,
     Tooltip,
     Typography,
     Upload,
@@ -36,6 +38,7 @@ export default function ViewTournamentRegistrationPage() {
     const [form] = Form.useForm();
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [registration, setRegistration] = useState<Registration | null>(null);
+    const [teams, setTeams] = useState<Team[]>([]);
     const [loading, setLoading] = useState(true);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
 
@@ -54,6 +57,13 @@ export default function ViewTournamentRegistrationPage() {
                     return;
                 }
                 setRegistration(userReg);
+
+                const teamsData = await fetchTeamsByTournament(tournamentId);
+                setTeams(
+                    teamsData.filter(
+                        (team) => team.leader_id === user.global_id || team.members.some((m) => m.global_id === user.global_id),
+                    ),
+                );
                 setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
                 form.setFieldsValue({
@@ -81,115 +91,102 @@ export default function ViewTournamentRegistrationPage() {
             <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
                 <IconUndo /> Go Back
             </Button>
-            <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <Title heading={4}>View Registration</Title>
+            <Spin loading={loading} tip="Loading…" className={"w-full h-full"}>
+                <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                    <Title heading={4}>View Registration</Title>
 
-                <Form form={form} layout="vertical">
-                    <Form.Item label="ID" field="id">
-                        <Input disabled />
-                    </Form.Item>
+                    <Form form={form} layout="vertical">
+                        <Form.Item label="ID" field="id">
+                            <Input disabled />
+                        </Form.Item>
 
-                    <Form.Item label="Name" field="user_name">
-                        <Input disabled />
-                    </Form.Item>
+                        <Form.Item label="Name" field="user_name">
+                            <Input disabled />
+                        </Form.Item>
 
-                    <Form.Item label="Age" field="age">
-                        <InputNumber disabled />
-                    </Form.Item>
+                        <Form.Item label="Age" field="age">
+                            <InputNumber disabled />
+                        </Form.Item>
 
-                    <Form.Item disabled label="Phone Number" field="phone_number">
-                        <InputNumber disabled />
-                    </Form.Item>
+                        <Form.Item disabled label="Phone Number" field="phone_number">
+                            <InputNumber disabled />
+                        </Form.Item>
 
-                    <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>
-                        <Select mode="multiple" disabled>
-                            {tournament?.events?.map((event) => {
-                                const key = `${event.code}-${event.type}`;
-                                return (
-                                    <Option key={key} value={key}>
-                                        {event.code} ({event.type})
-                                    </Option>
-                                );
-                            })}
-                        </Select>
-                    </Form.Item>
+                        <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>
+                            <Select mode="multiple" disabled>
+                                {tournament?.events?.map((event) => {
+                                    const key = `${event.code}-${event.type}`;
+                                    return (
+                                        <Option key={key} value={key}>
+                                            {event.code} ({event.type})
+                                        </Option>
+                                    );
+                                })}
+                            </Select>
+                        </Form.Item>
 
-                    <Form.Item shouldUpdate noStyle>
-                        <div className={`flex flex-row w-full gap-10`}>
-                            {registration?.teams?.map((team, idx) => {
-                                const teamLabel = team.label ?? team.team_id;
-                                const type = teamLabel.split("-").pop();
-
-                                return (
-                                    <div key={team.team_id}>
-                                        <div className={`text-center font-semibold mb-2`}>{teamLabel}</div>
+                        <Form.Item shouldUpdate noStyle>
+                            <div className={`flex flex-row w-full gap-10`}>
+                                {teams.map((team) => (
+                                    <div key={team.id}>
+                                        <div className={`text-center font-semibold mb-2`}>{team.name}</div>
                                         <Divider />
-                                        <Form.Item label="Team Name">
-                                            <Input value={team.name} disabled />
+                                        <Form.Item label="Team Events">
+                                            <Input value={team.events.join(", ")} disabled />
                                         </Form.Item>
-
                                         <Form.Item label="Team Leader">
-                                            <Button status={team.leader?.verified ? "success" : "danger"} disabled>
-                                                {team.leader?.global_id ?? "N/A"}
-                                            </Button>
+                                            <Input value={team.leader_id} disabled />
                                         </Form.Item>
-
                                         <Form.Item label="Team Members">
                                             <div className="flex flex-col gap-2">
-                                                {(team.member ?? []).map((m, i) => (
-                                                    <Button disabled key={m.global_id} status={m.verified ? "success" : "danger"}>
+                                                {team.members.map((m) => (
+                                                    <Button key={m.global_id} status={m.verified ? "success" : "danger"} disabled>
                                                         {m.global_id ?? "N/A"}
                                                     </Button>
                                                 ))}
                                             </div>
                                         </Form.Item>
-
-                                        <Form.Item>
-                                            <Checkbox checked={team.looking_for_team_members ?? false} disabled>
-                                                Looking for Team Members
-                                            </Checkbox>
-                                        </Form.Item>
                                     </div>
-                                );
-                            })}
-                        </div>
-                    </Form.Item>
+                                ))}
+                            </div>
+                        </Form.Item>
 
-                    <Form.Item label="Payment Proof">
-                        <Upload
-                            disabled
-                            multiple={false}
-                            limit={1}
-                            fileList={
-                                paymentProofUrl
-                                    ? [
-                                          {
-                                              uid: "1",
-                                              name: "Payment Proof",
-                                              url: paymentProofUrl,
-                                          },
-                                      ]
-                                    : []
-                            }
-                            customRequest={async (option) => {
-                                const {file, onSuccess, onError, onProgress} = option;
-                                try {
-                                    const url = await uploadFile(
-                                        file as File,
-                                        `tournaments/${tournamentId}/registrations/payment_proof`,
-                                        user?.global_id ?? "",
-                                        onProgress,
-                                    );
-                                    setPaymentProofUrl(url);
-                                    onSuccess?.(file);
-                                } catch (err) {
-                                    onError?.(err as Error);
+                        <Form.Item label="Payment Proof">
+                            <Upload
+                                disabled
+                                multiple={false}
+                                limit={1}
+                                fileList={
+                                    paymentProofUrl
+                                        ? [
+                                              {
+                                                  uid: "1",
+                                                  name: "Payment Proof",
+                                                  url: paymentProofUrl,
+                                              },
+                                          ]
+                                        : []
                                 }
-                            }}
-                        />
-                    </Form.Item>
-                </Form>
-            </div>
+                                customRequest={async (option) => {
+                                    const {file, onSuccess, onError, onProgress} = option;
+                                    try {
+                                        const url = await uploadFile(
+                                            file as File,
+                                            `tournaments/${tournamentId}/registrations/payment_proof`,
+                                            user?.global_id ?? "",
+                                            onProgress,
+                                        );
+                                        setPaymentProofUrl(url);
+                                        onSuccess?.(file);
+                                    } catch (err) {
+                                        onError?.(err as Error);
+                                    }
+                                }}
+                            />
+                        </Form.Item>
+                    </Form>
+                </div>
+            </Spin>
         </div>
     );
 }

@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "module": "ESNext",
+    "module": "NodeNext",
     "esModuleInterop": true,
-    "moduleResolution": "node",
+    "moduleResolution": "NodeNext",
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "outDir": "lib",
@@ -10,7 +10,11 @@
     "strict": true,
     "target": "es2017"
   },
-  "types": ["node"], // 👈 这一行很重要
+  "types": [
+    "node"
+  ], // 👈 这一行很重要
   "compileOnSave": true,
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

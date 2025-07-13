@@ -91,7 +91,6 @@ export default function ParticipantListPage() {
                 ),
             );
         }
-        console.log(registrationList, evtKey, searchTerm);
         return registrationList.filter(
             (r) => r.events_registered.includes(evtKey) && (r.user_name.includes(searchTerm) || r.user_id.includes(searchTerm)),
         );
