@@ -79,7 +79,7 @@ export default function EditTournamentRegistrationPage() {
                 age: values.age,
                 phone_number: values.phone_number ?? "",
                 organizer: values?.organizer ?? "",
-                events_registered: registration?.events_registered ?? [],
+                events_registered: values?.events_registered ?? [],
                 payment_proof_url: tempPaymentProofUrl,
                 registration_status: values?.registration_status ?? "pending",
                 rejection_reason: values?.registration_status === "rejected" ? rejection_reason : null,
