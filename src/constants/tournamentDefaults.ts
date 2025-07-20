@@ -3,7 +3,7 @@ import type {AgeBracket, Tournament} from "../schema";
 export const DEFAULT_EVENTS: Tournament["events"] = [
     {
         code: "3-3-3",
-        type: "individual",
+        type: "Individual",
         age_brackets: [
             {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 10}]},
             {
@@ -16,7 +16,7 @@ export const DEFAULT_EVENTS: Tournament["events"] = [
     },
     {
         code: "3-6-3",
-        type: "individual",
+        type: "Individual",
         age_brackets: [
             {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 10}]},
             {
@@ -29,7 +29,7 @@ export const DEFAULT_EVENTS: Tournament["events"] = [
     },
     {
         code: "cycle",
-        type: "individual",
+        type: "Individual",
         age_brackets: [
             {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 10}]},
             {
@@ -42,7 +42,7 @@ export const DEFAULT_EVENTS: Tournament["events"] = [
     },
     {
         code: "3-6-3",
-        type: "team relay",
+        type: "Team Relay",
         age_brackets: [
             {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 4}]},
             {
@@ -55,7 +55,7 @@ export const DEFAULT_EVENTS: Tournament["events"] = [
     },
     {
         code: "cycle",
-        type: "team relay",
+        type: "Team Relay",
         age_brackets: [
             {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 4}]},
             {

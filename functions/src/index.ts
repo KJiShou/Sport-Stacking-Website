@@ -39,14 +39,14 @@ export const sendEmail = onRequest({secrets: [SENDGRID_API_KEY]}, (req, res) => 
         }
 
         // Step 2: 校验必要参数
-        const {to, tournamentId, registrationId, globalId} = req.body;
-        if (!to || !tournamentId || !registrationId || !globalId) {
+        const {to, tournamentId, teamId, memberId} = req.body;
+        if (!to || !tournamentId || !teamId || !memberId) {
             res.status(400).json({error: "Missing required fields"});
             return;
         }
 
         // Step 3: 构造验证链接
-        const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&registrationId=${registrationId}&globalId=${globalId}`;
+        const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&teamId=${teamId}&memberId=${memberId}`;
         const safeVerifyUrl = verifyUrl.replace(/&/g, "&amp;");
 
         const html = `

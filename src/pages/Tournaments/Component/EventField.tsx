@@ -20,10 +20,10 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
             </Form.Item>
             <Form.Item field={`events.${index}.type`} className="w-1/4" rules={[{required: true}]}>
                 <Select placeholder="Type">
-                    <Select.Option value="individual">Individual</Select.Option>
-                    <Select.Option value="team relay">Team Relay</Select.Option>
-                    <Select.Option value="double">Double</Select.Option>
-                    <Select.Option value="parent_&_child">Parent & Child</Select.Option>
+                    <Select.Option value="Individual">Individual</Select.Option>
+                    <Select.Option value="Team Relay">Team Relay</Select.Option>
+                    <Select.Option value="Double">Double</Select.Option>
+                    <Select.Option value="Parent_&_Child">Parent & Child</Select.Option>
                 </Select>
             </Form.Item>
             <Button type="primary" className="mb-8" onClick={() => onEditAgeBrackets(index)}>

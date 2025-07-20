@@ -20,7 +20,7 @@ export const AgeBracketSchema = z.object({
 
 export const EventSchema = z.object({
     code: z.enum(["3-3-3", "3-6-3", "cycle"]),
-    type: z.enum(["individual", "double", "team relay", "parent & child"]),
+    type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child"]),
     teamSize: z.number().optional(),
     age_brackets: z.array(AgeBracketSchema), // 直接放进每个 event
 });

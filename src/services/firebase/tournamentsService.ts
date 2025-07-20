@@ -91,7 +91,7 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
 }
 
 export async function updateTournament(user: FirestoreUser, tournamentId: string, data: Omit<Tournament, "id">): Promise<void> {
-    if (!user?.roles?.edit_tournament || !(user.global_id === data.editor || user.global_id === data.recorder)) {
+    if (!user?.roles?.edit_tournament && !(user.global_id === data.editor || user.global_id === data.recorder)) {
         throw new Error("Unauthorized");
     }
 

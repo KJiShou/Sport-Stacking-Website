@@ -53,7 +53,7 @@ export default function RegisterTournamentPage() {
     const [availableEvents, setAvailableEvents] = useState<Tournament["events"]>([]);
     const [haveTeam, setHaveTeam] = useState<TeamEntry[]>([]);
     const [tournamentData, setTournamentData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
-    const [requiredKeys, setRequiredKeys] = useState(["3-3-3-individual", "3-6-3-individual", "cycle-individual"]);
+    const [requiredKeys, setRequiredKeys] = useState(["3-3-3-Individual", "3-6-3-Individual", "cycle-Individual"]);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
 
@@ -216,7 +216,7 @@ export default function RegisterTournamentPage() {
 
                 // 找出 required keys (individual events)
                 const requiredKeys = allAvailableEvents
-                    .filter((event) => event.type === "individual")
+                    .filter((event) => event.type === "Individual")
                     .map((event) => `${event.code}-${event.type}`);
 
                 // 设置所有可用事件，而不是排除required的

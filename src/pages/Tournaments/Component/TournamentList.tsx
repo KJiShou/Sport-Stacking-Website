@@ -448,8 +448,8 @@ export default function TournamentList() {
                 events: fullEvents,
                 status: values.status,
                 participants: selectedTournament.participants,
-                editor: values.editor,
-                recorder: values.recorder,
+                editor: values.editor ?? null,
+                recorder: values.recorder ?? null,
                 description: values.description ?? null,
                 agenda: agendaUrl,
                 logo: logoUrl,
@@ -824,19 +824,11 @@ export default function TournamentList() {
                             <InputNumber min={0} style={{width: "100%"}} placeholder="Enter max number of participants" />
                         </Form.Item>
 
-                        <Form.Item
-                            label="Editor ID"
-                            field="editor"
-                            rules={[{required: true, message: "Please input editor global ID"}]}
-                        >
+                        <Form.Item label="Editor ID" field="editor">
                             <Input placeholder="Enter editor global ID" />
                         </Form.Item>
 
-                        <Form.Item
-                            label="Recorder ID"
-                            field="recorder"
-                            rules={[{required: true, message: "Please input recorder global ID"}]}
-                        >
+                        <Form.Item label="Recorder ID" field="recorder">
                             <Input placeholder="Enter recorder global ID" />
                         </Form.Item>
 
@@ -1048,7 +1040,7 @@ export default function TournamentList() {
                                                             min_age: 0,
                                                             max_age: 0,
                                                             number_of_participants: 0,
-                                                            final_criteria: getPredefinedFinalCriteria("individual"),
+                                                            final_criteria: getPredefinedFinalCriteria("Individual"),
                                                         },
                                                     ])
                                                 }

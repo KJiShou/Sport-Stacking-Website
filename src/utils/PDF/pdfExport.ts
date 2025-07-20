@@ -2,18 +2,9 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {nanoid} from "nanoid";
-import type {AgeBracket, Registration, Tournament} from "../../schema";
+import type {AgeBracket, Registration, Team, Tournament} from "../../schema";
 
 // Types
-interface TeamRow {
-    team_id: string;
-    label?: string | null;
-    name: string;
-    member: {global_id?: string | null; verified?: boolean}[];
-    leader: {global_id?: string | null; verified?: boolean};
-    registrationId: string;
-}
-
 interface ExportPDFOptions {
     tournament: Tournament;
     eventKey: string;
@@ -23,6 +14,16 @@ interface ExportPDFOptions {
     phoneMap: Record<string, string>;
     searchTerm?: string;
     isTeamEvent: boolean;
+    logoDataUrl?: string;
+    team?: Team;
+    teams?: Team[];
+}
+
+interface ExportMasterListOptions {
+    tournament: Tournament;
+    registrations: Registration[];
+    ageMap: Record<string, number>;
+    phoneMap: Record<string, string>;
 }
 
 interface EventData {
@@ -97,38 +98,20 @@ async function fetchImageFixedOrientation(url: string): Promise<string> {
 
 // Core PDF Generation Functions
 const generateTeamTableData = (
-    registrations: Registration[],
+    teams: Team[],
     eventKey: string,
     bracket: AgeBracket,
     ageMap: Record<string, number>,
     phoneMap: Record<string, string>,
 ): string[][] => {
-    const teamRows: TeamRow[] = [];
-
-    for (const r of registrations) {
-        if (r.teams) {
-            for (const team of r.teams) {
-                if (team.team_id === eventKey) {
-                    teamRows.push({
-                        team_id: team.team_id ?? "",
-                        name: team.name ?? "",
-                        label: team.label ?? null,
-                        member: team.member ?? [],
-                        leader: team.leader ?? {global_id: "", verified: false},
-                        registrationId: r.id ?? nanoid(),
-                    });
-                }
-            }
-        }
-    }
-
-    return teamRows
-        .filter((record) => {
+    return teams
+        .filter((team) => {
+            if (!team.events.includes(eventKey)) return false;
             const ages: number[] = [];
-            if (record.leader.global_id && ageMap[record.leader.global_id] != null) {
-                ages.push(ageMap[record.leader.global_id]);
+            if (team.leader_id && ageMap[team.leader_id] != null) {
+                ages.push(ageMap[team.leader_id]);
             }
-            for (const m of record.member) {
+            for (const m of team.members) {
                 if (m.global_id && ageMap[m.global_id] != null) {
                     ages.push(ageMap[m.global_id]);
                 }
@@ -136,14 +119,25 @@ const generateTeamTableData = (
             const maxAge = ages.length > 0 ? Math.max(...ages) : -1;
             return maxAge >= bracket.min_age && maxAge <= bracket.max_age;
         })
-        .map((record) => {
-            const leaderPhone = record.leader.global_id ? phoneMap[record.leader.global_id] || "N/A" : "N/A";
+        .map((team, index) => {
+            const leaderPhone = team.leader_id ? phoneMap[team.leader_id] || "N/A" : "N/A";
+            const ages: number[] = [];
+            if (team.leader_id && ageMap[team.leader_id] != null) {
+                ages.push(ageMap[team.leader_id]);
+            }
+            for (const m of team.members) {
+                if (m.global_id && ageMap[m.global_id] != null) {
+                    ages.push(ageMap[m.global_id]);
+                }
+            }
+            const maxAge = ages.length > 0 ? Math.max(...ages) : -1;
             return [
-                record.leader.global_id ?? "N/A",
-                record.name,
-                record.member.map((m) => m.global_id).join(", "),
+                (index + 1).toString(),
+                team.leader_id ?? "N/A",
+                team.name,
+                team.members.map((m) => m.global_id).join(", "),
                 leaderPhone,
-                "N/A", // Age placeholder
+                maxAge === -1 ? "N/A" : maxAge.toString(),
             ];
         });
 };
@@ -155,12 +149,48 @@ const generateIndividualTableData = (
 ): string[][] => {
     return registrations
         .filter((r) => r.age >= bracket.min_age && r.age <= bracket.max_age)
-        .map((r) => [r.user_id, r.user_name, r.age.toString(), phoneMap[r.user_id] || "N/A"]);
+        .map((r, index) => [(index + 1).toString(), r.user_id, r.user_name, r.age.toString(), phoneMap[r.user_id] || "N/A"]);
+};
+
+const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string>): string[][] => {
+    const teamData: string[][] = [];
+
+    // Add leader
+    teamData.push([
+        "1",
+        team.leader_id,
+        "Leader", // Role
+        phoneMap[team.leader_id] || "N/A",
+    ]);
+
+    // Add members
+    team.members.forEach((member, index) => {
+        teamData.push([
+            (index + 2).toString(),
+            member.global_id,
+            "Member", // Role
+            phoneMap[member.global_id] || "N/A",
+        ]);
+    });
+
+    return teamData;
 };
 
 // Main Export Functions
-export const exportParticipantListToPDF = (options: ExportPDFOptions): void => {
-    const {tournament, eventKey, bracketName, registrations, ageMap, phoneMap, searchTerm = "", isTeamEvent} = options;
+export const exportParticipantListToPDF = async (options: ExportPDFOptions): Promise<void> => {
+    const {
+        tournament,
+        eventKey,
+        bracketName,
+        registrations,
+        ageMap,
+        phoneMap,
+        searchTerm = "",
+        isTeamEvent,
+        team,
+        teams = [],
+    } = options;
+    const marginY = 10;
 
     try {
         const event = tournament.events?.find((evt) => `${evt.code}-${evt.type}` === eventKey);
@@ -169,46 +199,110 @@ export const exportParticipantListToPDF = (options: ExportPDFOptions): void => {
         if (!event || !bracket) throw new Error("Event or bracket not found");
 
         const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const marginX = 14;
+        const logoWidth = 40;
+        const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
 
         // Header
-        doc.setFontSize(18);
-        doc.text(tournament.name, 14, 20);
-        doc.setFontSize(14);
-        doc.text(`Event: ${event.code} (${event.type})`, 14, 30);
-        doc.text(`Age Bracket: ${bracket.name} (${bracket.min_age}-${bracket.max_age})`, 14, 40);
+        doc.setFont("times", "bold");
+        doc.setFontSize(25);
+        const title = team ? `${team.name} Member List` : `${event.type} ${bracket.name} Name List`;
+        const titleLines = doc.splitTextToSize(title, titleMaxWidth);
+        doc.text(titleLines, marginX, marginY + 20);
 
-        if (searchTerm) {
-            doc.setFontSize(10);
-            doc.text(`Filtered by: "${searchTerm}"`, 14, 50);
+        let logoDataUrl: string | undefined;
+        if (tournament.logo) {
+            try {
+                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
+            } catch (error) {
+                console.error("Error loading logo:", error);
+            }
         }
 
-        const startY = searchTerm ? 60 : 50;
+        if (logoDataUrl) {
+            try {
+                doc.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, marginY + 5, 30, 30);
+            } catch (error) {
+                console.error("Error adding logo to PDF:", error);
+                doc.setFontSize(8);
+                doc.text("LOGO", pageWidth - marginX - logoWidth + 15, marginY + 20);
+            }
+        } else {
+            doc.setFontSize(8);
+            doc.text("LOGO", pageWidth - marginX - logoWidth + 15, marginY + 20);
+        }
+
+        const titleHeight = titleLines.length * 10; // Approximate height of the title
+        let currentY = marginY + 20 + titleHeight;
+
+        if (searchTerm && !team) {
+            doc.setFontSize(10);
+            doc.text(`Filtered by: "${searchTerm}"`, 14, currentY);
+        }
+        currentY += 10;
+
+        doc.line(14, currentY, doc.internal.pageSize.width - 14, currentY);
+        currentY += 10;
+        doc.setFontSize(12);
+        doc.text(`${tournament.venue} ${tournament.name}`, 14, currentY);
+        currentY += 10;
+
+        const startY = currentY;
 
         // Generate table data
-        const tableData = isTeamEvent
-            ? generateTeamTableData(registrations, eventKey, bracket, ageMap, phoneMap)
-            : generateIndividualTableData(registrations, bracket, phoneMap);
+        const tableData = team
+            ? generateSingleTeamTableData(team, phoneMap)
+            : isTeamEvent
+              ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap)
+              : generateIndividualTableData(registrations, bracket, phoneMap);
 
-        const headers = isTeamEvent
-            ? [["Team Leader", "Team Name", "Members", "Leader Phone", "Largest Age"]]
-            : [["Global ID", "Name", "Age", "Phone Number"]];
+        const headers = team
+            ? [["No.", "Global ID", "Role", "Phone Number"]]
+            : isTeamEvent
+              ? [["No.", "Team Leader", "Team Name", "Members", "Leader Phone", "Largest Age"]]
+              : [["No.", "Global ID", "Name", "Age", "Phone Number"]];
 
-        const columnStyles = isTeamEvent
-            ? {0: {cellWidth: 25}, 1: {cellWidth: 35}, 2: {cellWidth: 50}, 3: {cellWidth: 30}, 4: {cellWidth: 20}}
-            : {0: {cellWidth: 30}, 1: {cellWidth: 50}, 2: {cellWidth: 20}, 3: {cellWidth: 40}};
+        const columnStyles = team
+            ? {0: {cellWidth: 10}, 1: {cellWidth: 40}, 2: {cellWidth: 40}, 3: {cellWidth: 40}}
+            : isTeamEvent
+              ? {
+                    0: {cellWidth: 10},
+                    1: {cellWidth: 25},
+                    2: {cellWidth: 35},
+                    3: {cellWidth: 50},
+                    4: {cellWidth: 30},
+                    5: {cellWidth: 20},
+                }
+              : {0: {cellWidth: 10}, 1: {cellWidth: 32}, 2: {cellWidth: 90}, 3: {cellWidth: 20}, 4: {cellWidth: 30}};
 
         autoTable(doc, {
             startY,
             head: headers,
             body: tableData,
-            theme: "grid",
-            styles: {fontSize: isTeamEvent ? 9 : 10},
-            headStyles: {fillColor: [0, 0, 0]},
+            theme: "plain",
+            styles: {
+                fontSize: isTeamEvent || team ? 9 : 10,
+                lineColor: [0, 0, 0],
+                lineWidth: 0.1,
+                textColor: [0, 0, 0],
+                font: "times",
+            },
+            headStyles: {
+                fillColor: [255, 255, 255],
+                textColor: [0, 0, 0],
+                lineColor: [0, 0, 0],
+                lineWidth: 0.1,
+                font: "times",
+                fontStyle: "bold",
+            },
             columnStyles,
         });
 
         addPDFFooter(doc);
-        const filename = createPDFFilename([tournament.name, event.code, bracket.name, "participants.pdf"]);
+        const filename = team
+            ? createPDFFilename([tournament.name, team.name, "member_list.pdf"])
+            : createPDFFilename([tournament.name, event.code, bracket.name, "participants.pdf"]);
         openPDFInNewTab(doc, filename);
     } catch (error) {
         console.error("Error generating PDF:", error);
@@ -216,21 +310,59 @@ export const exportParticipantListToPDF = (options: ExportPDFOptions): void => {
     }
 };
 
-export const exportMasterListToPDF = (
-    tournament: Tournament,
-    registrations: Registration[],
-    ageMap: Record<string, number>,
-    phoneMap: Record<string, string>,
-): void => {
+export const exportMasterListToPDF = async (options: ExportMasterListOptions): Promise<void> => {
+    const {tournament, registrations, ageMap, phoneMap} = options;
+    const marginY = 10;
+
     try {
         const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const marginX = 14;
+        const logoWidth = 40;
+        const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
 
-        doc.setFontSize(18);
-        doc.text(`${tournament.name} - Master Participant List`, 14, 20);
+        // Header
+        doc.setFont("times", "bold");
+        doc.setFontSize(25);
+        const title = `${tournament.venue} ${tournament.name} - Master Participant List`;
+        const titleLines = doc.splitTextToSize(title, titleMaxWidth);
+        doc.text(titleLines, marginX, marginY + 20);
+
+        let logoDataUrl: string | undefined;
+        if (tournament.logo) {
+            try {
+                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
+            } catch (error) {
+                console.error("Error loading logo:", error);
+            }
+        }
+
+        if (logoDataUrl) {
+            try {
+                doc.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, marginY + 5, 30, 30);
+            } catch (error) {
+                console.error("Error adding logo to PDF:", error);
+                doc.setFontSize(8);
+                doc.text("LOGO", pageWidth - marginX - logoWidth + 15, marginY + 20);
+            }
+        } else {
+            doc.setFontSize(8);
+            doc.text("LOGO", pageWidth - marginX - logoWidth + 15, marginY + 20);
+        }
+
+        const titleHeight = titleLines.length * 10; // Approximate height of the title
+        let currentY = marginY + 20 + titleHeight;
+
+        doc.line(14, currentY, doc.internal.pageSize.width - 14, currentY);
+        currentY += 10;
         doc.setFontSize(12);
-        doc.text(`Total Participants: ${registrations.length}`, 14, 35);
+        doc.text(`Total Participants: ${registrations.length}`, 14, currentY);
+        currentY += 7;
 
-        const tableData = registrations.map((r) => [
+        const startY = currentY;
+
+        const tableData = registrations.map((r, index) => [
+            (index + 1).toString(),
             r.user_id || "N/A",
             r.user_name || "N/A",
             ageMap[r.user_id]?.toString() || "N/A",
@@ -239,18 +371,32 @@ export const exportMasterListToPDF = (
         ]);
 
         autoTable(doc, {
-            startY: 45,
-            head: [["Global ID", "Name", "Age", "Phone", "Events Registered"]],
+            startY,
+            head: [["No.", "Global ID", "Name", "Age", "Phone", "Events Registered"]],
             body: tableData,
-            theme: "grid",
-            styles: {fontSize: 9},
-            headStyles: {fillColor: [0, 0, 0]},
+            theme: "plain",
+            styles: {
+                fontSize: 9,
+                lineColor: [0, 0, 0],
+                lineWidth: 0.1,
+                textColor: [0, 0, 0],
+                font: "times",
+            },
+            headStyles: {
+                fillColor: [255, 255, 255],
+                textColor: [0, 0, 0],
+                lineColor: [0, 0, 0],
+                lineWidth: 0.1,
+                font: "times",
+                fontStyle: "bold",
+            },
             columnStyles: {
-                0: {cellWidth: 25},
-                1: {cellWidth: 40},
-                2: {cellWidth: 15},
-                3: {cellWidth: 30},
-                4: {cellWidth: 70},
+                0: {cellWidth: 10},
+                1: {cellWidth: 25},
+                2: {cellWidth: 40},
+                3: {cellWidth: 15},
+                4: {cellWidth: 30},
+                5: {cellWidth: 60},
             },
         });
 
@@ -263,21 +409,60 @@ export const exportMasterListToPDF = (
     }
 };
 
-export const exportAllBracketsListToPDF = (
+export const exportAllBracketsListToPDF = async (
     tournament: Tournament,
     registrations: Registration[],
+    teams: Team[],
     ageMap: Record<string, number>,
     phoneMap: Record<string, string>,
-): void => {
+): Promise<void> => {
     try {
         const doc = new jsPDF();
+        doc.setFont("times");
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const marginX = 14;
+        const logoWidth = 40;
+        const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
 
-        doc.setFontSize(18);
-        doc.text(`${tournament.name} - All Events & Brackets`, 14, 20);
+        // Header
+        doc.setFont("times", "bold");
+        doc.setFontSize(25);
+        const title = `${tournament.name} - All Events & Brackets`;
+        const titleLines = doc.splitTextToSize(title, titleMaxWidth);
+        doc.text(titleLines, marginX, 20);
+
+        let logoDataUrl: string | undefined;
+        if (tournament.logo) {
+            try {
+                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
+            } catch (error) {
+                console.error("Error loading logo:", error);
+            }
+        }
+
+        if (logoDataUrl) {
+            try {
+                doc.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, 10, 30, 30);
+            } catch (error) {
+                console.error("Error adding logo to PDF:", error);
+                doc.setFontSize(8);
+                doc.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
+            }
+        } else {
+            doc.setFontSize(8);
+            doc.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
+        }
+
+        const titleHeight = titleLines.length * 10; // Approximate height of the title
+        let currentY = 25 + titleHeight;
+
+        doc.line(14, currentY, doc.internal.pageSize.width - 14, currentY);
+        currentY += 10;
         doc.setFontSize(12);
-        doc.text(`Total Events: ${tournament.events.length}`, 14, 35);
+        doc.text(`Total Events: ${tournament.events.length}`, 14, currentY);
+        currentY += 7;
 
-        let startY = 45;
+        let startY = currentY;
         let isFirstEvent = true;
 
         for (const event of tournament.events) {
@@ -300,33 +485,59 @@ export const exportAllBracketsListToPDF = (
                 doc.text(`${bracket.name} (Ages ${bracket.min_age}-${bracket.max_age})`, 20, startY);
                 startY += 8;
 
-                const participants = isTeamEvent
-                    ? generateTeamTableData(registrations, eventKey, bracket, ageMap, phoneMap)
+                const tableData = isTeamEvent
+                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap)
                     : registrations
                           .filter(
                               (r) =>
                                   r.events_registered.includes(eventKey) && r.age >= bracket.min_age && r.age <= bracket.max_age,
                           )
-                          .map((r) => [
+                          .map((r, index) => [
+                              (index + 1).toString(),
                               r.user_name || "N/A",
                               r.user_id || "N/A",
                               r.age?.toString() || "N/A",
                               phoneMap[r.user_id] || "N/A",
                           ]);
 
-                if (participants.length > 0) {
+                if (tableData.length > 0) {
                     const headers = isTeamEvent
-                        ? [["Team Name", "Leader", "Members", "Phone"]]
-                        : [["Name", "Global ID", "Age", "Phone"]];
+                        ? [["No.", "Team Leader", "Team Name", "Members", "Leader Phone", "Largest Age"]]
+                        : [["No.", "Name", "Global ID", "Age", "Phone"]];
+
+                    const columnStyles = isTeamEvent
+                        ? {
+                              0: {cellWidth: 10},
+                              1: {cellWidth: 25},
+                              2: {cellWidth: 35},
+                              3: {cellWidth: 50},
+                              4: {cellWidth: 30},
+                              5: {cellWidth: 20},
+                          }
+                        : {0: {cellWidth: 10}, 1: {cellWidth: 60}, 2: {cellWidth: 40}, 3: {cellWidth: 20}, 4: {cellWidth: 30}};
 
                     autoTable(doc, {
                         startY,
                         head: headers,
-                        body: participants,
-                        theme: "striped",
-                        styles: {fontSize: 8},
-                        headStyles: {fillColor: [70, 70, 70]},
-                        margin: {left: 25},
+                        body: tableData,
+                        theme: "plain",
+                        styles: {
+                            fontSize: 9,
+                            lineColor: [0, 0, 0],
+                            lineWidth: 0.1,
+                            textColor: [0, 0, 0],
+                            font: "times",
+                        },
+                        headStyles: {
+                            fillColor: [255, 255, 255],
+                            textColor: [0, 0, 0],
+                            lineColor: [0, 0, 0],
+                            lineWidth: 0.1,
+                            font: "times",
+                            fontStyle: "bold",
+                        },
+                        columnStyles,
+                        margin: {left: 20},
                     });
 
                     startY = (doc as jsPDF & {lastAutoTable?: {finalY: number}}).lastAutoTable?.finalY + 10 || startY + 20;
@@ -359,7 +570,7 @@ export const generateStackingSheetPDF = async (
     ageMap: Record<string, number>,
     division: string,
     options: {logoUrl?: string; includeAllParticipants?: boolean; participantId?: string} = {},
-    sheetType = "",
+    sheetType = "Individual",
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
@@ -396,10 +607,39 @@ export const generateStackingSheetPDF = async (
     }
 };
 
+export const generateTeamStackingSheetPDF = async (
+    tournament: Tournament,
+    team: Team,
+    ageMap: Record<string, number>,
+    division: string,
+    options: {logoUrl?: string} = {},
+    sheetType = "Team",
+): Promise<void> => {
+    try {
+        const doc = new jsPDF();
+        let logoDataUrl: string | undefined;
+        if (tournament.logo) {
+            try {
+                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
+            } catch (error) {
+                console.error("Error loading logo:", error);
+            }
+        }
+
+        generateSingleStackingSheet(doc, tournament, team, ageMap, logoDataUrl, division, sheetType);
+
+        const filename = createPDFFilename([tournament.name, team.name, "timesheet.pdf"]);
+        openPDFInNewTab(doc, filename);
+    } catch (error) {
+        console.error("Error generating stacking sheet PDF:", error);
+        throw error;
+    }
+};
+
 const generateSingleStackingSheet = (
     doc: jsPDF,
     tournament: Tournament,
-    participant: Registration,
+    participant: Registration | Team,
     ageMap: Record<string, number>,
     logoDataUrl: string,
     division: string,
@@ -451,36 +691,65 @@ const generateSingleStackingSheet = (
     // === 3. Participant Info ===
     const infoY = startY + titleHeight + 15;
 
-    // Name label - normal, then name value - bigger and bold
-    doc.setFont("times", "normal");
-    doc.setFontSize(10);
-    doc.text("Name: ", marginX, infoY);
+    // Name and ID based on sheet type
+    if (sheetType !== "Individual") {
+        const team = participant as Team;
+        doc.setFont("times", "normal");
+        doc.setFontSize(10);
+        doc.text("Team Name: ", marginX, infoY);
+        const nameX = marginX + doc.getTextWidth("Team Name: ");
+        doc.setFont("times", "bold");
+        doc.setFontSize(14);
+        doc.text(team.name || "________________________", nameX, infoY);
 
-    const nameX = marginX + doc.getTextWidth("Name: ");
-    doc.setFont("times", "bold");
-    doc.setFontSize(14); // Increased from 10
-    doc.text(`${participant.user_name || "________________________"}`, nameX, infoY);
+        const nameHeight = 8;
+        doc.setFont("times", "normal");
+        doc.setFontSize(10);
+        doc.text(`Division: ${division || "___"}`, marginX, infoY + sectionSpacing);
+        const allMembers = [team.leader_id, ...(team.members || []).map((m) => m.global_id)];
+        doc.text(`IDs: ${allMembers.join(", ")}`, marginX, infoY + sectionSpacing * 2);
 
-    // Other information - normal size, positioned below the name
-    const nameHeight = 8; // Account for the larger name font
-    doc.setFont("times", "normal");
-    doc.setFontSize(10);
-    doc.text(`Division: ${division || "___"}`, marginX, infoY + sectionSpacing);
-    doc.text(`Age: ${(ageMap[participant.user_id] || "___").toString()}`, marginX + 80, infoY + sectionSpacing);
-    doc.text(`School & Organizer// ${participant.organizer ?? " - "}`, marginX + 120, infoY + sectionSpacing);
+        // ID box (right top)
+        const idBoxW = 30;
+        const idBoxH = 10;
+        doc.setLineWidth(0.1);
+        doc.rect(pageWidth - marginX - idBoxW, startY + titleHeight + 2, idBoxW, idBoxH);
+        doc.setFont("times", "bold");
+        doc.setFontSize(14);
+        doc.text("ID:", pageWidth - marginX - idBoxW + 3, startY + titleHeight + 9);
+        doc.text(team.leader_id || "____", pageWidth - marginX - idBoxW + 10, startY + titleHeight + 9);
+    } else {
+        const individual = participant as Registration;
+        doc.setFont("times", "normal");
+        doc.setFontSize(10);
+        doc.text("Name: ", marginX, infoY);
 
-    // ID box (right top)
-    const idBoxW = 30;
-    const idBoxH = 10;
-    doc.setLineWidth(0.1);
-    doc.rect(pageWidth - marginX - idBoxW, startY + titleHeight + 2, idBoxW, idBoxH);
-    doc.setFont("times", "bold");
-    doc.setFontSize(14);
-    doc.text("ID:", pageWidth - marginX - idBoxW + 3, startY + titleHeight + 9);
-    doc.text(participant.user_id || "____", pageWidth - marginX - idBoxW + 10, startY + titleHeight + 9);
+        const nameX = marginX + doc.getTextWidth("Name: ");
+        doc.setFont("times", "bold");
+        doc.setFontSize(14); // Increased from 10
+        doc.text(`${individual.user_name || "________________________"}`, nameX, infoY);
+
+        // Other information - normal size, positioned below the name
+        const nameHeight = 8; // Account for the larger name font
+        doc.setFont("times", "normal");
+        doc.setFontSize(10);
+        doc.text(`Division: ${division || "___"}`, marginX, infoY + sectionSpacing);
+        doc.text(`Age: ${(ageMap[individual.user_id] || "___").toString()}`, marginX + 80, infoY + sectionSpacing);
+        doc.text(`School & Organizer// ${individual.organizer ?? " - "}`, marginX + 120, infoY + sectionSpacing);
+
+        // ID box (right top)
+        const idBoxW = 30;
+        const idBoxH = 10;
+        doc.setLineWidth(0.1);
+        doc.rect(pageWidth - marginX - idBoxW, startY + titleHeight + 2, idBoxW, idBoxH);
+        doc.setFont("times", "bold");
+        doc.setFontSize(14);
+        doc.text("ID:", pageWidth - marginX - idBoxW + 3, startY + titleHeight + 9);
+        doc.text(individual.user_id || "____", pageWidth - marginX - idBoxW + 10, startY + titleHeight + 9);
+    }
 
     // === 4. Time Table ===
-    const tableY = infoY + 10;
+    const tableY = infoY + 15;
     const tableWidth = 47 + 37 + 37 + 37 + 5 + 37; // Total width of the table
     const colWidths = [47, 37, 37, 37, 5, 37];
     const tableX = (pageWidth - tableWidth) / 2;
@@ -504,7 +773,19 @@ const generateSingleStackingSheet = (
     });
 
     // Stack rows
-    const stacks = ["3-3-3", "3-6-3", "Cycle"];
+    const getStacks = () => {
+        switch (sheetType) {
+            case "Individual":
+                return ["3-3-3", "3-6-3", "Cycle"];
+            case "Double":
+            case "Parent & Child":
+            case "Team Relay":
+                return ["Cycle"];
+            default:
+                return ["Cycle"];
+        }
+    };
+    const stacks = getStacks();
     doc.setFont("times", "normal");
     doc.setFontSize(15);
     stacks.forEach((label, rowIndex) => {
@@ -656,4 +937,36 @@ export const generateAllStackingSheets = (
     logoUrl?: string,
 ): void => {
     generateStackingSheetPDF(tournament, participants, ageMap, division, {logoUrl, includeAllParticipants: true});
+};
+
+export const generateAllTeamStackingSheetsPDF = async (
+    tournament: Tournament,
+    teams: Team[],
+    ageMap: Record<string, number>,
+    division: string,
+    options: {logoUrl?: string} = {},
+    sheetType = "Team",
+): Promise<void> => {
+    try {
+        const doc = new jsPDF();
+        let logoDataUrl: string | undefined;
+        if (tournament.logo) {
+            try {
+                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
+            } catch (error) {
+                console.error("Error loading logo:", error);
+            }
+        }
+
+        teams.forEach((team, index) => {
+            if (index > 0) doc.addPage();
+            generateSingleStackingSheet(doc, tournament, team, ageMap, logoDataUrl, division, sheetType);
+        });
+
+        const filename = createPDFFilename([tournament.name, division, "all_team_timesheets.pdf"]);
+        openPDFInNewTab(doc, filename);
+    } catch (error) {
+        console.error("Error generating stacking sheet PDF:", error);
+        throw error;
+    }
 };

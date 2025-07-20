@@ -5,7 +5,9 @@ import {
     exportAllBracketsListToPDF,
     exportMasterListToPDF,
     exportParticipantListToPDF,
+    generateAllTeamStackingSheetsPDF,
     generateStackingSheetPDF,
+    generateTeamStackingSheetPDF,
     getCurrentEventData,
 } from "@/utils/PDF/pdfExport";
 import {Button, Dropdown, Input, Menu, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
@@ -16,17 +18,13 @@ import {nanoid} from "nanoid";
 import React, {useState, useRef} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
+import {set} from "zod";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
 
-interface TeamRow {
-    id: string;
-    name: string;
-    members: {global_id?: string | null; verified?: boolean}[];
-    leader_id: string;
+interface TeamRow extends Team {
     registrationId: string;
-    events: string[];
 }
 
 export default function ParticipantListPage() {
@@ -109,7 +107,7 @@ export default function ParticipantListPage() {
         );
     };
 
-    const handleExportToPDF = () => {
+    const handleExportToPDF = async () => {
         const currentData = getCurrentEventData(tournament, currentEventTab, currentBracketTab, registrationList, searchTerm);
 
         if (!currentData || !tournament) {
@@ -118,7 +116,8 @@ export default function ParticipantListPage() {
         }
 
         try {
-            exportParticipantListToPDF({
+            setLoading(true);
+            await exportParticipantListToPDF({
                 tournament,
                 eventKey: currentEventTab,
                 bracketName: currentBracketTab,
@@ -127,29 +126,47 @@ export default function ParticipantListPage() {
                 phoneMap,
                 searchTerm,
                 isTeamEvent: currentData.isTeamEvent,
+                logoDataUrl: tournament.logo ?? "",
+                teams: teamList,
             });
             Message.success("PDF preview opened in new tab!");
         } catch (error) {
             Message.error("Failed to generate PDF");
+        } finally {
+            setLoading(false);
         }
     };
 
-    const handlePreviewMasterList = () => {
+    const handlePreviewMasterList = async () => {
         if (!tournament) {
             Message.warning("Tournament data not loaded");
             return;
         }
-        exportMasterListToPDF(tournament, registrationList, ageMap, phoneMap);
+        setLoading(true);
+        await exportMasterListToPDF({
+            tournament,
+            registrations: registrationList,
+            ageMap,
+            phoneMap,
+        });
+        setLoading(false);
         Message.success("Master list PDF opened");
     };
 
-    const handlePreviewAllBrackets = () => {
+    const handlePreviewAllBrackets = async () => {
         if (!tournament) {
             Message.warning("Tournament data not loaded");
             return;
         }
-        exportAllBracketsListToPDF(tournament, registrationList, ageMap, phoneMap);
-        Message.success("All brackets list PDF opened");
+        setLoading(true);
+        try {
+            await exportAllBracketsListToPDF(tournament, registrationList, teamList, ageMap, phoneMap);
+            Message.success("All brackets list PDF opened");
+        } catch (error) {
+            Message.error("Failed to generate PDF");
+        } finally {
+            setLoading(false);
+        }
     };
 
     if (!tournament) return null;
@@ -166,14 +183,52 @@ export default function ParticipantListPage() {
         {
             title: "Action",
             width: 150,
-            render: (_, record) => (
-                <Button
-                    type="outline"
-                    onClick={() => window.open(`/tournaments/${tournamentId}/registrations/${record.id}/edit`, "_blank")}
-                >
-                    Edit
-                </Button>
-            ),
+            render: (_, record) => {
+                const {event, bracket} =
+                    getCurrentEventData(tournament, currentEventTab, currentBracketTab, registrationList, searchTerm) ?? {};
+
+                if (!event || !bracket) return null;
+
+                const droplist = (
+                    <div className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}>
+                        <Button
+                            type="text"
+                            className={`text-left`}
+                            loading={loading}
+                            onClick={async () => {
+                                setLoading(true);
+                                await generateStackingSheetPDF(
+                                    tournament,
+                                    [record],
+                                    ageMap,
+                                    bracket.name,
+                                    {
+                                        logoUrl: tournament.logo ?? "",
+                                    },
+                                    event.type,
+                                );
+                                setLoading(false);
+                            }}
+                        >
+                            Print Time Sheet
+                        </Button>
+                    </div>
+                );
+
+                return (
+                    <Dropdown.Button
+                        type="primary"
+                        size="default"
+                        droplist={droplist}
+                        trigger={["click", "hover"]}
+                        buttonProps={{
+                            onClick: () => window.open(`/tournaments/${tournamentId}/registrations/${record.id}/edit`, "_blank"),
+                        }}
+                    >
+                        Edit
+                    </Dropdown.Button>
+                );
+            },
         },
     ];
 
@@ -211,7 +266,7 @@ export default function ParticipantListPage() {
                                         type="text"
                                         loading={loading}
                                         className={`text-left`}
-                                        onClick={async () => handlePreviewAllBrackets()}
+                                        onClick={handlePreviewAllBrackets}
                                     >
                                         All Event List
                                     </Button>
@@ -222,16 +277,58 @@ export default function ParticipantListPage() {
                                         onClick={async () => {
                                             setLoading(true);
                                             try {
-                                                await generateStackingSheetPDF(
+                                                const currentData = getCurrentEventData(
                                                     tournament,
-                                                    registrationList,
-                                                    ageMap,
+                                                    currentEventTab,
                                                     currentBracketTab,
-                                                    {
-                                                        logoUrl: tournament.logo ?? "",
-                                                    },
-                                                    currentEventTab.split("-")[currentEventTab.split("-").length - 1] || "",
+                                                    registrationList,
+                                                    searchTerm,
                                                 );
+                                                if (!currentData) {
+                                                    Message.error("No event data found");
+                                                    setLoading(false);
+                                                    return;
+                                                }
+                                                if (currentData.isTeamEvent) {
+                                                    const teamsInBracket = teamList.filter((team) => {
+                                                        const ages: number[] = [];
+                                                        if (team.leader_id && ageMap[team.leader_id] != null) {
+                                                            ages.push(ageMap[team.leader_id]);
+                                                        }
+                                                        for (const m of team.members) {
+                                                            if (m.global_id && ageMap[m.global_id] != null) {
+                                                                ages.push(ageMap[m.global_id]);
+                                                            }
+                                                        }
+                                                        const maxAge = ages.length > 0 ? Math.max(...ages) : -1;
+                                                        return (
+                                                            maxAge >= currentData.bracket.min_age &&
+                                                            maxAge <= currentData.bracket.max_age &&
+                                                            team.events.includes(currentEventTab)
+                                                        );
+                                                    });
+                                                    await generateAllTeamStackingSheetsPDF(
+                                                        tournament,
+                                                        teamsInBracket,
+                                                        ageMap,
+                                                        currentBracketTab,
+                                                        {
+                                                            logoUrl: tournament.logo ?? "",
+                                                        },
+                                                        currentData.event.type,
+                                                    );
+                                                } else {
+                                                    await generateStackingSheetPDF(
+                                                        tournament,
+                                                        currentData.registrations,
+                                                        ageMap,
+                                                        currentBracketTab,
+                                                        {
+                                                            logoUrl: tournament.logo ?? "",
+                                                        },
+                                                        currentData.event.type,
+                                                    );
+                                                }
                                             } catch (error) {
                                                 Message.error("Failed to generate stacking sheet PDF");
                                             } finally {
@@ -327,21 +424,87 @@ export default function ParticipantListPage() {
                                                 },
                                                 {
                                                     title: "Action",
-                                                    width: 150,
-                                                    render: (_, rec) => (
-                                                        <Button
-                                                            type="outline"
-                                                            size="mini"
-                                                            onClick={() =>
-                                                                window.open(
-                                                                    `/tournaments/${tournamentId}/registrations/${rec.registrationId}/edit`,
-                                                                    "_blank",
-                                                                )
-                                                            }
-                                                        >
-                                                            Edit
-                                                        </Button>
-                                                    ),
+                                                    width: 200,
+                                                    render: (_, rec) => {
+                                                        const teamMembers = rec.members.map((member) => {
+                                                            const registration = registrationList.find(
+                                                                (r) => r.user_id === member.global_id,
+                                                            );
+                                                            return {
+                                                                ...member,
+                                                                name: registration ? registration.user_name : member.global_id,
+                                                                registration: registration,
+                                                            };
+                                                        });
+
+                                                        const droplist = (
+                                                            <div
+                                                                className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                                            >
+                                                                <Button
+                                                                    type="text"
+                                                                    className={`text-left`}
+                                                                    loading={loading}
+                                                                    onClick={async () => {
+                                                                        setLoading(true);
+                                                                        await exportParticipantListToPDF({
+                                                                            tournament,
+                                                                            eventKey: evtKey,
+                                                                            bracketName: br.name,
+                                                                            registrations: registrationList,
+                                                                            ageMap,
+                                                                            phoneMap,
+                                                                            isTeamEvent: true,
+                                                                            team: rec,
+                                                                            logoDataUrl: tournament.logo ?? "",
+                                                                        });
+                                                                        setLoading(false);
+                                                                    }}
+                                                                >
+                                                                    Print Member List
+                                                                </Button>
+                                                                <Button
+                                                                    type="text"
+                                                                    className={`text-left`}
+                                                                    loading={loading}
+                                                                    onClick={async () => {
+                                                                        setLoading(true);
+                                                                        await generateTeamStackingSheetPDF(
+                                                                            tournament,
+                                                                            rec,
+                                                                            ageMap,
+                                                                            br.name,
+                                                                            {logoUrl: tournament.logo ?? ""},
+                                                                            evt.type,
+                                                                        );
+                                                                        setLoading(false);
+                                                                    }}
+                                                                >
+                                                                    Team Time Sheet
+                                                                </Button>
+                                                            </div>
+                                                        );
+
+                                                        return (
+                                                            <div className="flex gap-2">
+                                                                <Dropdown.Button
+                                                                    type="primary"
+                                                                    size="default"
+                                                                    droplist={droplist}
+                                                                    trigger={["click", "hover"]}
+                                                                    buttonProps={{
+                                                                        onClick: () =>
+                                                                            window.open(
+                                                                                `/tournaments/${tournamentId}/registrations/${rec.registrationId}/edit`,
+                                                                                "_blank",
+                                                                            ),
+                                                                    }}
+                                                                >
+                                                                    Edit
+                                                                </Dropdown.Button>
+                                                            </div>
+                                                        );
+                                                    },
                                                 },
                                             ];
                                             return (
