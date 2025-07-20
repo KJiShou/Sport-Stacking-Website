@@ -563,6 +563,94 @@ export const exportAllBracketsListToPDF = async (
     }
 };
 
+interface NameListStickerOptions {
+    tournament: Tournament;
+    registrations: Registration[];
+}
+
+export const exportNameListStickerPDF = async (options: NameListStickerOptions): Promise<void> => {
+    const {tournament, registrations} = options;
+    try {
+        const doc = new jsPDF("p", "pt", "a4");
+        const pageHeight = doc.internal.pageSize.height;
+        const pageWidth = doc.internal.pageSize.width;
+
+        const margin = 40;
+        const colGap = 0;
+        const rowGap = 0;
+        const numCols = 2;
+        const numRows = 4;
+
+        const stickerWidth = (pageWidth - margin * 2 - colGap) / numCols;
+        const stickerHeight = (pageHeight - margin * 2 - rowGap * (numRows - 1)) / numRows;
+
+        let regIndex = 0;
+        let pageNum = 1;
+
+        while (regIndex < registrations.length) {
+            if (pageNum > 1) {
+                doc.addPage();
+            }
+
+            for (let row = 0; row < numRows; row++) {
+                for (let col = 0; col < numCols; col++) {
+                    if (regIndex >= registrations.length) {
+                        break;
+                    }
+
+                    const registration = registrations[regIndex];
+                    const x = margin + col * (stickerWidth + colGap);
+                    const y = margin + row * (stickerHeight + rowGap);
+                    const centerX = x + stickerWidth / 2;
+
+                    // Draw cutting lines
+                    doc.rect(x, y, stickerWidth, stickerHeight);
+
+                    // Content padding
+                    const contentX = x + 10;
+                    const contentY = y + 15;
+                    const contentWidth = stickerWidth - 20;
+
+                    // 1. Tournament Name (Title)
+                    doc.setFontSize(15);
+                    doc.setFont("times", "bold");
+                    const titleLines = doc.splitTextToSize(tournament.name, contentWidth);
+                    doc.text(titleLines, centerX, contentY, {align: "center"});
+                    doc.setLineWidth(0.1);
+                    doc.line(x, contentY + titleLines.length * 10 + 10, x + stickerWidth, contentY + titleLines.length * 10 + 10);
+                    let currentY = contentY + titleLines.length * 10 + 85;
+
+                    // 2. Global ID (Largest)
+                    doc.setFontSize(95);
+                    doc.setFont("times", "bold");
+                    doc.text(registration.user_id, centerX, currentY, {align: "center"});
+                    currentY += 10;
+
+                    // 3. Line separator
+                    doc.setLineWidth(0.1);
+                    doc.line(x, currentY, x + stickerWidth, currentY);
+                    currentY += 25;
+
+                    // 4. User Name
+                    doc.setFontSize(20);
+                    doc.setFont("times", "normal");
+                    const nameLines = doc.splitTextToSize(registration.user_name, contentWidth);
+                    doc.text(nameLines, centerX, currentY, {align: "center"});
+
+                    regIndex++;
+                }
+            }
+            pageNum++;
+        }
+
+        const filename = createPDFFilename([tournament.name, "name_list_stickers.pdf"]);
+        openPDFInNewTab(doc, filename);
+    } catch (error) {
+        console.error("Error generating name list sticker PDF:", error);
+        throw error;
+    }
+};
+
 // Stacking Sheet Functions
 export const generateStackingSheetPDF = async (
     tournament: Tournament,
