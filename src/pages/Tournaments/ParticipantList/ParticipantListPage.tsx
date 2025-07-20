@@ -4,6 +4,7 @@ import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/t
 import {
     exportAllBracketsListToPDF,
     exportMasterListToPDF,
+    exportNameListStickerPDF,
     exportParticipantListToPDF,
     generateAllTeamStackingSheetsPDF,
     generateStackingSheetPDF,
@@ -130,6 +131,25 @@ export default function ParticipantListPage() {
                 teams: teamList,
             });
             Message.success("PDF preview opened in new tab!");
+        } catch (error) {
+            Message.error("Failed to generate PDF");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleExportNameListSticker = async () => {
+        if (!tournament) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        setLoading(true);
+        try {
+            await exportNameListStickerPDF({
+                tournament,
+                registrations: registrationList,
+            });
+            Message.success("Name list sticker PDF opened");
         } catch (error) {
             Message.error("Failed to generate PDF");
         } finally {
@@ -269,6 +289,14 @@ export default function ParticipantListPage() {
                                         onClick={handlePreviewAllBrackets}
                                     >
                                         All Event List
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={handleExportNameListSticker}
+                                    >
+                                        Name List Sticker
                                     </Button>
                                     <Button
                                         type="text"
