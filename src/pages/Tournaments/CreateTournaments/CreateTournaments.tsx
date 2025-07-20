@@ -130,8 +130,8 @@ export default function CreateTournamentPage() {
                 max_participants: values.max_participants,
                 events: fullEvents,
                 description: values.description,
-                editor: values.editor,
-                recorder: values.recorder,
+                editor: values.editor ?? null,
+                recorder: values.recorder ?? null,
                 status: "Up Coming",
             });
 
@@ -281,19 +281,11 @@ export default function CreateTournamentPage() {
                         <InputNumber min={0} style={{width: "100%"}} placeholder="Enter max number of participants" />
                     </Form.Item>
 
-                    <Form.Item
-                        label="Editor ID"
-                        field="editor"
-                        rules={[{required: true, message: "Please input editor global ID"}]}
-                    >
+                    <Form.Item label="Editor ID" field="editor">
                         <Input placeholder="Enter editor global ID" />
                     </Form.Item>
 
-                    <Form.Item
-                        label="Recorder ID"
-                        field="recorder"
-                        rules={[{required: true, message: "Please input recorder global ID"}]}
-                    >
+                    <Form.Item label="Recorder ID" field="recorder">
                         <Input placeholder="Enter recorder global ID" />
                     </Form.Item>
 
@@ -314,7 +306,7 @@ export default function CreateTournamentPage() {
                                         onClick={() => {
                                             // Get the current event to determine the type
                                             const currentEvents = form.getFieldValue("events") || [];
-                                            const defaultType = "individual"; // fallback
+                                            const defaultType = "Individual"; // fallback
                                             const predefinedCriteria = getPredefinedFinalCriteria(defaultType);
 
                                             add({
@@ -512,7 +504,7 @@ export default function CreateTournamentPage() {
                                                         min_age: 0,
                                                         max_age: 0,
                                                         number_of_participants: 0,
-                                                        final_criteria: getPredefinedFinalCriteria("individual"),
+                                                        final_criteria: getPredefinedFinalCriteria("Individual"),
                                                     },
                                                 ])
                                             }

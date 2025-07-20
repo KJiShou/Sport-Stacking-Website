@@ -84,6 +84,19 @@ A modern web application for managing sport stacking tournaments, built with **R
     yarn dev
     ```
 
+5. **functions deployment**
+   ```bash
+   cd functions\
+   yarn build
+   yarn deploy
+   ```
+
+6. **After deploy**
+   ```bash
+    cd ..
+    yarn dev
+   ```
+
 ---
 
 ## 📂 Project Structure

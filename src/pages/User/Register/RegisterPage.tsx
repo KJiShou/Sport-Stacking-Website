@@ -91,7 +91,7 @@ const RegisterPage = () => {
                     birthdate,
                     gender,
                     country,
-                    school,
+                    school: school || "",
                     phone_number,
                     roles: null,
                     image_url: avatarUrl || "",
@@ -106,7 +106,7 @@ const RegisterPage = () => {
                         birthdate,
                         gender,
                         country,
-                        school,
+                        school: school || "",
                         phone_number,
                         roles: null,
                         best_times: {},
@@ -329,11 +329,7 @@ const RegisterPage = () => {
                         />
                     </Form.Item>
 
-                    <Form.Item
-                        label="Participant School/University/College"
-                        field="school"
-                        rules={[{required: true, message: "Please enter the School/University/College name"}]}
-                    >
+                    <Form.Item label="Participant School/University/College" field="school">
                         <Input placeholder="Enter School/University/College name" />
                     </Form.Item>
 

@@ -4,7 +4,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {Team} from "@/schema/TeamSchema";
-import {fetchUserRegistration, updateRegistration} from "@/services/firebase/registerService";
+import {deleteRegistrationById, fetchUserRegistration, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
@@ -15,6 +15,7 @@ import {
     Input,
     InputNumber,
     Message,
+    Popconfirm,
     Result,
     Select,
     Spin,
@@ -22,7 +23,7 @@ import {
     Typography,
     Upload,
 } from "@arco-design/web-react";
-import {IconExclamationCircle, IconUndo} from "@arco-design/web-react/icon";
+import {IconDelete, IconExclamationCircle, IconUndo} from "@arco-design/web-react/icon";
 import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
@@ -41,6 +42,23 @@ export default function ViewTournamentRegistrationPage() {
     const [teams, setTeams] = useState<Team[]>([]);
     const [loading, setLoading] = useState(true);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
+
+    const handleDeleteRegistration = async (registrationId: string) => {
+        if (!tournamentId) return;
+
+        setLoading(true);
+        try {
+            // Here you would call your delete service function
+            await deleteRegistrationById(tournamentId, registrationId);
+            Message.success("Registration deleted successfully.");
+            navigate("/tournaments");
+        } catch (error) {
+            console.error("Failed to delete registration:", error);
+            Message.error("Failed to delete registration.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
         const loadData = async () => {
@@ -185,6 +203,44 @@ export default function ViewTournamentRegistrationPage() {
                             />
                         </Form.Item>
                     </Form>
+                    <Popconfirm
+                        focusLock
+                        title={"Delete tournament registration"}
+                        content={
+                            <div className={`flex flex-col`}>
+                                <div>
+                                    Are you sure you want to delete this registration? Please note that this action is
+                                    irreversible and your payment will be cancelled.
+                                </div>
+                                <div className={`text-red-500 font-semibold mt-2`}>
+                                    <IconExclamationCircle /> This action cannot be undone.
+                                </div>
+                            </div>
+                        }
+                        onOk={(e) => {
+                            handleDeleteRegistration(user?.id ?? "");
+                            e.stopPropagation();
+                        }}
+                        okText="Yes"
+                        cancelText="No"
+                        onCancel={(e) => {
+                            e.stopPropagation();
+                        }}
+                        okButtonProps={{status: "danger"}}
+                    >
+                        <Button
+                            title={"Delete this registration"}
+                            type="secondary"
+                            status="danger"
+                            loading={loading}
+                            icon={<IconDelete />}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                            }}
+                        >
+                            Delete Registration
+                        </Button>
+                    </Popconfirm>
                 </div>
             </Spin>
         </div>

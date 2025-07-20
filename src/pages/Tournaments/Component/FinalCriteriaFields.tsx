@@ -16,8 +16,8 @@ export default function FinalCriteriaFields({index, onRemove}: Props) {
                 className="w-80"
             >
                 <Select placeholder="Select Type">
-                    <Select.Option value="individual">Individual</Select.Option>
-                    <Select.Option value="team">Team</Select.Option>
+                    <Select.Option value="Individual">Individual</Select.Option>
+                    <Select.Option value="Team">Team</Select.Option>
                 </Select>
             </Form.Item>
             <Form.Item field={`final_criteria.${index}.number`} rules={[{required: true}]} className="w-80">
