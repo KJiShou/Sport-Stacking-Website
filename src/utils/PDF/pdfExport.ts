@@ -107,30 +107,12 @@ const generateTeamTableData = (
     return teams
         .filter((team) => {
             if (!team.events.includes(eventKey)) return false;
-            const ages: number[] = [];
-            if (team.leader_id && ageMap[team.leader_id] != null) {
-                ages.push(ageMap[team.leader_id]);
-            }
-            for (const m of team.members) {
-                if (m.global_id && ageMap[m.global_id] != null) {
-                    ages.push(ageMap[m.global_id]);
-                }
-            }
-            const maxAge = ages.length > 0 ? Math.max(...ages) : -1;
+            const maxAge = team.largest_age;
             return maxAge >= bracket.min_age && maxAge <= bracket.max_age;
         })
         .map((team, index) => {
             const leaderPhone = team.leader_id ? phoneMap[team.leader_id] || "N/A" : "N/A";
-            const ages: number[] = [];
-            if (team.leader_id && ageMap[team.leader_id] != null) {
-                ages.push(ageMap[team.leader_id]);
-            }
-            for (const m of team.members) {
-                if (m.global_id && ageMap[m.global_id] != null) {
-                    ages.push(ageMap[m.global_id]);
-                }
-            }
-            const maxAge = ages.length > 0 ? Math.max(...ages) : -1;
+            const maxAge = team.largest_age;
             return [
                 (index + 1).toString(),
                 team.leader_id ?? "N/A",

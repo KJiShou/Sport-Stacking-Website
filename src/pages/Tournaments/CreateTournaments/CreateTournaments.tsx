@@ -31,7 +31,6 @@ import EventFields from "../Component/EventField";
 
 import LocationPicker, {isValidCountryPath} from "../Component/LocationPicker";
 import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
-import {useTournamentFormPrefill} from "../Component/useTournamentFormPrefill";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp, Timestamp];
@@ -55,8 +54,6 @@ export default function CreateTournamentPage() {
         makeHandleDeleteBracket,
         setAgeBracketModalVisible,
     } = useAgeBracketEditor(form);
-
-    useTournamentFormPrefill(form);
 
     // Helper function to get predefined final criteria based on event type
     const getPredefinedFinalCriteria = (eventType: string) => {
@@ -133,6 +130,8 @@ export default function CreateTournamentPage() {
                 editor: values.editor ?? null,
                 recorder: values.recorder ?? null,
                 status: "Up Coming",
+                registration_fee: values.registration_fee,
+                member_registration_fee: values.member_registration_fee,
             });
 
             if (agendaFile instanceof File) {
@@ -266,19 +265,27 @@ export default function CreateTournamentPage() {
                     </Form.Item>
 
                     {/* Max Participants */}
+                    <Form.Item label="Registration Fee" field="registration_fee" rules={[{required: true}]}>
+                        <InputNumber min={0} placeholder="please enter..." />
+                    </Form.Item>
+                    <Form.Item label="Member Registration Fee" field="member_registration_fee" rules={[{required: true}]}>
+                        <InputNumber min={0} placeholder="please enter..." />
+                    </Form.Item>
+
                     <Form.Item
-                        label={
-                            <div>
-                                Max Participants
-                                <Tooltip content="0 as no limit">
-                                    <IconExclamationCircle style={{margin: "0 8px", color: "rgb(var(--arcoblue-6))"}} />
-                                </Tooltip>
-                            </div>
-                        }
-                        field="max_participants"
-                        rules={[{required: true, message: "Please input maximum participants"}]}
+                        label="Registration Price"
+                        field="registration_price"
+                        rules={[{required: true, message: "Please input registration price"}]}
                     >
-                        <InputNumber min={0} style={{width: "100%"}} placeholder="Enter max number of participants" />
+                        <InputNumber min={0} style={{width: "100%"}} placeholder="Enter registration price" />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="Member Registration Price"
+                        field="member_registration_price"
+                        rules={[{required: true, message: "Please input member registration price"}]}
+                    >
+                        <InputNumber min={0} style={{width: "100%"}} placeholder="Enter member registration price" />
                     </Form.Item>
 
                     <Form.Item label="Editor ID" field="editor">

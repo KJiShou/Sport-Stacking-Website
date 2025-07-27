@@ -319,16 +319,7 @@ export default function ParticipantListPage() {
                                                 }
                                                 if (currentData.isTeamEvent) {
                                                     const teamsInBracket = teamList.filter((team) => {
-                                                        const ages: number[] = [];
-                                                        if (team.leader_id && ageMap[team.leader_id] != null) {
-                                                            ages.push(ageMap[team.leader_id]);
-                                                        }
-                                                        for (const m of team.members) {
-                                                            if (m.global_id && ageMap[m.global_id] != null) {
-                                                                ages.push(ageMap[m.global_id]);
-                                                            }
-                                                        }
-                                                        const maxAge = ages.length > 0 ? Math.max(...ages) : -1;
+                                                        const maxAge = team.largest_age;
                                                         return (
                                                             maxAge >= currentData.bracket.min_age &&
                                                             maxAge <= currentData.bracket.max_age &&
@@ -400,16 +391,7 @@ export default function ParticipantListPage() {
                                                 }));
 
                                             const rowsForBracket = teamRows.filter((record) => {
-                                                const ages: number[] = [];
-                                                if (record.leader_id && ageMap[record.leader_id] != null) {
-                                                    ages.push(ageMap[record.leader_id]);
-                                                }
-                                                for (const m of record.members) {
-                                                    if (m.global_id && ageMap[m.global_id] != null) {
-                                                        ages.push(ageMap[m.global_id]);
-                                                    }
-                                                }
-                                                const maxAge = ages.length > 0 ? Math.max(...ages) : -1;
+                                                const maxAge = record.largest_age;
                                                 return maxAge >= br.min_age && maxAge <= br.max_age;
                                             });
                                             const teamColumns: TableColumnProps<TeamRow>[] = [
@@ -438,17 +420,7 @@ export default function ParticipantListPage() {
                                                 {
                                                     title: "Largest Age",
                                                     width: 150,
-                                                    render: (_, record) => {
-                                                        const ages: number[] = [];
-                                                        if (record.leader_id && ageMap[record.leader_id] != null)
-                                                            ages.push(ageMap[record.leader_id]);
-                                                        for (const m of record.members) {
-                                                            if (m.global_id && ageMap[m.global_id] != null)
-                                                                ages.push(ageMap[m.global_id]);
-                                                        }
-                                                        const maxAge = ages.length ? Math.max(...ages) : "-";
-                                                        return <Text>{maxAge}</Text>;
-                                                    },
+                                                    render: (_, record) => <Text>{record.largest_age ?? "-"}</Text>,
                                                 },
                                                 {
                                                     title: "Action",

@@ -14,7 +14,8 @@ export const TeamSchema = z.object({
     registration_id: z.string(),
     leader_id: z.string(), // global_id of the leader
     members: z.array(TeamMemberSchema),
-    events: z.array(z.string()), // e.g., ["3-6-3", "cycle"]
+    events: z.array(z.string()), // e.g., ["3-6-3", "Cycle"]
+    largest_age: z.number().default(0),
 });
 
 export type Team = z.infer<typeof TeamSchema>;

@@ -2,9 +2,18 @@ import {Timestamp, collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, u
 import type {FirestoreUser, Registration} from "../../schema";
 import {db} from "./config";
 
-export async function createRegistration(user: FirestoreUser, data: Omit<Registration, "id">): Promise<string> {
+export async function createRegistration(
+    user: FirestoreUser,
+    data: Omit<Registration, "id" | "registrationFee" | "memberRegistrationFee">,
+): Promise<string> {
     if (!user?.id) {
         throw new Error("User global_id is missing.");
+    }
+
+    const tournamentDoc = await getDoc(doc(db, `tournaments/${data.tournament_id}`));
+    const tournament = tournamentDoc.data();
+    if (!tournament) {
+        throw new Error("Tournament not found");
     }
 
     const docRef = doc(db, `tournaments/${data.tournament_id}/registrations/${user.id}`);
@@ -12,6 +21,8 @@ export async function createRegistration(user: FirestoreUser, data: Omit<Registr
     // 确保 created_at / updated_at 都有填入
     const payload: Omit<Registration, "id"> = {
         ...data,
+        registrationFee: tournament.registration_fee,
+        memberRegistrationFee: tournament.member_registration_fee,
         created_at: data.created_at ?? Timestamp.now(),
         updated_at: Timestamp.now(),
     };

@@ -12,6 +12,7 @@ import {
     Checkbox,
     Divider,
     Form,
+    Image,
     Input,
     InputNumber,
     Message,
@@ -170,37 +171,11 @@ export default function ViewTournamentRegistrationPage() {
                         </Form.Item>
 
                         <Form.Item label="Payment Proof">
-                            <Upload
-                                disabled
-                                multiple={false}
-                                limit={1}
-                                fileList={
-                                    paymentProofUrl
-                                        ? [
-                                              {
-                                                  uid: "1",
-                                                  name: "Payment Proof",
-                                                  url: paymentProofUrl,
-                                              },
-                                          ]
-                                        : []
-                                }
-                                customRequest={async (option) => {
-                                    const {file, onSuccess, onError, onProgress} = option;
-                                    try {
-                                        const url = await uploadFile(
-                                            file as File,
-                                            `tournaments/${tournamentId}/registrations/payment_proof`,
-                                            user?.global_id ?? "",
-                                            onProgress,
-                                        );
-                                        setPaymentProofUrl(url);
-                                        onSuccess?.(file);
-                                    } catch (err) {
-                                        onError?.(err as Error);
-                                    }
-                                }}
-                            />
+                            {paymentProofUrl ? (
+                                <Image width={200} src={paymentProofUrl} alt="Payment Proof" />
+                            ) : (
+                                <Typography.Text type="secondary">No payment proof uploaded.</Typography.Text>
+                            )}
                         </Form.Item>
                     </Form>
                     <Popconfirm

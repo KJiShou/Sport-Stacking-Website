@@ -19,7 +19,7 @@ export const AgeBracketSchema = z.object({
 });
 
 export const EventSchema = z.object({
-    code: z.enum(["3-3-3", "3-6-3", "cycle"]),
+    code: z.enum(["3-3-3", "3-6-3", "Cycle"]),
     type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child"]),
     teamSize: z.number().optional(),
     age_brackets: z.array(AgeBracketSchema), // 直接放进每个 event
@@ -61,6 +61,8 @@ export const TournamentSchema = z.object({
     max_participants: z.number().optional().nullable(),
     editor: z.string().optional().nullable(),
     recorder: z.string().optional().nullable(),
+    registration_fee: z.number().optional().nullable(),
+    member_registration_fee: z.number().optional().nullable(),
 
     create_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
