@@ -15,7 +15,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                 <Select placeholder="Code">
                     <Select.Option value="3-3-3">3-3-3</Select.Option>
                     <Select.Option value="3-6-3">3-6-3</Select.Option>
-                    <Select.Option value="cycle">Cycle</Select.Option>
+                    <Select.Option value="Cycle">Cycle</Select.Option>
                 </Select>
             </Form.Item>
             <Form.Item field={`events.${index}.type`} className="w-1/4" rules={[{required: true}]}>

@@ -67,6 +67,8 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
     }
 
     const docRef = await addDoc(collection(db, "tournaments"), {
+        registration_fee: data.registration_fee,
+        member_registration_fee: data.member_registration_fee,
         name: data.name,
         start_date: data.start_date,
         end_date: data.end_date,
@@ -191,6 +193,19 @@ export async function deleteTournamentById(user: FirestoreUser, tournamentId: st
 
 export async function createTeam(tournamentId: string, teamData: Omit<Team, "id" | "tournament_id">): Promise<string> {
     const teamsCollectionRef = collection(db, "tournaments", tournamentId, "teams");
+
+    const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)];
+    const ages: number[] = [];
+    for (const id of memberIds) {
+        const regDoc = await getDoc(doc(db, `tournaments/${tournamentId}/registrations`, id));
+        if (regDoc.exists()) {
+            const reg = regDoc.data();
+            if (reg?.age) {
+                ages.push(reg.age);
+            }
+        }
+    }
+
     const docRef = await addDoc(teamsCollectionRef, {
         ...teamData,
         tournament_id: tournamentId,
@@ -207,5 +222,36 @@ export async function fetchTeamsByTournament(tournamentId: string): Promise<Team
 
 export async function updateTeam(tournamentId: string, teamId: string, teamData: Team): Promise<void> {
     const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
-    await updateDoc(teamRef, teamData);
+
+    const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)];
+    const ages: number[] = [];
+    for (const id of memberIds) {
+        const regDoc = await getDoc(doc(db, `tournaments/${tournamentId}/registrations`, id));
+        if (regDoc.exists()) {
+            const reg = regDoc.data();
+            if (reg?.age) {
+                ages.push(reg.age);
+            }
+        }
+    }
+
+    await updateDoc(teamRef, {
+        ...teamData,
+    });
+}
+
+export async function updateTournamentStatus(
+    user: FirestoreUser,
+    tournamentId: string,
+    status: "Up Coming" | "On Going" | "Close Registration" | "End",
+): Promise<void> {
+    if (!user?.roles?.edit_tournament) {
+        throw new Error("Unauthorized: You do not have permission to update the tournament status.");
+    }
+
+    const tournamentRef = doc(db, "tournaments", tournamentId);
+    await updateDoc(tournamentRef, {
+        status: status,
+        updated_at: Timestamp.now(),
+    });
 }

@@ -2,7 +2,12 @@ import LoginForm from "@/components/common/Login";
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser, Tournament} from "@/schema"; // 就是你那个 TournamentSchema infer出来的type
 import {countries} from "@/schema/Country";
-import {deleteTournamentById, fetchTournamentsByType, updateTournament} from "@/services/firebase/tournamentsService";
+import {
+    deleteTournamentById,
+    fetchTournamentsByType,
+    updateTournament,
+    updateTournamentStatus,
+} from "@/services/firebase/tournamentsService";
 import {
     Button,
     Card,
@@ -63,7 +68,6 @@ import FinalCategoriesFields from "./FinalCategoriesFields";
 import FinalCriteriaFields from "./FinalCriteriaFields";
 import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
-import {useTournamentFormPrefill} from "./useTournamentFormPrefill";
 
 type TournamentFormData = Tournament & {
     date_range: [Timestamp | Date, Timestamp | Date];
@@ -92,8 +96,6 @@ export default function TournamentList() {
         makeHandleDeleteBracket,
         setAgeBracketModalVisible,
     } = useAgeBracketEditor(form);
-
-    useTournamentFormPrefill(form);
 
     // Helper function to get predefined final criteria based on event type
     const getPredefinedFinalCriteria = (eventType: string) => {
@@ -249,12 +251,80 @@ export default function TournamentList() {
                 }
 
                 if (user?.roles?.edit_tournament || user?.global_id === tournament?.editor) {
+                    if (tournament.status === "On Going") {
+                        return (
+                            <Dropdown.Button
+                                type="primary"
+                                trigger={["click", "hover"]}
+                                onClick={() => navigate(`/tournaments/${tournament.id}/start/record`)}
+                                droplist={
+                                    <div
+                                        className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                    >
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
+                                        >
+                                            <IconEye /> View Registration List
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => navigate(`/tournaments/${tournament.id}/participants`)}
+                                        >
+                                            <IconUser /> Participant List
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => handleEdit(tournament)}
+                                        >
+                                            <IconEdit /> Edit
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            status="danger"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => handleDelete(tournament)}
+                                        >
+                                            <IconDelete /> Delete
+                                        </Button>
+                                    </div>
+                                }
+                                buttonProps={{
+                                    loading: loading,
+                                }}
+                            >
+                                <IconPlayArrow />
+                                Record
+                            </Dropdown.Button>
+                        );
+                    }
+
                     return (
                         <Popconfirm
                             title="Start Tournament"
                             content="Are you sure you want to start this tournament?"
                             onOk={async () => {
-                                navigate(`/tournaments/${tournament.id}/start`);
+                                if (user && tournament.id) {
+                                    try {
+                                        setLoading(true);
+                                        await updateTournamentStatus(user, tournament.id, "On Going");
+                                        await fetchTournaments();
+                                        Message.success("Tournament started successfully!");
+                                        navigate(`/tournaments/${tournament.id}/start/record`);
+                                    } catch (error) {
+                                        console.error("Failed to start tournament:", error);
+                                        Message.error("Failed to start tournament.");
+                                    } finally {
+                                        setLoading(false);
+                                    }
+                                }
                             }}
                             onCancel={() => console.log("Start cancelled")}
                             okText="Start"
@@ -451,6 +521,8 @@ export default function TournamentList() {
                 editor: values.editor ?? null,
                 recorder: values.recorder ?? null,
                 description: values.description ?? null,
+                registration_fee: values.registration_fee,
+                member_registration_fee: values.member_registration_fee,
                 agenda: agendaUrl,
                 logo: logoUrl,
             });
@@ -474,6 +546,14 @@ export default function TournamentList() {
         setSelectedTournament(tournament);
         setViewModalVisible(true);
         setTournamentData([
+            {
+                label: "Registration Price",
+                value: <div>RM{tournament?.registration_fee}</div>,
+            },
+            {
+                label: "Member Registration Price",
+                value: <div>RM{tournament?.member_registration_fee}</div>,
+            },
             {
                 label: "Location",
                 value: (
@@ -600,6 +680,8 @@ export default function TournamentList() {
             form.setFieldsValue({
                 name: selectedTournament.name,
                 country: selectedTournament.country,
+                registration_fee: selectedTournament.registration_fee,
+                member_registration_fee: selectedTournament.member_registration_fee,
                 venue: selectedTournament.venue,
                 address: selectedTournament.address,
                 max_participants: selectedTournament.max_participants,
@@ -822,6 +904,22 @@ export default function TournamentList() {
                             ]}
                         >
                             <InputNumber min={0} style={{width: "100%"}} placeholder="Enter max number of participants" />
+                        </Form.Item>
+
+                        <Form.Item
+                            label="Registration Fee"
+                            field="registration_fee"
+                            rules={[{required: true, message: "Please input registration fee"}]}
+                        >
+                            <InputNumber min={0} style={{width: "100%"}} placeholder="Enter registration fee" />
+                        </Form.Item>
+
+                        <Form.Item
+                            label="Member Registration Fee"
+                            field="member_registration_fee"
+                            rules={[{required: true, message: "Please input member registration fee"}]}
+                        >
+                            <InputNumber min={0} style={{width: "100%"}} placeholder="Enter member registration fee" />
                         </Form.Item>
 
                         <Form.Item label="Editor ID" field="editor">

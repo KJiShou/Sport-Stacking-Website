@@ -14,6 +14,7 @@ export type UserRegistrationRecord = z.infer<typeof UserRegistrationRecordSchema
 
 export const FirestoreUserSchema = z.object({
     id: z.string(),
+    memberId: z.string().optional().nullable(),
     global_id: z.string().optional().nullable(),
     name: z.string(),
     IC: z.string().regex(/^\d{12}$/, {

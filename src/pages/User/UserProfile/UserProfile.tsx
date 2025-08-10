@@ -92,6 +92,7 @@ export default function RegisterPage() {
 
     let descData = [
         {label: "Email", value: user?.email ?? "-"},
+        {label: "Member ID", value: user?.memberId ?? "-"},
         {label: "IC", value: user?.IC ?? "-"},
         {label: "Country / State", value: `${user?.country[0]} / ${user?.country[1]}`},
         {label: "Phone Number", value: user?.phone_number ?? "-"},
@@ -144,6 +145,7 @@ export default function RegisterPage() {
                 });
                 descData = [
                     {label: "Email", value: data?.email ?? "-"},
+                    {label: "Member ID", value: data?.memberId ?? "-"},
                     {label: "IC", value: data?.IC ?? "-"},
                     {label: "Country / State", value: `${data?.country[0]} / ${data?.country[1]}`},
                     {label: "Phone Number", value: data?.phone_number ?? "-"},
@@ -249,6 +251,10 @@ export default function RegisterPage() {
                                                 <Input disabled />
                                             </Form.Item>
 
+                                            <Form.Item label="Member ID" field="memberId">
+                                                <Input disabled />
+                                            </Form.Item>
+
                                             <Form.Item label="IC" field="IC">
                                                 <Input disabled />
                                             </Form.Item>
@@ -339,6 +345,7 @@ export default function RegisterPage() {
                                                                 IC: data?.IC,
                                                                 name: data?.name,
                                                                 country: data?.country,
+                                                                memberId: data?.memberId,
                                                                 school: data?.school ?? "",
                                                                 gender: data?.gender,
                                                                 birthdate: data?.birthdate,

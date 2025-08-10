@@ -1,5 +1,5 @@
 import type {AgeBracket} from "@/schema";
-import type {FinalCriteria} from "@/schema/TournamentSchema";
+import type {FinalCriterion} from "@/schema/TournamentSchema";
 import {validateAgeBrackets} from "@/utils/validation/validateAgeBrackets";
 import {type FormInstance, Message} from "@arco-design/web-react";
 import {useState} from "react";
@@ -28,7 +28,7 @@ export function useAgeBracketEditor(form: FormInstance, onBracketsSaved?: (brack
             }
 
             // Check for duplicate classifications within the same bracket
-            const classifications = bracket.final_criteria.map((criteria: FinalCriteria) => criteria.classification);
+            const classifications = bracket.final_criteria.map((criteria: FinalCriterion) => criteria.classification);
             const duplicates = classifications.filter(
                 (classification, idx: number) => classifications.indexOf(classification) !== idx,
             );

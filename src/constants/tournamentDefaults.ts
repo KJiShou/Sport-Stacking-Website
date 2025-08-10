@@ -28,7 +28,7 @@ export const DEFAULT_EVENTS: Tournament["events"] = [
         ],
     },
     {
-        code: "cycle",
+        code: "Cycle",
         type: "Individual",
         age_brackets: [
             {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 10}]},
@@ -54,7 +54,7 @@ export const DEFAULT_EVENTS: Tournament["events"] = [
         ],
     },
     {
-        code: "cycle",
+        code: "Cycle",
         type: "Team Relay",
         age_brackets: [
             {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 4}]},

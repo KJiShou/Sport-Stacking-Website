@@ -183,15 +183,21 @@ const RegisterPage = () => {
                                 <div className="flex flex-col items-center gap-2">
                                     <Upload
                                         listType="picture-card"
-                                        accept="image/*"
+                                        accept="image/jpeg,image/png,image/gif"
                                         showUploadList={false}
-                                        customRequest={({file, onSuccess}) => {
-                                            const MAX_SIZE = 10 * 1024 * 1024;
+                                        customRequest={({file, onSuccess, onError}) => {
+                                            const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+                                            const validTypes = ["image/jpeg", "image/png", "image/gif"];
+
+                                            if (!validTypes.includes(file.type)) {
+                                                Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
+                                                onError?.(new Error("Invalid file type"));
+                                                return;
+                                            }
 
                                             if (file.size > MAX_SIZE) {
-                                                // 100MB
-
                                                 Message.error("File size exceeds 10MB limit");
+                                                onError?.(new Error("File size exceeds 10MB limit"));
                                                 return;
                                             }
 
@@ -199,6 +205,10 @@ const RegisterPage = () => {
                                             reader.onload = () => {
                                                 form.setFieldValue("image_url", reader.result as string);
                                                 onSuccess?.();
+                                            };
+                                            reader.onerror = () => {
+                                                Message.error("Failed to read file.");
+                                                onError?.(new Error("Failed to read file."));
                                             };
                                             reader.readAsDataURL(file);
                                         }}

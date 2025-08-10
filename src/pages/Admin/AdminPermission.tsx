@@ -1,11 +1,12 @@
 import {Button, Form, Input, Message, Modal, Spin, Switch, Table, type TableColumnProps, Tag} from "@arco-design/web-react";
 import {useEffect, useState} from "react";
 import type {FirestoreUser} from "../../schema";
-import {fetchAllUsers, updateUserRoles} from "../../services/firebase/authService";
+import {fetchAllUsers, updateUserProfile, updateUserRoles} from "../../services/firebase/authService";
 import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
 import {DeviceBreakpoint} from "../../utils/DeviceInspector/deviceStore";
 
 type RoleFields = {
+    memberId: string;
     edit_tournament: boolean;
     record_tournament: boolean;
     modify_admin: boolean;
@@ -114,6 +115,7 @@ export default function AdminPermissionsPage() {
             const values = await form.validate();
             if (!selected) return;
             await updateUserRoles(selected.id, values as FirestoreUser["roles"]);
+            await updateUserProfile(selected.id, {memberId: values.memberId});
             Message.success("Permissions updated");
             setModalVisible(false);
             load(); // refresh table
@@ -169,6 +171,9 @@ export default function AdminPermissionsPage() {
                                     }
                                 }
                             >
+                                <Form.Item field="memberId" label="Member ID">
+                                    <Input />
+                                </Form.Item>
                                 <Form.Item
                                     field="edit_tournament"
                                     label="Edit Tournament"

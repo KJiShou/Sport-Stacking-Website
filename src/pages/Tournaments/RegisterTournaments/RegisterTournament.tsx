@@ -4,7 +4,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {addUserRegistrationRecord, getUserEmailByGlobalId} from "@/services/firebase/authService";
+import {addUserRegistrationRecord, getUserByGlobalId, getUserEmailByGlobalId} from "@/services/firebase/authService";
 import {createRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTeam, fetchTournamentById} from "@/services/firebase/tournamentsService";
@@ -53,9 +53,11 @@ export default function RegisterTournamentPage() {
     const [availableEvents, setAvailableEvents] = useState<Tournament["events"]>([]);
     const [haveTeam, setHaveTeam] = useState<TeamEntry[]>([]);
     const [tournamentData, setTournamentData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
-    const [requiredKeys, setRequiredKeys] = useState(["3-3-3-Individual", "3-6-3-Individual", "cycle-Individual"]);
+    const [requiredKeys, setRequiredKeys] = useState(["3-3-3-Individual", "3-6-3-Individual", "Cycle-Individual"]);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
+    const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
+    const [price, setPrice] = useState<number | null>(null);
 
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
@@ -133,6 +135,8 @@ export default function RegisterTournamentPage() {
                 phone_number: values.phone_number,
                 organizer: values.organizer ?? "",
                 events_registered: values.events_registered,
+                registrationFee: tournament.registration_fee,
+                memberRegistrationFee: tournament.member_registration_fee,
                 payment_proof_url: paymentProofUrl,
                 registration_status: "pending",
                 rejection_reason: null,
@@ -151,12 +155,31 @@ export default function RegisterTournamentPage() {
                     .map((id) => (id ? {global_id: id, verified: false} : null))
                     .filter((m): m is {global_id: string; verified: boolean} => m !== null);
 
+                const memberIds = members.map((m) => m.global_id);
+                if (teamData.leader) {
+                    memberIds.push(teamData.leader);
+                }
+
+                const memberUsers = await Promise.all(memberIds.map((id) => getUserByGlobalId(id)));
+
+                const ages = memberUsers
+                    .map((memberUser) => {
+                        if (memberUser?.birthdate && tournament?.start_date) {
+                            return getAgeAtTournament(memberUser.birthdate, tournament.start_date);
+                        }
+                        return 0;
+                    })
+                    .filter((age) => age > 0);
+
+                const largest_age = ages.length > 0 ? Math.max(...ages) : 0;
+
                 const teamId = await createTeam(tournamentId, {
                     name: teamData.name,
                     leader_id: teamData.leader,
                     members,
                     events: (teamData.label ?? "").split(",").map((s) => s.trim()),
                     registration_id: registrationId,
+                    largest_age,
                 });
 
                 const toNotify: string[] = [];
@@ -225,7 +248,13 @@ export default function RegisterTournamentPage() {
 
                 if (comp) {
                     setTournament(comp);
+                    const registrationPrice = user?.memberId ? comp.member_registration_fee : comp.registration_fee;
+                    setPrice(registrationPrice ?? 0);
                     setTournamentData([
+                        {
+                            label: "Registration Price",
+                            value: <div>RM{registrationPrice}</div>,
+                        },
                         {
                             label: "Location",
                             value: (
@@ -294,16 +323,17 @@ export default function RegisterTournamentPage() {
                 });
 
                 // 初始化团队状态
-                const initialHaveTeam = requiredKeys.map((event: string) => {
-                    const eventVar = event.split("-");
+                const initialHaveTeam = requiredKeys.map((eventKey: string) => {
+                    const eventObject = allAvailableEvents.find((e) => `${e.code}-${e.type}` === eventKey);
                     if (
-                        eventVar[eventVar.length - 1] === "team relay" ||
-                        eventVar[eventVar.length - 1] === "double" ||
-                        eventVar[eventVar.length - 1] === "parent & child"
+                        eventObject &&
+                        (eventObject.type === "Team Relay" ||
+                            eventObject.type === "Double" ||
+                            eventObject.type === "Parent & Child")
                     ) {
-                        return [true, event];
+                        return [true, eventKey];
                     }
-                    return [false, event];
+                    return [false, eventKey];
                 });
                 setHaveTeam(initialHaveTeam as TeamEntry[]);
 
@@ -388,6 +418,7 @@ export default function RegisterTournamentPage() {
                             mode="multiple"
                             defaultValue={requiredKeys}
                             onChange={(value) => {
+                                if (!availableEvents) return;
                                 // 确保个人赛事项不能被取消选择
                                 const finalValue = Array.from(new Set([...value, ...requiredKeys]));
 
@@ -395,16 +426,17 @@ export default function RegisterTournamentPage() {
                                 form.setFieldsValue({events_registered: finalValue});
 
                                 // 更新团队事件的状态
-                                const tempHaveTeam = finalValue.map((event: string) => {
-                                    const eventVar = event.split("-");
+                                const tempHaveTeam = finalValue.map((eventKey: string) => {
+                                    const eventObject = availableEvents.find((e) => `${e.code}-${e.type}` === eventKey);
                                     if (
-                                        eventVar[eventVar.length - 1] === "team relay" ||
-                                        eventVar[eventVar.length - 1] === "double" ||
-                                        eventVar[eventVar.length - 1] === "parent & child"
+                                        eventObject &&
+                                        (eventObject.type === "Team Relay" ||
+                                            eventObject.type === "Double" ||
+                                            eventObject.type === "Parent & Child")
                                     ) {
-                                        return [true, event];
+                                        return [true, eventKey];
                                     }
-                                    return [false, event];
+                                    return [false, eventKey];
                                 });
                                 setHaveTeam(tempHaveTeam as TeamEntry[]);
                             }}
@@ -611,17 +643,33 @@ export default function RegisterTournamentPage() {
                             </div>
                         }
                         field="payment_proof"
-                        rules={[{required: true}]}
+                        rules={[{required: !paymentProofUrl, message: "Payment proof is required."}]}
                     >
                         <Upload
                             className={"w-full flex flex-col items-center justify-center mb-10"}
                             drag
                             multiple={false}
                             limit={1}
-                            accept="image/*"
+                            accept="image/jpeg,image/png,image/gif"
                             customRequest={async (option) => {
                                 const {file, onSuccess, onError, onProgress} = option;
+                                const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+                                const validTypes = ["image/jpeg", "image/png", "image/gif"];
+
+                                if (!validTypes.includes(file.type)) {
+                                    Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
+                                    onError?.(new Error("Invalid file type"));
+                                    return;
+                                }
+
+                                if (file.size > MAX_SIZE) {
+                                    Message.error("File size exceeds 10MB limit");
+                                    onError?.(new Error("File size exceeds 10MB limit"));
+                                    return;
+                                }
+
                                 if (!user?.global_id) {
+                                    Message.error("User not authenticated");
                                     onError?.(new Error("User not authenticated"));
                                     return;
                                 }
@@ -639,10 +687,11 @@ export default function RegisterTournamentPage() {
                                     setLoading(false);
                                     onSuccess?.(file);
                                 } catch (err) {
+                                    Message.error("Failed to upload file.");
                                     onError?.(err as Error);
                                 }
                             }}
-                            tip="Only pictures can be uploaded"
+                            tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
                         />
                     </Form.Item>
 

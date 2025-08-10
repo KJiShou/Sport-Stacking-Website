@@ -1,0 +1,16 @@
+{
+  "Providers": [
+    {
+      "name": "gemini",
+      "api_base_url": "https://dquwmlleutzw.ap-southeast-1.clawcloudrun.com",
+      "api_key": "JS_NightKatana",
+      "models": ["gemini-2.5-flash", "gemini-2.5-pro"],
+      "transformer": {
+        "use": ["gemini"]
+      }
+    }
+  ],
+  "Router": {
+    "default": "gemini,gemini-2.5-pro"
+  }
+}
