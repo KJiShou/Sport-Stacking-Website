@@ -2,9 +2,54 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {nanoid} from "nanoid";
-import type {AgeBracket, Registration, Team, Tournament} from "../../schema";
+import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, TournamentEvent} from "../../schema";
+import type {TournamentRecord} from "../../schema/RecordSchema";
 
 // Types
+export interface PrelimResultData extends TournamentRecord {
+    rank: number;
+    name: string;
+    id: string;
+    three?: number;
+    threeSixThree?: number;
+    cycle?: number;
+    try1?: number;
+    try2?: number;
+    try3?: number;
+}
+
+export interface BracketResults {
+    bracket: AgeBracket;
+    records: PrelimResultData[];
+    classification?: "beginner" | "intermediate" | "advance";
+}
+
+export interface EventResults {
+    event: TournamentEvent;
+    brackets: BracketResults[];
+}
+
+export interface AllPrelimResultsPDFParams {
+    tournament: Tournament;
+    resultsData: EventResults[];
+    round?: "Preliminary" | "Final";
+}
+
+export interface FinalistsPDFParams {
+    tournament: Tournament;
+    finalistsData: EventResults[];
+}
+
+interface PrelimResult extends TournamentRecord {
+    rank: number;
+    name: string;
+}
+interface ExportPrelimResultsOptions {
+    tournament: Tournament;
+    eventKey: string;
+    records: PrelimResult[];
+}
+
 interface ExportPDFOptions {
     tournament: Tournament;
     eventKey: string;
@@ -387,6 +432,325 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
         openPDFInNewTab(doc, filename);
     } catch (error) {
         console.error("Error generating master list PDF:", error);
+        throw error;
+    }
+};
+
+export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFParams): Promise<void> => {
+    const {tournament, resultsData, round = "Preliminary"} = options;
+    try {
+        const doc = new jsPDF();
+        doc.setFont("times");
+
+        const addHeader = async (docInstance: jsPDF) => {
+            const pageWidth = docInstance.internal.pageSize.getWidth();
+            const marginX = 14;
+            const logoWidth = 40;
+            const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
+
+            docInstance.setFont("times", "bold");
+            docInstance.setFontSize(25);
+            const title = `${tournament.name} - ${round} Results`;
+            const titleLines = docInstance.splitTextToSize(title, titleMaxWidth);
+            docInstance.text(titleLines, marginX, 20);
+
+            let logoDataUrl: string | undefined;
+            if (tournament.logo) {
+                try {
+                    logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
+                } catch (error) {
+                    console.error("Error loading logo:", error);
+                }
+            }
+
+            if (logoDataUrl) {
+                try {
+                    docInstance.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, 10, 30, 30);
+                } catch (error) {
+                    console.error("Error adding logo to PDF:", error);
+                    docInstance.setFontSize(8);
+                    docInstance.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
+                }
+            } else {
+                docInstance.setFontSize(8);
+                docInstance.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
+            }
+
+            const titleHeight = titleLines.length * 10;
+            const currentY = 25 + titleHeight;
+            docInstance.line(14, currentY, docInstance.internal.pageSize.width - 14, currentY);
+            return currentY + 10;
+        };
+
+        let currentY = await addHeader(doc);
+        let isFirstEvent = true;
+
+        for (const eventResult of resultsData) {
+            const {event, brackets} = eventResult;
+
+            if (!isFirstEvent) {
+                doc.addPage();
+                currentY = await addHeader(doc);
+            }
+            isFirstEvent = false;
+
+            doc.setFontSize(16);
+            doc.setFont(undefined, "bold");
+            doc.text(`${event.code} - ${event.type}`, 14, currentY);
+            currentY += 10;
+
+            for (const bracketResult of brackets) {
+                const {bracket, records, classification} = bracketResult;
+
+                if (currentY > doc.internal.pageSize.height - 40) {
+                    doc.addPage();
+                    currentY = await addHeader(doc);
+                }
+
+                doc.setFontSize(14);
+                const classificationText = classification ? ` - ${classification}` : "";
+                doc.text(`${bracket.name} (Ages ${bracket.min_age}-${bracket.max_age})${classificationText}`, 20, currentY);
+                currentY += 8;
+
+                if (records.length > 0) {
+                    const isOverall = event.code === "Overall";
+                    const head = isOverall
+                        ? [["Rank", "ID", "Name", "3-3-3", "3-6-3", "Cycle", "Best Time"]]
+                        : [["Rank", "ID", "Name", "Try 1", "Try 2", "Try 3", "Best Time"]];
+
+                    const body = records.map((r) => {
+                        const rowData: (string | number)[] = [r.rank, r.id, r.name];
+                        if (isOverall) {
+                            rowData.push(
+                                r.three?.toFixed(3) ?? "N/A",
+                                r.threeSixThree?.toFixed(3) ?? "N/A",
+                                r.cycle?.toFixed(3) ?? "N/A",
+                            );
+                        } else {
+                            rowData.push(r.try1 ?? "N/A", r.try2 ?? "N/A", r.try3 ?? "N/A");
+                        }
+                        rowData.push(r.bestTime.toFixed(3));
+                        return rowData;
+                    });
+
+                    const finalCriteria = bracket.final_criteria || [];
+                    const classificationOrder = ["advance", "intermediate", "beginner"];
+                    const classificationColors: {[key: string]: [number, number, number]} = {
+                        advance: [255, 255, 0], // Yellow
+                        intermediate: [144, 238, 144], // Light Green
+                        beginner: [173, 216, 230], // Light Blue
+                    };
+
+                    const sortedCriteria = [...finalCriteria].sort(
+                        (a, b) => classificationOrder.indexOf(a.classification) - classificationOrder.indexOf(b.classification),
+                    );
+
+                    const rankGroups: {classification: string; startRank: number; endRank: number}[] = [];
+                    let currentRank = 0;
+
+                    for (const criterion of sortedCriteria) {
+                        const startRank = currentRank + 1;
+                        const endRank = currentRank + criterion.number;
+                        rankGroups.push({
+                            classification: criterion.classification,
+                            startRank,
+                            endRank,
+                        });
+                        currentRank = endRank;
+                    }
+
+                    autoTable(doc, {
+                        startY: currentY,
+                        head,
+                        body,
+                        theme: "plain",
+                        didParseCell: (data) => {
+                            if (round === "Final") return;
+                            // Only apply to body rows, not headers
+                            if (data.section === "body") {
+                                const rank = Number.parseInt(data.row.raw[0] as string);
+
+                                for (const group of rankGroups) {
+                                    if (rank >= group.startRank && rank <= group.endRank) {
+                                        const color = classificationColors[group.classification];
+                                        if (color) {
+                                            data.cell.styles.fillColor = color;
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        },
+                        styles: {
+                            fontSize: 9,
+                            lineColor: [0, 0, 0],
+                            lineWidth: 0.1,
+                            textColor: [0, 0, 0],
+                            font: "times",
+                        },
+                        headStyles: {
+                            fillColor: [255, 255, 255],
+                            textColor: [0, 0, 0],
+                            fontStyle: "bold",
+                        },
+                        margin: {left: 20},
+                    });
+
+                    currentY = (doc as jsPDF & {lastAutoTable?: {finalY: number}}).lastAutoTable?.finalY + 10 || currentY + 20;
+                } else {
+                    doc.setFontSize(10);
+                    doc.text("No results for this bracket.", 25, currentY);
+                    currentY += 10;
+                }
+                if (currentY > doc.internal.pageSize.height - 40) {
+                    doc.addPage();
+                    currentY = await addHeader(doc);
+                }
+            }
+        }
+
+        addPDFFooter(doc);
+        const filename = createPDFFilename([tournament.name, "all_prelim_results.pdf"]);
+        openPDFInNewTab(doc, filename);
+    } catch (error) {
+        console.error("Error generating all prelim results PDF:", error);
+        throw error;
+    }
+};
+
+export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams): Promise<void> => {
+    const {tournament, finalistsData} = options;
+    try {
+        const doc = new jsPDF();
+        doc.setFont("times");
+
+        const addHeader = async (docInstance: jsPDF) => {
+            const pageWidth = docInstance.internal.pageSize.getWidth();
+            const marginX = 14;
+            const logoWidth = 40;
+            const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
+
+            docInstance.setFont("times", "bold");
+            docInstance.setFontSize(25);
+            const title = `${tournament.name} - Finalists Name List`;
+            const titleLines = docInstance.splitTextToSize(title, titleMaxWidth);
+            docInstance.text(titleLines, marginX, 20);
+
+            let logoDataUrl: string | undefined;
+            if (tournament.logo) {
+                try {
+                    logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
+                } catch (error) {
+                    console.error("Error loading logo:", error);
+                }
+            }
+
+            if (logoDataUrl) {
+                try {
+                    docInstance.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, 10, 30, 30);
+                } catch (error) {
+                    console.error("Error adding logo to PDF:", error);
+                    docInstance.setFontSize(8);
+                    docInstance.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
+                }
+            } else {
+                docInstance.setFontSize(8);
+                docInstance.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
+            }
+
+            const titleHeight = titleLines.length * 10;
+            const currentY = 25 + titleHeight;
+            docInstance.line(14, currentY, docInstance.internal.pageSize.width - 14, currentY);
+            return currentY + 10;
+        };
+
+        let currentY = await addHeader(doc);
+
+        let isFirstEvent = true;
+
+        for (const eventResult of finalistsData) {
+            const {event, brackets} = eventResult;
+
+            if (!isFirstEvent) {
+                doc.addPage();
+                currentY = await addHeader(doc);
+            }
+            isFirstEvent = false;
+
+            doc.setFontSize(16);
+            doc.setFont(undefined, "bold");
+            doc.text(`${event.code} - ${event.type}`, 14, currentY);
+            currentY += 10;
+
+            let isFirstBracketInEvent = true;
+            for (const bracketResult of brackets) {
+                if (!isFirstBracketInEvent) {
+                    doc.addPage();
+                    currentY = await addHeader(doc);
+                    doc.setFontSize(16);
+                    doc.setFont(undefined, "bold");
+                    doc.text(`${event.code} - ${event.type}`, 14, currentY);
+                    currentY += 10;
+                }
+                isFirstBracketInEvent = false;
+
+                const {bracket, records, classification} = bracketResult;
+
+                if (currentY > doc.internal.pageSize.height - 40) {
+                    doc.addPage();
+                    currentY = await addHeader(doc);
+                    doc.setFontSize(16);
+                    doc.setFont(undefined, "bold");
+                    doc.text(`${event.code} - ${event.type}`, 14, currentY);
+                    currentY += 10;
+                }
+
+                doc.setFontSize(14);
+                doc.text(
+                    `${bracket.name} (Ages ${bracket.min_age}-${bracket.max_age}) ${classification ? `- ${classification}` : ""}`,
+                    20,
+                    currentY,
+                );
+                currentY += 8;
+
+                if (records.length > 0) {
+                    const head = [["Rank", "ID", "Name", "Try 1", "Try 2", "Try 3", "Best Time"]];
+                    const body = records.map((r) => [r.rank, r.id, r.name, "", "", "", ""]);
+
+                    autoTable(doc, {
+                        startY: currentY,
+                        head,
+                        body,
+                        theme: "plain",
+                        styles: {
+                            fontSize: 9,
+                            lineColor: [0, 0, 0],
+                            lineWidth: 0.1,
+                            textColor: [0, 0, 0],
+                            font: "times",
+                        },
+                        headStyles: {
+                            fillColor: [255, 255, 255],
+                            textColor: [0, 0, 0],
+                            fontStyle: "bold",
+                        },
+                        margin: {left: 20},
+                    });
+
+                    currentY = (doc as jsPDF & {lastAutoTable?: {finalY: number}}).lastAutoTable?.finalY + 10 || currentY + 20;
+                } else {
+                    doc.setFontSize(10);
+                    doc.text("No finalists for this bracket.", 25, currentY);
+                    currentY += 10;
+                }
+            }
+        }
+
+        addPDFFooter(doc);
+        const filename = createPDFFilename([tournament.name, "finalists_name_list.pdf"]);
+        openPDFInNewTab(doc, filename);
+    } catch (error) {
+        console.error("Error generating finalists name list PDF:", error);
         throw error;
     }
 };

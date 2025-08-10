@@ -2,12 +2,12 @@ import {Timestamp} from "firebase/firestore";
 import {z} from "zod";
 
 // final_criteria subcollection
-export const FinalCriteriaSchema = z.object({
+export const FinalCriterionSchema = z.object({
     classification: z.enum(["advance", "intermediate", "beginner"]),
     number: z.number(),
 });
 
-export type FinalCriteria = z.infer<typeof FinalCriteriaSchema>;
+export type FinalCriterion = z.infer<typeof FinalCriterionSchema>;
 
 // age_brackets subcollection
 export const AgeBracketSchema = z.object({
@@ -15,17 +15,18 @@ export const AgeBracketSchema = z.object({
     min_age: z.number(),
     max_age: z.number(),
     number_of_participants: z.number().optional().nullable().default(0),
-    final_criteria: z.array(FinalCriteriaSchema).optional(),
+    final_criteria: z.array(FinalCriterionSchema).optional(),
 });
 
 export const EventSchema = z.object({
-    code: z.enum(["3-3-3", "3-6-3", "Cycle"]),
+    code: z.enum(["3-3-3", "3-6-3", "Cycle", "Overall"]),
     type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child"]),
     teamSize: z.number().optional(),
     age_brackets: z.array(AgeBracketSchema), // 直接放进每个 event
 });
 
 export type AgeBracket = z.infer<typeof AgeBracketSchema>;
+export type TournamentEvent = z.infer<typeof EventSchema>;
 
 // main tournament schema
 export const TournamentSchema = z.object({

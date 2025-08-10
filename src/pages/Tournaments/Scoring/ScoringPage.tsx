@@ -1,6 +1,6 @@
 import {useAuthContext} from "@/context/AuthContext";
-import type {Registration, Team, Tournament} from "@/schema";
-import {getTournamentRecords, saveRecord} from "@/services/firebase/recordService";
+import type {Registration, Team, TeamMember, Tournament} from "@/schema";
+import {getRecords, getTournamentRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {Button, InputNumber, Message, Table, Tabs, Typography} from "@arco-design/web-react";
@@ -24,7 +24,7 @@ interface ParticipantScore extends Registration {
 }
 
 interface TeamScore extends Team {
-    scores: Score;
+    scores: Record<string, Score>;
 }
 
 export default function ScoringPage() {
@@ -60,7 +60,23 @@ export default function ScoringPage() {
             ]);
 
             setTeamList(teams);
-            setTeamScoreList(teams.map((team) => ({...team, scores: {try1: "", try2: "", try3: ""}})));
+            setTeamScoreList(
+                teams.map((team) => {
+                    const teamScores: Record<string, Score> = {};
+                    for (const eventKey of team.events) {
+                        const record = records.find((rec) => "teamId" in rec && rec.teamId === team.id && rec.event === eventKey);
+                        teamScores[eventKey] = {
+                            try1: record?.try1?.toString() || "",
+                            try2: record?.try2?.toString() || "",
+                            try3: record?.try3?.toString() || "",
+                        };
+                    }
+                    return {
+                        ...team,
+                        scores: teamScores,
+                    };
+                }),
+            );
 
             const approvedRegs = regs.filter((r) => r.registration_status === "approved");
 
@@ -113,8 +129,22 @@ export default function ScoringPage() {
         );
     };
 
-    const handleTeamScoreChange = (teamId: string, tryNum: keyof Score, value: string) => {
-        setTeamScoreList((prev) => prev.map((t) => (t.id === teamId ? {...t, scores: {...t.scores, [tryNum]: value}} : t)));
+    const handleTeamScoreChange = (teamId: string, eventKey: string, tryNum: keyof Score, value: string) => {
+        setTeamScoreList((prev) =>
+            prev.map((t) => {
+                if (t.id === teamId) {
+                    const updatedScores = {
+                        ...t.scores,
+                        [eventKey]: {
+                            ...t.scores[eventKey],
+                            [tryNum]: value,
+                        },
+                    };
+                    return {...t, scores: updatedScores};
+                }
+                return t;
+            }),
+        );
     };
 
     const getBestTime = (scores: Score) => {
@@ -122,6 +152,75 @@ export default function ScoringPage() {
             .map((s) => Number.parseFloat(s))
             .filter((t) => !Number.isNaN(t) && t > 0);
         return times.length > 0 ? Math.min(...times).toFixed(3) : "N/A";
+    };
+
+    const handleSaveAllScores = async () => {
+        if (!tournamentId) return;
+        setLoading(true);
+        try {
+            const individualPromises = registrationList
+                .flatMap((p) =>
+                    Object.entries(p.scores).map(([eventKey, eventScores]) => {
+                        if (eventScores?.try1 && eventScores.try2 && eventScores.try3) {
+                            return saveRecord({
+                                tournamentId,
+                                event: eventKey,
+                                participantId: p.user_id,
+                                participantName: p.user_name,
+                                participantAge: p.age,
+                                round: "prelim",
+                                classification: "beginner",
+                                try1: Number.parseFloat(eventScores.try1),
+                                try2: Number.parseFloat(eventScores.try2),
+                                try3: Number.parseFloat(eventScores.try3),
+                                status: "submitted",
+                                submitted_at: new Date().toISOString(),
+                            });
+                        }
+                        return null;
+                    }),
+                )
+                .filter(Boolean);
+
+            const teamPromises = teamScoreList
+                .flatMap((t) =>
+                    Object.entries(t.scores).map(([eventKey, teamScores]) => {
+                        if (teamScores?.try1 && teamScores.try2 && teamScores.try3) {
+                            return saveTeamRecord({
+                                tournamentId,
+                                event: eventKey,
+                                teamId: t.id,
+                                teamName: t.name,
+                                leaderId: t.leader_id,
+                                members: t.members,
+                                round: "prelim",
+                                classification: "beginner",
+                                try1: Number.parseFloat(teamScores.try1),
+                                try2: Number.parseFloat(teamScores.try2),
+                                try3: Number.parseFloat(teamScores.try3),
+                                status: "submitted",
+                                submitted_at: new Date().toISOString(),
+                            });
+                        }
+                        return null;
+                    }),
+                )
+                .filter(Boolean);
+
+            const allPromises = [...individualPromises, ...teamPromises];
+
+            if (allPromises.length > 0) {
+                await Promise.all(allPromises);
+                Message.success("All scores saved successfully!");
+            } else {
+                Message.info("No scores to save.");
+            }
+        } catch (error) {
+            console.error("Failed to save all scores:", error);
+            Message.error("Failed to save all scores. Please try again.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleSaveScores = async (eventKey: string, bracketName: string, isTeamEvent: boolean) => {
@@ -139,17 +238,40 @@ export default function ScoringPage() {
             }
 
             if (isTeamEvent) {
-                const teamsToSave = teamScoreList.filter(
-                    (t) => t.events.includes(eventKey) && t.largest_age >= bracket.min_age && t.largest_age <= bracket.max_age,
-                );
+                const teamsToSave = teamScoreList.filter((t) => t.events.includes(eventKey));
 
-                // Team saving logic to be implemented
-                console.log("Saving scores for teams:", teamsToSave);
-                Message.info("Team score saving is not yet implemented.");
+                const promises = teamsToSave
+                    .map((t) => {
+                        const teamScores = t.scores[eventKey];
+                        if (teamScores?.try1 && teamScores.try2 && teamScores.try3) {
+                            return saveTeamRecord({
+                                tournamentId,
+                                event: eventKey,
+                                teamId: t.id,
+                                teamName: t.name,
+                                leaderId: t.leader_id,
+                                members: t.members,
+                                round: "prelim",
+                                classification: "beginner",
+                                try1: Number.parseFloat(teamScores.try1),
+                                try2: Number.parseFloat(teamScores.try2),
+                                try3: Number.parseFloat(teamScores.try3),
+                                status: "submitted",
+                                submitted_at: new Date().toISOString(),
+                            });
+                        }
+                        return null;
+                    })
+                    .filter(Boolean);
+
+                if (promises.length > 0) {
+                    await Promise.all(promises);
+                    Message.success(`Scores for ${eventKey} - ${bracketName} saved successfully!`);
+                } else {
+                    Message.info("No scores to save.");
+                }
             } else {
-                const participantsToSave = registrationList.filter(
-                    (r) => r.events_registered.includes(eventKey) && r.age >= bracket.min_age && r.age <= bracket.max_age,
-                );
+                const participantsToSave = registrationList.filter((r) => r.events_registered.includes(eventKey));
 
                 const promises = participantsToSave
                     .map((p) => {
@@ -162,6 +284,7 @@ export default function ScoringPage() {
                                 participantName: p.user_name,
                                 participantAge: p.age,
                                 round: "prelim",
+                                classification: "beginner",
                                 try1: Number.parseFloat(eventScores.try1),
                                 try2: Number.parseFloat(eventScores.try2),
                                 try3: Number.parseFloat(eventScores.try3),
@@ -266,62 +389,106 @@ export default function ScoringPage() {
         },
     ];
 
-    const teamColumns: TableColumnProps<TeamScore>[] = [
+    const getTeamColumns = (eventKey: string): TableColumnProps<TeamScore>[] => [
         {title: "Team Name", dataIndex: "name", width: 200},
         {title: "Leader ID", dataIndex: "leader_id", width: 150},
         {
+            title: "Members",
+            dataIndex: "members",
+            width: 200,
+            render: (members: TeamMember[]) => (
+                <div>
+                    {members.map((m) => (
+                        <div key={m.global_id}>{m.global_id}</div>
+                    ))}
+                </div>
+            ),
+        },
+        {
             title: "Try 1",
             width: 120,
-            render: (_, record) => (
-                <InputNumber
-                    placeholder="first try"
-                    value={record.scores.try1 === "" ? undefined : Number.parseFloat(record.scores.try1)}
-                    onChange={(val) =>
-                        handleTeamScoreChange(record.id, "try1", val === undefined || val === null ? "" : String(val))
-                    }
-                />
-            ),
+            render: (_, record) => {
+                const score = record.scores[eventKey]?.try1 || "";
+                return (
+                    <InputNumber
+                        placeholder="first try"
+                        value={score === "" ? undefined : Number.parseFloat(score)}
+                        onChange={(val) =>
+                            handleTeamScoreChange(
+                                record.id,
+                                eventKey,
+                                "try1",
+                                val === undefined || val === null ? "" : String(val),
+                            )
+                        }
+                    />
+                );
+            },
         },
         {
             title: "Try 2",
             width: 120,
-            render: (_, record) => (
-                <InputNumber
-                    placeholder="second try"
-                    value={record.scores.try2 === "" ? undefined : Number.parseFloat(record.scores.try2)}
-                    onChange={(val) =>
-                        handleTeamScoreChange(record.id, "try2", val === undefined || val === null ? "" : String(val))
-                    }
-                />
-            ),
+            render: (_, record) => {
+                const score = record.scores[eventKey]?.try2 || "";
+                return (
+                    <InputNumber
+                        placeholder="second try"
+                        value={score === "" ? undefined : Number.parseFloat(score)}
+                        onChange={(val) =>
+                            handleTeamScoreChange(
+                                record.id,
+                                eventKey,
+                                "try2",
+                                val === undefined || val === null ? "" : String(val),
+                            )
+                        }
+                    />
+                );
+            },
         },
         {
             title: "Try 3",
             width: 120,
-            render: (_, record) => (
-                <InputNumber
-                    placeholder="third try"
-                    value={record.scores.try3 === "" ? undefined : Number.parseFloat(record.scores.try3)}
-                    onChange={(val) =>
-                        handleTeamScoreChange(record.id, "try3", val === undefined || val === null ? "" : String(val))
-                    }
-                />
-            ),
+            render: (_, record) => {
+                const score = record.scores[eventKey]?.try3 || "";
+                return (
+                    <InputNumber
+                        placeholder="third try"
+                        value={score === "" ? undefined : Number.parseFloat(score)}
+                        onChange={(val) =>
+                            handleTeamScoreChange(
+                                record.id,
+                                eventKey,
+                                "try3",
+                                val === undefined || val === null ? "" : String(val),
+                            )
+                        }
+                    />
+                );
+            },
         },
         {
             title: "Best Time",
             width: 120,
-            render: (_, record) => <span>{getBestTime(record.scores)}</span>,
+            render: (_, record) => {
+                const scores = record.scores[eventKey];
+                return <span>{scores ? getBestTime(scores) : "N/A"}</span>;
+            },
         },
     ];
 
     return (
         <div className="flex flex-col h-full bg-ghostwhite p-6 gap-6">
-            <Button type="outline" onClick={() => navigate(-1)} className="w-fit">
+            <Button type="outline" onClick={() => navigate("/tournaments")} className="w-fit">
                 <IconUndo /> Go Back
             </Button>
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-6 shadow-lg rounded-lg">
-                <Title heading={3}>{tournament.name} Prelim Score</Title>
+                <div className="w-full flex justify-between items-center">
+                    <Title heading={3}>{tournament.name} Prelim Score</Title>
+                    <Button type="primary" onClick={handleSaveAllScores} loading={loading}>
+                        Save All Scores
+                    </Button>
+                </div>
                 <Tabs
                     type="line"
                     destroyOnHide
@@ -352,7 +519,7 @@ export default function ScoringPage() {
                                             {isTeamEvent ? (
                                                 <Table
                                                     style={{width: "100%"}}
-                                                    columns={teamColumns}
+                                                    columns={getTeamColumns(evtKey)}
                                                     data={teamScoreList.filter(
                                                         (t) =>
                                                             t.events.includes(evtKey) &&
@@ -383,7 +550,58 @@ export default function ScoringPage() {
                                                     type="primary"
                                                     onClick={() => handleSaveScores(evtKey, br.name, isTeamEvent)}
                                                 >
-                                                    Save Scores
+                                                    Save Event Scores
+                                                </Button>
+                                                <Button
+                                                    type="primary"
+                                                    status="success"
+                                                    loading={loading}
+                                                    onClick={async () => {
+                                                        if (!tournamentId || !evtKey) return;
+                                                        setLoading(true);
+                                                        try {
+                                                            const eventRecords = await getRecords(tournamentId, evtKey);
+                                                            const prelimRecords = eventRecords.filter(
+                                                                (r) => r.round === "prelim",
+                                                            );
+
+                                                            const participantsForBracket = registrationList.filter(
+                                                                (r) =>
+                                                                    r.events_registered.includes(evtKey) &&
+                                                                    r.age >= br.min_age &&
+                                                                    r.age <= br.max_age,
+                                                            );
+                                                            const teamsForBracket = teamScoreList.filter(
+                                                                (t) =>
+                                                                    t.events.includes(evtKey) &&
+                                                                    t.largest_age >= br.min_age &&
+                                                                    t.largest_age <= br.max_age,
+                                                            );
+
+                                                            const allRecorded = isTeamEvent
+                                                                ? teamsForBracket.every((t) =>
+                                                                      prelimRecords.some((r) => r.teamId === t.id),
+                                                                  )
+                                                                : participantsForBracket.every((p) =>
+                                                                      prelimRecords.some((r) => r.participantId === p.user_id),
+                                                                  );
+
+                                                            if (allRecorded) {
+                                                                navigate(`/tournaments/${tournamentId}/record/prelim`);
+                                                            } else {
+                                                                Message.warning(
+                                                                    "Not all participants have preliminary records yet.",
+                                                                );
+                                                            }
+                                                        } catch (error) {
+                                                            Message.error("Failed to check records.");
+                                                        } finally {
+                                                            setLoading(false);
+                                                        }
+                                                    }}
+                                                    style={{marginLeft: 8}}
+                                                >
+                                                    Prelim Done
                                                 </Button>
                                             </div>
                                         </TabPane>

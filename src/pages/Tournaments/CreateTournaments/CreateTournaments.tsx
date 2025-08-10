@@ -3,7 +3,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {AgeBracket, Tournament} from "@/schema";
 import {countries} from "@/schema/Country";
-import type {FinalCriteria} from "@/schema/TournamentSchema";
+import type {FinalCriterion} from "@/schema/TournamentSchema";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTournament, updateTournament} from "@/services/firebase/tournamentsService";
 import {
@@ -80,7 +80,7 @@ export default function CreateTournamentPage() {
             }
 
             // Check for duplicate classifications within the same bracket
-            const classifications = bracket.final_criteria.map((criteria: FinalCriteria) => criteria.classification);
+            const classifications = bracket.final_criteria.map((criteria: FinalCriterion) => criteria.classification);
             const duplicates = classifications.filter((classification, idx) => classifications.indexOf(classification) !== idx);
 
             if (duplicates.length > 0) {

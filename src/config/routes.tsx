@@ -1,7 +1,10 @@
+import FinalResultsPage from "@/pages/Tournaments/FinalResults/FinalResultsPage";
 import ParticipantListPage from "@/pages/Tournaments/ParticipantList/ParticipantListPage";
+import PrelimResultsPage from "@/pages/Tournaments/PrelimResults/PrelimResultsPage";
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
 import EditTournamentRegistrationPage from "@/pages/Tournaments/RegistrationsList/EditRegistration/EditRegistration";
 import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/RegistrationsList";
+import FinalScoringPage from "@/pages/Tournaments/Scoring/FinalScoringPage";
 import ScoringPage from "@/pages/Tournaments/Scoring/ScoringPage";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
@@ -52,6 +55,18 @@ const routes: Route[] = [
     {
         path: "/tournaments/:tournamentId/start/record",
         component: ScoringPage,
+    },
+    {
+        path: "/tournaments/:tournamentId/record/prelim",
+        component: PrelimResultsPage,
+    },
+    {
+        path: "/tournaments/:tournamentId/scoring/final",
+        component: FinalScoringPage,
+    },
+    {
+        path: "/tournaments/:tournamentId/record/final",
+        component: FinalResultsPage,
     },
     {
         path: "/verify",
