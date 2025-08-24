@@ -6,6 +6,8 @@ import {
     Empty,
     Form,
     Input,
+    Menu,
+    Message,
     Modal,
     Select,
     Space,
@@ -14,8 +16,6 @@ import {
     Tabs,
     Tag,
     Typography,
-    Message,
-    Menu,
 } from "@arco-design/web-react";
 import {IconDelete, IconEdit, IconEye, IconMore, IconVideoCamera} from "@arco-design/web-react/icon";
 import type React from "react";
@@ -23,15 +23,16 @@ import {useEffect, useState} from "react";
 import {useAuthContext} from "../../context/AuthContext";
 import type {GlobalResult, GlobalTeamResult} from "../../schema/RecordSchema";
 
-// Extended types that include the Firestore document ID
-type GlobalResultWithId = GlobalResult & { id: string };
-type GlobalTeamResultWithId = GlobalTeamResult & { id: string };
 import {
-    getBestRecordsByAgeGroup,
     deleteRecord,
+    getBestRecordsByAgeGroup,
     toggleRecordVerification,
     updateRecordVideoUrl,
 } from "../../services/firebase/recordService";
+
+// Extended types that include the Firestore document ID
+type GlobalResultWithId = GlobalResult & {id: string};
+type GlobalTeamResultWithId = GlobalTeamResult & {id: string};
 
 const {Title, Paragraph, Text} = Typography;
 const TabPane = Tabs.TabPane;

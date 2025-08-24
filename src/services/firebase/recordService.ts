@@ -1,4 +1,4 @@
-import {collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc, where, deleteDoc, updateDoc} from "firebase/firestore";
+import {collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, setDoc, updateDoc, where} from "firebase/firestore";
 import type {TeamMember} from "../../schema";
 import type {GlobalResult, GlobalTeamResult, TournamentRecord, TournamentTeamRecord} from "../../schema/RecordSchema";
 import {db as firestore} from "./config";
@@ -679,7 +679,7 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
                         created_at: data.created_at || new Date().toISOString(),
                         updated_at: data.updated_at || new Date().toISOString(),
                         age: data.age || 0,
-                    } as GlobalResult & { id: string });
+                    } as GlobalResult & {id: string});
                 } else {
                     rows.push({
                         id: d.id, // Add the Firestore document ID
@@ -696,7 +696,7 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
                         created_at: data.created_at || new Date().toISOString(),
                         updated_at: data.updated_at || new Date().toISOString(),
                         age: data.age || 0,
-                    } as GlobalTeamResult & { id: string });
+                    } as GlobalTeamResult & {id: string});
                 }
             }
 
@@ -734,7 +734,7 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
                             created_at: data.created_at || new Date().toISOString(),
                             updated_at: data.updated_at || new Date().toISOString(),
                             age: data.age || 0,
-                        } as GlobalResult & { id: string });
+                        } as GlobalResult & {id: string});
                     } else {
                         resultsAcross.push({
                             id: d.id, // Add the Firestore document ID
@@ -751,7 +751,7 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
                             created_at: data.created_at || new Date().toISOString(),
                             updated_at: data.updated_at || new Date().toISOString(),
                             age: data.age || 0,
-                        } as GlobalTeamResult & { id: string });
+                        } as GlobalTeamResult & {id: string});
                     }
                 }
             } catch (err) {
@@ -896,11 +896,7 @@ export const getWorldRecords = async (): Promise<Record<string, (GlobalResult | 
 };
 
 // Delete record service
-export const deleteRecord = async (
-    category: Category,
-    eventType: EventType,
-    recordId: string,
-): Promise<void> => {
+export const deleteRecord = async (category: Category, eventType: EventType, recordId: string): Promise<void> => {
     try {
         const recordRef = doc(firestore, `globalResult/${category}/${eventType}`, recordId);
         await deleteDoc(recordRef);
@@ -921,7 +917,7 @@ export const toggleRecordVerification = async (
     try {
         const now = new Date().toISOString();
         const recordRef = doc(firestore, `globalResult/${category}/${eventType}`, recordId);
-        
+
         if (currentStatus === "submitted") {
             // Verify the record
             await updateDoc(recordRef, {
@@ -965,7 +961,7 @@ export const updateRecordVideoUrl = async (
     try {
         const now = new Date().toISOString();
         const recordRef = doc(firestore, `globalResult/${category}/${eventType}`, recordId);
-        
+
         await updateDoc(recordRef, {
             videoUrl: videoUrl,
             updated_at: now,
