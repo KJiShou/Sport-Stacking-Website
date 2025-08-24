@@ -1,4 +1,4 @@
-import {collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc, where} from "firebase/firestore";
+import {collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc, where, deleteDoc, updateDoc} from "firebase/firestore";
 import type {TeamMember} from "../../schema";
 import type {GlobalResult, GlobalTeamResult, TournamentRecord, TournamentTeamRecord} from "../../schema/RecordSchema";
 import {db as firestore} from "./config";
@@ -114,30 +114,61 @@ export const saveRecord = async (data: {
         : (baseRecordData as TournamentRecord);
     await setDoc(recordRef, recordData, {merge: true});
 
-    // Save to global results
+    // Save to global results using new structure: globalResult/Category/Event
     const lowerEvent = event.toLowerCase();
-    let collectionName: string;
+    let category: string;
+    let globalEventName: string;
 
-    if (lowerEvent.includes("3-3-3")) {
-        collectionName = "3-3-3-Individual";
-    } else if (lowerEvent.includes("3-6-3")) {
-        collectionName = "3-6-3-Individual";
-    } else if (lowerEvent.includes("cycle")) {
-        collectionName = "Cycle-Individual";
+    // Determine category and clean event name
+    if (lowerEvent.includes("double")) {
+        category = "Double";
+        if (lowerEvent.includes("3-3-3")) {
+            globalEventName = "3-3-3";
+        } else if (lowerEvent.includes("3-6-3")) {
+            globalEventName = "3-6-3";
+        } else if (lowerEvent.includes("cycle")) {
+            globalEventName = "Cycle";
+        } else {
+            globalEventName = event.split("-")[0];
+        }
+    } else if (lowerEvent.includes("parent")) {
+        category = "Parent & Child";
+        if (lowerEvent.includes("3-3-3")) {
+            globalEventName = "3-3-3";
+        } else if (lowerEvent.includes("3-6-3")) {
+            globalEventName = "3-6-3";
+        } else if (lowerEvent.includes("cycle")) {
+            globalEventName = "Cycle";
+        } else {
+            globalEventName = event.split("-")[0];
+        }
     } else {
-        const eventCode = event.split("-")[0];
-        collectionName = `${eventCode}-Individual`;
+        // Individual category
+        category = "Individual";
+        if (lowerEvent.includes("3-3-3")) {
+            globalEventName = "3-3-3";
+        } else if (lowerEvent.includes("3-6-3")) {
+            globalEventName = "3-6-3";
+        } else if (lowerEvent.includes("cycle")) {
+            globalEventName = "Cycle";
+        } else {
+            globalEventName = event.split("-")[0];
+        }
     }
 
     const globalResultId = `${tournamentId}_${event}_${participantId}_${round}`;
-    const globalResultRef = doc(firestore, `globalResult/Individual/${collectionName}`, globalResultId);
+    const globalResultRef = doc(firestore, `globalResult/${category}/${globalEventName}`, globalResultId);
     const globalResultData: GlobalResult = {
-        event: collectionName,
+        event: `${globalEventName}-${category}`,
         gender: data.gender,
         participantId,
         participantName,
         country,
         time: bestTime, // Schema uses 'time' not 'bestTime'
+        status: data.status,
+        videoUrl: data.videoUrl,
+        verified_by: data.verified_by,
+        verified_at: data.verified_at,
         created_at: now,
         updated_at: now,
         age: participantAge || 0, // Required by schema
@@ -239,34 +270,64 @@ export const saveTeamRecord = async (data: {
     };
     await setDoc(recordRef, recordData, {merge: true});
 
-    // Save to global results
+    // Save to global results using new structure: globalResult/Category/Event
     const lowerEvent = event.toLowerCase();
-    let collectionName: string;
+    let category: string;
+    let globalEventName: string;
 
+    // Determine category and clean event name
     if (lowerEvent.includes("double")) {
-        collectionName = "Double-Team";
-    } else if (lowerEvent.includes("parent & child")) {
-        collectionName = "Parent & Child-Team";
-    } else if (lowerEvent.includes("3-3-3")) {
-        collectionName = "3-3-3-Team";
-    } else if (lowerEvent.includes("3-6-3")) {
-        collectionName = "3-6-3-Team";
-    } else if (lowerEvent.includes("cycle")) {
-        collectionName = "Cycle-Team";
+        category = "Double";
+        if (lowerEvent.includes("3-3-3")) {
+            globalEventName = "3-3-3";
+        } else if (lowerEvent.includes("3-6-3")) {
+            globalEventName = "3-6-3";
+        } else if (lowerEvent.includes("cycle")) {
+            globalEventName = "Cycle";
+        } else {
+            globalEventName = event.split("-")[0];
+        }
+    } else if (lowerEvent.includes("parent")) {
+        category = "Parent & Child";
+        if (lowerEvent.includes("3-3-3")) {
+            globalEventName = "3-3-3";
+        } else if (lowerEvent.includes("3-6-3")) {
+            globalEventName = "3-6-3";
+        } else if (lowerEvent.includes("cycle")) {
+            globalEventName = "Cycle";
+        } else {
+            globalEventName = event.split("-")[0];
+        }
+    } else if (lowerEvent.includes("team") || lowerEvent.includes("relay")) {
+        category = "Team-Relay";
+        if (lowerEvent.includes("3-3-3")) {
+            globalEventName = "3-3-3";
+        } else if (lowerEvent.includes("3-6-3")) {
+            globalEventName = "3-6-3";
+        } else if (lowerEvent.includes("cycle")) {
+            globalEventName = "Cycle";
+        } else {
+            globalEventName = event.split("-")[0];
+        }
     } else {
-        const eventCode = event.split("-")[0];
-        collectionName = `${eventCode}-Team`;
+        // Default team category
+        category = "Team-Relay";
+        globalEventName = event.split("-")[0];
     }
 
     const globalResultId = `${tournamentId}_${event}_${participantId}_${round}`;
-    const globalResultRef = doc(firestore, `globalResult/Team/${collectionName}`, globalResultId);
+    const globalResultRef = doc(firestore, `globalResult/${category}/${globalEventName}`, globalResultId);
     const globalResultData: GlobalTeamResult = {
-        event: collectionName,
+        event: `${globalEventName}-${category}`,
         country: data.country || "",
         time: bestTime, // Schema uses 'time' not 'bestTime'
         teamName,
         leaderId,
         members: members.map((m) => m.global_id || ""), // Schema expects array of strings
+        status: data.status,
+        videoUrl: data.videoUrl,
+        verified_by: data.verified_by,
+        verified_at: data.verified_at,
         created_at: now,
         updated_at: now,
         age: 0, // Required by schema
@@ -407,21 +468,26 @@ export const updateRecord = async (
 };
 
 export const getFastestRecord = async (data: GetFastestRecordData): Promise<GlobalResult | null> => {
-    const {event, round, type} = data;
-    const q = query(
-        collection(firestore, `globalResult/${type}/${event}`),
-        where("event", "==", event),
-        where("round", "==", round),
-        orderBy("bestTime", "asc"),
-        limit(1),
-    );
+    const {event, round, type} = data; // Keep parameters for backward compatibility
 
-    const querySnapshot = await getDocs(q);
-    if (querySnapshot.empty) {
+    try {
+        const q = query(
+            collection(firestore, `globalResult/${type}/${event}`),
+            where("event", "==", event),
+            // Remove round filtering as global results don't have round field
+            orderBy("time", "asc"), // Use 'time' instead of 'bestTime'
+            limit(1),
+        );
+
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+            return snapshot.docs[0].data() as GlobalResult;
+        }
+        return null;
+    } catch (error) {
+        console.error(`Failed to get fastest record for ${event}:`, error);
         return null;
     }
-
-    return querySnapshot.docs[0].data() as GlobalResult;
 };
 
 export const getPrelimRecords = async (
@@ -559,115 +625,353 @@ export const getRecords = async (
     return [...prelimRecords, ...finalRecords];
 };
 
-// 新增：获取事件排名记录
-export const getEventRankings = async (event: string, round: "prelim" | "final" = "final"): Promise<GlobalResult[]> => {
-    const rankings: GlobalResult[] = [];
+// 获取事件排名记录 - 修正版本
+type Category = "Individual" | "Double" | "Parent & Child" | "Team-Relay";
+type EventType = "3-3-3" | "3-6-3" | "Cycle";
 
+const CATEGORIES: Category[] = ["Individual", "Double", "Parent & Child", "Team-Relay"];
+const EVENT_TYPES: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
+
+function isCategory(x: string): x is Category {
+    return (CATEGORIES as string[]).includes(x);
+}
+function isEventType(x: string): x is EventType {
+    return (EVENT_TYPES as string[]).includes(x);
+}
+
+/**
+ * New form:
+ *   getEventRankings(category, eventType)
+ * Legacy form (kept for compatibility):
+ *   getEventRankings(event)          // returns across all categories for that event
+ *   getEventRankings(event, round)   // round ignored; maintained for callers
+ */
+export async function getEventRankings(category: Category, eventType: EventType): Promise<(GlobalResult | GlobalTeamResult)[]>;
+export async function getEventRankings(event: string, round?: "prelim" | "final"): Promise<(GlobalResult | GlobalTeamResult)[]>;
+export async function getEventRankings(a: string, b?: string): Promise<(GlobalResult | GlobalTeamResult)[]> {
     try {
-        // 获取个人项目排名 - 简化查询避免索引问题
-        const individualQuery = query(
-            collection(firestore, `globalResult/Individual/${event}-Individual`),
-            where("round", "==", round),
-        );
+        // NEW SIGNATURE: (category, eventType)
+        if (b && isCategory(a) && isEventType(b)) {
+            const category = a as Category;
+            const eventType = b as EventType;
 
-        const individualSnapshot = await getDocs(individualQuery);
-        for (const doc of individualSnapshot.docs) {
-            rankings.push(doc.data() as GlobalResult);
+            const qCol = collection(firestore, `globalResult/${category}/${eventType}`);
+            const snap = await getDocs(qCol);
+
+            const rows: (GlobalResult | GlobalTeamResult)[] = [];
+
+            for (const d of snap.docs) {
+                const data = d.data();
+
+                if (category === "Individual") {
+                    rows.push({
+                        id: d.id, // Add the Firestore document ID
+                        event: data.event || `${eventType}-${category}`,
+                        gender: data.gender || "Overall",
+                        participantId: data.participantId || "",
+                        participantName: data.participantName || "Unknown",
+                        country: data.country || "Unknown",
+                        time: data.time || 0,
+                        status: data.status || "submitted",
+                        videoUrl: data.videoUrl || null,
+                        verified_by: data.verified_by || null,
+                        verified_at: data.verified_at || null,
+                        created_at: data.created_at || new Date().toISOString(),
+                        updated_at: data.updated_at || new Date().toISOString(),
+                        age: data.age || 0,
+                    } as GlobalResult & { id: string });
+                } else {
+                    rows.push({
+                        id: d.id, // Add the Firestore document ID
+                        event: data.event || `${eventType}-${category}`,
+                        country: data.country || "Unknown",
+                        teamName: data.teamName || "Unknown Team",
+                        leaderId: data.leaderId || "",
+                        members: data.members || [],
+                        time: data.time || 0,
+                        status: data.status || "submitted",
+                        videoUrl: data.videoUrl || null,
+                        verified_by: data.verified_by || null,
+                        verified_at: data.verified_at || null,
+                        created_at: data.created_at || new Date().toISOString(),
+                        updated_at: data.updated_at || new Date().toISOString(),
+                        age: data.age || 0,
+                    } as GlobalTeamResult & { id: string });
+                }
+            }
+
+            // Sort fastest first, filter invalid times
+            return rows
+                .filter((r) => (r.time ?? 0) > 0)
+                .sort((x, y) => (x.time ?? Number.MAX_VALUE) - (y.time ?? Number.MAX_VALUE));
         }
 
-        // 获取团队项目排名 - 简化查询避免索引问题
-        const teamQuery = query(collection(firestore, `globalResult/Team/${event}-Team`), where("round", "==", round));
+        // LEGACY SIGNATURE: (event[, round]) → search this event across all categories
+        const eventOnly = a;
+        const resultsAcross: (GlobalResult | GlobalTeamResult)[] = [];
 
-        const teamSnapshot = await getDocs(teamQuery);
-        for (const doc of teamSnapshot.docs) {
-            rankings.push(doc.data() as GlobalResult);
+        for (const cat of CATEGORIES) {
+            // Only query if eventOnly is a valid EventType; otherwise skip (avoids bad paths)
+            if (!isEventType(eventOnly)) continue;
+            const qCol = collection(firestore, `globalResult/${cat}/${eventOnly}`);
+            try {
+                const snap = await getDocs(qCol);
+                for (const d of snap.docs) {
+                    const data = d.data();
+                    if (cat === "Individual") {
+                        resultsAcross.push({
+                            id: d.id, // Add the Firestore document ID
+                            event: data.event || `${eventOnly}-${cat}`,
+                            gender: data.gender || "Overall",
+                            participantId: data.participantId || "",
+                            participantName: data.participantName || "Unknown",
+                            country: data.country || "Unknown",
+                            time: data.time || 0,
+                            status: data.status || "submitted",
+                            videoUrl: data.videoUrl || null,
+                            verified_by: data.verified_by || null,
+                            verified_at: data.verified_at || null,
+                            created_at: data.created_at || new Date().toISOString(),
+                            updated_at: data.updated_at || new Date().toISOString(),
+                            age: data.age || 0,
+                        } as GlobalResult & { id: string });
+                    } else {
+                        resultsAcross.push({
+                            id: d.id, // Add the Firestore document ID
+                            event: data.event || `${eventOnly}-${cat}`,
+                            country: data.country || "Unknown",
+                            teamName: data.teamName || "Unknown Team",
+                            leaderId: data.leaderId || "",
+                            members: data.members || [],
+                            time: data.time || 0,
+                            status: data.status || "submitted",
+                            videoUrl: data.videoUrl || null,
+                            verified_by: data.verified_by || null,
+                            verified_at: data.verified_at || null,
+                            created_at: data.created_at || new Date().toISOString(),
+                            updated_at: data.updated_at || new Date().toISOString(),
+                            age: data.age || 0,
+                        } as GlobalTeamResult & { id: string });
+                    }
+                }
+            } catch (err) {
+                console.warn(`Could not fetch ${cat} records for ${eventOnly}:`, err);
+            }
         }
 
-        // 在内存中排序，避免 Firestore 索引问题
-        return rankings.sort((a, b) => a.time - b.time);
+        return resultsAcross
+            .filter((r) => (r.time ?? 0) > 0)
+            .sort((x, y) => (x.time ?? Number.MAX_VALUE) - (y.time ?? Number.MAX_VALUE));
     } catch (error) {
-        console.error(`获取 ${event} 排名失败:`, error);
+        console.error(`getEventRankings failed:`, error);
         return [];
     }
-};
+}
 
-// 新增：获取按年龄分组的最佳记录
-export const getBestRecordsByAgeGroup = async (): Promise<Record<string, GlobalResult[]>> => {
-    const allRecords: Record<string, GlobalResult[]> = {};
+// 获取按年龄分组的最佳记录 - 修正版本
+export const getBestRecordsByAgeGroup = async (): Promise<
+    Record<Category, Partial<Record<EventType, (GlobalResult | GlobalTeamResult)[]>>>
+> => {
+    const result: Record<Category, Partial<Record<EventType, (GlobalResult | GlobalTeamResult)[]>>> = {
+        Individual: {},
+        Double: {},
+        "Parent & Child": {},
+        "Team-Relay": {},
+    };
 
-    try {
-        const events = ["3-3-3", "3-6-3", "Cycle", "Double", "Parent & Child"];
+    // Define the exact combinations you want to display in the backend
+    const combos: [Category, EventType][] = [
+        ["Individual", "3-3-3"],
+        ["Individual", "3-6-3"],
+        ["Individual", "Cycle"],
+        ["Double", "Cycle"],
+        ["Parent & Child", "Cycle"],
+        ["Team-Relay", "Cycle"],
+    ];
 
-        for (const event of events) {
-            const records = await getEventRankings(event, "final");
-
-            // 由于 GlobalResult 没有年龄信息，我们直接按最佳时间排序
-            // 每个事件只保留前10名最佳记录
-            allRecords[event] = records.slice(0, 10);
+    for (const [category, eventType] of combos) {
+        try {
+            // Use the new (category, eventType) signature
+            const rows = await getEventRankings(category, eventType);
+            // filter invalid times & keep top 10
+            const top10 = rows.filter((r) => (r.time ?? 0) > 0).slice(0, 10);
+            result[category][eventType] = top10;
+        } catch (err) {
+            console.warn(`Could not fetch best records for ${category} ${eventType}:`, err);
+            result[category][eventType] = [];
         }
-
-        return allRecords;
-    } catch (error) {
-        console.error("获取按年龄分组的最佳记录失败:", error);
-        return {};
     }
+
+    return result;
 };
 
-// 新增：获取分类排名记录
+// 获取分类排名记录 - 修正版本
 export const getClassificationRankings = async (
     event: string,
     classification: "beginner" | "intermediate" | "advance",
-    round: "prelim" | "final" = "final",
-): Promise<GlobalResult[]> => {
-    const rankings: GlobalResult[] = [];
+    round: "prelim" | "final" = "final", // 保持参数兼容性，但不在查询中使用
+): Promise<(GlobalResult | GlobalTeamResult)[]> => {
+    const rankings: (GlobalResult | GlobalTeamResult)[] = [];
 
     try {
-        // 获取个人项目分类排名 - 简化查询避免索引问题
-        const individualQuery = query(
-            collection(firestore, `globalResult/Individual/${event}-Individual`),
-            where("round", "==", round),
-            where("classification", "==", classification),
-        );
+        // Updated logic: globalResult/[Category]/[EventType]
+        const categories = ["Individual", "Parent & Child", "Double", "Team-Relay"];
 
-        const individualSnapshot = await getDocs(individualQuery);
-        for (const doc of individualSnapshot.docs) {
-            rankings.push(doc.data() as GlobalResult);
-        }
+        for (const category of categories) {
+            try {
+                const categoryQuery = query(collection(firestore, `globalResult/${category}/${event}`));
 
-        // 获取团队项目分类排名 - 简化查询避免索引问题
-        const teamQuery = query(
-            collection(firestore, `globalResult/Team/${event}-Team`),
-            where("round", "==", round),
-            where("classification", "==", classification),
-        );
+                const categorySnapshot = await getDocs(categoryQuery);
+                for (const doc of categorySnapshot.docs) {
+                    const data = doc.data();
 
-        const teamSnapshot = await getDocs(teamQuery);
-        for (const doc of teamSnapshot.docs) {
-            rankings.push(doc.data() as GlobalResult);
+                    // Filter by classification in memory
+                    if (data.classification === classification) {
+                        if (category === "Individual") {
+                            // Individual records
+                            rankings.push({
+                                event: data.event || `${event}-${category}`,
+                                gender: data.gender || "Overall",
+                                participantId: data.participantId || "",
+                                participantName: data.participantName || "Unknown",
+                                country: data.country || "Unknown",
+                                time: data.time || 0,
+                                created_at: data.created_at || new Date().toISOString(),
+                                updated_at: data.updated_at || new Date().toISOString(),
+                                age: data.age || 0,
+                            } as GlobalResult);
+                        } else {
+                            // Team records
+                            rankings.push({
+                                event: data.event || `${event}-${category}`,
+                                country: data.country || "Unknown",
+                                teamName: data.teamName || "Unknown Team",
+                                leaderId: data.leaderId || "",
+                                members: data.members || [],
+                                time: data.time || 0,
+                                created_at: data.created_at || new Date().toISOString(),
+                                updated_at: data.updated_at || new Date().toISOString(),
+                                age: data.age || 0,
+                            } as GlobalTeamResult);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn(`Could not fetch ${category} classification records for ${event}:`, error);
+            }
         }
 
         // 在内存中排序，避免 Firestore 索引问题
-        return rankings.sort((a, b) => a.time - b.time);
+        return rankings.sort((a, b) => (a.time || Number.MAX_VALUE) - (b.time || Number.MAX_VALUE));
     } catch (error) {
         console.error(`获取 ${event} ${classification} 分类排名失败:`, error);
         return [];
     }
 };
 
-// 新增：获取所有事件的世界记录
-export const getWorldRecords = async (): Promise<Record<string, GlobalResult[]>> => {
-    const worldRecords: Record<string, GlobalResult[]> = {};
+// 获取所有事件的世界记录 - 修正版本
+export const getWorldRecords = async (): Promise<Record<string, (GlobalResult | GlobalTeamResult)[]>> => {
+    const worldRecords: Record<string, (GlobalResult | GlobalTeamResult)[]> = {};
 
     // 定义所有事件类型 - 匹配实际数据库结构
-    const events = ["3-3-3", "3-6-3", "Cycle", "Double", "Parent & Child"];
+    const events = ["3-3-3", "3-6-3", "Cycle", "Double", "Team Relay"];
 
     for (const event of events) {
-        const rankings = await getEventRankings(event, "final");
-        if (rankings.length > 0) {
-            // 只取前10名作为世界记录
-            worldRecords[event] = rankings.slice(0, 10);
+        try {
+            const rankings = await getEventRankings(event);
+            if (rankings.length > 0) {
+                // 只取前10名作为世界记录，过滤掉无效记录
+                const validRankings = rankings.filter((record) => record.time > 0);
+                worldRecords[event] = validRankings.slice(0, 10);
+            } else {
+                worldRecords[event] = [];
+            }
+        } catch (error) {
+            console.warn(`Could not fetch world records for ${event}:`, error);
+            worldRecords[event] = [];
         }
     }
 
     return worldRecords;
+};
+
+// Delete record service
+export const deleteRecord = async (
+    category: Category,
+    eventType: EventType,
+    recordId: string,
+): Promise<void> => {
+    try {
+        const recordRef = doc(firestore, `globalResult/${category}/${eventType}`, recordId);
+        await deleteDoc(recordRef);
+    } catch (error) {
+        console.error(`Failed to delete record ${recordId}:`, error);
+        throw error;
+    }
+};
+
+// Verify/Unverify record service
+export const toggleRecordVerification = async (
+    category: Category,
+    eventType: EventType,
+    recordId: string,
+    verifiedBy: string,
+    currentStatus: "submitted" | "verified",
+): Promise<void> => {
+    try {
+        const now = new Date().toISOString();
+        const recordRef = doc(firestore, `globalResult/${category}/${eventType}`, recordId);
+        
+        if (currentStatus === "submitted") {
+            // Verify the record
+            await updateDoc(recordRef, {
+                status: "verified",
+                verified_by: verifiedBy,
+                verified_at: now,
+                updated_at: now,
+            });
+        } else {
+            // Unverify the record
+            await updateDoc(recordRef, {
+                status: "submitted",
+                verified_by: null,
+                verified_at: null,
+                updated_at: now,
+            });
+        }
+    } catch (error) {
+        console.error(`Failed to toggle verification for record ${recordId}:`, error);
+        throw error;
+    }
+};
+
+// Legacy function name for backward compatibility
+export const verifyRecord = async (
+    category: Category,
+    eventType: EventType,
+    recordId: string,
+    verifiedBy: string,
+): Promise<void> => {
+    return toggleRecordVerification(category, eventType, recordId, verifiedBy, "submitted");
+};
+
+// Add/Update video URL service
+export const updateRecordVideoUrl = async (
+    category: Category,
+    eventType: EventType,
+    recordId: string,
+    videoUrl: string,
+): Promise<void> => {
+    try {
+        const now = new Date().toISOString();
+        const recordRef = doc(firestore, `globalResult/${category}/${eventType}`, recordId);
+        
+        await updateDoc(recordRef, {
+            videoUrl: videoUrl,
+            updated_at: now,
+        });
+    } catch (error) {
+        console.error(`Failed to update video URL for record ${recordId}:`, error);
+        throw error;
+    }
 };

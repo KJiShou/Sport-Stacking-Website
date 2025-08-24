@@ -72,13 +72,6 @@ const Navbar: React.FC = () => {
         }
     }, [firebaseUser]);
 
-    const recordsMenuItems: MenuItem[] = [
-        {key: "/records", label: "World Records"},
-        {key: "/records/cycle", label: "Cycle"},
-        {key: "/records/3-6-3", label: "3-6-3"},
-        {key: "/records/3-3-3", label: "3-3-3"},
-        {key: "/records/double", label: "Double"},
-    ];
     return (
         <div className="fixed top-0 left-0 z-50 w-full h-24 flex items-center justify-between px-6 py-4 bg-[var(--color-bg-2)] border-b border-[var(--color-border)]">
             <div className="logo" />
@@ -101,19 +94,10 @@ const Navbar: React.FC = () => {
                     <IconCalendar />
                     Tournaments
                 </MenuItem>
-                <SubMenu
-                    key="records"
-                    title={
-                        <span>
-                            <IconCalendar />
-                            Records
-                        </span>
-                    }
-                >
-                    {recordsMenuItems.map(({key, label}) => (
-                        <MenuItem key={key}>{label}</MenuItem>
-                    ))}
-                </SubMenu>
+                <MenuItem key="/records">
+                    <IconCalendar />
+                    Records
+                </MenuItem>
                 {user?.roles?.modify_admin && (
                     <MenuItem key="/admins">
                         <IconUser />

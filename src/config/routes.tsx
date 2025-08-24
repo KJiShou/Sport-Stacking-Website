@@ -13,10 +13,6 @@ import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import Athletes from "../pages/Athletes/Athletes";
 import Home from "../pages/Home/Home";
 import RecordsIndex from "../pages/Records";
-import page_3_3_3 from "../pages/Records/3-3-3/3-3-3";
-import page_3_6_3 from "../pages/Records/3-6-3/3-6-3";
-import Cycle from "../pages/Records/Cycle/Cycle";
-import Double from "../pages/Records/Double/Double";
 import CreateTournamentPage from "../pages/Tournaments/CreateTournaments/CreateTournaments";
 import RegisterTournamentPage from "../pages/Tournaments/RegisterTournaments/RegisterTournament";
 import Tournaments from "../pages/Tournaments/Tournaments";
@@ -74,10 +70,6 @@ const routes: Route[] = [
         component: VerifyPage,
     },
     {path: "/records", component: RecordsIndex},
-    {path: "/records/3-3-3", component: page_3_3_3},
-    {path: "/records/3-6-3", component: page_3_6_3},
-    {path: "/records/Cycle", component: Cycle},
-    {path: "/records/Double", component: Double},
     {path: "/register", component: RegisterPage},
     {path: "/users/:id", component: UserProfile},
     {path: "/admins", component: AdminPermissionsPage},
