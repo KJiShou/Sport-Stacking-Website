@@ -96,6 +96,8 @@ export default function EditTournamentRegistrationPage() {
                 user_id: registration?.user_id ?? "",
                 user_name: values.user_name,
                 age: values.age,
+                gender: values.gender,
+                country: registration?.country ?? "MY",
                 phone_number: values.phone_number ?? "",
                 organizer: values?.organizer ?? "",
                 events_registered: values?.events_registered ?? [],
@@ -124,11 +126,38 @@ export default function EditTournamentRegistrationPage() {
                     })
                     .filter((age) => age > 0);
 
-                const largest_age = ages.length > 0 ? Math.max(...ages) : 0;
+                // Calculate team age based on event type
+                let largest_age = 0;
+                
+                if (ages.length > 0) {
+                    // Get the first event to determine the type
+                    const firstEvent = team.events[0]?.toLowerCase() || "";
+                    
+                    if (firstEvent.includes("team relay")) {
+                        // Team relay: use average age
+                        largest_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                    } else if (firstEvent.includes("double")) {
+                        // Double: use average age but check 10-year range constraint
+                        const minAge = Math.min(...ages);
+                        const maxAge = Math.max(...ages);
+                        if (maxAge - minAge > 10) {
+                            throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
+                        }
+                        largest_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                    } else if (firstEvent.includes("parent") && firstEvent.includes("child")) {
+                        // Parent & Child: use child's age (registration user's age)
+                        const childAge = registration?.age || 0;
+                        largest_age = childAge;
+                    } else {
+                        // Default: use largest age (for backward compatibility)
+                        largest_age = Math.max(...ages);
+                    }
+                }
 
                 const teamData = {
                     ...team,
                     largest_age,
+                    looking_for_member: team.looking_for_member ?? false,
                 };
 
                 const isNew = !initialTeams.some((initialTeam) => initialTeam.id === team.id);
@@ -192,6 +221,7 @@ export default function EditTournamentRegistrationPage() {
                 user_name: userReg.user_name,
                 id: userReg.user_id,
                 age: userReg.age,
+                gender: userReg.gender,
                 phone_number: userReg.phone_number,
                 organizer: userReg.organizer,
                 events_registered: userReg.events_registered,
@@ -269,6 +299,10 @@ export default function EditTournamentRegistrationPage() {
                             <InputNumber disabled={!edit} />
                         </Form.Item>
 
+                        <Form.Item label="Gender" field="gender">
+                            <Select disabled={!edit} placeholder="Select gender" options={["Male", "Female"]} />
+                        </Form.Item>
+
                         <Form.Item label="Phone Number" field="phone_number">
                             <Input disabled={!edit} />
                         </Form.Item>
@@ -325,6 +359,7 @@ export default function EditTournamentRegistrationPage() {
                                             events: [key],
                                             registration_id: registrationId ?? "",
                                             largest_age: 0,
+                                            looking_for_member: false,
                                         }));
                                         setTeams((prev) => [...prev, ...newTeamsToAdd]);
                                     }

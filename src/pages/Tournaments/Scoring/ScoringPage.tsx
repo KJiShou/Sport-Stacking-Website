@@ -1,12 +1,12 @@
-import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Team, TeamMember, Tournament} from "@/schema";
-import {getRecords, getTournamentRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
+import {getUserByGlobalId} from "@/services/firebase/authService";
+import {getPrelimRecords, getTournamentPrelimRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {Button, InputNumber, Message, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconUndo} from "@arco-design/web-react/icon";
-import React, {useState, useRef} from "react";
+import {useState, useRef} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 
@@ -30,12 +30,10 @@ interface TeamScore extends Team {
 export default function ScoringPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
     const navigate = useNavigate();
-    const {user} = useAuthContext();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [registrationList, setRegistrationList] = useState<ParticipantScore[]>([]);
     const [teamScoreList, setTeamScoreList] = useState<TeamScore[]>([]);
-    const [teamList, setTeamList] = useState<Team[]>([]);
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
     const mountedRef = useRef(false);
@@ -56,15 +54,15 @@ export default function ScoringPage() {
             const [regs, teams, records] = await Promise.all([
                 fetchRegistrations(tournamentId),
                 fetchTeamsByTournament(tournamentId),
-                getTournamentRecords(tournamentId),
+                getTournamentPrelimRecords(tournamentId),
             ]);
-
-            setTeamList(teams);
             setTeamScoreList(
                 teams.map((team) => {
                     const teamScores: Record<string, Score> = {};
                     for (const eventKey of team.events) {
-                        const record = records.find((rec) => "teamId" in rec && rec.teamId === team.id && rec.event === eventKey);
+                        const record = records.find(
+                            (rec) => "leaderId" in rec && rec.leaderId === team.leader_id && rec.event === eventKey,
+                        );
                         teamScores[eventKey] = {
                             try1: record?.try1?.toString() || "",
                             try2: record?.try2?.toString() || "",
@@ -168,8 +166,10 @@ export default function ScoringPage() {
                                 participantId: p.user_id,
                                 participantName: p.user_name,
                                 participantAge: p.age,
+                                country: p.country,
+                                gender: p.gender || "Male", // Fallback for existing registrations without gender
                                 round: "prelim",
-                                classification: "beginner",
+                                classification: undefined,
                                 try1: Number.parseFloat(eventScores.try1),
                                 try2: Number.parseFloat(eventScores.try2),
                                 try3: Number.parseFloat(eventScores.try3),
@@ -182,19 +182,34 @@ export default function ScoringPage() {
                 )
                 .filter(Boolean);
 
-            const teamPromises = teamScoreList
-                .flatMap((t) =>
-                    Object.entries(t.scores).map(([eventKey, teamScores]) => {
+            // First get all leader info
+            const teamLeaderInfo = await Promise.all(
+                teamScoreList.map(async (t) => ({
+                    teamId: t.id,
+                    leaderInfo: await getUserByGlobalId(t.leader_id),
+                })),
+            );
+
+            // Create a map for quick lookup
+            const leaderInfoMap = Object.fromEntries(
+                teamLeaderInfo.map(({teamId, leaderInfo}) => [teamId, leaderInfo?.country?.[0] || "MY"]),
+            );
+
+            // Process all team scores
+            const teamPromises = teamScoreList.flatMap((t) =>
+                Object.entries(t.scores)
+                    .map(([eventKey, teamScores]) => {
                         if (teamScores?.try1 && teamScores.try2 && teamScores.try3) {
                             return saveTeamRecord({
                                 tournamentId,
                                 event: eventKey,
-                                teamId: t.id,
+                                participantId: t.id,
                                 teamName: t.name,
+                                country: leaderInfoMap[t.id],
                                 leaderId: t.leader_id,
                                 members: t.members,
                                 round: "prelim",
-                                classification: "beginner",
+                                classification: "intermediate",
                                 try1: Number.parseFloat(teamScores.try1),
                                 try2: Number.parseFloat(teamScores.try2),
                                 try3: Number.parseFloat(teamScores.try3),
@@ -203,9 +218,9 @@ export default function ScoringPage() {
                             });
                         }
                         return null;
-                    }),
-                )
-                .filter(Boolean);
+                    })
+                    .filter(Boolean),
+            );
 
             const allPromises = [...individualPromises, ...teamPromises];
 
@@ -240,6 +255,20 @@ export default function ScoringPage() {
             if (isTeamEvent) {
                 const teamsToSave = teamScoreList.filter((t) => t.events.includes(eventKey));
 
+                // First get all leader info
+                const teamLeaderInfo = await Promise.all(
+                    teamsToSave.map(async (t) => ({
+                        teamId: t.id,
+                        leaderInfo: await getUserByGlobalId(t.leader_id),
+                    })),
+                );
+
+                // Create a map for quick lookup
+                const leaderInfoMap = Object.fromEntries(
+                    teamLeaderInfo.map(({teamId, leaderInfo}) => [teamId, leaderInfo?.country?.[0] || "MY"]),
+                );
+
+                // Now save all team records
                 const promises = teamsToSave
                     .map((t) => {
                         const teamScores = t.scores[eventKey];
@@ -247,8 +276,9 @@ export default function ScoringPage() {
                             return saveTeamRecord({
                                 tournamentId,
                                 event: eventKey,
-                                teamId: t.id,
+                                participantId: t.id,
                                 teamName: t.name,
+                                country: leaderInfoMap[t.id],
                                 leaderId: t.leader_id,
                                 members: t.members,
                                 round: "prelim",
@@ -283,6 +313,8 @@ export default function ScoringPage() {
                                 participantId: p.user_id,
                                 participantName: p.user_name,
                                 participantAge: p.age,
+                                country: p.country,
+                                gender: p.gender || "Male", // Fallback for existing registrations without gender
                                 round: "prelim",
                                 classification: "beginner",
                                 try1: Number.parseFloat(eventScores.try1),
@@ -560,10 +592,8 @@ export default function ScoringPage() {
                                                         if (!tournamentId || !evtKey) return;
                                                         setLoading(true);
                                                         try {
-                                                            const eventRecords = await getRecords(tournamentId, evtKey);
-                                                            const prelimRecords = eventRecords.filter(
-                                                                (r) => r.round === "prelim",
-                                                            );
+                                                            const eventRecords = await getPrelimRecords(tournamentId, evtKey);
+                                                            const prelimRecords = eventRecords;
 
                                                             const participantsForBracket = registrationList.filter(
                                                                 (r) =>
@@ -580,7 +610,7 @@ export default function ScoringPage() {
 
                                                             const allRecorded = isTeamEvent
                                                                 ? teamsForBracket.every((t) =>
-                                                                      prelimRecords.some((r) => r.teamId === t.id),
+                                                                      prelimRecords.some((r) => r.participantId === t.id),
                                                                   )
                                                                 : participantsForBracket.every((p) =>
                                                                       prelimRecords.some((r) => r.participantId === p.user_id),

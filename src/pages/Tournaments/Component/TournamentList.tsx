@@ -326,7 +326,7 @@ export default function TournamentList() {
                                     }
                                 }
                             }}
-                            onCancel={() => console.log("Start cancelled")}
+                            onCancel={() => setLoading(false)}
                             okText="Start"
                             cancelText="Cancel"
                             okButtonProps={{type: "primary"}}

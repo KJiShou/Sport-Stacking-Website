@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The following commands are commonly used in this project:
 
-- **`yarn dev`**: Start the development server.
+- **`yarn dev`**: Start the development server on port 5000.
 - **`yarn build`**: Build the project for production.
 - **`yarn preview`**: Preview the production build.
 - **`yarn typecheck`**: Run TypeScript type checking.
@@ -56,3 +56,9 @@ This is a web application for managing sport stacking tournaments.
 ### Firebase Functions
 
 The project uses Firebase Cloud Functions located in the `functions/` directory. To deploy them, `cd functions`, then run `yarn build` and `yarn deploy`.
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.

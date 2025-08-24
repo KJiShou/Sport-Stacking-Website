@@ -73,6 +73,7 @@ const Navbar: React.FC = () => {
     }, [firebaseUser]);
 
     const recordsMenuItems: MenuItem[] = [
+        {key: "/records", label: "World Records"},
         {key: "/records/cycle", label: "Cycle"},
         {key: "/records/3-6-3", label: "3-6-3"},
         {key: "/records/3-3-3", label: "3-3-3"},

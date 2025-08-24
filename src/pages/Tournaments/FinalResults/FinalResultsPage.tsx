@@ -1,14 +1,14 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Team, Tournament} from "@/schema";
 import type {TournamentRecord} from "@/schema/RecordSchema";
-import {getTournamentRecords} from "@/services/firebase/recordService";
+import {getTournamentFinalRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, updateTournamentStatus} from "@/services/firebase/tournamentsService";
 import {type EventResults, type PrelimResultData, exportAllPrelimResultsToPDF} from "@/utils/PDF/pdfExport";
 import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconPrinter, IconUndo} from "@arco-design/web-react/icon";
-import React, {useEffect, useMemo, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 
 const {Title} = Typography;
@@ -66,8 +66,8 @@ export default function FinalResultsPage() {
                     setTournament(t);
                 }
 
-                const records = await getTournamentRecords(tournamentId);
-                setAllRecords(records.filter((r) => r.round === "final"));
+                const records = await getTournamentFinalRecords(tournamentId);
+                setAllRecords(records);
 
                 const regs = await fetchRegistrations(tournamentId);
                 setRegistrations(regs);
@@ -215,17 +215,17 @@ export default function FinalResultsPage() {
                                 });
                             } else if (isTeamEvent) {
                                 records = allRecords
-                                    .filter((r) => r.event === eventKey && r.teamId && r.classification === classification)
+                                    .filter((r) => r.event === eventKey && r.participantId && r.classification === classification)
                                     .filter((r) => {
-                                        const team = teams.find((t) => t.id === r.teamId);
+                                        const team = teams.find((t) => t.id === r.participantId);
                                         return team && team.largest_age >= bracket.min_age && team.largest_age <= bracket.max_age;
                                     })
                                     .sort((a, b) => a.bestTime - b.bestTime)
                                     .map((record, index) => ({
                                         ...record,
                                         rank: index + 1,
-                                        name: teamNameMap[record.teamId as string] || "N/A",
-                                        id: record.teamId as string,
+                                        name: teamNameMap[record.participantId as string] || "N/A",
+                                        id: record.participantId as string,
                                     }));
                             } else {
                                 records = allRecords
@@ -288,6 +288,9 @@ export default function FinalResultsPage() {
         {title: "Rank", dataIndex: "rank", width: 80},
         {title: "ID", dataIndex: "id", width: 150},
         {title: "Name", dataIndex: "name", width: 200},
+        {title: "Try 1", dataIndex: "try1", width: 120, render: (t) => t?.toFixed(3) || "N/A"},
+        {title: "Try 2", dataIndex: "try2", width: 120, render: (t) => t?.toFixed(3) || "N/A"},
+        {title: "Try 3", dataIndex: "try3", width: 120, render: (t) => t?.toFixed(3) || "N/A"},
         {title: "Best Time", dataIndex: "bestTime", width: 120, render: (t) => t.toFixed(3)},
     ];
 
@@ -312,17 +315,17 @@ export default function FinalResultsPage() {
 
         if (isTeamEvent) {
             return allRecords
-                .filter((r) => r.event === currentEventTab && r.teamId && r.classification === currentClassificationTab)
+                .filter((r) => r.event === currentEventTab && r.participantId && r.classification === currentClassificationTab)
                 .filter((r) => {
-                    const team = teams.find((t) => t.id === r.teamId);
+                    const team = teams.find((t) => t.id === r.participantId);
                     return team && team.largest_age >= bracket.min_age && team.largest_age <= bracket.max_age;
                 })
                 .sort((a, b) => a.bestTime - b.bestTime)
                 .map((record, index) => ({
                     ...record,
                     rank: index + 1,
-                    name: teamNameMap[record.teamId as string] || "N/A",
-                    id: record.teamId as string,
+                    name: teamNameMap[record.participantId as string] || "N/A",
+                    id: record.participantId as string,
                 }));
         }
 
@@ -368,10 +371,10 @@ export default function FinalResultsPage() {
                 return allRecords.some(
                     (r) =>
                         r.event === currentEventTab &&
-                        r.teamId &&
+                        r.participantId &&
                         r.classification === classification &&
                         teams.some(
-                            (t) => t.id === r.teamId && t.largest_age >= bracket.min_age && t.largest_age <= bracket.max_age,
+                            (t) => t.id === r.participantId && t.largest_age >= bracket.min_age && t.largest_age <= bracket.max_age,
                         ),
                 );
             }

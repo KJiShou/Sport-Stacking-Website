@@ -272,28 +272,16 @@ export default function CreateTournamentPage() {
                         <InputNumber min={0} placeholder="please enter..." />
                     </Form.Item>
 
-                    <Form.Item
-                        label="Registration Price"
-                        field="registration_price"
-                        rules={[{required: true, message: "Please input registration price"}]}
-                    >
-                        <InputNumber min={0} style={{width: "100%"}} placeholder="Enter registration price" />
-                    </Form.Item>
-
-                    <Form.Item
-                        label="Member Registration Price"
-                        field="member_registration_price"
-                        rules={[{required: true, message: "Please input member registration price"}]}
-                    >
-                        <InputNumber min={0} style={{width: "100%"}} placeholder="Enter member registration price" />
-                    </Form.Item>
-
                     <Form.Item label="Editor ID" field="editor">
                         <Input placeholder="Enter editor global ID" />
                     </Form.Item>
 
                     <Form.Item label="Recorder ID" field="recorder">
                         <Input placeholder="Enter recorder global ID" />
+                    </Form.Item>
+
+                    <Form.Item label="Max Participants" field="max_participants">
+                        <InputNumber placeholder="Enter max participant" defaultValue={0} />
                     </Form.Item>
 
                     <Form.Item label="Events">

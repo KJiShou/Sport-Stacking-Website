@@ -12,6 +12,7 @@ import type * as React from "react";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import Athletes from "../pages/Athletes/Athletes";
 import Home from "../pages/Home/Home";
+import RecordsIndex from "../pages/Records";
 import page_3_3_3 from "../pages/Records/3-3-3/3-3-3";
 import page_3_6_3 from "../pages/Records/3-6-3/3-6-3";
 import Cycle from "../pages/Records/Cycle/Cycle";
@@ -72,6 +73,7 @@ const routes: Route[] = [
         path: "/verify",
         component: VerifyPage,
     },
+    {path: "/records", component: RecordsIndex},
     {path: "/records/3-3-3", component: page_3_3_3},
     {path: "/records/3-6-3", component: page_3_6_3},
     {path: "/records/Cycle", component: Cycle},

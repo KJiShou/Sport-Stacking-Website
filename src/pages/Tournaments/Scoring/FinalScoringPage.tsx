@@ -1,6 +1,8 @@
-import {useAuthContext} from "@/context/AuthContext";
 import type {AgeBracket, Registration, Team, TeamMember, Tournament, TournamentEvent} from "@/schema";
-import {getTournamentRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
+import type {TournamentTeamRecord} from "@/schema/RecordSchema";
+import {getTournamentFinalRecords, getTournamentPrelimRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
+import {fetchRegistrations} from "@/services/firebase/registerService";
+import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import type {PrelimResultData} from "@/utils/PDF/pdfExport";
 import {Button, InputNumber, Message, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
@@ -99,7 +101,6 @@ export default function FinalScoringPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
     const navigate = useNavigate();
     const location = useLocation();
-    const {user} = useAuthContext();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [finalists, setFinalists] = useState<Finalist[]>([]);
@@ -111,14 +112,127 @@ export default function FinalScoringPage() {
     const [eventKeyMap, setEventKeyMap] = useState<Map<string, {code: string; type: string}>>(new Map());
 
     useEffect(() => {
-        const fetchRecords = async () => {
-            if (location.state && tournamentId) {
-                const {finalists: finalistData, tournament: tournamentData} = location.state;
+        const fetchAndProcessData = async () => {
+            if (!tournamentId) return;
+            
+            setLoading(true);
+            try {
+                let finalistData: Finalist[];
+                let tournamentData: Tournament;
+                let registrations: Registration[];
+                let teams: Team[];
+
+                if (location.state) {
+                    // Use state if available
+                    ({finalists: finalistData, tournament: tournamentData, registrations, teams} = location.state);
+                } else {
+                    // Fallback: fetch all required data
+                    const [fetchedTournament, fetchedRegistrations, fetchedTeams, prelimRecords] = await Promise.all([
+                        fetchTournamentById(tournamentId),
+                        fetchRegistrations(tournamentId),
+                        fetchTeamsByTournament(tournamentId),
+                        getTournamentPrelimRecords(tournamentId),
+                    ]);
+
+                    if (!fetchedTournament) {
+                        Message.error("Tournament not found");
+                        return;
+                    }
+
+                    tournamentData = fetchedTournament;
+                    registrations = fetchedRegistrations;
+                    teams = fetchedTeams;
+
+                    // Create name and age maps
+                    const nameMap = registrations.reduce((acc, r) => {
+                        acc[r.user_id] = r.user_name;
+                        return acc;
+                    }, {} as Record<string, string>);
+
+                    const ageMap = registrations.reduce((acc, r) => {
+                        acc[r.user_id] = r.age;
+                        return acc;
+                    }, {} as Record<string, number>);
+
+                    const teamNameMap = teams.reduce((acc, t) => {
+                        acc[t.id] = t.name;
+                        return acc;
+                    }, {} as Record<string, string>);
+
+                    // Recreate finalists from prelim data using the same logic as PrelimResultsPage
+                    finalistData = [];
+                    
+                    for (const event of tournamentData.events ?? []) {
+                        // Skip "Overall" event for finals calculation
+                        if (event.code === "Overall") continue;
+
+                        for (const bracket of event.age_brackets ?? []) {
+                            const isTeamEvent = ["double", "team relay", "parent & child"].includes(event.type.toLowerCase());
+                            const eventKey = `${event.code}-${event.type}`;
+
+                            let records: (PrelimResultData & {team?: Team; registration?: Registration})[];
+
+                            if (isTeamEvent) {
+                                records = prelimRecords
+                                    .filter((r) => r.event === eventKey && (r as TournamentTeamRecord).leaderId)
+                                    .filter((r) => {
+                                        const teamId = r.participantId;
+                                        const team = teams.find((t) => t.id === teamId);
+                                        return team && team.largest_age >= bracket.min_age && team.largest_age <= bracket.max_age;
+                                    })
+                                    .sort((a, b) => a.bestTime - b.bestTime)
+                                    .map((record, index) => {
+                                        const teamId = record.participantId;
+                                        const team = teams.find((t) => t.id === teamId);
+                                        return {
+                                            ...record,
+                                            rank: index + 1,
+                                            name: teamNameMap[teamId as string] || "N/A",
+                                            id: team?.id || teamId || "unknown",
+                                            teamId: teamId,
+                                            team: teams.find((t) => t.id === teamId),
+                                        };
+                                    });
+                            } else {
+                                records = prelimRecords
+                                    .filter((r) => {
+                                        const age = ageMap[r.participantId as string];
+                                        return r.event === eventKey && age >= bracket.min_age && age <= bracket.max_age;
+                                    })
+                                    .sort((a, b) => a.bestTime - b.bestTime)
+                                    .map((record, index) => ({
+                                        ...record,
+                                        rank: index + 1,
+                                        name: nameMap[record.participantId as string] || "N/A",
+                                        id: record.participantId as string,
+                                        registration: registrations.find((reg) => reg.user_id === record.participantId),
+                                    }));
+                            }
+
+                            const finalCriteria = bracket.final_criteria || [];
+                            let processedCount = 0;
+                            for (const criterion of finalCriteria) {
+                                const {classification, number} = criterion;
+                                const bracketFinalists = records.slice(processedCount, processedCount + number);
+
+                                if (bracketFinalists.length > 0) {
+                                    finalistData.push({
+                                        event,
+                                        bracket,
+                                        records: bracketFinalists,
+                                        classification,
+                                    });
+                                }
+                                processedCount += number;
+                            }
+                        }
+                    }
+                }
+
                 setTournament(tournamentData);
                 setFinalists(finalistData);
 
-                const existingRecords = await getTournamentRecords(tournamentId);
-                const finalRecords = existingRecords.filter((r) => r.round === "final");
+                const finalRecords = await getTournamentFinalRecords(tournamentId);
 
                 const participantScoresMap: Record<string, ParticipantScore> = {};
                 const teamScoresMap: Record<string, TeamScore> = {};
@@ -138,8 +252,8 @@ export default function FinalScoringPage() {
                                 teamScoresMap[teamId] = {...record.team, scores: {}};
                             }
                             const finalRecord = finalRecords.find(
-                                (r) => r.teamId === teamId && r.event.toLowerCase() === eventKey,
-                            );
+                                (r) => r.participantId === teamId && r.event.toLowerCase() === eventKey,
+                            ) as TournamentTeamRecord | undefined;
                             teamScoresMap[teamId].scores[eventKey] = {
                                 try1: finalRecord?.try1?.toString() || "",
                                 try2: finalRecord?.try2?.toString() || "",
@@ -175,10 +289,15 @@ export default function FinalScoringPage() {
                         setCurrentClassificationTab(firstFinalist.classification);
                     }
                 }
+            } catch (error) {
+                console.error("Error fetching final scoring data:", error);
+                Message.error("Failed to load final scoring data");
+            } finally {
+                setLoading(false);
             }
         };
 
-        fetchRecords();
+        fetchAndProcessData();
     }, [location.state, tournamentId]);
 
     const handleScoreChange = (userId: string, eventKey: string, tryNum: keyof Score, value: string) => {
@@ -347,6 +466,8 @@ export default function FinalScoringPage() {
                         participantId: item.participant.user_id,
                         participantName: item.participant.user_name,
                         participantAge: item.participant.age,
+                        country: item.participant.country || "MY", // Add missing country
+                        gender: item.participant.gender || "Male", // Fallback for existing registrations without gender
                         round: "final",
                         classification: item.classification,
                         try1: Number.parseFloat(item.scores.try1) || 0,
@@ -360,8 +481,9 @@ export default function FinalScoringPage() {
                     return saveTeamRecord({
                         tournamentId,
                         event: correctlyCasedEvent,
-                        teamId: item.team.id,
+                        participantId: item.team.id, // Use participantId instead of teamId
                         teamName: item.team.name,
+                        country: "MY", // Default country - should be obtained from team/leader data
                         leaderId: item.team.leader_id,
                         members: item.team.members,
                         round: "final",
@@ -392,10 +514,20 @@ export default function FinalScoringPage() {
         }
     };
 
-    if (!tournament) return <div>Loading...</div>;
+    if (!tournament || loading) {
+        return (
+            <div className="flex flex-col h-full bg-ghostwhite p-6 gap-6">
+                <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-6 shadow-lg rounded-lg">
+                    <div className="flex justify-center items-center h-64">
+                        <div>Loading final scoring data...</div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     const getIndividualColumns = (eventKey: string): TableColumnProps<ParticipantScore>[] => [
-        {title: "Position", width: 80, render: (_, record, index) => index + 1},
+        {title: "Position", width: 80, render: (_value, _record, index) => index + 1},
         {title: "Global ID", dataIndex: "user_id", width: 150},
         {title: "Name", dataIndex: "user_name", width: 200},
         {
@@ -481,7 +613,7 @@ export default function FinalScoringPage() {
     ];
 
     const getTeamColumns = (eventKey: string): TableColumnProps<TeamScore>[] => [
-        {title: "Position", width: 80, render: (_, record, index) => index + 1},
+        {title: "Position", width: 80, render: (_value, _record, index) => index + 1},
         {title: "Team Name", dataIndex: "name", width: 200},
         {title: "Leader ID", dataIndex: "leader_id", width: 150},
         {
@@ -597,14 +729,14 @@ export default function FinalScoringPage() {
                                 if (!tournamentId) return;
                                 setLoading(true);
                                 try {
-                                    const finalRecords = await getTournamentRecords(tournamentId);
+                                    const finalRecords = await getTournamentFinalRecords(tournamentId);
                                     const allFinalistsScored = finalists.every((finalist) =>
                                         finalist.records.every((record) => {
                                             const isTeam = !!record.team;
                                             const id = isTeam ? record.team?.id : record.registration?.user_id;
                                             return finalRecords.some(
-                                                (fr) =>
-                                                    fr.round === "final" && (isTeam ? fr.teamId === id : fr.participantId === id),
+                                                (fr: typeof finalRecords[0]) =>
+                                                    isTeam ? fr.participantId === id : fr.participantId === id,
                                             );
                                         }),
                                     );

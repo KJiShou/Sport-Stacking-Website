@@ -15,9 +15,6 @@ export type {Role} from "./RoleSchema";
 export {TeamSchema} from "./TeamSchema";
 export type {Team, TeamMember} from "./TeamSchema";
 
-export {RecordSchema} from "./RecordSchema";
-export type {Record} from "./RecordSchema";
-
 export {RegistrationSchema} from "./RegistrationSchema";
 export type {Registration} from "./RegistrationSchema";
 
