@@ -23,7 +23,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                     <Select.Option value="Individual">Individual</Select.Option>
                     <Select.Option value="Team Relay">Team Relay</Select.Option>
                     <Select.Option value="Double">Double</Select.Option>
-                    <Select.Option value="Parent_&_Child">Parent & Child</Select.Option>
+                    <Select.Option value="Parent & Child">Parent & Child</Select.Option>
                 </Select>
             </Form.Item>
             <Button type="primary" className="mb-8" onClick={() => onEditAgeBrackets(index)}>

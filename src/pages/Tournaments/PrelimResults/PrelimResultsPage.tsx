@@ -1,10 +1,8 @@
 import type {AgeBracket, Registration, Team, Tournament, TournamentEvent} from "@/schema";
-import type {TournamentRecord} from "@/schema/RecordSchema";
-import {getTournamentRecords} from "@/services/firebase/recordService";
+import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
-    type AllPrelimResultsPDFParams,
     type BracketResults,
     type EventResults,
     type PrelimResultData,
@@ -14,8 +12,9 @@ import {
 import {Button, Message, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
-import React, {useEffect, useMemo, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
+import type {TournamentRecord, TournamentTeamRecord} from "../../../schema/RecordSchema";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
@@ -69,8 +68,8 @@ export default function PrelimResultsPage() {
                     setTournament(t);
                 }
 
-                const records = await getTournamentRecords(tournamentId);
-                setAllRecords(records.filter((r) => r.round === "prelim"));
+                const records = await getTournamentPrelimRecords(tournamentId);
+                setAllRecords(records);
 
                 const regs = await fetchRegistrations(tournamentId);
                 setRegistrations(regs);
@@ -220,22 +219,27 @@ export default function PrelimResultsPage() {
                                 return age >= bracket.min_age && age <= bracket.max_age;
                             })
                             .sort((a, b) => a.bestTime - b.bestTime);
-                        records.forEach((r, i) => (r.rank = i + 1));
+                        records.forEach((r, i) => {
+                            r.rank = i + 1;
+                        });
                     } else if (isTeamEvent) {
                         records = allRecords
-                            .filter((r) => r.event === eventKey && r.teamId)
+                            .filter((r) => r.event === eventKey && (r as TournamentTeamRecord).leaderId)
                             .filter((r) => {
-                                const team = teams.find((t) => t.id === r.teamId);
+                                const teamId = r.participantId; // participantId is used as teamId for team records
+                                const team = teams.find((t) => t.id === teamId);
                                 return team && team.largest_age >= bracket.min_age && team.largest_age <= bracket.max_age;
                             })
                             .sort((a, b) => a.bestTime - b.bestTime)
                             .map((record, index) => {
-                                const team = teams.find((t) => t.id === record.teamId);
+                                const teamId = record.participantId; // participantId is used as teamId
+                                const team = teams.find((t) => t.id === teamId);
                                 return {
                                     ...record,
                                     rank: index + 1,
-                                    name: teamNameMap[record.teamId as string] || "N/A",
-                                    id: team?.leader_id || (record.teamId as string),
+                                    name: teamNameMap[teamId as string] || "N/A",
+                                    id: team?.leader_id || teamId || "unknown",
+                                    teamId: teamId, // Add explicit teamId for consistency
                                 };
                             });
                     } else {
@@ -291,19 +295,22 @@ export default function PrelimResultsPage() {
 
                     if (isTeamEvent) {
                         records = allRecords
-                            .filter((r) => r.event === eventKey && r.teamId)
+                            .filter((r) => r.event === eventKey && (r as TournamentTeamRecord).leaderId)
                             .filter((r) => {
-                                const team = teams.find((t) => t.id === r.teamId);
+                                const teamId = r.participantId; // participantId is used as teamId for team records
+                                const team = teams.find((t) => t.id === teamId);
                                 return team && team.largest_age >= bracket.min_age && team.largest_age <= bracket.max_age;
                             })
                             .sort((a, b) => a.bestTime - b.bestTime)
                             .map((record, index) => {
-                                const team = teams.find((t) => t.id === record.teamId);
+                                const teamId = record.participantId; // participantId is used as teamId
+                                const team = teams.find((t) => t.id === teamId);
                                 return {
                                     ...record,
                                     rank: index + 1,
-                                    name: teamNameMap[record.teamId as string] || "N/A",
-                                    id: team?.id || (record.teamId as string),
+                                    name: teamNameMap[teamId as string] || "N/A",
+                                    id: team?.id || teamId || "unknown",
+                                    teamId: teamId, // Add explicit teamId for consistency
                                 };
                             });
                     } else {
@@ -374,6 +381,9 @@ export default function PrelimResultsPage() {
         {title: "Rank", dataIndex: "rank", width: 80},
         {title: "ID", dataIndex: "id", width: 150},
         {title: "Name", dataIndex: "name", width: 200},
+        {title: "Try 1", dataIndex: "try1", width: 120, render: (t) => t?.toFixed(3) || "N/A"},
+        {title: "Try 2", dataIndex: "try2", width: 120, render: (t) => t?.toFixed(3) || "N/A"},
+        {title: "Try 3", dataIndex: "try3", width: 120, render: (t) => t?.toFixed(3) || "N/A"},
         {title: "Best Time", dataIndex: "bestTime", width: 120, render: (t) => t.toFixed(3)},
     ];
 
@@ -401,19 +411,22 @@ export default function PrelimResultsPage() {
 
         if (isTeamEvent) {
             return allRecords
-                .filter((r) => r.event === currentEventTab && r.teamId)
+                .filter((r) => r.event === currentEventTab && (r as TournamentTeamRecord).leaderId)
                 .filter((r) => {
-                    const team = teams.find((t) => t.id === r.teamId);
+                    const teamId = r.participantId; // participantId is used as teamId for team records
+                    const team = teams.find((t) => t.id === teamId);
                     return team && team.largest_age >= bracket.min_age && team.largest_age <= bracket.max_age;
                 })
                 .sort((a, b) => a.bestTime - b.bestTime)
                 .map((record, index) => {
-                    const team = teams.find((t) => t.id === record.teamId);
+                    const teamId = record.participantId; // participantId is used as teamId
+                    const team = teams.find((t) => t.id === teamId);
                     return {
                         ...record,
                         rank: index + 1,
-                        name: teamNameMap[record.teamId as string] || "N/A",
-                        id: team?.leader_id || (record.teamId as string),
+                        name: teamNameMap[teamId as string] || "N/A",
+                        id: team?.leader_id || teamId || "unknown",
+                        teamId: teamId, // Add explicit teamId for consistency
                     };
                 });
         }
@@ -459,21 +472,24 @@ export default function PrelimResultsPage() {
 
                     if (isTeamEvent) {
                         records = allRecords
-                            .filter((r) => r.event === eventKey && r.teamId)
+                            .filter((r) => r.event === eventKey && (r as TournamentTeamRecord).leaderId)
                             .filter((r) => {
-                                const team = teams.find((t) => t.id === r.teamId);
+                                const teamId = r.participantId; // participantId is used as teamId for team records
+                                const team = teams.find((t) => t.id === teamId);
                                 return team && team.largest_age >= bracket.min_age && team.largest_age <= bracket.max_age;
                             })
                             .sort((a, b) => a.bestTime - b.bestTime)
                             .map((record, index) => {
-                                const team = teams.find((t) => t.id === record.teamId);
+                                const teamId = record.participantId; // participantId is used as teamId
+                                const team = teams.find((t) => t.id === teamId);
                                 return {
                                     ...record,
                                     rank: index + 1,
-                                    name: teamNameMap[record.teamId as string] || "N/A",
-                                    id: team?.id || (record.teamId as string),
+                                    name: teamNameMap[teamId as string] || "N/A",
+                                    id: team?.id || teamId || "unknown",
+                                    teamId: teamId, // Add explicit teamId for consistency
                                     // Make sure team object is passed for final scoring
-                                    team: teams.find((t) => t.id === record.teamId),
+                                    team: teams.find((t) => t.id === teamId),
                                 };
                             });
                     } else {

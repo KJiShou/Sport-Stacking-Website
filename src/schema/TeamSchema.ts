@@ -16,6 +16,7 @@ export const TeamSchema = z.object({
     members: z.array(TeamMemberSchema),
     events: z.array(z.string()), // e.g., ["3-6-3", "Cycle"]
     largest_age: z.number().default(0),
+    looking_for_member: z.boolean().default(false), // Indicates if the team is looking for members
 });
 
 export type Team = z.infer<typeof TeamSchema>;

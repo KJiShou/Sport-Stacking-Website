@@ -220,6 +220,17 @@ export async function fetchTeamsByTournament(tournamentId: string): Promise<Team
     return snapshot.docs.map((doc) => doc.data() as Team);
 }
 
+export async function fetchTeamsLookingForMembers(tournamentId: string, eventFilter?: string): Promise<Team[]> {
+    const teamsCollectionRef = collection(db, "tournaments", tournamentId, "teams");
+    const q = query(
+        teamsCollectionRef,
+        where("looking_for_member", "==", true),
+        ...(eventFilter ? [where("events", "array-contains", eventFilter)] : []),
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => doc.data() as Team);
+}
+
 export async function updateTeam(tournamentId: string, teamId: string, teamData: Team): Promise<void> {
     const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
 

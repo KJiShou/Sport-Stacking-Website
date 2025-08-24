@@ -7,6 +7,7 @@ import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {addUserRegistrationRecord, getUserByGlobalId, getUserEmailByGlobalId} from "@/services/firebase/authService";
 import {createRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
+import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService";
 import {createTeam, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
@@ -132,6 +133,7 @@ export default function RegisterTournamentPage() {
                 user_id: user?.global_id ?? "",
                 user_name: values.user_name,
                 age: form.getFieldValue("age"),
+                country: user?.country?.[0] ?? "",
                 phone_number: values.phone_number,
                 organizer: values.organizer ?? "",
                 events_registered: values.events_registered,
@@ -171,8 +173,36 @@ export default function RegisterTournamentPage() {
                     })
                     .filter((age) => age > 0);
 
-                const largest_age = ages.length > 0 ? Math.max(...ages) : 0;
+                // Calculate team age based on event type
+                const eventType = (teamData.label ?? "").split(",")[0]?.trim().toLowerCase();
+                let largest_age = 0;
 
+                if (ages.length > 0) {
+                    if (eventType.includes("team relay")) {
+                        // Team relay: use average age
+                        largest_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                    } else if (eventType.includes("double")) {
+                        // Double: use average age but check 10-year range constraint
+                        const minAge = Math.min(...ages);
+                        const maxAge = Math.max(...ages);
+                        if (maxAge - minAge > 10) {
+                            throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
+                        }
+                        largest_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                    } else if (eventType.includes("parent") && eventType.includes("child")) {
+                        // Parent & Child: use child's age (registrant's age)
+                        const registrantAge =
+                            user?.birthdate && tournament?.start_date
+                                ? getAgeAtTournament(user.birthdate, tournament.start_date)
+                                : 0;
+                        largest_age = registrantAge;
+                    } else {
+                        // Default: use largest age (for backward compatibility)
+                        largest_age = Math.max(...ages);
+                    }
+                }
+
+                // Create the team first
                 const teamId = await createTeam(tournamentId, {
                     name: teamData.name,
                     leader_id: teamData.leader,
@@ -180,7 +210,21 @@ export default function RegisterTournamentPage() {
                     events: (teamData.label ?? "").split(",").map((s) => s.trim()),
                     registration_id: registrationId,
                     largest_age,
+                    looking_for_member: false, // We handle recruitment separately now
                 });
+
+                // If looking for members, create a recruitment record
+                if (teamData.looking_for_team_members) {
+                    await createTeamRecruitment({
+                        team_id: teamId,
+                        tournament_id: tournamentId,
+                        team_name: teamData.name,
+                        leader_id: teamData.leader,
+                        events: (teamData.label ?? "").split(",").map((s) => s.trim()),
+                        requirements: "", // You can add form fields for these if needed
+                        max_members_needed: 3, // You can add form fields for these if needed
+                    });
+                }
 
                 const toNotify: string[] = [];
                 if (teamData.leader && teamData.leader !== user.global_id) {
@@ -317,6 +361,7 @@ export default function RegisterTournamentPage() {
                     user_name: user?.name,
                     id: user?.global_id,
                     age: age,
+                    gender: user?.gender,
                     events_registered: requiredKeys, // 一开始强制先选上 required events
                     phone_number: user?.phone_number,
                     organizer: user?.school ?? "",
@@ -354,7 +399,7 @@ export default function RegisterTournamentPage() {
     return (
         <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <Image src={`${tournament?.logo}`} alt="logo" width={200} />
+                {tournament?.logo && <Image src={tournament.logo} alt="logo" width={200} />}
                 <Descriptions
                     column={1}
                     title={
@@ -378,329 +423,360 @@ export default function RegisterTournamentPage() {
             </div>
 
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <Title heading={5}>Register for Event</Title>
-                <Form requiredSymbol={false} form={form} layout="vertical" onSubmit={handleRegister}>
-                    <Form.Item disabled label="ID" field="id" rules={[{required: true}]}>
-                        <Input disabled placeholder="Enter your ID" />
-                    </Form.Item>
-                    <Form.Item label="Name" field="user_name" rules={[{required: true}]}>
-                        <Input disabled placeholder="Enter your name" />
-                    </Form.Item>
-                    <Form.Item disabled label="Age" field="age" rules={[{required: true}]}>
-                        <InputNumber disabled placeholder="Enter your age" />
-                    </Form.Item>
-                    <Form.Item disabled label="Phone Number" field="phone_number" rules={[{required: true}]}>
-                        <Input disabled placeholder="Update your phone number at profile" />
-                    </Form.Item>
-                    <Form.Item disabled label="Organizer" field="organizer">
-                        <Input disabled placeholder="Update your organizer at profile" />
-                    </Form.Item>
-                    <Form.Item
-                        label={
-                            <div>
-                                Select Event(s)
-                                <Tooltip content="Individual Events are required and cannot be deselected.">
-                                    <IconExclamationCircle
-                                        style={{
-                                            margin: "0 8px",
-                                            color: "rgb(var(--arcoblue-6))",
-                                        }}
-                                    />
-                                </Tooltip>
-                            </div>
-                        }
-                        field="events_registered"
-                        rules={[{required: true}]}
-                    >
-                        <Select
-                            placeholder="Select events"
-                            style={{width: 345, marginRight: 20}}
-                            mode="multiple"
-                            defaultValue={requiredKeys}
-                            onChange={(value) => {
-                                if (!availableEvents) return;
-                                // 确保个人赛事项不能被取消选择
-                                const finalValue = Array.from(new Set([...value, ...requiredKeys]));
-
-                                // 更新表单值
-                                form.setFieldsValue({events_registered: finalValue});
-
-                                // 更新团队事件的状态
-                                const tempHaveTeam = finalValue.map((eventKey: string) => {
-                                    const eventObject = availableEvents.find((e) => `${e.code}-${e.type}` === eventKey);
-                                    if (
-                                        eventObject &&
-                                        (eventObject.type === "Team Relay" ||
-                                            eventObject.type === "Double" ||
-                                            eventObject.type === "Parent & Child")
-                                    ) {
-                                        return [true, eventKey];
-                                    }
-                                    return [false, eventKey];
-                                });
-                                setHaveTeam(tempHaveTeam as TeamEntry[]);
-                            }}
-                            notFoundContent={<Empty description="No Available Events" />}
+                <div className="w-full">
+                    <Title heading={5}>Register for Event</Title>
+                    <Form requiredSymbol={false} form={form} layout="vertical" onSubmit={handleRegister}>
+                        <Form.Item disabled label="ID" field="id" rules={[{required: true}]}>
+                            <Input disabled placeholder="Enter your ID" />
+                        </Form.Item>
+                        <Form.Item label="Name" field="user_name" rules={[{required: true}]}>
+                            <Input disabled placeholder="Enter your name" />
+                        </Form.Item>
+                        <Form.Item disabled label="Age" field="age" rules={[{required: true}]}>
+                            <InputNumber disabled placeholder="Enter your age" />
+                        </Form.Item>
+                        <Form.Item disabled label="Gender" field="gender" rules={[{required: true}]}>
+                            <Select disabled placeholder="Update your gender at profile" options={["Male", "Female"]} />
+                        </Form.Item>
+                        <Form.Item disabled label="Phone Number" field="phone_number" rules={[{required: true}]}>
+                            <Input disabled placeholder="Update your phone number at profile" />
+                        </Form.Item>
+                        <Form.Item disabled label="Organizer" field="organizer">
+                            <Input disabled placeholder="Update your organizer at profile" />
+                        </Form.Item>
+                        <Form.Item
+                            label={
+                                <div>
+                                    Select Event(s)
+                                    <Tooltip content="Individual Events are required and cannot be deselected.">
+                                        <IconExclamationCircle
+                                            style={{
+                                                margin: "0 8px",
+                                                color: "rgb(var(--arcoblue-6))",
+                                            }}
+                                        />
+                                    </Tooltip>
+                                </div>
+                            }
+                            field="events_registered"
+                            rules={[{required: true}]}
                         >
-                            {options?.map((option) => {
-                                const key = `${option.code}-${option.type}`;
-                                const isRequired = requiredKeys.includes(key);
-                                return (
-                                    <Option
-                                        key={key}
-                                        value={key}
-                                        disabled={isRequired}
-                                        style={{
-                                            opacity: isRequired ? 0.6 : 1,
-                                            backgroundColor: isRequired ? "#f5f5f5" : "transparent",
-                                        }}
-                                    >
-                                        {option.code} ({option.type}) {isRequired && "(Required)"}
-                                    </Option>
-                                );
-                            })}
-                        </Select>
-                    </Form.Item>
+                            <Select
+                                placeholder="Select events"
+                                style={{width: 345, marginRight: 20}}
+                                mode="multiple"
+                                defaultValue={requiredKeys}
+                                onChange={(value) => {
+                                    if (!availableEvents) return;
+                                    // 确保个人赛事项不能被取消选择
+                                    const finalValue = Array.from(new Set([...value, ...requiredKeys]));
 
-                    <Form.Item shouldUpdate noStyle>
-                        <div className="flex flex-row w-full gap-10">
-                            {haveTeam.map(([teamId, teamLabel]) => {
-                                return (
-                                    teamId &&
-                                    teamLabel && (
-                                        <div key={teamLabel}>
-                                            <div className="text-center">{teamLabel}</div>
-                                            <Divider />
-                                            <Form.Item field={`teams.${teamLabel}.label`} initialValue={teamLabel} noStyle>
-                                                <Input hidden />
-                                            </Form.Item>
+                                    // 更新表单值
+                                    form.setFieldsValue({events_registered: finalValue});
 
-                                            {/* Team Name */}
-                                            <Form.Item
-                                                shouldUpdate={() =>
-                                                    form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)
-                                                }
-                                            >
-                                                {({getFieldValue}) => {
-                                                    const isLooking = form.getFieldValue(
-                                                        `teams.${teamLabel}.looking_for_team_members`,
-                                                    );
-                                                    return (
-                                                        <Form.Item
-                                                            field={`teams.${teamLabel}.name`}
-                                                            label="Team Name"
-                                                            rules={isLooking ? [] : [{required: true}]}
-                                                        >
-                                                            <Input disabled={isLooking} placeholder="Please enter team name" />
-                                                        </Form.Item>
-                                                    );
-                                                }}
-                                            </Form.Item>
-
-                                            {/* Team Leader */}
-                                            <Form.Item
-                                                shouldUpdate={() =>
-                                                    form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)
-                                                }
-                                            >
-                                                {({getFieldValue}) => {
-                                                    const isLooking = form.getFieldValue(
-                                                        `teams.${teamLabel}.looking_for_team_members`,
-                                                    );
-                                                    return (
-                                                        <Form.Item
-                                                            field={`teams.${teamLabel}.leader`}
-                                                            label="Team Leader Global ID"
-                                                            rules={isLooking ? [] : [{required: true}]}
-                                                            initialValue={!isLooking ? (user?.global_id ?? "") : ""}
-                                                        >
-                                                            <Input disabled placeholder="Please enter team leader global ID" />
-                                                        </Form.Item>
-                                                    );
-                                                }}
-                                            </Form.Item>
-
-                                            {/* Team Member */}
-                                            <Form.Item
-                                                shouldUpdate={() =>
-                                                    form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)
-                                                }
-                                            >
-                                                {({getFieldValue}) => {
-                                                    const isLooking = form.getFieldValue(
-                                                        `teams.${teamLabel}.looking_for_team_members`,
-                                                    );
-                                                    return (
-                                                        <Form.Item
-                                                            field={`teams.${teamLabel}.member`}
-                                                            label={
-                                                                <div>
-                                                                    Team Member
-                                                                    <Tooltip content="Must Enter Team Member Global ID. Not include Team Leader Global ID">
-                                                                        <IconExclamationCircle
-                                                                            style={{
-                                                                                margin: "0 8px",
-                                                                                color: "rgb(var(--arcoblue-6))",
-                                                                            }}
-                                                                        />
-                                                                    </Tooltip>
-                                                                </div>
-                                                            }
-                                                            rules={
-                                                                isLooking
-                                                                    ? []
-                                                                    : [
-                                                                          {required: true},
-                                                                          {
-                                                                              validator: (value, callback) => {
-                                                                                  const type = teamLabel.split("-").pop();
-                                                                                  if (!value || value.length === 0) {
-                                                                                      callback("Please enter team members");
-                                                                                      return;
-                                                                                  }
-                                                                                  if (
-                                                                                      type === "team relay" &&
-                                                                                      (value.length < 3 || value.length > 4)
-                                                                                  ) {
-                                                                                      callback(
-                                                                                          "Team relay must have 3 to 4 members",
-                                                                                      );
-                                                                                      return;
-                                                                                  }
-                                                                                  if (
-                                                                                      (type === "double" ||
-                                                                                          type === "parent & child") &&
-                                                                                      value.length !== 1
-                                                                                  ) {
-                                                                                      callback(
-                                                                                          "Double / Parent & Child must have exactly 1 member",
-                                                                                      );
-                                                                                      return;
-                                                                                  }
-                                                                                  callback();
-                                                                              },
-                                                                          },
-                                                                      ]
-                                                            }
-                                                        >
-                                                            <Select
-                                                                mode="multiple"
-                                                                allowCreate={{
-                                                                    formatter: (inputValue, creating) => ({
-                                                                        value: inputValue,
-                                                                        label: `${creating ? "Enter to create: " : ""}${inputValue}`,
-                                                                    }),
-                                                                }}
-                                                                placeholder="Input Team Member Global ID"
-                                                                allowClear
-                                                                disabled={isLooking}
-                                                                style={{width: 345, flex: 1}}
-                                                            />
-                                                        </Form.Item>
-                                                    );
-                                                }}
-                                            </Form.Item>
-
-                                            {/* Looking for Team Members */}
-                                            <Form.Item
-                                                field={`teams.${teamLabel}.looking_for_team_members`}
-                                                triggerPropName="checked"
-                                            >
-                                                <Checkbox
-                                                    onChange={() => {
-                                                        if (form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)) {
-                                                            form.setFieldValue(`teams.${teamLabel}.member`, null);
-                                                            form.setFieldValue(`teams.${teamLabel}.leader`, null);
-                                                        } else {
-                                                            form.setFieldValue(
-                                                                `teams.${teamLabel}.leader`,
-                                                                user?.global_id ?? null,
-                                                            );
-                                                        }
-                                                    }}
-                                                >
-                                                    Looking for Team Members
-                                                </Checkbox>
-                                            </Form.Item>
-                                        </div>
-                                    )
-                                );
-                            })}
-                        </div>
-                    </Form.Item>
-                    <Form.Item
-                        label={
-                            <div>
-                                Payment Proof
-                                <Tooltip content="Please upload a picture of your payment proof.">
-                                    <IconExclamationCircle
-                                        style={{
-                                            margin: "0 8px",
-                                            color: "rgb(var(--arcoblue-6))",
-                                        }}
-                                    />
-                                </Tooltip>
-                            </div>
-                        }
-                        field="payment_proof"
-                        rules={[{required: !paymentProofUrl, message: "Payment proof is required."}]}
-                    >
-                        <Upload
-                            className={"w-full flex flex-col items-center justify-center mb-10"}
-                            drag
-                            multiple={false}
-                            limit={1}
-                            accept="image/jpeg,image/png,image/gif"
-                            customRequest={async (option) => {
-                                const {file, onSuccess, onError, onProgress} = option;
-                                const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-                                const validTypes = ["image/jpeg", "image/png", "image/gif"];
-
-                                if (!validTypes.includes(file.type)) {
-                                    Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
-                                    onError?.(new Error("Invalid file type"));
-                                    return;
-                                }
-
-                                if (file.size > MAX_SIZE) {
-                                    Message.error("File size exceeds 10MB limit");
-                                    onError?.(new Error("File size exceeds 10MB limit"));
-                                    return;
-                                }
-
-                                if (!user?.global_id) {
-                                    Message.error("User not authenticated");
-                                    onError?.(new Error("User not authenticated"));
-                                    return;
-                                }
-                                try {
-                                    setLoading(true);
-                                    const downloadURL = await uploadFile(
-                                        file as File,
-                                        `tournaments/${tournamentId}/registrations/payment_proof`,
-                                        user.global_id,
-                                        (progress) => {
-                                            onProgress?.(progress);
-                                        },
+                                    // 更新团队事件的状态
+                                    const tempHaveTeam = finalValue.map((eventKey: string) => {
+                                        const eventObject = availableEvents.find((e) => `${e.code}-${e.type}` === eventKey);
+                                        if (
+                                            eventObject &&
+                                            (eventObject.type === "Team Relay" ||
+                                                eventObject.type === "Double" ||
+                                                eventObject.type === "Parent & Child")
+                                        ) {
+                                            return [true, eventKey];
+                                        }
+                                        return [false, eventKey];
+                                    });
+                                    setHaveTeam(tempHaveTeam as TeamEntry[]);
+                                }}
+                                notFoundContent={<Empty description="No Available Events" />}
+                            >
+                                {options?.map((option) => {
+                                    const key = `${option.code}-${option.type}`;
+                                    const isRequired = requiredKeys.includes(key);
+                                    return (
+                                        <Option
+                                            key={key}
+                                            value={key}
+                                            disabled={isRequired}
+                                            style={{
+                                                opacity: isRequired ? 0.6 : 1,
+                                                backgroundColor: isRequired ? "#f5f5f5" : "transparent",
+                                            }}
+                                        >
+                                            {option.code} ({option.type}) {isRequired && "(Required)"}
+                                        </Option>
                                     );
-                                    setPaymentProofUrl(downloadURL);
-                                    setLoading(false);
-                                    onSuccess?.(file);
-                                } catch (err) {
-                                    Message.error("Failed to upload file.");
-                                    onError?.(err as Error);
-                                }
-                            }}
-                            tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
-                        />
-                    </Form.Item>
+                                })}
+                            </Select>
+                        </Form.Item>
 
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" long loading={loading} disabled={loading}>
-                            Register
-                        </Button>
-                    </Form.Item>
-                </Form>
+                        <Form.Item shouldUpdate noStyle>
+                            <div className="flex flex-row w-full gap-10">
+                                {haveTeam.map(([teamId, teamLabel]) => {
+                                    return (
+                                        teamId &&
+                                        teamLabel && (
+                                            <div key={teamLabel}>
+                                                <div className="text-center">{teamLabel}</div>
+                                                <Divider />
+                                                <Form.Item field={`teams.${teamLabel}.label`} initialValue={teamLabel} noStyle>
+                                                    <Input hidden />
+                                                </Form.Item>
+
+                                                {/* Team Name */}
+                                                <Form.Item
+                                                    shouldUpdate={() =>
+                                                        form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)
+                                                    }
+                                                >
+                                                    {({getFieldValue}) => {
+                                                        const isLooking = form.getFieldValue(
+                                                            `teams.${teamLabel}.looking_for_team_members`,
+                                                        );
+                                                        return (
+                                                            <Form.Item
+                                                                field={`teams.${teamLabel}.name`}
+                                                                label="Team Name"
+                                                                rules={isLooking ? [] : [{required: true}]}
+                                                            >
+                                                                <Input
+                                                                    disabled={isLooking}
+                                                                    placeholder="Please enter team name"
+                                                                />
+                                                            </Form.Item>
+                                                        );
+                                                    }}
+                                                </Form.Item>
+
+                                                {/* Team Leader */}
+                                                <Form.Item
+                                                    shouldUpdate={() =>
+                                                        form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)
+                                                    }
+                                                >
+                                                    {({getFieldValue}) => {
+                                                        const isLooking = form.getFieldValue(
+                                                            `teams.${teamLabel}.looking_for_team_members`,
+                                                        );
+                                                        return (
+                                                            <Form.Item
+                                                                field={`teams.${teamLabel}.leader`}
+                                                                label="Team Leader Global ID"
+                                                                rules={isLooking ? [] : [{required: true}]}
+                                                                initialValue={!isLooking ? (user?.global_id ?? "") : ""}
+                                                            >
+                                                                <Input
+                                                                    disabled
+                                                                    placeholder="Please enter team leader global ID"
+                                                                />
+                                                            </Form.Item>
+                                                        );
+                                                    }}
+                                                </Form.Item>
+
+                                                {/* Team Member */}
+                                                <Form.Item
+                                                    shouldUpdate={() =>
+                                                        form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)
+                                                    }
+                                                >
+                                                    {({getFieldValue}) => {
+                                                        const isLooking = form.getFieldValue(
+                                                            `teams.${teamLabel}.looking_for_team_members`,
+                                                        );
+                                                        return (
+                                                            <Form.Item
+                                                                field={`teams.${teamLabel}.member`}
+                                                                label={
+                                                                    <div>
+                                                                        {teamLabel.split("-").pop() === "Parent & Child"
+                                                                            ? "Parent Global ID"
+                                                                            : "Team Member"}
+                                                                        <Tooltip
+                                                                            content={
+                                                                                teamLabel.split("-").pop() === "Parent & Child"
+                                                                                    ? "Enter Parent's Global ID. You (the child) are automatically the leader."
+                                                                                    : "Must Enter Team Member Global ID. Not include Team Leader Global ID"
+                                                                            }
+                                                                        >
+                                                                            <IconExclamationCircle
+                                                                                style={{
+                                                                                    margin: "0 8px",
+                                                                                    color: "rgb(var(--arcoblue-6))",
+                                                                                }}
+                                                                            />
+                                                                        </Tooltip>
+                                                                    </div>
+                                                                }
+                                                                rules={
+                                                                    isLooking
+                                                                        ? []
+                                                                        : [
+                                                                              {required: true},
+                                                                              {
+                                                                                  validator: (value, callback) => {
+                                                                                      const type = teamLabel.split("-").pop();
+                                                                                      if (!value || value.length === 0) {
+                                                                                          const memberType =
+                                                                                              type === "Parent & Child"
+                                                                                                  ? "parent"
+                                                                                                  : "team members";
+                                                                                          callback(`Please enter ${memberType}`);
+                                                                                          return;
+                                                                                      }
+                                                                                      if (
+                                                                                          type === "team relay" &&
+                                                                                          (value.length < 3 || value.length > 4)
+                                                                                      ) {
+                                                                                          callback(
+                                                                                              "Team relay must have 3 to 4 members",
+                                                                                          );
+                                                                                          return;
+                                                                                      }
+                                                                                      if (
+                                                                                          (type === "double" ||
+                                                                                              type === "Parent & Child") &&
+                                                                                          value.length !== 1
+                                                                                      ) {
+                                                                                          const errorMsg =
+                                                                                              type === "Parent & Child"
+                                                                                                  ? "Parent & Child must have exactly 1 parent"
+                                                                                                  : "Double must have exactly 1 member";
+                                                                                          callback(errorMsg);
+                                                                                          return;
+                                                                                      }
+                                                                                      callback();
+                                                                                  },
+                                                                              },
+                                                                          ]
+                                                                }
+                                                            >
+                                                                <Select
+                                                                    mode="multiple"
+                                                                    allowCreate={{
+                                                                        formatter: (inputValue, creating) => ({
+                                                                            value: inputValue,
+                                                                            label: `${creating ? "Enter to create: " : ""}${inputValue}`,
+                                                                        }),
+                                                                    }}
+                                                                    placeholder={
+                                                                        teamLabel.split("-").pop() === "Parent & Child"
+                                                                            ? "Input Parent Global ID"
+                                                                            : "Input Team Member Global ID"
+                                                                    }
+                                                                    allowClear
+                                                                    disabled={isLooking}
+                                                                    style={{width: 345, flex: 1}}
+                                                                />
+                                                            </Form.Item>
+                                                        );
+                                                    }}
+                                                </Form.Item>
+
+                                                {/* Looking for Team Members */}
+                                                <Form.Item
+                                                    field={`teams.${teamLabel}.looking_for_team_members`}
+                                                    triggerPropName="checked"
+                                                >
+                                                    <Checkbox
+                                                        onChange={() => {
+                                                            if (
+                                                                form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)
+                                                            ) {
+                                                                form.setFieldValue(`teams.${teamLabel}.member`, null);
+                                                                form.setFieldValue(`teams.${teamLabel}.leader`, null);
+                                                            } else {
+                                                                form.setFieldValue(
+                                                                    `teams.${teamLabel}.leader`,
+                                                                    user?.global_id ?? null,
+                                                                );
+                                                            }
+                                                        }}
+                                                    >
+                                                        Looking for Team Members
+                                                    </Checkbox>
+                                                </Form.Item>
+                                            </div>
+                                        )
+                                    );
+                                })}
+                            </div>
+                        </Form.Item>
+                        <Form.Item
+                            label={
+                                <div>
+                                    Payment Proof
+                                    <Tooltip content="Please upload a picture of your payment proof.">
+                                        <IconExclamationCircle
+                                            style={{
+                                                margin: "0 8px",
+                                                color: "rgb(var(--arcoblue-6))",
+                                            }}
+                                        />
+                                    </Tooltip>
+                                </div>
+                            }
+                            field="payment_proof"
+                            rules={[{required: !paymentProofUrl, message: "Payment proof is required."}]}
+                        >
+                            <Upload
+                                className={"w-full flex flex-col items-center justify-center mb-10"}
+                                drag
+                                multiple={false}
+                                limit={1}
+                                accept="image/jpeg,image/png,image/gif"
+                                customRequest={async (option) => {
+                                    const {file, onSuccess, onError, onProgress} = option;
+                                    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+                                    const validTypes = ["image/jpeg", "image/png", "image/gif"];
+
+                                    if (!validTypes.includes(file.type)) {
+                                        Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
+                                        onError?.(new Error("Invalid file type"));
+                                        return;
+                                    }
+
+                                    if (file.size > MAX_SIZE) {
+                                        Message.error("File size exceeds 10MB limit");
+                                        onError?.(new Error("File size exceeds 10MB limit"));
+                                        return;
+                                    }
+
+                                    if (!user?.global_id) {
+                                        Message.error("User not authenticated");
+                                        onError?.(new Error("User not authenticated"));
+                                        return;
+                                    }
+                                    try {
+                                        setLoading(true);
+                                        const downloadURL = await uploadFile(
+                                            file as File,
+                                            `tournaments/${tournamentId}/registrations/payment_proof`,
+                                            user.global_id,
+                                            (progress) => {
+                                                onProgress?.(progress);
+                                            },
+                                        );
+                                        setPaymentProofUrl(downloadURL);
+                                        setLoading(false);
+                                        onSuccess?.(file);
+                                    } catch (err) {
+                                        Message.error("Failed to upload file.");
+                                        onError?.(err as Error);
+                                    }
+                                }}
+                                tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
+                            />
+                        </Form.Item>
+
+                        <Form.Item>
+                            <Button type="primary" htmlType="submit" long loading={loading} disabled={loading}>
+                                Register
+                            </Button>
+                        </Form.Item>
+                    </Form>
+                </div>
             </div>
         </div>
     );
