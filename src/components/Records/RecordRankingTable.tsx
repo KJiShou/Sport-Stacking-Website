@@ -132,7 +132,7 @@ const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) =
     const dataSource = rankings.map((record, index) => ({
         ...record,
         rank: index + 1,
-        key: record.tournamentId + "_" + (record.participantId || record.teamId) + "_" + record.round,
+        key: `${record.tournamentId}_${record.participantId || record.teamId}_${record.round}`,
     }));
 
     return (

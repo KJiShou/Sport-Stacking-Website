@@ -1,6 +1,11 @@
 import type {AgeBracket, Registration, Team, TeamMember, Tournament, TournamentEvent} from "@/schema";
 import type {TournamentTeamRecord} from "@/schema/RecordSchema";
-import {getTournamentFinalRecords, getTournamentPrelimRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
+import {
+    getTournamentFinalRecords,
+    getTournamentPrelimRecords,
+    saveRecord,
+    saveTeamRecord,
+} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import type {PrelimResultData} from "@/utils/PDF/pdfExport";
@@ -114,7 +119,7 @@ export default function FinalScoringPage() {
     useEffect(() => {
         const fetchAndProcessData = async () => {
             if (!tournamentId) return;
-            
+
             setLoading(true);
             try {
                 let finalistData: Finalist[];
@@ -144,24 +149,33 @@ export default function FinalScoringPage() {
                     teams = fetchedTeams;
 
                     // Create name and age maps
-                    const nameMap = registrations.reduce((acc, r) => {
-                        acc[r.user_id] = r.user_name;
-                        return acc;
-                    }, {} as Record<string, string>);
+                    const nameMap = registrations.reduce(
+                        (acc, r) => {
+                            acc[r.user_id] = r.user_name;
+                            return acc;
+                        },
+                        {} as Record<string, string>,
+                    );
 
-                    const ageMap = registrations.reduce((acc, r) => {
-                        acc[r.user_id] = r.age;
-                        return acc;
-                    }, {} as Record<string, number>);
+                    const ageMap = registrations.reduce(
+                        (acc, r) => {
+                            acc[r.user_id] = r.age;
+                            return acc;
+                        },
+                        {} as Record<string, number>,
+                    );
 
-                    const teamNameMap = teams.reduce((acc, t) => {
-                        acc[t.id] = t.name;
-                        return acc;
-                    }, {} as Record<string, string>);
+                    const teamNameMap = teams.reduce(
+                        (acc, t) => {
+                            acc[t.id] = t.name;
+                            return acc;
+                        },
+                        {} as Record<string, string>,
+                    );
 
                     // Recreate finalists from prelim data using the same logic as PrelimResultsPage
                     finalistData = [];
-                    
+
                     for (const event of tournamentData.events ?? []) {
                         // Skip "Overall" event for finals calculation
                         if (event.code === "Overall") continue;
@@ -734,9 +748,8 @@ export default function FinalScoringPage() {
                                         finalist.records.every((record) => {
                                             const isTeam = !!record.team;
                                             const id = isTeam ? record.team?.id : record.registration?.user_id;
-                                            return finalRecords.some(
-                                                (fr: typeof finalRecords[0]) =>
-                                                    isTeam ? fr.participantId === id : fr.participantId === id,
+                                            return finalRecords.some((fr: (typeof finalRecords)[0]) =>
+                                                isTeam ? fr.participantId === id : fr.participantId === id,
                                             );
                                         }),
                                     );

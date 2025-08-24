@@ -6,7 +6,7 @@ import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/t
 import {Button, InputNumber, Message, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconUndo} from "@arco-design/web-react/icon";
-import {useState, useRef} from "react";
+import {useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 

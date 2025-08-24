@@ -1,5 +1,4 @@
 import type {AgeBracket, Registration, Team, Tournament, TournamentEvent} from "@/schema";
-import type {TournamentRecord, TournamentTeamRecord} from "../../../schema/RecordSchema";
 import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
@@ -15,6 +14,7 @@ import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
 import {useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
+import type {TournamentRecord, TournamentTeamRecord} from "../../../schema/RecordSchema";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
@@ -219,7 +219,9 @@ export default function PrelimResultsPage() {
                                 return age >= bracket.min_age && age <= bracket.max_age;
                             })
                             .sort((a, b) => a.bestTime - b.bestTime);
-                        records.forEach((r, i) => (r.rank = i + 1));
+                        records.forEach((r, i) => {
+                            r.rank = i + 1;
+                        });
                     } else if (isTeamEvent) {
                         records = allRecords
                             .filter((r) => r.event === eventKey && (r as TournamentTeamRecord).leaderId)

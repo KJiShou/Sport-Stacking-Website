@@ -104,9 +104,9 @@ const WorldRecordsTable: React.FC = () => {
             isHeader: true,
         });
 
-        individualEvents.forEach((event) => {
+        for (const event of individualEvents) {
             if (allRecords[event]) {
-                allRecords[event].forEach((record, index) => {
+                for (const [index, record] of allRecords[event].entries()) {
                     mergedData.push({
                         key: `${event}-${index}`,
                         event: index === 0 ? event : "",
@@ -117,9 +117,9 @@ const WorldRecordsTable: React.FC = () => {
                         year: formatDate(record.created_at || new Date().toISOString()),
                         isHeader: false,
                     });
-                });
+                }
             }
-        });
+        }
 
         // 添加 Doubles 部分
         mergedData.push({
@@ -133,9 +133,9 @@ const WorldRecordsTable: React.FC = () => {
             isHeader: true,
         });
 
-        doublesEvents.forEach((event) => {
+        for (const event of doublesEvents) {
             if (allRecords[event]) {
-                allRecords[event].forEach((record, index) => {
+                for (const [index, record] of allRecords[event].entries()) {
                     mergedData.push({
                         key: `doubles-cycle-${index}`,
                         event: "Cycle",
@@ -146,9 +146,9 @@ const WorldRecordsTable: React.FC = () => {
                         year: formatDate(record.created_at || new Date().toISOString()),
                         isHeader: false,
                     });
-                });
+                }
             }
-        });
+        }
 
         return mergedData;
     };

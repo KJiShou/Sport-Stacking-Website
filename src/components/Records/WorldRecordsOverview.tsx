@@ -100,7 +100,7 @@ const WorldRecordsOverview: React.FC<WorldRecordsOverviewProps> = ({event}) => {
 
                                     {records.slice(0, 3).map((record, index) => (
                                         <div
-                                            key={index}
+                                            key={`${record.participantName || record.teamName || "unknown"}-${record.bestTime}-${index}`}
                                             style={{
                                                 display: "flex",
                                                 justifyContent: "space-between",

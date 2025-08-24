@@ -266,7 +266,7 @@ export const saveTeamRecord = async (data: {
         time: bestTime, // Schema uses 'time' not 'bestTime'
         teamName,
         leaderId,
-        members: members.map(m => m.global_id || ""), // Schema expects array of strings
+        members: members.map((m) => m.global_id || ""), // Schema expects array of strings
         created_at: now,
         updated_at: now,
         age: 0, // Required by schema
@@ -274,9 +274,7 @@ export const saveTeamRecord = async (data: {
     await setDoc(globalResultRef, globalResultData);
 };
 
-export const getTournamentPrelimRecords = async (
-    tournamentId: string,
-): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
+export const getTournamentPrelimRecords = async (tournamentId: string): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
     const records: (TournamentRecord | TournamentTeamRecord)[] = [];
     const tournamentRef = doc(firestore, "tournaments", tournamentId);
     const tournamentSnap = await getDoc(tournamentRef);
@@ -317,9 +315,7 @@ export const getTournamentPrelimRecords = async (
                 for (const recordDoc of prelimRecordsSnapshot.docs) {
                     const data = recordDoc.data();
                     data.round = "prelim"; // Ensure round is set
-                    records.push(
-                        eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord),
-                    );
+                    records.push(eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord));
                 }
             }
         }
@@ -328,9 +324,7 @@ export const getTournamentPrelimRecords = async (
     return records;
 };
 
-export const getTournamentFinalRecords = async (
-    tournamentId: string,
-): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
+export const getTournamentFinalRecords = async (tournamentId: string): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
     const records: (TournamentRecord | TournamentTeamRecord)[] = [];
     const tournamentRef = doc(firestore, "tournaments", tournamentId);
     const tournamentSnap = await getDoc(tournamentRef);
@@ -371,9 +365,7 @@ export const getTournamentFinalRecords = async (
                 for (const recordDoc of finalRecordsSnapshot.docs) {
                     const data = recordDoc.data();
                     data.round = "final"; // Ensure round is set
-                    records.push(
-                        eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord),
-                    );
+                    records.push(eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord));
                 }
             }
         }
@@ -383,9 +375,7 @@ export const getTournamentFinalRecords = async (
 };
 
 // Keep the original function for backward compatibility
-export const getTournamentRecords = async (
-    tournamentId: string,
-): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
+export const getTournamentRecords = async (tournamentId: string): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
     const [prelimRecords, finalRecords] = await Promise.all([
         getTournamentPrelimRecords(tournamentId),
         getTournamentFinalRecords(tournamentId),

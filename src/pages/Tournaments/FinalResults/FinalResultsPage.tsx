@@ -374,7 +374,8 @@ export default function FinalResultsPage() {
                         r.participantId &&
                         r.classification === classification &&
                         teams.some(
-                            (t) => t.id === r.participantId && t.largest_age >= bracket.min_age && t.largest_age <= bracket.max_age,
+                            (t) =>
+                                t.id === r.participantId && t.largest_age >= bracket.min_age && t.largest_age <= bracket.max_age,
                         ),
                 );
             }

@@ -128,11 +128,11 @@ export default function EditTournamentRegistrationPage() {
 
                 // Calculate team age based on event type
                 let largest_age = 0;
-                
+
                 if (ages.length > 0) {
                     // Get the first event to determine the type
                     const firstEvent = team.events[0]?.toLowerCase() || "";
-                    
+
                     if (firstEvent.includes("team relay")) {
                         // Team relay: use average age
                         largest_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
@@ -466,7 +466,9 @@ export default function EditTournamentRegistrationPage() {
                                                             content: (
                                                                 <Input
                                                                     placeholder="Enter new member's global ID"
-                                                                    onChange={(v) => (newMemberId = v)}
+                                                                    onChange={(v) => {
+                                                                        newMemberId = v;
+                                                                    }}
                                                                 />
                                                             ),
                                                             onOk: () => {
