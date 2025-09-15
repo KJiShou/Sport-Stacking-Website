@@ -231,6 +231,47 @@ export async function fetchTeamsLookingForMembers(tournamentId: string, eventFil
     return snapshot.docs.map((doc) => doc.data() as Team);
 }
 
+export async function addMemberToTeam(tournamentId: string, teamId: string, memberId: string): Promise<void> {
+    try {
+        const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+        const teamDoc = await getDoc(teamRef);
+        
+        if (!teamDoc.exists()) {
+            throw new Error("Team not found");
+        }
+        
+        const team = teamDoc.data() as Team;
+        
+        // Ensure members array exists
+        const members = team.members || [];
+        
+        // Check if member is already in the team
+        const isAlreadyMember = members.some(member => member.global_id === memberId) || 
+                               team.leader_id === memberId;
+        
+        if (isAlreadyMember) {
+            throw new Error("Member is already in this team");
+        }
+        
+        // Add new member
+        const newMember = {
+            global_id: memberId,
+            verified: false, // Will need verification
+        };
+        
+        const updatedMembers = [...members, newMember];
+        
+        await updateDoc(teamRef, {
+            members: updatedMembers,
+            looking_for_member: updatedMembers.length >= 3 ? false : team.looking_for_member, // Stop looking if team is full
+        });
+        
+    } catch (error) {
+        console.error("Error adding member to team:", error);
+        throw error;
+    }
+}
+
 export async function updateTeam(tournamentId: string, teamId: string, teamData: Team): Promise<void> {
     const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
 

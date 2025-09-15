@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import {Avatar, Button, Dropdown, Menu, Message, Modal, Spin} from "@arco-design/web-react";
-import {IconCalendar, IconExport, IconHome, IconUser} from "@arco-design/web-react/icon";
+import {IconCalendar, IconExport, IconHome, IconUser, IconUserGroup} from "@arco-design/web-react/icon";
 import {useState} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
@@ -99,10 +99,24 @@ const Navbar: React.FC = () => {
                     Records
                 </MenuItem>
                 {user?.roles?.modify_admin && (
-                    <MenuItem key="/admins">
-                        <IconUser />
-                        Admin
-                    </MenuItem>
+                    <SubMenu
+                        key="admin-menu"
+                        title={
+                            <>
+                                <IconUser />
+                                Admin
+                            </>
+                        }
+                    >
+                        <MenuItem key="/admins">
+                            <IconUser />
+                            Permissions
+                        </MenuItem>
+                        <MenuItem key="/admin/team-recruitment">
+                            <IconUserGroup />
+                            Team Recruitment
+                        </MenuItem>
+                    </SubMenu>
                 )}
             </Menu>
             {!isRegisterPage && (

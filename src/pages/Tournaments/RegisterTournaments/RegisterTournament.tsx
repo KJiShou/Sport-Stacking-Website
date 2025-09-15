@@ -8,6 +8,7 @@ import {addUserRegistrationRecord, getUserByGlobalId, getUserEmailByGlobalId} fr
 import {createRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService";
+import {createIndividualRecruitment} from "@/services/firebase/individualRecruitmentService";
 import {createTeam, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
@@ -59,6 +60,7 @@ export default function RegisterTournamentPage() {
     const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
     const [price, setPrice] = useState<number | null>(null);
+    const [lookingForTeams, setLookingForTeams] = useState<string[]>([]); // Events user is looking for teams
 
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
@@ -248,6 +250,27 @@ export default function RegisterTournamentPage() {
                     }
                 }
             }
+
+            // Handle individual recruitment if user is looking for teams
+            if (lookingForTeams.length > 0) {
+                try {
+                    await createIndividualRecruitment({
+                        participant_id: user.global_id ?? "",
+                        tournament_id: tournamentId,
+                        participant_name: user.name ?? "",
+                        age: getAgeAtTournament(user.birthdate ?? new Date(), tournament.start_date ?? new Date()),
+                        gender: (registrationData.gender ?? "Male") as "Male" | "Female",
+                        country: registrationData.country ?? "",
+                        events_interested: lookingForTeams,
+                        phone_number: registrationData.phone_number,
+                        additional_info: `Participant is looking for teams in the following events: ${lookingForTeams.join(", ")}`,
+                    });
+                } catch (error) {
+                    console.error("Failed to create individual recruitment:", error);
+                    // Don't fail the entire registration if this fails
+                }
+            }
+
             const registrationRecord: UserRegistrationRecord = {
                 status: "pending",
                 tournament_id: tournamentId,
@@ -511,6 +534,57 @@ export default function RegisterTournamentPage() {
                             </Select>
                         </Form.Item>
 
+                        {/* Individual Looking for Teams Section */}
+                        <Form.Item shouldUpdate noStyle>
+                            {(_, form) => {
+                                const selectedEvents = form.getFieldValue("events_registered") || [];
+                                const teamEvents = selectedEvents.filter((eventKey: string) => {
+                                    const eventObject = availableEvents?.find((e) => `${e.code}-${e.type}` === eventKey);
+                                    return eventObject &&
+                                        (eventObject.type === "Team Relay" ||
+                                         eventObject.type === "Double" ||
+                                         eventObject.type === "Parent & Child");
+                                });
+
+                                if (teamEvents.length === 0) return null;
+
+                                return (
+                                    <div className="mb-6 p-4 border border-dashed border-blue-300 rounded-lg bg-blue-50">
+                                        <Title heading={6} className="mb-3">
+                                            🔍 Looking for Teammates?
+                                        </Title>
+                                        <Paragraph type="secondary" className="mb-3 text-sm">
+                                            If you need help finding teammates for team events, check the events below. Tournament organizers will help connect you with other participants.
+                                        </Paragraph>
+
+                                        <div className="space-y-2">
+                                            {teamEvents.map((eventKey: string) => (
+                                                <Checkbox
+                                                    key={`individual-looking-${eventKey}`}
+                                                    checked={lookingForTeams.includes(eventKey)}
+                                                    onChange={(checked) => {
+                                                        if (checked) {
+                                                            setLookingForTeams(prev => [...prev, eventKey]);
+                                                        } else {
+                                                            setLookingForTeams(prev => prev.filter(event => event !== eventKey));
+                                                        }
+                                                    }}
+                                                >
+                                                    Looking for teammates in <strong>{eventKey}</strong>
+                                                </Checkbox>
+                                            ))}
+                                        </div>
+
+                                        {lookingForTeams.length > 0 && (
+                                            <div className="mt-3 p-2 bg-green-50 rounded text-sm text-green-700">
+                                                ✅ We'll help you find teammates for: {lookingForTeams.join(", ")}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            }}
+                        </Form.Item>
+
                         <Form.Item shouldUpdate noStyle>
                             <div className="flex flex-row w-full gap-10">
                                 {haveTeam.map(([teamId, teamLabel]) => {
@@ -531,17 +605,15 @@ export default function RegisterTournamentPage() {
                                                     }
                                                 >
                                                     {({getFieldValue}) => {
-                                                        const isLooking = form.getFieldValue(
-                                                            `teams.${teamLabel}.looking_for_team_members`,
-                                                        );
+                                                        const isLookingTopLevel = lookingForTeams.includes(teamLabel);
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${teamLabel}.name`}
                                                                 label="Team Name"
-                                                                rules={isLooking ? [] : [{required: true}]}
+                                                                rules={isLookingTopLevel ? [] : [{required: true}]}
                                                             >
                                                                 <Input
-                                                                    disabled={isLooking}
+                                                                    disabled={isLookingTopLevel}
                                                                     placeholder="Please enter team name"
                                                                 />
                                                             </Form.Item>
@@ -556,15 +628,13 @@ export default function RegisterTournamentPage() {
                                                     }
                                                 >
                                                     {({getFieldValue}) => {
-                                                        const isLooking = form.getFieldValue(
-                                                            `teams.${teamLabel}.looking_for_team_members`,
-                                                        );
+                                                        const isLookingTopLevel = lookingForTeams.includes(teamLabel);
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${teamLabel}.leader`}
                                                                 label="Team Leader Global ID"
-                                                                rules={isLooking ? [] : [{required: true}]}
-                                                                initialValue={!isLooking ? (user?.global_id ?? "") : ""}
+                                                                rules={isLookingTopLevel ? [] : [{required: true}]}
+                                                                initialValue={!isLookingTopLevel ? (user?.global_id ?? "") : ""}
                                                             >
                                                                 <Input
                                                                     disabled
@@ -582,9 +652,7 @@ export default function RegisterTournamentPage() {
                                                     }
                                                 >
                                                     {({getFieldValue}) => {
-                                                        const isLooking = form.getFieldValue(
-                                                            `teams.${teamLabel}.looking_for_team_members`,
-                                                        );
+                                                        const isLookingTopLevel = lookingForTeams.includes(teamLabel);
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${teamLabel}.member`}
@@ -610,7 +678,7 @@ export default function RegisterTournamentPage() {
                                                                     </div>
                                                                 }
                                                                 rules={
-                                                                    isLooking
+                                                                    isLookingTopLevel
                                                                         ? []
                                                                         : [
                                                                               {required: true},
@@ -666,7 +734,7 @@ export default function RegisterTournamentPage() {
                                                                             : "Input Team Member Global ID"
                                                                     }
                                                                     allowClear
-                                                                    disabled={isLooking}
+                                                                    disabled={isLookingTopLevel}
                                                                     style={{width: 345, flex: 1}}
                                                                 />
                                                             </Form.Item>
@@ -681,17 +749,9 @@ export default function RegisterTournamentPage() {
                                                 >
                                                     <Checkbox
                                                         onChange={() => {
-                                                            if (
-                                                                form.getFieldValue(`teams.${teamLabel}.looking_for_team_members`)
-                                                            ) {
-                                                                form.setFieldValue(`teams.${teamLabel}.member`, null);
-                                                                form.setFieldValue(`teams.${teamLabel}.leader`, null);
-                                                            } else {
-                                                                form.setFieldValue(
-                                                                    `teams.${teamLabel}.leader`,
-                                                                    user?.global_id ?? null,
-                                                                );
-                                                            }
+                                                            // Don't clear form fields anymore
+                                                            // Just let the checkbox state manage itself via Form.Item field
+                                                            // The form validation will handle required/optional fields based on checked state
                                                         }}
                                                     >
                                                         Looking for Team Members

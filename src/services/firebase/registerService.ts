@@ -1,6 +1,8 @@
 import {Timestamp, collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where} from "firebase/firestore";
 import type {FirestoreUser, Registration} from "../../schema";
 import {db} from "./config";
+import {getIndividualRecruitmentsByParticipant, deleteIndividualRecruitment} from "./individualRecruitmentService";
+import {getTeamRecruitmentsByLeader, deleteTeamRecruitment} from "./teamRecruitmentService";
 
 export async function createRegistration(
     user: FirestoreUser,
@@ -132,6 +134,30 @@ export async function deleteRegistrationById(tournamentId: string, registrationI
         const querySnapshot = await getDocs(q);
         for (const doc of querySnapshot.docs) {
             await deleteDoc(doc.ref);
+        }
+
+        // Delete associated individual recruitment records
+        try {
+            const recruitments = await getIndividualRecruitmentsByParticipant(registrationData.user_id);
+            const tournamentRecruitments = recruitments.filter((recruitment) => recruitment.tournament_id === tournamentId);
+            for (const recruitment of tournamentRecruitments) {
+                await deleteIndividualRecruitment(recruitment.id);
+            }
+        } catch (recruitmentError) {
+            console.error("Error deleting individual recruitment records:", recruitmentError);
+            // Don't throw error here to avoid breaking the main deletion flow
+        }
+
+        // Delete associated team recruitment records
+        try {
+            const teamRecruitments = await getTeamRecruitmentsByLeader(registrationData.user_id);
+            const tournamentTeamRecruitments = teamRecruitments.filter((recruitment) => recruitment.tournament_id === tournamentId);
+            for (const recruitment of tournamentTeamRecruitments) {
+                await deleteTeamRecruitment(recruitment.id);
+            }
+        } catch (teamRecruitmentError) {
+            console.error("Error deleting team recruitment records:", teamRecruitmentError);
+            // Don't throw error here to avoid breaking the main deletion flow
         }
 
         // Delete the registration document
