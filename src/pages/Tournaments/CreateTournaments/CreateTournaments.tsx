@@ -1,7 +1,7 @@
 import {DEFAULT_AGE_BRACKET, DEFAULT_EVENTS} from "@/constants/tournamentDefaults";
 import {useAuthContext} from "@/context/AuthContext";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
-import type {AgeBracket, Tournament} from "@/schema";
+import type {AgeBracket, Tournament, TournamentEvent} from "@/schema";
 import {countries} from "@/schema/Country";
 import type {FinalCriterion} from "@/schema/TournamentSchema";
 import {uploadFile} from "@/services/firebase/storageService";
@@ -36,6 +36,19 @@ type TournamentFormData = Tournament & {
     date_range: [Timestamp, Timestamp];
     registration_date_range: [Timestamp, Timestamp];
 };
+
+type DraftTournamentEvent = Partial<TournamentEvent> & {__prevType?: string};
+
+const cloneAgeBrackets = (brackets: AgeBracket[] = []): AgeBracket[] =>
+    brackets.map((bracket) => ({
+        ...bracket,
+        final_criteria: bracket.final_criteria?.map((criterion) => ({...criterion})),
+    }));
+
+const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
+    ...event,
+    age_brackets: cloneAgeBrackets(event.age_brackets),
+});
 
 const {Title} = Typography;
 const {RangePicker} = DatePicker;
@@ -107,7 +120,12 @@ export default function CreateTournamentPage() {
                 return;
             }
 
-            const fullEvents: Tournament["events"] = form.getFieldValue("events");
+            const rawEvents = (form.getFieldValue("events") ?? []) as DraftTournamentEvent[];
+            const sanitizedEvents: TournamentEvent[] = rawEvents.map(({__prevType: _ignored, age_brackets, id, ...rest}) => ({
+                id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
+                age_brackets: cloneAgeBrackets(age_brackets ?? []),
+                ...rest,
+            }));
 
             const agendaFile = form.getFieldValue("agenda");
             const logoFile = form.getFieldValue("logo");
@@ -125,7 +143,7 @@ export default function CreateTournamentPage() {
                 registration_start_date: values.registration_date_range[0],
                 registration_end_date: values.registration_date_range[1],
                 max_participants: values.max_participants,
-                events: fullEvents,
+                events: sanitizedEvents,
                 description: values.description,
                 editor: values.editor ?? null,
                 recorder: values.recorder ?? null,
@@ -176,7 +194,7 @@ export default function CreateTournamentPage() {
                     layout="vertical"
                     onSubmit={handleSubmit}
                     initialValues={{
-                        events: DEFAULT_EVENTS,
+                        events: DEFAULT_EVENTS.map(cloneEvent),
                         max_participants: 0,
                     }}
                     requiredSymbol={false}
@@ -299,15 +317,11 @@ export default function CreateTournamentPage() {
                                     <Button
                                         type="text"
                                         onClick={() => {
-                                            // Get the current event to determine the type
-                                            const currentEvents = form.getFieldValue("events") || [];
-                                            const defaultType = "Individual"; // fallback
-                                            const predefinedCriteria = getPredefinedFinalCriteria(defaultType);
-
                                             add({
-                                                code: "",
-                                                type: "",
-                                                age_brackets: DEFAULT_AGE_BRACKET,
+                                                id: crypto.randomUUID(),
+                                                codes: [],
+                                                type: "" as TournamentEvent["type"],
+                                                age_brackets: cloneAgeBrackets(DEFAULT_AGE_BRACKET),
                                             });
                                         }}
                                     >

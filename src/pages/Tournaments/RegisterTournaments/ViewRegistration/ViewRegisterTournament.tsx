@@ -7,6 +7,7 @@ import type {Team} from "@/schema/TeamSchema";
 import {deleteRegistrationById, fetchUserRegistration, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {getEventKey, getEventLabel, getTeamEventLabels, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Checkbox,
@@ -85,12 +86,17 @@ export default function ViewTournamentRegistrationPage() {
                 );
                 setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
+                const eventIds =
+                    tournamentData?.events
+                        ?.filter((event) => matchesAnyEventKey(userReg.events_registered, event))
+                        .map((event) => getEventKey(event)) ?? userReg.events_registered;
+
                 form.setFieldsValue({
                     user_name: userReg.user_name,
                     id: userReg.user_id,
                     age: userReg.age,
                     phone_number: userReg.phone_number,
-                    events_registered: userReg.events_registered,
+                    events_registered: eventIds,
                 });
             } catch (err) {
                 Message.error("Failed to load data.");
@@ -134,10 +140,11 @@ export default function ViewTournamentRegistrationPage() {
                         <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>
                             <Select mode="multiple" disabled>
                                 {tournament?.events?.map((event) => {
-                                    const key = `${event.code}-${event.type}`;
+                                    const key = getEventKey(event);
+                                    const displayText = getEventLabel(event);
                                     return (
                                         <Option key={key} value={key}>
-                                            {event.code} ({event.type})
+                                            {displayText}
                                         </Option>
                                     );
                                 })}
@@ -146,27 +153,34 @@ export default function ViewTournamentRegistrationPage() {
 
                         <Form.Item shouldUpdate noStyle>
                             <div className={`flex flex-row w-full gap-10`}>
-                                {teams.map((team) => (
-                                    <div key={team.id}>
-                                        <div className={`text-center font-semibold mb-2`}>{team.name}</div>
-                                        <Divider />
-                                        <Form.Item label="Team Events">
-                                            <Input value={team.events.join(", ")} disabled />
-                                        </Form.Item>
-                                        <Form.Item label="Team Leader">
-                                            <Input value={team.leader_id} disabled />
-                                        </Form.Item>
-                                        <Form.Item label="Team Members">
-                                            <div className="flex flex-col gap-2">
-                                                {team.members.map((m) => (
-                                                    <Button key={m.global_id} status={m.verified ? "success" : "danger"} disabled>
-                                                        {m.global_id ?? "N/A"}
-                                                    </Button>
-                                                ))}
-                                            </div>
-                                        </Form.Item>
-                                    </div>
-                                ))}
+                                {teams.map((team) => {
+                                    const teamEventLabel = getTeamEventLabels(team, tournament?.events ?? []).join(", ");
+                                    return (
+                                        <div key={team.id}>
+                                            <div className={`text-center font-semibold mb-2`}>{teamEventLabel}</div>
+                                            <Divider />
+                                            <Form.Item label="Team Name">
+                                                <Input value={team.name} disabled />
+                                            </Form.Item>
+                                            <Form.Item label="Team Leader">
+                                                <Input value={team.leader_id} disabled />
+                                            </Form.Item>
+                                            <Form.Item label="Team Members">
+                                                <div className="flex flex-col gap-2">
+                                                    {team.members.map((m) => (
+                                                        <Button
+                                                            key={m.global_id}
+                                                            status={m.verified ? "success" : "danger"}
+                                                            disabled
+                                                        >
+                                                            {m.global_id ?? "N/A"}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </Form.Item>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </Form.Item>
 

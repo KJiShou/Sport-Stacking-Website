@@ -373,6 +373,44 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
     }
 }
 
+/**
+ * Remove user registration records for a specific tournament
+ */
+export async function removeUserRegistrationRecordsByTournament(tournamentId: string): Promise<void> {
+    try {
+        // Get all users who have registration records for this tournament
+        const usersQuery = query(
+            collection(db, "users"),
+            where("registration_records", "!=", null)
+        );
+        
+        const usersSnapshot = await getDocs(usersQuery);
+        
+        const updatePromises = usersSnapshot.docs.map(async (userDoc) => {
+            const userData = userDoc.data();
+            const registrationRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
+            
+            // Filter out records for the deleted tournament
+            const filteredRecords = registrationRecords.filter(
+                record => record.tournament_id !== tournamentId
+            );
+            
+            // Only update if there were records to remove
+            if (filteredRecords.length !== registrationRecords.length) {
+                await updateDoc(userDoc.ref, {
+                    registration_records: filteredRecords,
+                    updated_at: Timestamp.now(),
+                });
+            }
+        });
+        
+        await Promise.all(updatePromises);
+    } catch (error) {
+        console.error("Error cleaning up user registration records:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+}
+
 export async function deleteAccount(userId: string): Promise<void> {
     try {
         // 1. 删除 Firestore 里的用户资料

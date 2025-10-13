@@ -53,9 +53,31 @@ export const saveRecord = async (data: {
         event.toLowerCase().includes("parent & child");
 
     // Split event name to get event type and category
-    const eventParts = event.split("-");
-    const eventType = eventParts.pop()?.toLowerCase() || ""; // Gets the last part (Individual/Double/etc)
-    const eventName = eventParts.join("-"); // Rejoins the rest of the parts for the event name
+    // Handle multi-word event types like "Team Relay" and "Parent & Child"
+    let eventType = "";
+    let eventName = "";
+
+    if (event.includes("-Team Relay")) {
+        eventType = "team_relay";
+        eventName = event.replace("-Team Relay", "");
+    } else if (event.includes("-Parent & Child")) {
+        eventType = "parent_&_child";
+        eventName = event.replace("-Parent & Child", "");
+    } else if (event.includes("-Special Need")) {
+        eventType = "special_need";
+        eventName = event.replace("-Special Need", "");
+    } else if (event.includes("-Individual")) {
+        eventType = "individual";
+        eventName = event.replace("-Individual", "");
+    } else if (event.includes("-Double")) {
+        eventType = "double";
+        eventName = event.replace("-Double", "");
+    } else {
+        // Fallback for any other formats
+        const eventParts = event.split("-");
+        eventType = eventParts.pop()?.toLowerCase().replace(/\s+/g, "_") || "";
+        eventName = eventParts.join("-");
+    }
 
     // Determine the event category path
     let eventCategory: string;
@@ -63,14 +85,11 @@ export const saveRecord = async (data: {
         case "double":
             eventCategory = "double";
             break;
-        case "team relay":
-        case "teamrelay":
-            eventCategory = "team-relay";
+        case "team_relay":
+            eventCategory = "team_relay";
             break;
-        case "parent & child":
-        case "parent&child":
-        case "parentchild":
-            eventCategory = "parent-child";
+        case "parent_&_child":
+            eventCategory = "parent_&_child";
             break;
         default:
             eventCategory = "individual";
@@ -94,11 +113,11 @@ export const saveRecord = async (data: {
         try3,
         bestTime,
         status,
-        classification: data.classification,
-        videoUrl: videoUrl || null,
+        classification: data.classification ?? null,
+        videoUrl: videoUrl ?? null,
         submitted_at,
-        verified_by: verified_by || null,
-        verified_at: verified_at || null,
+        verified_by: verified_by ?? null,
+        verified_at: verified_at ?? null,
         created_at: now,
         updated_at: now,
     };
@@ -116,59 +135,32 @@ export const saveRecord = async (data: {
 
     // Save to global results using new structure: globalResult/Category/Event
     const lowerEvent = event.toLowerCase();
-    let category: string;
     let globalEventName: string;
 
-    // Determine category and clean event name
-    if (lowerEvent.includes("double")) {
-        category = "Double";
-        if (lowerEvent.includes("3-3-3")) {
-            globalEventName = "3-3-3";
-        } else if (lowerEvent.includes("3-6-3")) {
-            globalEventName = "3-6-3";
-        } else if (lowerEvent.includes("cycle")) {
-            globalEventName = "Cycle";
-        } else {
-            globalEventName = event.split("-")[0];
-        }
-    } else if (lowerEvent.includes("parent")) {
-        category = "Parent & Child";
-        if (lowerEvent.includes("3-3-3")) {
-            globalEventName = "3-3-3";
-        } else if (lowerEvent.includes("3-6-3")) {
-            globalEventName = "3-6-3";
-        } else if (lowerEvent.includes("cycle")) {
-            globalEventName = "Cycle";
-        } else {
-            globalEventName = event.split("-")[0];
-        }
+    // Extract event code from event name
+    if (eventName.includes("3-3-3")) {
+        globalEventName = "3-3-3";
+    } else if (eventName.includes("3-6-3")) {
+        globalEventName = "3-6-3";
+    } else if (eventName.includes("cycle")) {
+        globalEventName = "Cycle";
     } else {
-        // Individual category
-        category = "Individual";
-        if (lowerEvent.includes("3-3-3")) {
-            globalEventName = "3-3-3";
-        } else if (lowerEvent.includes("3-6-3")) {
-            globalEventName = "3-6-3";
-        } else if (lowerEvent.includes("cycle")) {
-            globalEventName = "Cycle";
-        } else {
-            globalEventName = event.split("-")[0];
-        }
+        globalEventName = eventName || "Unknown";
     }
 
     const globalResultId = `${tournamentId}_${event}_${participantId}_${round}`;
-    const globalResultRef = doc(firestore, `globalResult/${category}/${globalEventName}`, globalResultId);
+    const globalResultRef = doc(firestore, `globalResult/${eventType}/${globalEventName}`, globalResultId);
     const globalResultData: GlobalResult = {
-        event: `${globalEventName}-${category}`,
+        event: `${globalEventName}-${eventType}`,
         gender: data.gender,
         participantId,
         participantName,
         country,
         time: bestTime, // Schema uses 'time' not 'bestTime'
         status: data.status,
-        videoUrl: data.videoUrl,
-        verified_by: data.verified_by,
-        verified_at: data.verified_at,
+        videoUrl: data.videoUrl ?? null,
+        verified_by: data.verified_by ?? null,
+        verified_at: data.verified_at ?? null,
         created_at: now,
         updated_at: now,
         age: participantAge || 0, // Required by schema
@@ -219,9 +211,31 @@ export const saveTeamRecord = async (data: {
     const now = new Date().toISOString();
 
     // Split event name to get event type and category
-    const eventParts = event.split("-");
-    const eventType = eventParts.pop()?.toLowerCase() || ""; // Gets the last part (Double/Team Relay/etc)
-    const eventName = eventParts.join("-"); // Rejoins the rest of the parts for the event name
+    // Handle multi-word event types like "Team Relay" and "Parent & Child"
+    let eventType = "";
+    let eventName = "";
+
+    if (event.includes("-Team Relay")) {
+        eventType = "team_relay";
+        eventName = event.replace("-Team Relay", "");
+    } else if (event.includes("-Parent & Child")) {
+        eventType = "parent_&_child";
+        eventName = event.replace("-Parent & Child", "");
+    } else if (event.includes("-Special Need")) {
+        eventType = "special_need";
+        eventName = event.replace("-Special Need", "");
+    } else if (event.includes("-Individual")) {
+        eventType = "individual";
+        eventName = event.replace("-Individual", "");
+    } else if (event.includes("-Double")) {
+        eventType = "double";
+        eventName = event.replace("-Double", "");
+    } else {
+        // Fallback for any other formats
+        const eventParts = event.split("-");
+        eventType = eventParts.pop()?.toLowerCase().replace(/\s+/g, "_") || "";
+        eventName = eventParts.join("-");
+    }
 
     // Determine the event category path
     let eventCategory: string;
@@ -229,17 +243,14 @@ export const saveTeamRecord = async (data: {
         case "double":
             eventCategory = "double";
             break;
-        case "team relay":
-        case "teamrelay":
-            eventCategory = "team-relay";
+        case "team_relay":
+            eventCategory = "team_relay";
             break;
-        case "parent & child":
-        case "parent&child":
-        case "parentchild":
-            eventCategory = "parent-child";
+        case "parent_&_child":
+            eventCategory = "parent_&_child";
             break;
         default:
-            eventCategory = "team"; // Default for any other team events
+            eventCategory = "team_relay"; // Default for any other team events
     }
 
     // Save to tournament-specific records
@@ -260,7 +271,7 @@ export const saveTeamRecord = async (data: {
         try3,
         bestTime,
         status,
-        classification: data.classification,
+        classification: data.classification ?? null,
         videoUrl: videoUrl || null,
         submitted_at,
         verified_by: verified_by || null,
@@ -271,63 +282,32 @@ export const saveTeamRecord = async (data: {
     await setDoc(recordRef, recordData, {merge: true});
 
     // Save to global results using new structure: globalResult/Category/Event
-    const lowerEvent = event.toLowerCase();
-    let category: string;
     let globalEventName: string;
 
-    // Determine category and clean event name
-    if (lowerEvent.includes("double")) {
-        category = "Double";
-        if (lowerEvent.includes("3-3-3")) {
-            globalEventName = "3-3-3";
-        } else if (lowerEvent.includes("3-6-3")) {
-            globalEventName = "3-6-3";
-        } else if (lowerEvent.includes("cycle")) {
-            globalEventName = "Cycle";
-        } else {
-            globalEventName = event.split("-")[0];
-        }
-    } else if (lowerEvent.includes("parent")) {
-        category = "Parent & Child";
-        if (lowerEvent.includes("3-3-3")) {
-            globalEventName = "3-3-3";
-        } else if (lowerEvent.includes("3-6-3")) {
-            globalEventName = "3-6-3";
-        } else if (lowerEvent.includes("cycle")) {
-            globalEventName = "Cycle";
-        } else {
-            globalEventName = event.split("-")[0];
-        }
-    } else if (lowerEvent.includes("team") || lowerEvent.includes("relay")) {
-        category = "Team-Relay";
-        if (lowerEvent.includes("3-3-3")) {
-            globalEventName = "3-3-3";
-        } else if (lowerEvent.includes("3-6-3")) {
-            globalEventName = "3-6-3";
-        } else if (lowerEvent.includes("cycle")) {
-            globalEventName = "Cycle";
-        } else {
-            globalEventName = event.split("-")[0];
-        }
+    // Extract event code from event name
+    if (eventName.includes("3-3-3")) {
+        globalEventName = "3-3-3";
+    } else if (eventName.includes("3-6-3")) {
+        globalEventName = "3-6-3";
+    } else if (eventName.includes("cycle")) {
+        globalEventName = "Cycle";
     } else {
-        // Default team category
-        category = "Team-Relay";
-        globalEventName = event.split("-")[0];
+        globalEventName = eventName || "Unknown";
     }
 
     const globalResultId = `${tournamentId}_${event}_${participantId}_${round}`;
-    const globalResultRef = doc(firestore, `globalResult/${category}/${globalEventName}`, globalResultId);
+    const globalResultRef = doc(firestore, `globalResult/${eventType}/${globalEventName}`, globalResultId);
     const globalResultData: GlobalTeamResult = {
-        event: `${globalEventName}-${category}`,
+        event: `${globalEventName}-${eventType}`,
         country: data.country || "",
         time: bestTime, // Schema uses 'time' not 'bestTime'
         teamName,
         leaderId,
         members: members.map((m) => m.global_id || ""), // Schema expects array of strings
         status: data.status,
-        videoUrl: data.videoUrl,
-        verified_by: data.verified_by,
-        verified_at: data.verified_at,
+        videoUrl: data.videoUrl ?? null,
+        verified_by: data.verified_by ?? null,
+        verified_at: data.verified_at ?? null,
         created_at: now,
         updated_at: now,
         age: 0, // Required by schema
@@ -344,45 +324,137 @@ export const getTournamentPrelimRecords = async (tournamentId: string): Promise<
         const tournamentData = tournamentSnap.data();
         if (tournamentData.events && Array.isArray(tournamentData.events)) {
             for (const event of tournamentData.events) {
-                const eventKey = `${event.code}-${event.type}`;
-                const eventParts = eventKey.split("-");
-                const eventType = eventParts.pop()?.toLowerCase() || "";
-                const eventName = eventParts.join("-");
+                // Handle new event structure with codes array
+                if (event.codes && Array.isArray(event.codes)) {
+                    for (const code of event.codes) {
+                        const eventKey = `${code}-${event.type}`;
+                        // Handle multi-word event types like "Team Relay" and "Parent & Child"
+                        let eventType = "";
+                        let eventName = "";
 
-                let eventCategory: string;
-                switch (eventType) {
-                    case "double":
-                        eventCategory = "double";
-                        break;
-                    case "team relay":
-                    case "team-relay":
-                    case "teamrelay":
-                        eventCategory = "team-relay";
-                        break;
-                    case "parent & child":
-                    case "parent&child":
-                    case "parentchild":
-                        eventCategory = "parent-child";
-                        break;
-                    default:
-                        eventCategory = "individual";
-                }
+                        if (eventKey.includes("-Team Relay")) {
+                            eventType = "team_relay";
+                            eventName = eventKey.replace("-Team Relay", "");
+                        } else if (eventKey.includes("-Parent & Child")) {
+                            eventType = "parent_&_child";
+                            eventName = eventKey.replace("-Parent & Child", "");
+                        } else if (eventKey.includes("-Special Need")) {
+                            eventType = "special_need";
+                            eventName = eventKey.replace("-Special Need", "");
+                        } else {
+                            // Handle single-word types like Individual, Double
+                            const eventParts = eventKey.split("-");
+                            eventType = eventParts.pop()?.toLowerCase() || "";
+                            eventName = eventParts.join("-");
+                        }
 
-                const prelimRecordsQuery = query(
-                    collection(firestore, `tournaments/${tournamentId}/events/prelim/${eventCategory}/${eventName}/records`),
-                );
+                        let eventCategory: string;
+                        switch (eventType) {
+                            case "double":
+                                eventCategory = "double";
+                                break;
+                            case "team_relay":
+                                eventCategory = "team_relay";
+                                break;
+                            case "parent_&_child":
+                                eventCategory = "parent_&_child";
+                                break;
+                            default:
+                                eventCategory = "individual";
+                        }
 
-                const prelimRecordsSnapshot = await getDocs(prelimRecordsQuery);
-                for (const recordDoc of prelimRecordsSnapshot.docs) {
-                    const data = recordDoc.data();
-                    data.round = "prelim"; // Ensure round is set
-                    records.push(eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord));
+                        // Try new path first
+                        const prelimRecordsQuery = query(
+                            collection(
+                                firestore,
+                                `tournaments/${tournamentId}/events/prelim/${eventCategory}/${eventName}/records`,
+                            ),
+                        );
+
+                        const prelimRecordsSnapshot = await getDocs(prelimRecordsQuery);
+                        for (const recordDoc of prelimRecordsSnapshot.docs) {
+                            const data = recordDoc.data();
+                            data.round = "prelim"; // Ensure round is set
+                            records.push(
+                                eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord),
+                            );
+                        }
+                    }
+                } else {
+                    // Fallback for old event structure (backward compatibility)
+                    const eventKey = `${event.code}-${event.type}`;
+                    const eventParts = eventKey.split("-");
+                    const eventType = eventParts.pop()?.toLowerCase() || "";
+                    const eventName = eventParts.join("-");
+
+                    let eventCategory: string;
+                    switch (eventType) {
+                        case "double":
+                            eventCategory = "double";
+                            break;
+                        case "team_relay":
+                            eventCategory = "team_relay";
+                            break;
+                        case "parent_&_child":
+                            eventCategory = "parent_&_child";
+                            break;
+                        default:
+                            eventCategory = "individual";
+                    }
+
+                    // Try new path first
+                    const prelimRecordsQuery = query(
+                        collection(firestore, `tournaments/${tournamentId}/events/prelim/${eventCategory}/${eventName}/records`),
+                    );
+
+                    const prelimRecordsSnapshot = await getDocs(prelimRecordsQuery);
+                    for (const recordDoc of prelimRecordsSnapshot.docs) {
+                        const data = recordDoc.data();
+                        data.round = "prelim"; // Ensure round is set
+                        records.push(
+                            eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord),
+                        );
+                    }
                 }
             }
         }
     }
 
     return records;
+};
+
+const getEventCategoryFromType = (typeLabel: string): string => {
+    const normalized = typeLabel.toLowerCase();
+    if (normalized === "double") return "double";
+    if (normalized === "team relay") return "team_relay";
+    if (normalized === "parent & child") return "parent_&_child";
+    if (normalized === "special need") return "special_need";
+    return "individual";
+};
+
+const parseEventKey = (eventKey: string): {eventName: string; eventCategory: string} => {
+    let eventName = eventKey;
+    let typeLabel = "";
+
+    if (eventKey.includes("-Team Relay")) {
+        typeLabel = "Team Relay";
+        eventName = eventKey.replace("-Team Relay", "");
+    } else if (eventKey.includes("-Parent & Child")) {
+        typeLabel = "Parent & Child";
+        eventName = eventKey.replace("-Parent & Child", "");
+    } else if (eventKey.includes("-Special Need")) {
+        typeLabel = "Special Need";
+        eventName = eventKey.replace("-Special Need", "");
+    } else {
+        const eventParts = eventKey.split("-");
+        typeLabel = eventParts.pop() || "";
+        eventName = eventParts.join("-");
+    }
+
+    return {
+        eventName: eventName.trim(),
+        eventCategory: getEventCategoryFromType(typeLabel.trim()),
+    };
 };
 
 export const getTournamentFinalRecords = async (tournamentId: string): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
@@ -394,39 +466,45 @@ export const getTournamentFinalRecords = async (tournamentId: string): Promise<(
         const tournamentData = tournamentSnap.data();
         if (tournamentData.events && Array.isArray(tournamentData.events)) {
             for (const event of tournamentData.events) {
-                const eventKey = `${event.code}-${event.type}`;
-                const eventParts = eventKey.split("-");
-                const eventType = eventParts.pop()?.toLowerCase() || "";
-                const eventName = eventParts.join("-");
+                // Handle new event structure with codes array
+                if (event.codes && Array.isArray(event.codes)) {
+                    for (const code of event.codes) {
+                        const eventKey = `${code}-${event.type}`;
+                        const {eventName, eventCategory} = parseEventKey(eventKey);
 
-                let eventCategory: string;
-                switch (eventType) {
-                    case "double":
-                        eventCategory = "double";
-                        break;
-                    case "team relay":
-                    case "team-relay":
-                    case "teamrelay":
-                        eventCategory = "team-relay";
-                        break;
-                    case "parent & child":
-                    case "parent&child":
-                    case "parentchild":
-                        eventCategory = "parent-child";
-                        break;
-                    default:
-                        eventCategory = "individual";
-                }
+                        const finalRecordsQuery = query(
+                            collection(
+                                firestore,
+                                `tournaments/${tournamentId}/events/final/${eventCategory}/${eventName}/records`,
+                            ),
+                        );
 
-                const finalRecordsQuery = query(
-                    collection(firestore, `tournaments/${tournamentId}/events/final/${eventCategory}/${eventName}/records`),
-                );
+                        const finalRecordsSnapshot = await getDocs(finalRecordsQuery);
+                        for (const recordDoc of finalRecordsSnapshot.docs) {
+                            const data = recordDoc.data();
+                            data.round = "final"; // Ensure round is set
+                            records.push(
+                                eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord),
+                            );
+                        }
+                    }
+                } else {
+                    // Fallback for old event structure (backward compatibility)
+                    const eventKey = `${event.code}-${event.type}`;
+                    const {eventName, eventCategory} = parseEventKey(eventKey);
 
-                const finalRecordsSnapshot = await getDocs(finalRecordsQuery);
-                for (const recordDoc of finalRecordsSnapshot.docs) {
-                    const data = recordDoc.data();
-                    data.round = "final"; // Ensure round is set
-                    records.push(eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord));
+                    const finalRecordsQuery = query(
+                        collection(firestore, `tournaments/${tournamentId}/events/final/${eventCategory}/${eventName}/records`),
+                    );
+
+                    const finalRecordsSnapshot = await getDocs(finalRecordsQuery);
+                    for (const recordDoc of finalRecordsSnapshot.docs) {
+                        const data = recordDoc.data();
+                        data.round = "final"; // Ensure round is set
+                        records.push(
+                            eventCategory === "individual" ? (data as TournamentRecord) : (data as TournamentTeamRecord),
+                        );
+                    }
                 }
             }
         }
@@ -468,7 +546,7 @@ export const updateRecord = async (
 };
 
 export const getFastestRecord = async (data: GetFastestRecordData): Promise<GlobalResult | null> => {
-    const {event, round, type} = data; // Keep parameters for backward compatibility
+    const {event, type} = data; // Keep parameters for backward compatibility
 
     try {
         const q = query(
@@ -501,6 +579,12 @@ export const getPrelimRecords = async (
     const eventType = eventParts.pop()?.toLowerCase() || "";
     const eventName = eventParts.join("-");
 
+    // Validate that we have a valid event name to avoid double slashes in path
+    if (!eventName || eventName.trim() === "") {
+        console.warn(`Invalid event key format: ${eventKey}. Expected format: "EventCode-EventType"`);
+        return records;
+    }
+
     // Determine event category
     const normalizedType = eventType.toLowerCase().replace(/\s+/g, "");
 
@@ -510,11 +594,11 @@ export const getPrelimRecords = async (
             eventCategory = "double";
             break;
         case "teamrelay":
-            eventCategory = "team-relay";
+            eventCategory = "team_relay";
             break;
         case "parent&child":
         case "parentchild":
-            eventCategory = "parent-child";
+            eventCategory = "parent_&_child";
             break;
         case "individual":
             eventCategory = "individual";
@@ -525,7 +609,7 @@ export const getPrelimRecords = async (
                 eventKey.toLowerCase().includes("double") ||
                 eventKey.toLowerCase().includes("team") ||
                 eventKey.toLowerCase().includes("parent");
-            eventCategory = isTeamEvent ? "team" : "individual";
+            eventCategory = isTeamEvent ? "team_relay" : "individual";
             break;
         }
     }
@@ -542,6 +626,30 @@ export const getPrelimRecords = async (
             const data = recordDoc.data();
             data.round = "prelim"; // Ensure round is set
             records.push(data as TournamentRecord | TournamentTeamRecord);
+        }
+
+        // Also check legacy paths for backward compatibility
+        if (eventCategory === "team_relay") {
+            const legacyPrelimQuery = query(
+                collection(firestore, `tournaments/${tournamentId}/events/prelim/team-relay/${eventName}/records`),
+            );
+            const legacyPrelimSnapshot = await getDocs(legacyPrelimQuery);
+            for (const recordDoc of legacyPrelimSnapshot.docs) {
+                const data = recordDoc.data();
+                data.round = "prelim";
+                records.push(data as TournamentTeamRecord);
+            }
+        }
+        if (eventCategory === "parent_&_child") {
+            const legacyPrelimQuery = query(
+                collection(firestore, `tournaments/${tournamentId}/events/prelim/parent-child/${eventName}/records`),
+            );
+            const legacyPrelimSnapshot = await getDocs(legacyPrelimQuery);
+            for (const recordDoc of legacyPrelimSnapshot.docs) {
+                const data = recordDoc.data();
+                data.round = "prelim";
+                records.push(data as TournamentTeamRecord);
+            }
         }
     } catch (error) {
         console.error("Error fetching prelim records:", error);
@@ -562,6 +670,12 @@ export const getFinalRecords = async (
     const eventType = eventParts.pop()?.toLowerCase() || "";
     const eventName = eventParts.join("-");
 
+    // Validate that we have a valid event name to avoid double slashes in path
+    if (!eventName || eventName.trim() === "") {
+        console.warn(`Invalid event key format: ${eventKey}. Expected format: "EventCode-EventType"`);
+        return records;
+    }
+
     // Determine event category
     const normalizedType = eventType.toLowerCase().replace(/\s+/g, "");
 
@@ -571,11 +685,11 @@ export const getFinalRecords = async (
             eventCategory = "double";
             break;
         case "teamrelay":
-            eventCategory = "team-relay";
+            eventCategory = "team_relay";
             break;
         case "parent&child":
         case "parentchild":
-            eventCategory = "parent-child";
+            eventCategory = "parent_&_child";
             break;
         case "individual":
             eventCategory = "individual";
@@ -586,7 +700,7 @@ export const getFinalRecords = async (
                 eventKey.toLowerCase().includes("double") ||
                 eventKey.toLowerCase().includes("team") ||
                 eventKey.toLowerCase().includes("parent");
-            eventCategory = isTeamEvent ? "team" : "individual";
+            eventCategory = isTeamEvent ? "team_relay" : "individual";
             break;
         }
     }
@@ -603,6 +717,30 @@ export const getFinalRecords = async (
             const data = recordDoc.data();
             data.round = "final"; // Ensure round is set
             records.push(data as TournamentRecord | TournamentTeamRecord);
+        }
+
+        // Also check legacy paths for backward compatibility
+        if (eventCategory === "team_relay") {
+            const legacyFinalQuery = query(
+                collection(firestore, `tournaments/${tournamentId}/events/final/team-relay/${eventName}/records`),
+            );
+            const legacyFinalSnapshot = await getDocs(legacyFinalQuery);
+            for (const recordDoc of legacyFinalSnapshot.docs) {
+                const data = recordDoc.data();
+                data.round = "final";
+                records.push(data as TournamentTeamRecord);
+            }
+        }
+        if (eventCategory === "parent_&_child") {
+            const legacyFinalQuery = query(
+                collection(firestore, `tournaments/${tournamentId}/events/final/parent-child/${eventName}/records`),
+            );
+            const legacyFinalSnapshot = await getDocs(legacyFinalQuery);
+            for (const recordDoc of legacyFinalSnapshot.docs) {
+                const data = recordDoc.data();
+                data.round = "final";
+                records.push(data as TournamentTeamRecord);
+            }
         }
     } catch (error) {
         console.error("Error fetching final records:", error);
@@ -626,10 +764,10 @@ export const getRecords = async (
 };
 
 // 获取事件排名记录 - 修正版本
-type Category = "Individual" | "Double" | "Parent & Child" | "Team-Relay";
+type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
 type EventType = "3-3-3" | "3-6-3" | "Cycle";
 
-const CATEGORIES: Category[] = ["Individual", "Double", "Parent & Child", "Team-Relay"];
+const CATEGORIES: Category[] = ["individual", "double", "parent_&_child", "team_relay", "special_need"];
 const EVENT_TYPES: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
 
 function isCategory(x: string): x is Category {
@@ -662,8 +800,7 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
 
             for (const d of snap.docs) {
                 const data = d.data();
-
-                if (category === "Individual") {
+                if (category === "individual") {
                     rows.push({
                         id: d.id, // Add the Firestore document ID
                         event: data.event || `${eventType}-${category}`,
@@ -718,7 +855,7 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
                 const snap = await getDocs(qCol);
                 for (const d of snap.docs) {
                     const data = d.data();
-                    if (cat === "Individual") {
+                    if (cat === "individual") {
                         resultsAcross.push({
                             id: d.id, // Add the Firestore document ID
                             event: data.event || `${eventOnly}-${cat}`,
@@ -768,25 +905,39 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
     }
 }
 
+// Display categories (for UI)
+type DisplayCategory = "Individual" | "Double" | "Parent & Child" | "Team Relay" | "Special Need";
+
+// Map from system categories to display categories
+const CATEGORY_DISPLAY_MAP: Record<Category, DisplayCategory> = {
+    individual: "Individual",
+    double: "Double",
+    "parent_&_child": "Parent & Child",
+    team_relay: "Team Relay",
+    special_need: "Special Need",
+};
+
 // 获取按年龄分组的最佳记录 - 修正版本
 export const getBestRecordsByAgeGroup = async (): Promise<
-    Record<Category, Partial<Record<EventType, (GlobalResult | GlobalTeamResult)[]>>>
+    Record<DisplayCategory, Partial<Record<EventType, (GlobalResult | GlobalTeamResult)[]>>>
 > => {
-    const result: Record<Category, Partial<Record<EventType, (GlobalResult | GlobalTeamResult)[]>>> = {
+    const result: Record<DisplayCategory, Partial<Record<EventType, (GlobalResult | GlobalTeamResult)[]>>> = {
         Individual: {},
         Double: {},
         "Parent & Child": {},
-        "Team-Relay": {},
+        "Team Relay": {},
+        "Special Need": {},
     };
 
     // Define the exact combinations you want to display in the backend
     const combos: [Category, EventType][] = [
-        ["Individual", "3-3-3"],
-        ["Individual", "3-6-3"],
-        ["Individual", "Cycle"],
-        ["Double", "Cycle"],
-        ["Parent & Child", "Cycle"],
-        ["Team-Relay", "Cycle"],
+        ["individual", "3-3-3"],
+        ["individual", "3-6-3"],
+        ["individual", "Cycle"],
+        ["double", "Cycle"],
+        ["parent_&_child", "Cycle"],
+        ["team_relay", "Cycle"],
+        ["team_relay", "3-6-3"],
     ];
 
     for (const [category, eventType] of combos) {
@@ -795,10 +946,12 @@ export const getBestRecordsByAgeGroup = async (): Promise<
             const rows = await getEventRankings(category, eventType);
             // filter invalid times & keep top 10
             const top10 = rows.filter((r) => (r.time ?? 0) > 0).slice(0, 10);
-            result[category][eventType] = top10;
+            const displayCategory = CATEGORY_DISPLAY_MAP[category];
+            result[displayCategory][eventType] = top10;
         } catch (err) {
             console.warn(`Could not fetch best records for ${category} ${eventType}:`, err);
-            result[category][eventType] = [];
+            const displayCategory = CATEGORY_DISPLAY_MAP[category];
+            result[displayCategory][eventType] = [];
         }
     }
 
@@ -809,13 +962,12 @@ export const getBestRecordsByAgeGroup = async (): Promise<
 export const getClassificationRankings = async (
     event: string,
     classification: "beginner" | "intermediate" | "advance",
-    round: "prelim" | "final" = "final", // 保持参数兼容性，但不在查询中使用
 ): Promise<(GlobalResult | GlobalTeamResult)[]> => {
     const rankings: (GlobalResult | GlobalTeamResult)[] = [];
 
     try {
         // Updated logic: globalResult/[Category]/[EventType]
-        const categories = ["Individual", "Parent & Child", "Double", "Team-Relay"];
+        const categories = ["individual", "parent_&_child", "double", "team_relay", "special_need"];
 
         for (const category of categories) {
             try {

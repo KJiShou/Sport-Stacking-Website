@@ -38,20 +38,30 @@ const {Title, Paragraph, Text} = Typography;
 const TabPane = Tabs.TabPane;
 const Option = Select.Option;
 
-type RecordCategory = "individual" | "team-relay" | "double" | "parent-child";
+type RecordCategory = "individual" | "team_relay" | "double" | "parent_&_child" | "special_need";
 type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Double" | "Team Relay" | "Parent & Child";
 type AgeGroup = "6U" | "8U" | "10U" | "12U" | "14U" | "17U" | "Open" | "Overall";
 
 // Match the service types
-type Category = "Individual" | "Double" | "Parent & Child" | "Team-Relay";
+type Category = "Individual" | "Double" | "Parent & Child" | "Team Relay" | "Special Need";
 type EventTypeKey = "3-3-3" | "3-6-3" | "Cycle";
 
-// Map UI tab keys -> backend category labels
+// Map UI tab keys -> display category labels
 const CATEGORY_MAP: Record<RecordCategory, Category> = {
     individual: "Individual",
     double: "Double",
-    "team-relay": "Team-Relay",
-    "parent-child": "Parent & Child",
+    team_relay: "Team Relay",
+    "parent_&_child": "Parent & Child",
+    special_need: "Special Need",
+};
+
+// Map display categories to backend system categories
+const BACKEND_CATEGORY_MAP: Record<Category, string> = {
+    Individual: "individual",
+    Double: "double",
+    "Team Relay": "team_relay",
+    "Parent & Child": "parent_&_child",
+    "Special Need": "special_need",
 };
 
 // Shape returned by getBestRecordsByAgeGroup()
@@ -62,7 +72,8 @@ const EVENTS_FOR_CATEGORY: Record<Category, EventTypeKey[]> = {
     Individual: ["3-3-3", "3-6-3", "Cycle"],
     Double: ["Cycle"],
     "Parent & Child": ["Cycle"],
-    "Team-Relay": ["Cycle"],
+    "Team Relay": ["Cycle", "3-6-3"],
+    "Special Need": ["3-3-3", "3-6-3", "Cycle"],
 };
 
 interface RecordDisplay {
@@ -142,7 +153,8 @@ const RecordsIndex: React.FC = () => {
         Individual: {},
         Double: {},
         "Parent & Child": {},
-        "Team-Relay": {},
+        "Team Relay": {},
+        "Special Need": {},
     });
     const [loading, setLoading] = useState(true);
     const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>("Overall");
@@ -194,10 +206,17 @@ const RecordsIndex: React.FC = () => {
 
         try {
             // Determine category and eventType based on current tab and event
-            const category = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
+            const displayCategory = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
+            const backendCategory = BACKEND_CATEGORY_MAP[displayCategory];
             const eventType = (activeCategory === "individual" ? selectedIndividualEvent : record.event) as EventTypeKey;
 
-            await toggleRecordVerification(category, eventType, record.recordId, user.global_id, record.status);
+            await toggleRecordVerification(
+                backendCategory as "individual" | "double" | "parent_&_child" | "team_relay" | "special_need",
+                eventType,
+                record.recordId,
+                user.global_id,
+                record.status,
+            );
             const action = record.status === "submitted" ? "verified" : "unverified";
             Message.success(`Record ${action} successfully for ${record.athlete}`);
             window.location.reload(); // Refresh the entire page
@@ -221,10 +240,15 @@ const RecordsIndex: React.FC = () => {
             onOk: async () => {
                 try {
                     // Determine category and eventType based on current tab and event
-                    const category = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
+                    const displayCategory = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
+                    const backendCategory = BACKEND_CATEGORY_MAP[displayCategory];
                     const eventType = (activeCategory === "individual" ? selectedIndividualEvent : record.event) as EventTypeKey;
 
-                    await deleteRecord(category, eventType, record.recordId ?? "");
+                    await deleteRecord(
+                        backendCategory as "individual" | "double" | "parent_&_child" | "team_relay" | "special_need",
+                        eventType,
+                        record.recordId ?? "",
+                    );
                     Message.success("Record deleted successfully");
                     loadRecords(); // Refresh records
                 } catch (error) {
@@ -245,10 +269,16 @@ const RecordsIndex: React.FC = () => {
             const values = await videoForm.validate();
 
             // Determine category and eventType based on current tab and event
-            const category = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
+            const displayCategory = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
+            const backendCategory = BACKEND_CATEGORY_MAP[displayCategory];
             const eventType = (activeCategory === "individual" ? selectedIndividualEvent : selectedRecord.event) as EventTypeKey;
 
-            await updateRecordVideoUrl(category, eventType, selectedRecord.recordId, values.videoUrl);
+            await updateRecordVideoUrl(
+                backendCategory as "individual" | "double" | "parent_&_child" | "team_relay" | "special_need",
+                eventType,
+                selectedRecord.recordId,
+                values.videoUrl,
+            );
             Message.success("Video URL updated successfully");
             setEditVideoModalVisible(false);
             videoForm.resetFields();
@@ -257,54 +287,6 @@ const RecordsIndex: React.FC = () => {
             console.error("Failed to update video URL:", error);
             Message.error("Failed to update video URL");
         }
-    };
-
-    const prepareRecordsData = (category: RecordCategory): RecordDisplay[] => {
-        const recordsData: RecordDisplay[] = [];
-        const backendCategory = CATEGORY_MAP[category]; // "Individual" | "Double" | ...
-
-        // Events you want to show for this category
-        const events = EVENTS_FOR_CATEGORY[backendCategory];
-
-        for (const eventType of events) {
-            const eventRecords = allRecords[backendCategory]?.[eventType] || [];
-            let eventRank = 1;
-
-            eventRecords.forEach((record, index) => {
-                const recordAgeGroup = getAgeGroup(record.age);
-                if (selectedAgeGroup !== "Overall" && recordAgeGroup !== selectedAgeGroup) {
-                    return;
-                }
-
-                const isTeamResult = "teamName" in record;
-                const athleteName = isTeamResult
-                    ? (record as GlobalTeamResult).teamName || "Unknown Team"
-                    : (record as GlobalResult).participantName || "Unknown";
-
-                const gender = isTeamResult ? "Team" : (record as GlobalResult).gender || "Overall";
-
-                recordsData.push({
-                    key: `${backendCategory}-${eventType}-${index}`,
-                    rank: eventRank++,
-                    event: eventType, // display the sub-event (e.g., "Cycle")
-                    gender,
-                    time: formatTime(record.time),
-                    athlete: athleteName,
-                    country: record.country || "Unknown",
-                    flag: getCountryFlag(record.country),
-                    date: formatDate(record.created_at || new Date().toISOString()),
-                    ageGroup: recordAgeGroup,
-                    status: record.status || "submitted",
-                    videoUrl: record.videoUrl || undefined,
-                    rawTime: record.time,
-                    recordId: (record as GlobalResultWithId | GlobalTeamResultWithId).id, // Use the Firestore document ID
-                    participantId: isTeamResult ? undefined : (record as GlobalResult).participantId,
-                    teamName: isTeamResult ? (record as GlobalTeamResult).teamName : undefined,
-                });
-            });
-        }
-
-        return recordsData;
     };
 
     const getTableColumns = () => {
@@ -470,33 +452,54 @@ const RecordsIndex: React.FC = () => {
         ];
     };
 
-    const getCategoryTitle = (category: RecordCategory): string => {
-        const titles = {
-            individual: "Individual Records",
-            double: "Doubles Records",
-            "team-relay": "Team Relay Records",
-            "parent-child": "Parent & Child Records",
-        };
-        return titles[category];
-    };
-
-    const getCategoryDescription = (category: RecordCategory): string => {
-        const descriptions = {
-            individual: "Combined rankings from Cycle, 3-3-3, and 3-6-3 individual events",
-            double: "Team doubles event records",
-            "team-relay": "Team relay event records",
-            "parent-child": "Parent & Child team event records",
-        };
-        return descriptions[category];
-    };
-
     const [selectedIndividualEvent, setSelectedIndividualEvent] = useState<EventType>("3-3-3");
+    const [selectedDoubleEvent, setSelectedDoubleEvent] = useState<EventTypeKey>("Cycle");
+    const [selectedTeamRelayEvent, setSelectedTeamRelayEvent] = useState<EventTypeKey>("Cycle");
+    const [selectedParentChildEvent, setSelectedParentChildEvent] = useState<EventTypeKey>("Cycle");
+    const [selectedSpecialNeedEvent, setSelectedSpecialNeedEvent] = useState<EventTypeKey>("3-3-3");
 
-    const renderIndividualContent = () => {
-        const backendCategory: Category = "Individual";
-        const eventType = selectedIndividualEvent as EventTypeKey;
+    const getSelectedEventForCategory = (category: RecordCategory): EventTypeKey => {
+        switch (category) {
+            case "individual":
+                return selectedIndividualEvent as EventTypeKey;
+            case "double":
+                return selectedDoubleEvent;
+            case "team_relay":
+                return selectedTeamRelayEvent;
+            case "parent_&_child":
+                return selectedParentChildEvent;
+            default:
+                return selectedSpecialNeedEvent;
+        }
+    };
 
-        const eventRecords = allRecords[backendCategory]?.[eventType] || [];
+    const setSelectedEventForCategory = (category: RecordCategory, event: EventTypeKey) => {
+        switch (category) {
+            case "individual":
+                setSelectedIndividualEvent(event as EventType);
+                break;
+            case "double":
+                setSelectedDoubleEvent(event);
+                break;
+            case "team_relay":
+                setSelectedTeamRelayEvent(event);
+                break;
+            case "parent_&_child":
+                setSelectedParentChildEvent(event);
+                break;
+            default:
+                setSelectedSpecialNeedEvent(event);
+                break;
+        }
+    };
+
+    const renderCategoryContent = (category: RecordCategory) => {
+        const backendCategory = CATEGORY_MAP[category];
+        const availableEvents = EVENTS_FOR_CATEGORY[backendCategory];
+        const selectedEvent = getSelectedEventForCategory(category);
+
+        // Get records for the selected event only
+        const eventRecords = allRecords[backendCategory]?.[selectedEvent] || [];
         const recordsData: RecordDisplay[] = [];
         let eventRank = 1;
 
@@ -506,48 +509,51 @@ const RecordsIndex: React.FC = () => {
                 return;
             }
 
-            // Only include individual results (not team results)
-            if ("participantName" in record) {
-                const athleteName = (record as GlobalResult).participantName || "Unknown";
-                recordsData.push({
-                    key: `${selectedIndividualEvent}-${index}`,
-                    rank: eventRank++,
-                    event: selectedIndividualEvent, // "3-3-3" | "3-6-3" | "Cycle"
-                    gender: (record as GlobalResult).gender || "Overall",
-                    time: formatTime(record.time),
-                    athlete: athleteName,
-                    country: record.country || "Unknown",
-                    flag: getCountryFlag(record.country),
-                    date: formatDate(record.created_at || new Date().toISOString()),
-                    ageGroup: recordAgeGroup,
-                    status: record.status || "submitted",
-                    videoUrl: record.videoUrl || undefined,
-                    rawTime: record.time,
-                    recordId: (record as GlobalResultWithId | GlobalTeamResultWithId).id, // Use the Firestore document ID
-                    participantId: (record as GlobalResult).participantId,
-                });
-            }
+            const isTeamResult = "teamName" in record;
+            const athleteName = isTeamResult
+                ? (record as GlobalTeamResult).teamName || "Unknown Team"
+                : (record as GlobalResult).participantName || "Unknown";
+            const gender = isTeamResult ? "Team" : (record as GlobalResult).gender || "Overall";
+
+            recordsData.push({
+                key: `${backendCategory}-${selectedEvent}-${index}`,
+                rank: eventRank++,
+                event: selectedEvent,
+                gender,
+                time: formatTime(record.time),
+                athlete: athleteName,
+                country: record.country || "Unknown",
+                flag: getCountryFlag(record.country),
+                date: formatDate(record.created_at || new Date().toISOString()),
+                ageGroup: recordAgeGroup,
+                status: record.status || "submitted",
+                videoUrl: record.videoUrl || undefined,
+                rawTime: record.time,
+                recordId: (record as GlobalResultWithId | GlobalTeamResultWithId).id,
+                participantId: isTeamResult ? undefined : (record as GlobalResult).participantId,
+                teamName: isTeamResult ? (record as GlobalTeamResult).teamName : undefined,
+            });
         });
 
         return (
             <div>
-                {/* Individual Event Rounded Tabs */}
+                {/* Event Tabs - show for all categories */}
                 <div style={{marginBottom: "24px"}}>
                     <Tabs
                         type="rounded"
-                        activeTab={selectedIndividualEvent}
-                        onChange={(key) => setSelectedIndividualEvent(key as EventType)}
+                        activeTab={selectedEvent}
+                        onChange={(key) => setSelectedEventForCategory(category, key as EventTypeKey)}
                         style={{marginBottom: "16px"}}
                     >
-                        <TabPane key="3-3-3" title="3-3-3" />
-                        <TabPane key="3-6-3" title="3-6-3" />
-                        <TabPane key="Cycle" title="Cycle" />
+                        {availableEvents.map((event) => (
+                            <TabPane key={event} title={event} />
+                        ))}
                     </Tabs>
 
                     <div style={{display: "flex", justifyContent: "space-between", alignItems: "center"}}>
                         <div>
                             <Text style={{fontSize: "16px", fontWeight: "500", color: "#333"}}>
-                                Individual {selectedIndividualEvent} Records
+                                {backendCategory} {selectedEvent} Records
                             </Text>
                             <div style={{marginTop: "4px"}}>
                                 <Text style={{fontSize: "14px", color: "#666"}}>Total records: {recordsData.length}</Text>
@@ -574,10 +580,7 @@ const RecordsIndex: React.FC = () => {
 
                 {recordsData.length === 0 ? (
                     <div style={{textAlign: "center", padding: "60px"}}>
-                        <Empty
-                            description={`No ${selectedIndividualEvent} records found for this age group`}
-                            style={{color: "#666"}}
-                        />
+                        <Empty description={`No ${selectedEvent} records found for this age group`} style={{color: "#666"}} />
                     </div>
                 ) : (
                     <Table
@@ -594,73 +597,9 @@ const RecordsIndex: React.FC = () => {
                         hover
                         style={{backgroundColor: "white"}}
                         scroll={{x: 800}}
-                        rowClassName={(record, index) => (index % 2 === 0 ? "even-row" : "odd-row")}
+                        rowClassName={(_, index) => (index % 2 === 0 ? "even-row" : "odd-row")}
                     />
                 )}
-            </div>
-        );
-    };
-
-    const renderCategoryContent = (category: RecordCategory) => {
-        if (category === "individual") {
-            return renderIndividualContent();
-        }
-
-        const recordsData = prepareRecordsData(category);
-
-        if (recordsData.length === 0) {
-            return (
-                <div style={{textAlign: "center", padding: "60px"}}>
-                    <Empty description="No records found for this category and age group" style={{color: "#666"}} />
-                </div>
-            );
-        }
-
-        return (
-            <div>
-                <div style={{marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center"}}>
-                    <div>
-                        <Text style={{fontSize: "16px", fontWeight: "500", color: "#333"}}>
-                            {getCategoryDescription(category)}
-                        </Text>
-                        <div style={{marginTop: "4px"}}>
-                            <Text style={{fontSize: "14px", color: "#666"}}>Total records: {recordsData.length}</Text>
-                        </div>
-                    </div>
-
-                    <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
-                        <Text style={{fontSize: "14px", color: "#666"}}>Age Group:</Text>
-                        <Select
-                            value={selectedAgeGroup}
-                            onChange={(value) => setSelectedAgeGroup(value as AgeGroup)}
-                            style={{width: 120}}
-                            size="small"
-                        >
-                            {AGE_GROUPS.map((ageGroup) => (
-                                <Option key={ageGroup} value={ageGroup}>
-                                    {ageGroup}
-                                </Option>
-                            ))}
-                        </Select>
-                    </div>
-                </div>
-
-                <Table
-                    columns={getTableColumns()}
-                    data={recordsData}
-                    pagination={{
-                        pageSize: 20,
-                        showTotal: true,
-                        showJumper: true,
-                        sizeCanChange: true,
-                    }}
-                    size="small"
-                    stripe
-                    hover
-                    style={{backgroundColor: "white"}}
-                    scroll={{x: 800}}
-                    rowClassName={(record, index) => (index % 2 === 0 ? "even-row" : "odd-row")}
-                />
             </div>
         );
     };
@@ -729,7 +668,7 @@ const RecordsIndex: React.FC = () => {
                                 </div>
                             }
                         >
-                            {renderCategoryContent("team-relay")}
+                            {renderCategoryContent("team_relay")}
                         </TabPane>
 
                         <TabPane
@@ -740,7 +679,18 @@ const RecordsIndex: React.FC = () => {
                                 </div>
                             }
                         >
-                            {renderCategoryContent("parent-child")}
+                            {renderCategoryContent("parent_&_child")}
+                        </TabPane>
+
+                        <TabPane
+                            key="special_need"
+                            title={
+                                <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
+                                    <span>Special Need</span>
+                                </div>
+                            }
+                        >
+                            {renderCategoryContent("special_need")}
                         </TabPane>
                     </Tabs>
                 </div>

@@ -6,6 +6,7 @@ import {
     addDoc,
     collection,
     deleteDoc,
+    deleteField,
     doc,
     getDoc,
     getDocs,
@@ -15,7 +16,12 @@ import {
     where,
 } from "firebase/firestore";
 import type {FirestoreUser, Team, Tournament} from "../../schema";
+import {TournamentSchema} from "../../schema";
 import {db} from "./config";
+import {removeUserRegistrationRecordsByTournament} from "./authService";
+import {getIndividualRecruitmentsByTournament, deleteIndividualRecruitment} from "./individualRecruitmentService";
+import {getActiveTeamRecruitments, deleteTeamRecruitment} from "./teamRecruitmentService";
+import {deleteTournamentStorage} from "./storageService";
 
 export async function createTournament(user: FirestoreUser, data: Omit<Tournament, "id">): Promise<string> {
     if (!user?.roles?.edit_tournament) {
@@ -66,6 +72,11 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("Address is required.");
     }
 
+    const eventsWithIds = (data.events ?? []).map((event) => ({
+        ...event,
+        id: event.id && event.id.length > 0 ? event.id : crypto.randomUUID(),
+    }));
+
     const docRef = await addDoc(collection(db, "tournaments"), {
         registration_fee: data.registration_fee,
         member_registration_fee: data.member_registration_fee,
@@ -78,7 +89,7 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         registration_start_date: data.registration_start_date,
         registration_end_date: data.registration_end_date,
         max_participants: data.max_participants,
-        events: data.events,
+        events: eventsWithIds,
         description: data.description ?? null,
         agenda: data.agenda ?? null,
         logo: data.logo ?? null,
@@ -150,10 +161,21 @@ export async function fetchTournamentsByType(type: "current" | "history"): Promi
 
         const snapshot = await getDocs(tournamentsQuery);
 
-        return snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-        })) as Tournament[];
+        return snapshot.docs
+            .map((doc) => {
+                const parsed = TournamentSchema.safeParse({
+                    id: doc.id,
+                    ...doc.data(),
+                });
+
+                if (!parsed.success) {
+                    console.warn(`Failed to parse tournament ${doc.id}`, parsed.error.flatten());
+                    return null;
+                }
+
+                return parsed.data;
+            })
+            .filter((tournament): tournament is Tournament => tournament !== null);
     } catch (error) {
         console.error("Failed to fetch tournaments:", error);
         throw error;
@@ -170,7 +192,17 @@ export async function fetchTournamentById(tournamentId: string): Promise<Tournam
             return null;
         }
 
-        return {...docSnap.data()} as Tournament;
+        const parsed = TournamentSchema.safeParse({
+            id: docSnap.id,
+            ...docSnap.data(),
+        });
+
+        if (!parsed.success) {
+            console.warn(`Tournament document failed validation: ${tournamentId}`, parsed.error.flatten());
+            return null;
+        }
+
+        return parsed.data;
     } catch (error) {
         console.error("Error fetching tournament:", error);
         throw error;
@@ -183,11 +215,114 @@ export async function deleteTournamentById(user: FirestoreUser, tournamentId: st
     }
 
     try {
-        const tournamentRef = doc(db, "tournaments", tournamentId);
-        await deleteDoc(tournamentRef);
+        // Delete all related data in sequence
+        await deleteTournamentCascade(tournamentId);
     } catch (error) {
         console.error("Error deleting tournament:", error);
         throw error;
+    }
+}
+
+async function deleteTournamentCascade(tournamentId: string): Promise<void> {
+    // 1. Delete all registrations
+    try {
+        const registrationsRef = collection(db, "tournaments", tournamentId, "registrations");
+        const registrationsSnapshot = await getDocs(registrationsRef);
+        
+        const registrationDeletePromises = registrationsSnapshot.docs.map(doc => 
+            deleteDoc(doc.ref)
+        );
+        
+        await Promise.all(registrationDeletePromises);
+    } catch (error) {
+        console.error("Error deleting registrations:", error);
+        throw new Error("Failed to delete tournament registrations");
+    }
+
+    // 2. Delete all teams
+    try {
+        const teamsRef = collection(db, "tournaments", tournamentId, "teams");
+        const teamsSnapshot = await getDocs(teamsRef);
+        
+        const teamDeletePromises = teamsSnapshot.docs.map(doc => 
+            deleteDoc(doc.ref)
+        );
+        
+        await Promise.all(teamDeletePromises);
+    } catch (error) {
+        console.error("Error deleting teams:", error);
+        throw new Error("Failed to delete tournament teams");
+    }
+
+    // 3. Delete scoring/results data if they exist in subcollections
+    try {
+        // Check for other subcollections like scores, finalists, etc.
+        const subcollections = ['scores', 'finalists', 'results'];
+        
+        for (const subcollectionName of subcollections) {
+            const subcollectionRef = collection(db, "tournaments", tournamentId, subcollectionName);
+            const subcollectionSnapshot = await getDocs(subcollectionRef);
+            
+            if (subcollectionSnapshot.docs.length > 0) {
+                const deletePromises = subcollectionSnapshot.docs.map(doc => 
+                    deleteDoc(doc.ref)
+                );
+                
+                await Promise.all(deletePromises);
+            }
+        }
+    } catch (error) {
+        console.error("Error deleting subcollection data:", error);
+        // Don't throw here as these subcollections might not exist
+    }
+
+    // 4. Delete individual recruitment records
+    try {
+        const individualRecruitments = await getIndividualRecruitmentsByTournament(tournamentId);
+        const individualDeletePromises = individualRecruitments.map(recruitment => 
+            deleteIndividualRecruitment(recruitment.id)
+        );
+        await Promise.all(individualDeletePromises);
+    } catch (error) {
+        console.error("Error deleting individual recruitment records:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+
+    // 5. Delete team recruitment records  
+    try {
+        const teamRecruitments = await getActiveTeamRecruitments(tournamentId);
+        const teamDeletePromises = teamRecruitments.map(recruitment => 
+            deleteTeamRecruitment(recruitment.id)
+        );
+        await Promise.all(teamDeletePromises);
+    } catch (error) {
+        console.error("Error deleting team recruitment records:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+
+    // 6. Clean up user registration records
+    try {
+        await removeUserRegistrationRecordsByTournament(tournamentId);
+    } catch (error) {
+        console.error("Error cleaning up user registration records:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+
+    // 7. Delete all tournament storage files (agenda, logo, payment proofs, etc.)
+    try {
+        await deleteTournamentStorage(tournamentId);
+    } catch (error) {
+        console.error("Error deleting tournament storage files:", error);
+        // Don't throw here as storage deletion shouldn't block tournament deletion
+    }
+
+    // 8. Finally, delete the tournament document itself
+    try {
+        const tournamentRef = doc(db, "tournaments", tournamentId);
+        await deleteDoc(tournamentRef);
+    } catch (error) {
+        console.error("Error deleting tournament document:", error);
+        throw new Error("Failed to delete tournament document");
     }
 }
 
@@ -206,8 +341,12 @@ export async function createTeam(tournamentId: string, teamData: Omit<Team, "id"
         }
     }
 
+    const {events, event_ids, ...restTeamData} = teamData;
+    const normalizedEventIds = Array.from(new Set(event_ids?.length ? event_ids : events ?? []));
+
     const docRef = await addDoc(teamsCollectionRef, {
-        ...teamData,
+        ...restTeamData,
+        event_ids: normalizedEventIds,
         tournament_id: tournamentId,
     });
     await updateDoc(docRef, {id: docRef.id});
@@ -222,13 +361,21 @@ export async function fetchTeamsByTournament(tournamentId: string): Promise<Team
 
 export async function fetchTeamsLookingForMembers(tournamentId: string, eventFilter?: string): Promise<Team[]> {
     const teamsCollectionRef = collection(db, "tournaments", tournamentId, "teams");
-    const q = query(
-        teamsCollectionRef,
-        where("looking_for_member", "==", true),
-        ...(eventFilter ? [where("events", "array-contains", eventFilter)] : []),
-    );
+    const q = query(teamsCollectionRef, where("looking_for_member", "==", true));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => doc.data() as Team);
+    const teams = snapshot.docs.map((doc) => doc.data() as Team);
+    if (!eventFilter) {
+        return teams;
+    }
+
+    return teams.filter((team) => {
+        const eventIds = team.event_ids ?? [];
+        if (eventIds.includes(eventFilter)) {
+            return true;
+        }
+
+        return (team.events ?? []).includes(eventFilter);
+    });
 }
 
 export async function addMemberToTeam(tournamentId: string, teamId: string, memberId: string): Promise<void> {
@@ -287,8 +434,13 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
         }
     }
 
+    const {events, event_ids, ...restTeamData} = teamData;
+    const normalizedEventIds = Array.from(new Set(event_ids?.length ? event_ids : events ?? []));
+
     await updateDoc(teamRef, {
-        ...teamData,
+        ...restTeamData,
+        event_ids: normalizedEventIds,
+        events: deleteField(),
     });
 }
 
