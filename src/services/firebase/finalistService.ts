@@ -48,10 +48,7 @@ export const getEventCategoryFromType = (type: string): EventCategory => {
     }
 };
 
-export const saveTournamentFinalists = async (
-    tournamentId: string,
-    groups: FinalistGroupPayload[],
-): Promise<void> => {
+export const saveTournamentFinalists = async (tournamentId: string, groups: FinalistGroupPayload[]): Promise<void> => {
     if (!tournamentId || groups.length === 0) {
         return;
     }

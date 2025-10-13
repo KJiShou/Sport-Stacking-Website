@@ -60,7 +60,7 @@ export async function deleteFile(filePath: string): Promise<void> {
         await deleteObject(fileRef);
     } catch (error: unknown) {
         // If file doesn't exist, don't throw error
-        if (error instanceof Error && 'code' in error && error.code === 'storage/object-not-found') {
+        if (error instanceof Error && "code" in error && error.code === "storage/object-not-found") {
             return;
         }
         console.error(`Error deleting file ${filePath}:`, error);
@@ -76,21 +76,17 @@ export async function deleteFolder(folderPath: string): Promise<void> {
     try {
         const folderRef = ref(storage, folderPath);
         const listResult = await listAll(folderRef);
-        
+
         // Delete all files in the folder
-        const deletePromises = listResult.items.map(itemRef => 
-            deleteObject(itemRef)
-        );
-        
+        const deletePromises = listResult.items.map((itemRef) => deleteObject(itemRef));
+
         // Recursively delete subfolders
-        const subfolderPromises = listResult.prefixes.map(subfolderRef => 
-            deleteFolder(subfolderRef.fullPath)
-        );
-        
+        const subfolderPromises = listResult.prefixes.map((subfolderRef) => deleteFolder(subfolderRef.fullPath));
+
         await Promise.all([...deletePromises, ...subfolderPromises]);
     } catch (error: unknown) {
         // If folder doesn't exist, don't throw error
-        if (error instanceof Error && 'code' in error && error.code === 'storage/object-not-found') {
+        if (error instanceof Error && "code" in error && error.code === "storage/object-not-found") {
             return;
         }
         console.error(`Error deleting folder ${folderPath}:`, error);
@@ -109,14 +105,14 @@ export async function deleteTournamentStorage(tournamentId: string): Promise<voi
             // Tournament agenda and logo files
             deleteFile(`agendas/${tournamentId}`),
             deleteFile(`logos/${tournamentId}`),
-            
+
             // All registration payment proofs for this tournament
             deleteFolder(`tournaments/${tournamentId}/registrations/payment_proof`),
-            
+
             // Any other tournament-specific files
-            deleteFolder(`tournaments/${tournamentId}`)
+            deleteFolder(`tournaments/${tournamentId}`),
         ];
-        
+
         await Promise.all(deletePromises);
     } catch (error) {
         console.error(`Error deleting tournament storage for ${tournamentId}:`, error);

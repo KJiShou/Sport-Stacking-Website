@@ -228,11 +228,9 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
     try {
         const registrationsRef = collection(db, "tournaments", tournamentId, "registrations");
         const registrationsSnapshot = await getDocs(registrationsRef);
-        
-        const registrationDeletePromises = registrationsSnapshot.docs.map(doc => 
-            deleteDoc(doc.ref)
-        );
-        
+
+        const registrationDeletePromises = registrationsSnapshot.docs.map((doc) => deleteDoc(doc.ref));
+
         await Promise.all(registrationDeletePromises);
     } catch (error) {
         console.error("Error deleting registrations:", error);
@@ -243,11 +241,9 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
     try {
         const teamsRef = collection(db, "tournaments", tournamentId, "teams");
         const teamsSnapshot = await getDocs(teamsRef);
-        
-        const teamDeletePromises = teamsSnapshot.docs.map(doc => 
-            deleteDoc(doc.ref)
-        );
-        
+
+        const teamDeletePromises = teamsSnapshot.docs.map((doc) => deleteDoc(doc.ref));
+
         await Promise.all(teamDeletePromises);
     } catch (error) {
         console.error("Error deleting teams:", error);
@@ -257,17 +253,15 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
     // 3. Delete scoring/results data if they exist in subcollections
     try {
         // Check for other subcollections like scores, finalists, etc.
-        const subcollections = ['scores', 'finalists', 'results'];
-        
+        const subcollections = ["scores", "finalists", "results"];
+
         for (const subcollectionName of subcollections) {
             const subcollectionRef = collection(db, "tournaments", tournamentId, subcollectionName);
             const subcollectionSnapshot = await getDocs(subcollectionRef);
-            
+
             if (subcollectionSnapshot.docs.length > 0) {
-                const deletePromises = subcollectionSnapshot.docs.map(doc => 
-                    deleteDoc(doc.ref)
-                );
-                
+                const deletePromises = subcollectionSnapshot.docs.map((doc) => deleteDoc(doc.ref));
+
                 await Promise.all(deletePromises);
             }
         }
@@ -279,21 +273,17 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
     // 4. Delete individual recruitment records
     try {
         const individualRecruitments = await getIndividualRecruitmentsByTournament(tournamentId);
-        const individualDeletePromises = individualRecruitments.map(recruitment => 
-            deleteIndividualRecruitment(recruitment.id)
-        );
+        const individualDeletePromises = individualRecruitments.map((recruitment) => deleteIndividualRecruitment(recruitment.id));
         await Promise.all(individualDeletePromises);
     } catch (error) {
         console.error("Error deleting individual recruitment records:", error);
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
-    // 5. Delete team recruitment records  
+    // 5. Delete team recruitment records
     try {
         const teamRecruitments = await getActiveTeamRecruitments(tournamentId);
-        const teamDeletePromises = teamRecruitments.map(recruitment => 
-            deleteTeamRecruitment(recruitment.id)
-        );
+        const teamDeletePromises = teamRecruitments.map((recruitment) => deleteTeamRecruitment(recruitment.id));
         await Promise.all(teamDeletePromises);
     } catch (error) {
         console.error("Error deleting team recruitment records:", error);
@@ -342,7 +332,7 @@ export async function createTeam(tournamentId: string, teamData: Omit<Team, "id"
     }
 
     const {events, event_ids, ...restTeamData} = teamData;
-    const normalizedEventIds = Array.from(new Set(event_ids?.length ? event_ids : events ?? []));
+    const normalizedEventIds = Array.from(new Set(event_ids?.length ? event_ids : (events ?? [])));
 
     const docRef = await addDoc(teamsCollectionRef, {
         ...restTeamData,
@@ -382,37 +372,35 @@ export async function addMemberToTeam(tournamentId: string, teamId: string, memb
     try {
         const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
         const teamDoc = await getDoc(teamRef);
-        
+
         if (!teamDoc.exists()) {
             throw new Error("Team not found");
         }
-        
+
         const team = teamDoc.data() as Team;
-        
+
         // Ensure members array exists
         const members = team.members || [];
-        
+
         // Check if member is already in the team
-        const isAlreadyMember = members.some(member => member.global_id === memberId) || 
-                               team.leader_id === memberId;
-        
+        const isAlreadyMember = members.some((member) => member.global_id === memberId) || team.leader_id === memberId;
+
         if (isAlreadyMember) {
             throw new Error("Member is already in this team");
         }
-        
+
         // Add new member
         const newMember = {
             global_id: memberId,
             verified: false, // Will need verification
         };
-        
+
         const updatedMembers = [...members, newMember];
-        
+
         await updateDoc(teamRef, {
             members: updatedMembers,
             looking_for_member: updatedMembers.length >= 3 ? false : team.looking_for_member, // Stop looking if team is full
         });
-        
     } catch (error) {
         console.error("Error adding member to team:", error);
         throw error;
@@ -435,7 +423,7 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
     }
 
     const {events, event_ids, ...restTeamData} = teamData;
-    const normalizedEventIds = Array.from(new Set(event_ids?.length ? event_ids : events ?? []));
+    const normalizedEventIds = Array.from(new Set(event_ids?.length ? event_ids : (events ?? [])));
 
     await updateDoc(teamRef, {
         ...restTeamData,

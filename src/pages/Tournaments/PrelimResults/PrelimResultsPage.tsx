@@ -444,46 +444,61 @@ export default function PrelimResultsPage() {
 
     const nameMap = useMemo(
         () =>
-            registrations.reduce((acc, reg) => {
-                acc[reg.user_id] = reg.user_name;
-                return acc;
-            }, {} as Record<string, string>),
+            registrations.reduce(
+                (acc, reg) => {
+                    acc[reg.user_id] = reg.user_name;
+                    return acc;
+                },
+                {} as Record<string, string>,
+            ),
         [registrations],
     );
 
     const ageMap = useMemo(
         () =>
-            registrations.reduce((acc, reg) => {
-                acc[reg.user_id] = reg.age;
-                return acc;
-            }, {} as Record<string, number>),
+            registrations.reduce(
+                (acc, reg) => {
+                    acc[reg.user_id] = reg.age;
+                    return acc;
+                },
+                {} as Record<string, number>,
+            ),
         [registrations],
     );
 
     const registrationMap = useMemo(
         () =>
-            registrations.reduce((acc, reg) => {
-                acc[reg.user_id] = reg;
-                return acc;
-            }, {} as Record<string, Registration>),
+            registrations.reduce(
+                (acc, reg) => {
+                    acc[reg.user_id] = reg;
+                    return acc;
+                },
+                {} as Record<string, Registration>,
+            ),
         [registrations],
     );
 
     const teamNameMap = useMemo(
         () =>
-            teams.reduce((acc, team) => {
-                acc[team.id] = team.name;
-                return acc;
-            }, {} as Record<string, string>),
+            teams.reduce(
+                (acc, team) => {
+                    acc[team.id] = team.name;
+                    return acc;
+                },
+                {} as Record<string, string>,
+            ),
         [teams],
     );
 
     const teamMap = useMemo(
         () =>
-            teams.reduce((acc, team) => {
-                acc[team.id] = team;
-                return acc;
-            }, {} as Record<string, Team>),
+            teams.reduce(
+                (acc, team) => {
+                    acc[team.id] = team;
+                    return acc;
+                },
+                {} as Record<string, Team>,
+            ),
         [teams],
     );
 
@@ -660,9 +675,16 @@ export default function PrelimResultsPage() {
                     const participantIds = finalistEntry.records
                         .map((record) => {
                             if (isTournamentTeamEvent(finalistEntry.event)) {
-                                return record.team?.id ?? record.teamId ?? (typeof record.participantId === "string" ? record.participantId : undefined);
+                                return (
+                                    record.team?.id ??
+                                    record.teamId ??
+                                    (typeof record.participantId === "string" ? record.participantId : undefined)
+                                );
                             }
-                            return record.registration?.user_id ?? (typeof record.participantId === "string" ? record.participantId : undefined);
+                            return (
+                                record.registration?.user_id ??
+                                (typeof record.participantId === "string" ? record.participantId : undefined)
+                            );
                         })
                         .filter((id): id is string => Boolean(id));
 

@@ -64,7 +64,12 @@ const sanitizeEventCodes = (codes?: string[]): string[] => (codes ?? []).filter(
 const buildEventCodeMap = (events?: TournamentEvent[]): Map<string, string[]> => {
     const map = new Map<string, string[]>();
     for (const event of events ?? []) {
-        const rawCodes = event.codes && event.codes.length > 0 ? event.codes : (event as {code?: string}).code ? [(event as {code: string}).code] : [];
+        const rawCodes =
+            event.codes && event.codes.length > 0
+                ? event.codes
+                : (event as {code?: string}).code
+                  ? [(event as {code: string}).code]
+                  : [];
         const sanitized = sanitizeEventCodes(rawCodes);
         if (sanitized.length === 0) continue;
         const key = event.type.toLowerCase();
@@ -155,18 +160,13 @@ const BracketContent: React.FC<{
     }, [group.finalists]);
 
     const filteredTeamScores = useMemo(
-        () =>
-            teamScores.filter(
-                (t) => group.classification === currentClassification && teamsInGroup.has(t.id),
-            ),
+        () => teamScores.filter((t) => group.classification === currentClassification && teamsInGroup.has(t.id)),
         [teamScores, group.classification, currentClassification, teamsInGroup],
     );
 
     const filteredParticipantScores = useMemo(
         () =>
-            participantScores.filter(
-                (p) => group.classification === currentClassification && participantsInGroup.has(p.user_id),
-            ),
+            participantScores.filter((p) => group.classification === currentClassification && participantsInGroup.has(p.user_id)),
         [participantScores, group.classification, currentClassification, participantsInGroup],
     );
 
@@ -202,18 +202,10 @@ const BracketContent: React.FC<{
                     width: 200,
                     render: (_: unknown, record: ParticipantScore) => (
                         <div style={{display: "flex", gap: "8px", flexWrap: "wrap"}}>
-                            <Button
-                                size="small"
-                                type="primary"
-                                onClick={() => openModal({participant: record, group})}
-                            >
+                            <Button size="small" type="primary" onClick={() => openModal({participant: record, group})}>
                                 Edit
                             </Button>
-                            <Button
-                                size="small"
-                                status="danger"
-                                onClick={() => handleClearScores(record.user_id, group)}
-                            >
+                            <Button size="small" status="danger" onClick={() => handleClearScores(record.user_id, group)}>
                                 Clear
                             </Button>
                         </div>
@@ -266,18 +258,10 @@ const BracketContent: React.FC<{
                 width: 220,
                 render: (_: unknown, record: TeamScore) => (
                     <div style={{display: "flex", gap: "8px", flexWrap: "wrap"}}>
-                        <Button
-                            size="small"
-                            type="primary"
-                            onClick={() => openModal({team: record, group})}
-                        >
+                        <Button size="small" type="primary" onClick={() => openModal({team: record, group})}>
                             Edit
                         </Button>
-                        <Button
-                            size="small"
-                            status="danger"
-                            onClick={() => handleClearTeamScores(record.id, group)}
-                        >
+                        <Button size="small" status="danger" onClick={() => handleClearTeamScores(record.id, group)}>
                             Clear
                         </Button>
                     </div>
@@ -638,8 +622,7 @@ export default function FinalScoringPage() {
                             const eventKey = `${code}-${event.type}`;
 
                             for (const bracket of event.age_brackets ?? []) {
-                                const isTeamEvent =
-                                    ["double", "team relay", "parent & child"].includes(event.type.toLowerCase());
+                                const isTeamEvent = ["double", "team relay", "parent & child"].includes(event.type.toLowerCase());
                                 const mappedCodes = eventCodesByType.get(event.type.toLowerCase()) ?? [];
                                 const fallbackCodes = sanitizeEventCodes(event.codes);
                                 const resolvedCodes = mappedCodes.length > 0 ? mappedCodes : fallbackCodes;
@@ -653,7 +636,9 @@ export default function FinalScoringPage() {
                                         .filter((r) => {
                                             const teamId = r.participantId;
                                             const team = teams.find((t) => t.id === teamId);
-                                            return team && team.largest_age >= bracket.min_age && team.largest_age <= bracket.max_age;
+                                            return (
+                                                team && team.largest_age >= bracket.min_age && team.largest_age <= bracket.max_age
+                                            );
                                         })
                                         .sort((a, b) => a.bestTime - b.bestTime)
                                         .map((record, index) => {
@@ -686,9 +671,7 @@ export default function FinalScoringPage() {
                                             rank: index + 1,
                                             name: nameMap[record.participantId as string] || "N/A",
                                             id: record.participantId as string,
-                                            registration: registrations.find(
-                                                (reg) => reg.user_id === record.participantId,
-                                            ),
+                                            registration: registrations.find((reg) => reg.user_id === record.participantId),
                                         }));
                                 }
 
@@ -719,7 +702,7 @@ export default function FinalScoringPage() {
                     const mappedCodes =
                         finalist.eventCodes && finalist.eventCodes.length > 0
                             ? finalist.eventCodes
-                            : eventCodesByType.get(finalist.event.type.toLowerCase()) ?? [];
+                            : (eventCodesByType.get(finalist.event.type.toLowerCase()) ?? []);
                     const fallbackCodes = sanitizeEventCodes(finalist.event.codes);
                     const resolvedCodes = mappedCodes.length > 0 ? mappedCodes : fallbackCodes;
                     const eventCodes = resolvedCodes.length > 0 ? [...resolvedCodes] : [finalist.event.type];
@@ -1031,10 +1014,9 @@ export default function FinalScoringPage() {
                                                         finalists: classificationFinalists,
                                                     };
 
-                                                    const groupIsTeamEvent =
-                                                        ["double", "team relay", "parent & child"].includes(
-                                                            classificationGroup.event.type.toLowerCase(),
-                                                        );
+                                                    const groupIsTeamEvent = ["double", "team relay", "parent & child"].includes(
+                                                        classificationGroup.event.type.toLowerCase(),
+                                                    );
 
                                                     return (
                                                         <TabPane key={classification} title={classification}>
@@ -1093,9 +1075,7 @@ export default function FinalScoringPage() {
                                 </span>
                             )}
                             {selectedTeam?.members?.length ? (
-                                <span>
-                                    Members: {selectedTeam.members.map((member) => member.global_id).join(", ")}
-                                </span>
+                                <span>Members: {selectedTeam.members.map((member) => member.global_id).join(", ")}</span>
                             ) : null}
                             {modalEventLabel && <span>Event Type: {modalEventLabel}</span>}
                             <span>Event Codes: {modalCodes.join(", ")}</span>
@@ -1112,14 +1092,26 @@ export default function FinalScoringPage() {
                                 const score = modalScores[eventKey] ?? buildEmptyScoreForFinalist();
                                 const bestTime = getBestTime(score);
                                 return (
-                                    <div key={eventKey} style={{border: "1px solid #e5e7eb", borderRadius: "6px", padding: "12px"}}>
+                                    <div
+                                        key={eventKey}
+                                        style={{border: "1px solid #e5e7eb", borderRadius: "6px", padding: "12px"}}
+                                    >
                                         <div style={{display: "flex", justifyContent: "space-between", marginBottom: "12px"}}>
                                             <span style={{fontWeight: 600}}>{code}</span>
                                             <span style={{fontWeight: 600}}>Best Time: {bestTime}</span>
                                         </div>
-                                        <div style={{display: "grid", gap: "12px", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))"}}>
+                                        <div
+                                            style={{
+                                                display: "grid",
+                                                gap: "12px",
+                                                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                                            }}
+                                        >
                                             {(["try1", "try2", "try3"] as const).map((attemptKey) => (
-                                                <div key={attemptKey} style={{display: "flex", flexDirection: "column", gap: "6px"}}>
+                                                <div
+                                                    key={attemptKey}
+                                                    style={{display: "flex", flexDirection: "column", gap: "6px"}}
+                                                >
                                                     <span style={{fontWeight: 500}}>{`Try ${attemptKey.slice(3)}`}</span>
                                                     <InputNumber
                                                         placeholder={`Try ${attemptKey.slice(3)}`}

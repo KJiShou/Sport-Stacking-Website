@@ -151,7 +151,9 @@ export async function deleteRegistrationById(tournamentId: string, registrationI
         // Delete associated team recruitment records
         try {
             const teamRecruitments = await getTeamRecruitmentsByLeader(registrationData.user_id);
-            const tournamentTeamRecruitments = teamRecruitments.filter((recruitment) => recruitment.tournament_id === tournamentId);
+            const tournamentTeamRecruitments = teamRecruitments.filter(
+                (recruitment) => recruitment.tournament_id === tournamentId,
+            );
             for (const recruitment of tournamentTeamRecruitments) {
                 await deleteTeamRecruitment(recruitment.id);
             }

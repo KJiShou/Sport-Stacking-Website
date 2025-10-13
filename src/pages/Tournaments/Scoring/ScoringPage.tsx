@@ -105,9 +105,7 @@ export default function ScoringPage() {
                                     const codeEventKey = `${code}-${eventType}`;
                                     const record = records.find(
                                         (rec) =>
-                                            "leaderId" in rec &&
-                                            rec.leaderId === team.leader_id &&
-                                            rec.event === codeEventKey,
+                                            "leaderId" in rec && rec.leaderId === team.leader_id && rec.event === codeEventKey,
                                     );
                                     teamScores[codeEventKey] = {
                                         try1: record?.try1?.toString() || "",
@@ -118,10 +116,7 @@ export default function ScoringPage() {
                             } else {
                                 const eventKey = getEventKey(event);
                                 const record = records.find(
-                                    (rec) =>
-                                        "leaderId" in rec &&
-                                        rec.leaderId === team.leader_id &&
-                                        rec.event === eventKey,
+                                    (rec) => "leaderId" in rec && rec.leaderId === team.leader_id && rec.event === eventKey,
                                 );
                                 teamScores[eventKey] = {
                                     try1: record?.try1?.toString() || "",
@@ -131,16 +126,11 @@ export default function ScoringPage() {
                             }
                         }
                     } else {
-                        const fallbackKeys = (team.event_ids && team.event_ids.length > 0
-                            ? team.event_ids
-                            : team.events ?? []);
+                        const fallbackKeys = team.event_ids && team.event_ids.length > 0 ? team.event_ids : (team.events ?? []);
 
                         for (const fallbackKey of fallbackKeys) {
                             const record = records.find(
-                                (rec) =>
-                                    "leaderId" in rec &&
-                                    rec.leaderId === team.leader_id &&
-                                    rec.event === fallbackKey,
+                                (rec) => "leaderId" in rec && rec.leaderId === team.leader_id && rec.event === fallbackKey,
                             );
                             teamScores[fallbackKey] = {
                                 try1: record?.try1?.toString() || "",
@@ -185,9 +175,7 @@ export default function ScoringPage() {
                                 };
                             }
                         } else {
-                            const record = records.find(
-                                (rec) => rec.participantId === r.user_id && rec.event === eventType,
-                            );
+                            const record = records.find((rec) => rec.participantId === r.user_id && rec.event === eventType);
                             participantScores[eventType] = {
                                 try1: record?.try1?.toString() || "",
                                 try2: record?.try2?.toString() || "",
@@ -292,7 +280,9 @@ export default function ScoringPage() {
                         if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
 
                         if (invalidTries.length > 0) {
-                            errors.push(`${participant.user_name} (${participant.user_id}): Invalid times in ${code} (${eventType}) - ${invalidTries.join(", ")}`);
+                            errors.push(
+                                `${participant.user_name} (${participant.user_id}): Invalid times in ${code} (${eventType}) - ${invalidTries.join(", ")}`,
+                            );
                         }
                     }
                 }
@@ -313,7 +303,9 @@ export default function ScoringPage() {
                     if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
 
                     if (invalidTries.length > 0) {
-                        errors.push(`${participant.user_name} (${participant.user_id}): Invalid times in ${eventType} - ${invalidTries.join(", ")}`);
+                        errors.push(
+                            `${participant.user_name} (${participant.user_id}): Invalid times in ${eventType} - ${invalidTries.join(", ")}`,
+                        );
                     }
                 }
             }
@@ -358,7 +350,9 @@ export default function ScoringPage() {
                         if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
 
                         if (invalidTries.length > 0) {
-                            errors.push(`${team.name} (Leader: ${team.leader_id}): Invalid times in ${code} (${eventType}) - ${invalidTries.join(", ")}`);
+                            errors.push(
+                                `${team.name} (Leader: ${team.leader_id}): Invalid times in ${code} (${eventType}) - ${invalidTries.join(", ")}`,
+                            );
                         }
                     }
                 }
@@ -379,7 +373,9 @@ export default function ScoringPage() {
                     if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
 
                     if (invalidTries.length > 0) {
-                        errors.push(`${team.name} (Leader: ${team.leader_id}): Invalid times in ${eventType} - ${invalidTries.join(", ")}`);
+                        errors.push(
+                            `${team.name} (Leader: ${team.leader_id}): Invalid times in ${eventType} - ${invalidTries.join(", ")}`,
+                        );
                     }
                 }
             }
@@ -417,7 +413,7 @@ export default function ScoringPage() {
     };
 
     const handleModalScoreChange = (eventKey: string, tryNum: keyof Score, value: string) => {
-        setModalScores(prev => ({
+        setModalScores((prev) => ({
             ...prev,
             [eventKey]: {
                 ...prev[eventKey],
@@ -486,7 +482,7 @@ export default function ScoringPage() {
 
         const validationErrors = validateModalRecord();
         if (validationErrors.length > 0) {
-            const errorMessage = `Validation Failed:\n${validationErrors.join('\n')}`;
+            const errorMessage = `Validation Failed:\n${validationErrors.join("\n")}`;
             Message.error(errorMessage);
             return;
         }
@@ -512,9 +508,40 @@ export default function ScoringPage() {
                             const try2 = Number.parseFloat(scores.try2);
                             const try3 = Number.parseFloat(scores.try3);
 
-                            promises.push(saveRecord({
+                            promises.push(
+                                saveRecord({
+                                    tournamentId,
+                                    event: codeEventKey,
+                                    participantId: selectedParticipant.user_id,
+                                    participantName: selectedParticipant.user_name,
+                                    participantAge: selectedParticipant.age,
+                                    country: selectedParticipant.country,
+                                    gender: selectedParticipant.gender || "Male",
+                                    round: "prelim",
+                                    classification: undefined,
+                                    verified_by: undefined,
+                                    verified_at: undefined,
+                                    try1,
+                                    try2,
+                                    try3,
+                                    status: "submitted",
+                                    submitted_at: new Date().toISOString(),
+                                }),
+                            );
+                        }
+                    }
+                } else {
+                    // For events without codes
+                    const scores = modalScores[event.type];
+                    if (scores?.try1 && scores.try2 && scores.try3) {
+                        const try1 = Number.parseFloat(scores.try1);
+                        const try2 = Number.parseFloat(scores.try2);
+                        const try3 = Number.parseFloat(scores.try3);
+
+                        promises.push(
+                            saveRecord({
                                 tournamentId,
-                                event: codeEventKey,
+                                event: event.type,
                                 participantId: selectedParticipant.user_id,
                                 participantName: selectedParticipant.user_name,
                                 participantAge: selectedParticipant.age,
@@ -529,44 +556,17 @@ export default function ScoringPage() {
                                 try3,
                                 status: "submitted",
                                 submitted_at: new Date().toISOString(),
-                            }));
-                        }
-                    }
-                } else {
-                    // For events without codes
-                    const scores = modalScores[event.type];
-                    if (scores?.try1 && scores.try2 && scores.try3) {
-                        const try1 = Number.parseFloat(scores.try1);
-                        const try2 = Number.parseFloat(scores.try2);
-                        const try3 = Number.parseFloat(scores.try3);
-
-                        promises.push(saveRecord({
-                            tournamentId,
-                            event: event.type,
-                            participantId: selectedParticipant.user_id,
-                            participantName: selectedParticipant.user_name,
-                            participantAge: selectedParticipant.age,
-                            country: selectedParticipant.country,
-                            gender: selectedParticipant.gender || "Male",
-                            round: "prelim",
-                            classification: undefined,
-                            verified_by: undefined,
-                            verified_at: undefined,
-                            try1,
-                            try2,
-                            try3,
-                            status: "submitted",
-                            submitted_at: new Date().toISOString(),
-                        }));
+                            }),
+                        );
                     }
                 }
 
                 await Promise.all(promises);
 
                 // Update the participant in the list with new scores
-                setRegistrationList(prev => prev.map(p =>
-                    p.user_id === selectedParticipant.user_id ? {...p, scores: modalScores} : p
-                ));
+                setRegistrationList((prev) =>
+                    prev.map((p) => (p.user_id === selectedParticipant.user_id ? {...p, scores: modalScores} : p)),
+                );
 
                 // If individual event, try to calculate overall
                 if (selectedEvent === "Individual") {
@@ -575,7 +575,6 @@ export default function ScoringPage() {
 
                 Message.success(`Record saved for ${selectedParticipant.user_name}!`);
                 closeModal();
-
             } else if (selectedTeam && event) {
                 // Save team records
                 const promises: Promise<void>[] = [];
@@ -597,9 +596,40 @@ export default function ScoringPage() {
                             const try2 = Number.parseFloat(scores.try2);
                             const try3 = Number.parseFloat(scores.try3);
 
-                            promises.push(saveTeamRecord({
+                            promises.push(
+                                saveTeamRecord({
+                                    tournamentId,
+                                    event: codeEventKey,
+                                    participantId: selectedTeam.id,
+                                    teamName: selectedTeam.name,
+                                    country,
+                                    leaderId: selectedTeam.leader_id,
+                                    members: selectedTeam.members,
+                                    round: "prelim",
+                                    classification: undefined,
+                                    verified_by: undefined,
+                                    verified_at: undefined,
+                                    try1,
+                                    try2,
+                                    try3,
+                                    status: "submitted",
+                                    submitted_at: new Date().toISOString(),
+                                }),
+                            );
+                        }
+                    }
+                } else {
+                    // For events without codes
+                    const scores = modalScores[event.type];
+                    if (scores?.try1 && scores.try2 && scores.try3) {
+                        const try1 = Number.parseFloat(scores.try1);
+                        const try2 = Number.parseFloat(scores.try2);
+                        const try3 = Number.parseFloat(scores.try3);
+
+                        promises.push(
+                            saveTeamRecord({
                                 tournamentId,
-                                event: codeEventKey,
+                                event: event.type,
                                 participantId: selectedTeam.id,
                                 teamName: selectedTeam.name,
                                 country,
@@ -614,44 +644,15 @@ export default function ScoringPage() {
                                 try3,
                                 status: "submitted",
                                 submitted_at: new Date().toISOString(),
-                            }));
-                        }
-                    }
-                } else {
-                    // For events without codes
-                    const scores = modalScores[event.type];
-                    if (scores?.try1 && scores.try2 && scores.try3) {
-                        const try1 = Number.parseFloat(scores.try1);
-                        const try2 = Number.parseFloat(scores.try2);
-                        const try3 = Number.parseFloat(scores.try3);
-
-                        promises.push(saveTeamRecord({
-                            tournamentId,
-                            event: event.type,
-                            participantId: selectedTeam.id,
-                            teamName: selectedTeam.name,
-                            country,
-                            leaderId: selectedTeam.leader_id,
-                            members: selectedTeam.members,
-                            round: "prelim",
-                            classification: undefined,
-                            verified_by: undefined,
-                            verified_at: undefined,
-                            try1,
-                            try2,
-                            try3,
-                            status: "submitted",
-                            submitted_at: new Date().toISOString(),
-                        }));
+                            }),
+                        );
                     }
                 }
 
                 await Promise.all(promises);
 
                 // Update the team in the list with new scores
-                setTeamScoreList(prev => prev.map(t =>
-                    t.id === selectedTeam.id ? {...t, scores: modalScores} : t
-                ));
+                setTeamScoreList((prev) => prev.map((t) => (t.id === selectedTeam.id ? {...t, scores: modalScores} : t)));
 
                 Message.success(`Record saved for team ${selectedTeam.name}!`);
                 closeModal();
@@ -669,25 +670,33 @@ export default function ScoringPage() {
 
         // Find Individual event with all three codes
         const individualEvent = tournament.events?.find(
-            (e) => e.type === "Individual" &&
-            e.codes?.includes("3-3-3") &&
-            e.codes?.includes("3-6-3") &&
-            e.codes?.includes("Cycle")
+            (e) =>
+                e.type === "Individual" && e.codes?.includes("3-3-3") && e.codes?.includes("3-6-3") && e.codes?.includes("Cycle"),
         );
 
         if (!individualEvent) return;
 
         try {
             // Get all individual participants who have completed all three events
-            const individualParticipants = registrationList.filter(p =>
-                p.events_registered.includes("Individual") &&
-                p.scores["3-3-3-Individual"] && p.scores["3-3-3-Individual"].try1 && p.scores["3-3-3-Individual"].try2 && p.scores["3-3-3-Individual"].try3 &&
-                p.scores["3-6-3-Individual"] && p.scores["3-6-3-Individual"].try1 && p.scores["3-6-3-Individual"].try2 && p.scores["3-6-3-Individual"].try3 &&
-                p.scores["Cycle-Individual"] && p.scores["Cycle-Individual"].try1 && p.scores["Cycle-Individual"].try2 && p.scores["Cycle-Individual"].try3
+            const individualParticipants = registrationList.filter(
+                (p) =>
+                    p.events_registered.includes("Individual") &&
+                    p.scores["3-3-3-Individual"] &&
+                    p.scores["3-3-3-Individual"].try1 &&
+                    p.scores["3-3-3-Individual"].try2 &&
+                    p.scores["3-3-3-Individual"].try3 &&
+                    p.scores["3-6-3-Individual"] &&
+                    p.scores["3-6-3-Individual"].try1 &&
+                    p.scores["3-6-3-Individual"].try2 &&
+                    p.scores["3-6-3-Individual"].try3 &&
+                    p.scores["Cycle-Individual"] &&
+                    p.scores["Cycle-Individual"].try1 &&
+                    p.scores["Cycle-Individual"].try2 &&
+                    p.scores["Cycle-Individual"].try3,
             );
 
             // Calculate overall results and save them
-            const overallPromises = individualParticipants.map(p => {
+            const overallPromises = individualParticipants.map((p) => {
                 const threeScores = p.scores["3-3-3-Individual"];
                 const threeSixThreeScores = p.scores["3-6-3-Individual"];
                 const cycleScores = p.scores["Cycle-Individual"];
@@ -696,17 +705,17 @@ export default function ScoringPage() {
                 const threeBest = Math.min(
                     Number.parseFloat(threeScores.try1),
                     Number.parseFloat(threeScores.try2),
-                    Number.parseFloat(threeScores.try3)
+                    Number.parseFloat(threeScores.try3),
                 );
                 const threeSixThreeBest = Math.min(
                     Number.parseFloat(threeSixThreeScores.try1),
                     Number.parseFloat(threeSixThreeScores.try2),
-                    Number.parseFloat(threeSixThreeScores.try3)
+                    Number.parseFloat(threeSixThreeScores.try3),
                 );
                 const cycleBest = Math.min(
                     Number.parseFloat(cycleScores.try1),
                     Number.parseFloat(cycleScores.try2),
-                    Number.parseFloat(cycleScores.try3)
+                    Number.parseFloat(cycleScores.try3),
                 );
 
                 // Calculate overall time (sum of best times)
@@ -743,7 +752,6 @@ export default function ScoringPage() {
             Message.error("Failed to calculate overall results.");
         }
     };
-
 
     const handleSaveScores = async (eventKey: string, bracketName: string, isTeamEvent: boolean) => {
         if (!tournamentId || !tournament) return;
@@ -786,14 +794,13 @@ export default function ScoringPage() {
         }
 
         if (validationErrors.length > 0) {
-            const errorMessage = `Validation Failed:\n${validationErrors.slice(0, 5).join('\n')}${validationErrors.length > 5 ? `\n... and ${validationErrors.length - 5} more errors` : ''}`;
+            const errorMessage = `Validation Failed:\n${validationErrors.slice(0, 5).join("\n")}${validationErrors.length > 5 ? `\n... and ${validationErrors.length - 5} more errors` : ""}`;
             Message.error(errorMessage);
             return;
         }
 
         setLoading(true);
         try {
-
             if (isTeamEvent) {
                 const tournamentEvents = tournament.events ?? [];
                 const teamsToSave = teamScoreList.filter((t) =>
@@ -821,34 +828,33 @@ export default function ScoringPage() {
                 if (eventCodes.length > 0) {
                     // For events with codes, save scores for each code separately
                     promises = teamsToSave
-                        .flatMap(
-                            (t) =>
-                                eventCodes.map((code) => {
-                                    const codeEventKey = `${code}-${event?.type ?? eventType}`;
-                                    const teamScores = t.scores[codeEventKey];
-                                    if (teamScores?.try1 && teamScores.try2 && teamScores.try3) {
-                                        return saveTeamRecord({
-                                            tournamentId,
-                                            event: codeEventKey,
-                                            participantId: t.id,
-                                            teamName: t.name,
-                                            country: leaderInfoMap[t.id],
-                                            leaderId: t.leader_id,
-                                            members: t.members,
-                                            round: "prelim",
-                                            classification: undefined,
-                                verified_by: undefined,
-                                                    verified_at: undefined,
-                                            try1: Number.parseFloat(teamScores.try1),
-                                            try2: Number.parseFloat(teamScores.try2),
-                                            try3: Number.parseFloat(teamScores.try3),
-                                            status: "submitted",
-                                            submitted_at: new Date().toISOString(),
-                                            videoUrl: "",
-                                        });
-                                    }
-                                    return null;
-                                }),
+                        .flatMap((t) =>
+                            eventCodes.map((code) => {
+                                const codeEventKey = `${code}-${event?.type ?? eventType}`;
+                                const teamScores = t.scores[codeEventKey];
+                                if (teamScores?.try1 && teamScores.try2 && teamScores.try3) {
+                                    return saveTeamRecord({
+                                        tournamentId,
+                                        event: codeEventKey,
+                                        participantId: t.id,
+                                        teamName: t.name,
+                                        country: leaderInfoMap[t.id],
+                                        leaderId: t.leader_id,
+                                        members: t.members,
+                                        round: "prelim",
+                                        classification: undefined,
+                                        verified_by: undefined,
+                                        verified_at: undefined,
+                                        try1: Number.parseFloat(teamScores.try1),
+                                        try2: Number.parseFloat(teamScores.try2),
+                                        try3: Number.parseFloat(teamScores.try3),
+                                        status: "submitted",
+                                        submitted_at: new Date().toISOString(),
+                                        videoUrl: "",
+                                    });
+                                }
+                                return null;
+                            }),
                         )
                         .filter(Boolean);
                 } else {
@@ -868,8 +874,8 @@ export default function ScoringPage() {
                                     members: t.members,
                                     round: "prelim",
                                     classification: undefined,
-                                verified_by: undefined,
-                                verified_at: undefined,
+                                    verified_by: undefined,
+                                    verified_at: undefined,
                                     try1: Number.parseFloat(teamScores.try1),
                                     try2: Number.parseFloat(teamScores.try2),
                                     try3: Number.parseFloat(teamScores.try3),
@@ -998,12 +1004,18 @@ export default function ScoringPage() {
     // Helper function to convert system labels to display names
     const getDisplayName = (eventType: string): string => {
         switch (eventType) {
-            case "Individual": return "Individual";
-            case "Double": return "Double";
-            case "Team Relay": return "Team Relay";
-            case "Parent & Child": return "Parent & Child";
-            case "Special Need": return "Special Need";
-            default: return eventType;
+            case "Individual":
+                return "Individual";
+            case "Double":
+                return "Double";
+            case "Team Relay":
+                return "Team Relay";
+            case "Parent & Child":
+                return "Parent & Child";
+            case "Special Need":
+                return "Special Need";
+            default:
+                return eventType;
         }
     };
 
@@ -1039,27 +1051,19 @@ export default function ScoringPage() {
             title: "Status",
             width: 100,
             render: (_, record) => {
-                const isComplete = codes.every(code => {
+                const isComplete = codes.every((code) => {
                     const codeEventKey = `${code}-${eventKey}`;
                     const scores = record.scores[codeEventKey];
                     return scores?.try1 && scores?.try2 && scores?.try3;
                 });
-                return (
-                    <span style={{ color: isComplete ? 'green' : 'orange' }}>
-                        {isComplete ? 'Complete' : 'Incomplete'}
-                    </span>
-                );
+                return <span style={{color: isComplete ? "green" : "orange"}}>{isComplete ? "Complete" : "Incomplete"}</span>;
             },
         },
         {
             title: "Action",
             width: 100,
             render: (_, record) => (
-                <Button
-                    type="primary"
-                    size="small"
-                    onClick={() => openModal(record, null, eventKey)}
-                >
+                <Button type="primary" size="small" onClick={() => openModal(record, null, eventKey)}>
                     Edit
                 </Button>
             ),
@@ -1090,27 +1094,19 @@ export default function ScoringPage() {
             title: "Status",
             width: 100,
             render: (_, record) => {
-                const isComplete = codes.every(code => {
+                const isComplete = codes.every((code) => {
                     const codeEventKey = `${code}-${eventKey}`;
                     const scores = record.scores[codeEventKey];
                     return scores?.try1 && scores?.try2 && scores?.try3;
                 });
-                return (
-                    <span style={{ color: isComplete ? 'green' : 'orange' }}>
-                        {isComplete ? 'Complete' : 'Incomplete'}
-                    </span>
-                );
+                return <span style={{color: isComplete ? "green" : "orange"}}>{isComplete ? "Complete" : "Incomplete"}</span>;
             },
         },
         {
             title: "Action",
             width: 100,
             render: (_, record) => (
-                <Button
-                    type="primary"
-                    size="small"
-                    onClick={() => openModal(null, record, eventKey)}
-                >
+                <Button type="primary" size="small" onClick={() => openModal(null, record, eventKey)}>
                     Edit
                 </Button>
             ),
@@ -1126,11 +1122,7 @@ export default function ScoringPage() {
             render: (_, record) => {
                 const scores = record.scores[eventKey];
                 const isComplete = scores?.try1 && scores?.try2 && scores?.try3;
-                return (
-                    <span style={{ color: isComplete ? 'green' : 'orange' }}>
-                        {isComplete ? 'Complete' : 'Incomplete'}
-                    </span>
-                );
+                return <span style={{color: isComplete ? "green" : "orange"}}>{isComplete ? "Complete" : "Incomplete"}</span>;
             },
         },
         {
@@ -1145,11 +1137,7 @@ export default function ScoringPage() {
             title: "Action",
             width: 100,
             render: (_, record) => (
-                <Button
-                    type="primary"
-                    size="small"
-                    onClick={() => openModal(record, null, eventKey)}
-                >
+                <Button type="primary" size="small" onClick={() => openModal(record, null, eventKey)}>
                     Edit
                 </Button>
             ),
@@ -1177,11 +1165,7 @@ export default function ScoringPage() {
             render: (_, record) => {
                 const scores = record.scores[eventKey];
                 const isComplete = scores?.try1 && scores?.try2 && scores?.try3;
-                return (
-                    <span style={{ color: isComplete ? 'green' : 'orange' }}>
-                        {isComplete ? 'Complete' : 'Incomplete'}
-                    </span>
-                );
+                return <span style={{color: isComplete ? "green" : "orange"}}>{isComplete ? "Complete" : "Incomplete"}</span>;
             },
         },
         {
@@ -1196,11 +1180,7 @@ export default function ScoringPage() {
             title: "Action",
             width: 100,
             render: (_, record) => (
-                <Button
-                    type="primary"
-                    size="small"
-                    onClick={() => openModal(null, record, eventKey)}
-                >
+                <Button type="primary" size="small" onClick={() => openModal(null, record, eventKey)}>
                     Edit
                 </Button>
             ),
@@ -1345,7 +1325,10 @@ export default function ScoringPage() {
                                                                 prelimRecords = allCodeRecords.flat();
                                                             } else {
                                                                 // Fallback for events without codes
-                                                                prelimRecords = await getPrelimRecords(tournamentId, eventTypeKey);
+                                                                prelimRecords = await getPrelimRecords(
+                                                                    tournamentId,
+                                                                    eventTypeKey,
+                                                                );
                                                             }
 
                                                             const participantsForBracket = registrationList.filter(
@@ -1428,7 +1411,7 @@ export default function ScoringPage() {
 
             {/* Modal for editing records */}
             <Modal
-                title={`Edit Record - ${selectedParticipant?.user_name || selectedTeam?.name || 'Unknown'}`}
+                title={`Edit Record - ${selectedParticipant?.user_name || selectedTeam?.name || "Unknown"}`}
                 visible={modalVisible}
                 onCancel={closeModal}
                 footer={[
@@ -1439,13 +1422,15 @@ export default function ScoringPage() {
                         Save Record
                     </Button>,
                 ]}
-                style={{ width: '800px' }}
+                style={{width: "800px"}}
             >
                 {modalVisible && (
                     <div className="space-y-4">
                         {selectedParticipant && (
                             <div>
-                                <h4 className="font-semibold mb-2">Participant: {selectedParticipant.user_name} ({selectedParticipant.user_id})</h4>
+                                <h4 className="font-semibold mb-2">
+                                    Participant: {selectedParticipant.user_name} ({selectedParticipant.user_id})
+                                </h4>
                                 <p className="text-sm text-gray-600 mb-4">Event: {selectedEvent}</p>
                             </div>
                         )}
@@ -1463,7 +1448,7 @@ export default function ScoringPage() {
                             <div className="space-y-6">
                                 {modalEventCodes.map((code) => {
                                     const codeEventKey = `${code}-${modalBaseEventKey}`;
-                                    const scores = modalScores[codeEventKey] || { try1: '', try2: '', try3: '' };
+                                    const scores = modalScores[codeEventKey] || {try1: "", try2: "", try3: ""};
                                     const try1Id = `${codeEventKey}-try1`;
                                     const try2Id = `${codeEventKey}-try2`;
                                     const try3Id = `${codeEventKey}-try3`;
@@ -1489,7 +1474,7 @@ export default function ScoringPage() {
                                                         }
                                                         precision={3}
                                                         min={0}
-                                                        style={{ width: '100%' }}
+                                                        style={{width: "100%"}}
                                                     />
                                                 </div>
                                                 <div>
@@ -1509,7 +1494,7 @@ export default function ScoringPage() {
                                                         }
                                                         precision={3}
                                                         min={0}
-                                                        style={{ width: '100%' }}
+                                                        style={{width: "100%"}}
                                                     />
                                                 </div>
                                                 <div>
@@ -1529,7 +1514,7 @@ export default function ScoringPage() {
                                                         }
                                                         precision={3}
                                                         min={0}
-                                                        style={{ width: '100%' }}
+                                                        style={{width: "100%"}}
                                                     />
                                                 </div>
                                                 <div>
@@ -1549,16 +1534,17 @@ export default function ScoringPage() {
                                 <h5 className="font-semibold mb-3">{modalBaseEventKey}</h5>
                                 <div className="grid grid-cols-4 gap-4 items-center">
                                     <div>
-                                        <label
-                                            className="block text-sm font-medium mb-1"
-                                            htmlFor={`${modalBaseEventKey}-try1`}
-                                        >
+                                        <label className="block text-sm font-medium mb-1" htmlFor={`${modalBaseEventKey}-try1`}>
                                             Try 1
                                         </label>
                                         <InputNumber
                                             id={`${modalBaseEventKey}-try1`}
                                             placeholder="First try"
-                                            value={modalScores[modalBaseEventKey]?.try1 === "" ? undefined : Number.parseFloat(modalScores[modalBaseEventKey]?.try1 || "")}
+                                            value={
+                                                modalScores[modalBaseEventKey]?.try1 === ""
+                                                    ? undefined
+                                                    : Number.parseFloat(modalScores[modalBaseEventKey]?.try1 || "")
+                                            }
                                             onChange={(val) =>
                                                 handleModalScoreChange(
                                                     modalBaseEventKey,
@@ -1568,20 +1554,21 @@ export default function ScoringPage() {
                                             }
                                             precision={3}
                                             min={0}
-                                            style={{ width: '100%' }}
+                                            style={{width: "100%"}}
                                         />
                                     </div>
                                     <div>
-                                        <label
-                                            className="block text-sm font-medium mb-1"
-                                            htmlFor={`${modalBaseEventKey}-try2`}
-                                        >
+                                        <label className="block text-sm font-medium mb-1" htmlFor={`${modalBaseEventKey}-try2`}>
                                             Try 2
                                         </label>
                                         <InputNumber
                                             id={`${modalBaseEventKey}-try2`}
                                             placeholder="Second try"
-                                            value={modalScores[modalBaseEventKey]?.try2 === "" ? undefined : Number.parseFloat(modalScores[modalBaseEventKey]?.try2 || "")}
+                                            value={
+                                                modalScores[modalBaseEventKey]?.try2 === ""
+                                                    ? undefined
+                                                    : Number.parseFloat(modalScores[modalBaseEventKey]?.try2 || "")
+                                            }
                                             onChange={(val) =>
                                                 handleModalScoreChange(
                                                     modalBaseEventKey,
@@ -1591,20 +1578,21 @@ export default function ScoringPage() {
                                             }
                                             precision={3}
                                             min={0}
-                                            style={{ width: '100%' }}
+                                            style={{width: "100%"}}
                                         />
                                     </div>
                                     <div>
-                                        <label
-                                            className="block text-sm font-medium mb-1"
-                                            htmlFor={`${modalBaseEventKey}-try3`}
-                                        >
+                                        <label className="block text-sm font-medium mb-1" htmlFor={`${modalBaseEventKey}-try3`}>
                                             Try 3
                                         </label>
                                         <InputNumber
                                             id={`${modalBaseEventKey}-try3`}
                                             placeholder="Third try"
-                                            value={modalScores[modalBaseEventKey]?.try3 === "" ? undefined : Number.parseFloat(modalScores[modalBaseEventKey]?.try3 || "")}
+                                            value={
+                                                modalScores[modalBaseEventKey]?.try3 === ""
+                                                    ? undefined
+                                                    : Number.parseFloat(modalScores[modalBaseEventKey]?.try3 || "")
+                                            }
                                             onChange={(val) =>
                                                 handleModalScoreChange(
                                                     modalBaseEventKey,
@@ -1614,7 +1602,7 @@ export default function ScoringPage() {
                                             }
                                             precision={3}
                                             min={0}
-                                            style={{ width: '100%' }}
+                                            style={{width: "100%"}}
                                         />
                                     </div>
                                     <div>

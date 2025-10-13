@@ -379,22 +379,17 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
 export async function removeUserRegistrationRecordsByTournament(tournamentId: string): Promise<void> {
     try {
         // Get all users who have registration records for this tournament
-        const usersQuery = query(
-            collection(db, "users"),
-            where("registration_records", "!=", null)
-        );
-        
+        const usersQuery = query(collection(db, "users"), where("registration_records", "!=", null));
+
         const usersSnapshot = await getDocs(usersQuery);
-        
+
         const updatePromises = usersSnapshot.docs.map(async (userDoc) => {
             const userData = userDoc.data();
             const registrationRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
-            
+
             // Filter out records for the deleted tournament
-            const filteredRecords = registrationRecords.filter(
-                record => record.tournament_id !== tournamentId
-            );
-            
+            const filteredRecords = registrationRecords.filter((record) => record.tournament_id !== tournamentId);
+
             // Only update if there were records to remove
             if (filteredRecords.length !== registrationRecords.length) {
                 await updateDoc(userDoc.ref, {
@@ -403,7 +398,7 @@ export async function removeUserRegistrationRecordsByTournament(tournamentId: st
                 });
             }
         });
-        
+
         await Promise.all(updatePromises);
     } catch (error) {
         console.error("Error cleaning up user registration records:", error);

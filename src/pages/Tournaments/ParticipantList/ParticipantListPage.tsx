@@ -109,8 +109,7 @@ export default function ParticipantListPage() {
                 const matchesName = team.name ? team.name.toLowerCase().includes(normalizedSearch) : false;
                 const matchesLeader = team.leader_id ? team.leader_id.toLowerCase().includes(normalizedSearch) : false;
                 const matchesMembers =
-                    team.members?.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch) ?? false) ??
-                    false;
+                    team.members?.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch) ?? false) ?? false;
 
                 return matchesName || matchesLeader || matchesMembers;
             });
@@ -260,14 +259,8 @@ export default function ParticipantListPage() {
             width: 150,
             render: (_, record) => {
                 const {event, bracket} =
-                    getCurrentEventData(
-                        tournament,
-                        currentEventTab,
-                        currentBracketTab,
-                        registrationList,
-                        searchTerm,
-                        teamList,
-                    ) ?? {};
+                    getCurrentEventData(tournament, currentEventTab, currentBracketTab, registrationList, searchTerm, teamList) ??
+                    {};
 
                 if (!event || !bracket) return null;
 
@@ -431,13 +424,7 @@ export default function ParticipantListPage() {
                         </Dropdown.Button>
                     </div>
                 </div>
-                <Tabs
-                    type="line"
-                    destroyOnHide
-                    className="w-full"
-                    activeTab={currentEventTab}
-                    onChange={handleEventTabChange}
-                >
+                <Tabs type="line" destroyOnHide className="w-full" activeTab={currentEventTab} onChange={handleEventTabChange}>
                     {tournament.events?.map((evt) => {
                         const tabKey = getEventKey(evt);
                         const isTeamEventForTab = isTeamEvent(evt);
@@ -461,8 +448,7 @@ export default function ParticipantListPage() {
                                                 .filter((team) => teamMatchesEventKey(team, tabKey, tournamentEvents))
                                                 .map((team) => ({
                                                     ...team,
-                                                    registrationId:
-                                                        regs.find((r) => r.user_id === team.leader_id)?.id ?? "",
+                                                    registrationId: regs.find((r) => r.user_id === team.leader_id)?.id ?? "",
                                                 }));
 
                                             const rowsForBracket = teamRows.filter((record) => {

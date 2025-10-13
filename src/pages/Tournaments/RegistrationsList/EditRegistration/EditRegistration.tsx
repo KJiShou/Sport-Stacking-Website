@@ -157,7 +157,9 @@ export default function EditTournamentRegistrationPage() {
                     const tournamentEvents = tournament?.events ?? [];
                     const resolvedTeamEvents = getTeamEvents(team, tournamentEvents);
                     const primaryEvent = resolvedTeamEvents[0];
-                    const firstEventKey = primaryEvent ? getEventKey(primaryEvent) : team.event_ids?.[0] ?? team.events?.[0] ?? "";
+                    const firstEventKey = primaryEvent
+                        ? getEventKey(primaryEvent)
+                        : (team.event_ids?.[0] ?? team.events?.[0] ?? "");
                     const firstEventType = (primaryEvent?.type ?? firstEventKey).toLowerCase();
 
                     if (firstEventType.includes("team relay")) {
@@ -272,9 +274,10 @@ export default function EditTournamentRegistrationPage() {
 
             setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
-            const eventIds = tournamentData?.events
-                ?.filter((event) => matchesAnyEventKey(userReg.events_registered, event))
-                .map((event) => getEventKey(event)) ?? userReg.events_registered;
+            const eventIds =
+                tournamentData?.events
+                    ?.filter((event) => matchesAnyEventKey(userReg.events_registered, event))
+                    .map((event) => getEventKey(event)) ?? userReg.events_registered;
 
             form.setFieldsValue({
                 user_name: userReg.user_name,
@@ -397,17 +400,15 @@ export default function EditTournamentRegistrationPage() {
                                     setRegistration((prev) => (prev ? {...prev, events_registered: selectedEvents} : null));
 
                                     const selectedTeamEvents = (tournament?.events ?? []).filter(
-                                        (event) => selectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
+                                        (event) =>
+                                            selectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
                                     );
                                     const existingTeamEventKeys = teams.flatMap((team) =>
-                                        team.event_ids && team.event_ids.length > 0
-                                            ? team.event_ids
-                                            : team.events ?? [],
+                                        team.event_ids && team.event_ids.length > 0 ? team.event_ids : (team.events ?? []),
                                     );
 
                                     const newTeamEvents = selectedTeamEvents.filter(
-                                        (event) =>
-                                            !existingTeamEventKeys.some((existing) => matchesEventKey(existing, event)),
+                                        (event) => !existingTeamEventKeys.some((existing) => matchesEventKey(existing, event)),
                                     );
 
                                     if (newTeamEvents.length > 0) {
@@ -436,10 +437,11 @@ export default function EditTournamentRegistrationPage() {
                                     }
 
                                     const tournamentEvents = tournament?.events ?? [];
-                                    const removedTeamEvents = teams.filter((team) =>
-                                        !selectedTeamEvents.some((event) =>
-                                            teamMatchesEventKey(team, getEventKey(event), tournamentEvents),
-                                        ),
+                                    const removedTeamEvents = teams.filter(
+                                        (team) =>
+                                            !selectedTeamEvents.some((event) =>
+                                                teamMatchesEventKey(team, getEventKey(event), tournamentEvents),
+                                            ),
                                     );
                                     if (removedTeamEvents.length > 0) {
                                         const removedTeamIds = removedTeamEvents.map((t) => t.id);
@@ -467,115 +469,118 @@ export default function EditTournamentRegistrationPage() {
                                     return (
                                         <div key={team.id} className="border p-4 rounded-md shadow-sm">
                                             <Title heading={6}>{teamEventLabel}</Title>
-                                        <Divider />
-                                        <Form.Item label="Team Name">
-                                            <Input
-                                                value={team.name}
-                                                disabled={!edit}
-                                                onChange={(v) => {
-                                                    setTeams((prev) => prev.map((t) => (t.id === team.id ? {...t, name: v} : t)));
-                                                }}
-                                            />
-                                        </Form.Item>
-                                        <Form.Item label="Team Leader">
-                                            <Input value={team.leader_id} disabled />
-                                        </Form.Item>
-                                        <Form.Item label="Team Members">
-                                            <div className="flex flex-col gap-2">
-                                                {team.members.map((m, i) => (
-                                                    <div key={nanoid()} className="flex gap-2 items-center">
-                                                        <Tag
-                                                            color={m.verified ? "green" : "red"}
-                                                            style={{cursor: edit ? "pointer" : "default"}}
-                                                            onClick={() => {
-                                                                if (edit) {
+                                            <Divider />
+                                            <Form.Item label="Team Name">
+                                                <Input
+                                                    value={team.name}
+                                                    disabled={!edit}
+                                                    onChange={(v) => {
+                                                        setTeams((prev) =>
+                                                            prev.map((t) => (t.id === team.id ? {...t, name: v} : t)),
+                                                        );
+                                                    }}
+                                                />
+                                            </Form.Item>
+                                            <Form.Item label="Team Leader">
+                                                <Input value={team.leader_id} disabled />
+                                            </Form.Item>
+                                            <Form.Item label="Team Members">
+                                                <div className="flex flex-col gap-2">
+                                                    {team.members.map((m, i) => (
+                                                        <div key={nanoid()} className="flex gap-2 items-center">
+                                                            <Tag
+                                                                color={m.verified ? "green" : "red"}
+                                                                style={{cursor: edit ? "pointer" : "default"}}
+                                                                onClick={() => {
+                                                                    if (edit) {
+                                                                        setTeams((prev) =>
+                                                                            prev.map((t) =>
+                                                                                t.id === team.id
+                                                                                    ? {
+                                                                                          ...t,
+                                                                                          members: t.members.map((member, idx) =>
+                                                                                              idx === i
+                                                                                                  ? {
+                                                                                                        ...member,
+                                                                                                        verified:
+                                                                                                            !member.verified,
+                                                                                                    }
+                                                                                                  : member,
+                                                                                          ),
+                                                                                      }
+                                                                                    : t,
+                                                                            ),
+                                                                        );
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {m.global_id || "N/A"}
+                                                            </Tag>
+                                                            <Button
+                                                                icon={<IconClose />}
+                                                                shape="circle"
+                                                                size="mini"
+                                                                disabled={!edit}
+                                                                onClick={() => {
                                                                     setTeams((prev) =>
                                                                         prev.map((t) =>
                                                                             t.id === team.id
                                                                                 ? {
                                                                                       ...t,
-                                                                                      members: t.members.map((member, idx) =>
-                                                                                          idx === i
-                                                                                              ? {
-                                                                                                    ...member,
-                                                                                                    verified: !member.verified,
-                                                                                                }
-                                                                                              : member,
+                                                                                      members: t.members.filter(
+                                                                                          (_, idx) => idx !== i,
                                                                                       ),
                                                                                   }
                                                                                 : t,
                                                                         ),
                                                                     );
-                                                                }
-                                                            }}
-                                                        >
-                                                            {m.global_id || "N/A"}
-                                                        </Tag>
-                                                        <Button
-                                                            icon={<IconClose />}
-                                                            shape="circle"
-                                                            size="mini"
-                                                            disabled={!edit}
-                                                            onClick={() => {
-                                                                setTeams((prev) =>
-                                                                    prev.map((t) =>
-                                                                        t.id === team.id
-                                                                            ? {
-                                                                                  ...t,
-                                                                                  members: t.members.filter(
-                                                                                      (_, idx) => idx !== i,
-                                                                                  ),
-                                                                              }
-                                                                            : t,
-                                                                    ),
-                                                                );
-                                                            }}
-                                                        />
-                                                    </div>
-                                                ))}
-                                                <Button
-                                                    type="primary"
-                                                    disabled={!edit}
-                                                    icon={<IconPlus />}
-                                                    onClick={() => {
-                                                        let newMemberId = "";
-                                                        Modal.confirm({
-                                                            title: "Add New Member",
-                                                            content: (
-                                                                <Input
-                                                                    placeholder="Enter new member's global ID"
-                                                                    onChange={(v) => {
-                                                                        newMemberId = v;
-                                                                    }}
-                                                                />
-                                                            ),
-                                                            onOk: () => {
-                                                                if (newMemberId) {
-                                                                    setTeams((prev) =>
-                                                                        prev.map((t) =>
-                                                                            t.id === team.id
-                                                                                ? {
-                                                                                      ...t,
-                                                                                      members: [
-                                                                                          ...t.members,
-                                                                                          {
-                                                                                              global_id: newMemberId,
-                                                                                              verified: false,
-                                                                                          },
-                                                                                      ],
-                                                                                  }
-                                                                                : t,
-                                                                        ),
-                                                                    );
-                                                                }
-                                                            },
-                                                        });
-                                                    }}
-                                                >
-                                                    Add Member
-                                                </Button>
-                                            </div>
-                                        </Form.Item>
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                    <Button
+                                                        type="primary"
+                                                        disabled={!edit}
+                                                        icon={<IconPlus />}
+                                                        onClick={() => {
+                                                            let newMemberId = "";
+                                                            Modal.confirm({
+                                                                title: "Add New Member",
+                                                                content: (
+                                                                    <Input
+                                                                        placeholder="Enter new member's global ID"
+                                                                        onChange={(v) => {
+                                                                            newMemberId = v;
+                                                                        }}
+                                                                    />
+                                                                ),
+                                                                onOk: () => {
+                                                                    if (newMemberId) {
+                                                                        setTeams((prev) =>
+                                                                            prev.map((t) =>
+                                                                                t.id === team.id
+                                                                                    ? {
+                                                                                          ...t,
+                                                                                          members: [
+                                                                                              ...t.members,
+                                                                                              {
+                                                                                                  global_id: newMemberId,
+                                                                                                  verified: false,
+                                                                                              },
+                                                                                          ],
+                                                                                      }
+                                                                                    : t,
+                                                                            ),
+                                                                        );
+                                                                    }
+                                                                },
+                                                            });
+                                                        }}
+                                                    >
+                                                        Add Member
+                                                    </Button>
+                                                </div>
+                                            </Form.Item>
                                         </div>
                                     );
                                 })}

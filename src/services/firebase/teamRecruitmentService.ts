@@ -54,10 +54,7 @@ export async function getAllTeamRecruitments() {
 // Get team recruitment records by leader ID
 export async function getTeamRecruitmentsByLeader(leaderId: string): Promise<TeamRecruitment[]> {
     try {
-        const q = query(
-            collection(db, TEAM_RECRUITMENT_COLLECTION),
-            where("leader_id", "==", leaderId)
-        );
+        const q = query(collection(db, TEAM_RECRUITMENT_COLLECTION), where("leader_id", "==", leaderId));
         const querySnapshot = await getDocs(q);
         return querySnapshot.docs.map((doc) => ({
             id: doc.id,

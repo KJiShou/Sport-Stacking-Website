@@ -47,18 +47,20 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                     </div>
                 </div>
 
-                <Form.Item shouldUpdate={(prev, next) => {
-                    // Check if event type changed
-                    if (prev.events?.[index]?.type !== next.events?.[index]?.type) {
-                        return true;
-                    }
-                    return false;
-                }}>
+                <Form.Item
+                    shouldUpdate={(prev, next) => {
+                        // Check if event type changed
+                        if (prev.events?.[index]?.type !== next.events?.[index]?.type) {
+                            return true;
+                        }
+                        return false;
+                    }}
+                >
                     {(_, form) => {
                         const eventType = form.getFieldValue(`events.${index}.type`);
                         const prevEventType = form.getFieldValue(`events.${index}.__prevType`);
                         const availableCodes = eventType ? EVENT_TYPES[eventType as keyof typeof EVENT_TYPES] || [] : [];
-                        
+
                         // Clear codes if event type changed
                         if (eventType && eventType !== prevEventType) {
                             const currentCodes = form.getFieldValue(`events.${index}.codes`) || [];
