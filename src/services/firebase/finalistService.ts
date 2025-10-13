@@ -34,8 +34,18 @@ const normalizeBracketKey = (bracket: string, classification: string): string =>
         }
     }
 
-    // Trim leading/trailing dashes
-    result = result.replace(/^-+|-+$/g, "");
+    // Trim leading/trailing dashes without regex
+    let start = 0;
+    let end = result.length;
+
+    while (start < end && result[start] === "-") {
+        start++;
+    }
+    while (end > start && result[end - 1] === "-") {
+        end--;
+    }
+
+    result = result.slice(start, end);
 
     return `${result}-${classification}`;
 };
