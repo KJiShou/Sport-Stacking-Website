@@ -248,6 +248,33 @@ export default function ScoringPage() {
         return times.length > 0 ? Math.min(...times).toFixed(3) : "N/A";
     };
 
+    // Helper function to validate a single score object
+    const validateScoreFields = (
+        scores: Score | undefined,
+        label: string,
+        participantName: string,
+        participantId: string,
+    ): string[] => {
+        const errors: string[] = [];
+        if (!scores || !scores.try1 || !scores.try2 || !scores.try3) {
+            errors.push(`${participantName} (${participantId}): Missing records for ${label}`);
+        } else {
+            const invalidTries: string[] = [];
+            const try1 = Number.parseFloat(scores.try1);
+            const try2 = Number.parseFloat(scores.try2);
+            const try3 = Number.parseFloat(scores.try3);
+
+            if (Number.isNaN(try1) || try1 <= 0) invalidTries.push("Try 1");
+            if (Number.isNaN(try2) || try2 <= 0) invalidTries.push("Try 2");
+            if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
+
+            if (invalidTries.length > 0) {
+                errors.push(`${participantName} (${participantId}): Invalid times in ${label} - ${invalidTries.join(", ")}`);
+            }
+        }
+        return errors;
+    };
+
     const validateParticipantRecord = (participant: ParticipantScore) => {
         const errors: string[] = [];
         const missingEvents: string[] = [];
@@ -265,49 +292,20 @@ export default function ScoringPage() {
                 for (const code of eventCodes) {
                     const codeEventKey = `${code}-${eventType}`;
                     const scores = participant.scores[codeEventKey];
-
                     if (!scores || !scores.try1 || !scores.try2 || !scores.try3) {
                         missingEvents.push(`${code} (${eventType})`);
-                    } else {
-                        // Validate that all tries have valid positive numbers
-                        const invalidTries: string[] = [];
-                        const try1 = Number.parseFloat(scores.try1);
-                        const try2 = Number.parseFloat(scores.try2);
-                        const try3 = Number.parseFloat(scores.try3);
-
-                        if (Number.isNaN(try1) || try1 <= 0) invalidTries.push("Try 1");
-                        if (Number.isNaN(try2) || try2 <= 0) invalidTries.push("Try 2");
-                        if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
-
-                        if (invalidTries.length > 0) {
-                            errors.push(
-                                `${participant.user_name} (${participant.user_id}): Invalid times in ${code} (${eventType}) - ${invalidTries.join(", ")}`,
-                            );
-                        }
                     }
+                    errors.push(
+                        ...validateScoreFields(scores, `${code} (${eventType})`, participant.user_name, participant.user_id),
+                    );
                 }
             } else {
                 // For events without codes
                 const scores = participant.scores[eventType];
                 if (!scores || !scores.try1 || !scores.try2 || !scores.try3) {
                     missingEvents.push(eventType);
-                } else {
-                    // Validate that all tries have valid positive numbers
-                    const invalidTries: string[] = [];
-                    const try1 = Number.parseFloat(scores.try1);
-                    const try2 = Number.parseFloat(scores.try2);
-                    const try3 = Number.parseFloat(scores.try3);
-
-                    if (Number.isNaN(try1) || try1 <= 0) invalidTries.push("Try 1");
-                    if (Number.isNaN(try2) || try2 <= 0) invalidTries.push("Try 2");
-                    if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
-
-                    if (invalidTries.length > 0) {
-                        errors.push(
-                            `${participant.user_name} (${participant.user_id}): Invalid times in ${eventType} - ${invalidTries.join(", ")}`,
-                        );
-                    }
                 }
+                errors.push(...validateScoreFields(scores, eventType, participant.user_name, participant.user_id));
             }
         }
 
@@ -315,7 +313,8 @@ export default function ScoringPage() {
             errors.push(`${participant.user_name} (${participant.user_id}): Missing records for ${missingEvents.join(", ")}`);
         }
 
-        return errors;
+        // Remove duplicate error messages
+        return Array.from(new Set(errors));
     };
 
     const validateTeamRecord = (team: TeamScore) => {

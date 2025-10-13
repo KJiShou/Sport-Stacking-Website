@@ -136,10 +136,24 @@ export default function TeamRecruitmentManagement() {
 
             if (values.action === "assign" && values.teamId) {
                 // First add member to the team
-                await addMemberToTeam(individual.tournament_id, values.teamId, individual.participant_id);
+                try {
+                    await addMemberToTeam(individual.tournament_id, values.teamId, individual.participant_id);
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                    Message.error(`Failed to add participant to team: ${errorMessage}`);
+                    setLoading(false);
+                    return;
+                }
 
                 // Then update the recruitment status
-                await updateIndividualRecruitmentStatus(individual.id, "matched", values.teamId);
+                try {
+                    await updateIndividualRecruitmentStatus(individual.id, "matched", values.teamId);
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                    Message.error(`Failed to update recruitment status: ${errorMessage}`);
+                    setLoading(false);
+                    return;
+                }
 
                 Message.success(`${individual.participant_name} has been successfully assigned to the team!`);
             }

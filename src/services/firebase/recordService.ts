@@ -580,7 +580,8 @@ export const getPrelimRecords = async (
     const eventName = eventParts.join("-");
 
     // Validate that we have a valid event name to avoid double slashes in path
-    if (!eventName || eventName.trim() === "") {
+    const trimmedEventName = eventName.trim();
+    if (!trimmedEventName) {
         console.warn(`Invalid event key format: ${eventKey}. Expected format: "EventCode-EventType"`);
         return records;
     }

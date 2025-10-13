@@ -89,7 +89,7 @@ interface EventData {
 }
 
 // Utility Functions
-const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9]/g, "");
+const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9_]/g, "");
 
 const getPrimaryEventCode = (event: TournamentEvent): string => {
     const sanitized = sanitizeEventCodes(event.codes);

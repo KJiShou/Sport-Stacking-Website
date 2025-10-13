@@ -446,11 +446,22 @@ export default function FinalScoringPage() {
                 const promises: Promise<void>[] = [];
 
                 for (const code of codesToProcess) {
-                    const eventKey = normalizeEventKey(code, selectedGroup.event.type);
-                    const scores = modalScores[eventKey];
-                    if (!scores) continue;
-
-                    const try1 = Number.parseFloat(scores.try1);
+                    if (validationErrors.length > 0) {
+                        Message.error({
+                            content: (
+                                <div>
+                                    <div style={{fontWeight: 600, marginBottom: 4}}>Validation Failed:</div>
+                                    <ul style={{paddingLeft: 18, margin: 0}}>
+                                        {validationErrors.map((err, idx) => (
+                                            <li key={idx}>{err}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ),
+                            duration: 5000,
+                        });
+                        return;
+                    }
                     const try2 = Number.parseFloat(scores.try2);
                     const try3 = Number.parseFloat(scores.try3);
 

@@ -4,7 +4,8 @@ type TeamEventRefs = Partial<Pick<Team, "event_ids" | "events">>;
 
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
 
-export const sanitizeEventCodes = (codes?: string[]): string[] => (codes ?? []).filter((code) => code !== "Overall");
+export const sanitizeEventCodes = (codes?: string[]): string[] =>
+    (codes ?? []).filter((code) => code != null && code !== "" && code !== "Overall");
 
 export const getEventKey = (event: TournamentEvent | null | undefined): string => {
     if (!event) return "";

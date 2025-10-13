@@ -72,9 +72,13 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("Address is required.");
     }
 
+    function generateEventId(existingId?: string): string {
+        return existingId && existingId.length > 0 ? existingId : crypto.randomUUID();
+    }
+
     const eventsWithIds = (data.events ?? []).map((event) => ({
         ...event,
-        id: event.id && event.id.length > 0 ? event.id : crypto.randomUUID(),
+        id: generateEventId(event.id),
     }));
 
     const docRef = await addDoc(collection(db, "tournaments"), {

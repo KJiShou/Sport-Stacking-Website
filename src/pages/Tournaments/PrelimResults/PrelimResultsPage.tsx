@@ -32,7 +32,7 @@ const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[
 
 const getRawEventCodes = (event: TournamentEvent): string[] => {
     if (event.codes && event.codes.length > 0) return [...event.codes];
-    if ((event as {code?: string}).code) return [(event as {code: string}).code];
+    if ("code" in event && typeof (event as any).code === "string") return [(event as any).code];
     return [];
 };
 
