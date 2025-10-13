@@ -928,8 +928,8 @@ export default function FinalScoringPage() {
                                         finalist.records.every((record) => {
                                             const isTeam = !!record.team;
                                             const id = isTeam ? record.team?.id : record.registration?.user_id;
-                                            return finalRecords.some((fr: (typeof finalRecords)[0]) =>
-                                                isTeam ? fr.participantId === id : fr.participantId === id,
+                                            return finalRecords.some(
+                                                (fr: (typeof finalRecords)[0]) => isTeam ?? fr.participantId === id,
                                             );
                                         }),
                                     );
