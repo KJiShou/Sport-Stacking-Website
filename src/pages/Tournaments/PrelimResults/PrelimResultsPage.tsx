@@ -1,9 +1,5 @@
 import type {AgeBracket, Registration, Team, Tournament, TournamentEvent} from "@/schema";
-import {
-    getEventCategoryFromType,
-    saveTournamentFinalists,
-    type FinalistGroupPayload,
-} from "@/services/firebase/finalistService";
+import {type FinalistGroupPayload, getEventCategoryFromType, saveTournamentFinalists} from "@/services/firebase/finalistService";
 import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";

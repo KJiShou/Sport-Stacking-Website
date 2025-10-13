@@ -1,7 +1,4 @@
 // src/utils/pdfExportUtils.ts
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import {nanoid} from "nanoid";
 import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import type {TournamentRecord} from "../../schema/RecordSchema";
 import {
@@ -12,6 +9,9 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import {nanoid} from "nanoid";
 
 // Types
 export interface PrelimResultData extends TournamentRecord {
