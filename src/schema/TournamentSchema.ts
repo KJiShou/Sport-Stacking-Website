@@ -19,8 +19,11 @@ export const AgeBracketSchema = z.object({
 });
 
 export const EventSchema = z.object({
-    code: z.enum(["3-3-3", "3-6-3", "Cycle", "Overall"]),
-    type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child"]),
+    id: z
+        .union([z.string().uuid(), z.string().length(0), z.undefined(), z.null()])
+        .transform((value) => (typeof value === "string" && value.length > 0 ? value : crypto.randomUUID())),
+    codes: z.array(z.enum(["3-3-3", "3-6-3", "Cycle", "Overall"])),
+    type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"]),
     teamSize: z.number().optional(),
     age_brackets: z.array(AgeBracketSchema), // 直接放进每个 event
 });

@@ -1,7 +1,15 @@
-// src/utils/pdfExportUtils.ts
+import {
+    getEventKey,
+    getEventLabel,
+    matchesAnyEventKey,
+    matchesEventKey,
+    sanitizeEventCodes,
+    teamMatchesEventKey,
+} from "@/utils/tournament/eventUtils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {nanoid} from "nanoid";
+// src/utils/pdfExportUtils.ts
 import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import type {TournamentRecord} from "../../schema/RecordSchema";
 
@@ -22,6 +30,7 @@ export interface BracketResults {
     bracket: AgeBracket;
     records: PrelimResultData[];
     classification?: "beginner" | "intermediate" | "advance";
+    highlightFinalists?: boolean;
 }
 
 export interface EventResults {
@@ -33,6 +42,7 @@ export interface AllPrelimResultsPDFParams {
     tournament: Tournament;
     resultsData: EventResults[];
     round?: "Preliminary" | "Final";
+    highlightFinalists?: boolean;
 }
 
 export interface FinalistsPDFParams {
@@ -79,6 +89,16 @@ interface EventData {
 }
 
 // Utility Functions
+const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9_]/g, "");
+
+const getPrimaryEventCode = (event: TournamentEvent): string => {
+    const sanitized = sanitizeEventCodes(event.codes);
+    if (sanitized.length > 0) return sanitized[0];
+    const legacyCode = (event as {code?: string}).code;
+    if (legacyCode) return legacyCode;
+    return event.type;
+};
+
 const isTeamEventType = (type: string): boolean => ["double", "team relay", "parent & child"].includes(type.toLowerCase());
 
 const createPDFFilename = (parts: string[]): string =>
@@ -148,10 +168,11 @@ const generateTeamTableData = (
     bracket: AgeBracket,
     ageMap: Record<string, number>,
     phoneMap: Record<string, string>,
+    tournamentEvents: TournamentEvent[],
 ): string[][] => {
     return teams
         .filter((team) => {
-            if (!team.events.includes(eventKey)) return false;
+            if (!teamMatchesEventKey(team, eventKey, tournamentEvents)) return false;
             const maxAge = team.largest_age;
             return maxAge >= bracket.min_age && maxAge <= bracket.max_age;
         })
@@ -220,7 +241,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
     const marginY = 10;
 
     try {
-        const event = tournament.events?.find((evt) => `${evt.code}-${evt.type}` === eventKey);
+        const event = tournament.events?.find((evt) => matchesEventKey(eventKey, evt) || getEventKey(evt) === eventKey);
         const bracket = event?.age_brackets.find((br) => br.name === bracketName);
 
         if (!event || !bracket) throw new Error("Event or bracket not found");
@@ -281,7 +302,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         const tableData = team
             ? generateSingleTeamTableData(team, phoneMap)
             : isTeamEvent
-              ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap)
+              ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, tournament.events ?? [])
               : generateIndividualTableData(registrations, bracket, phoneMap);
 
         const headers = team
@@ -329,7 +350,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         addPDFFooter(doc);
         const filename = team
             ? createPDFFilename([tournament.name, team.name, "member_list.pdf"])
-            : createPDFFilename([tournament.name, event.code, bracket.name, "participants.pdf"]);
+            : createPDFFilename([tournament.name, getPrimaryEventCode(event), bracket.name, "participants.pdf"]);
         openPDFInNewTab(doc, filename);
     } catch (error) {
         console.error("Error generating PDF:", error);
@@ -437,7 +458,7 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
 };
 
 export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFParams): Promise<void> => {
-    const {tournament, resultsData, round = "Preliminary"} = options;
+    const {tournament, resultsData, round = "Preliminary", highlightFinalists = true} = options;
     try {
         const doc = new jsPDF();
         doc.setFont("times");
@@ -496,7 +517,8 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
 
             doc.setFontSize(16);
             doc.setFont(undefined, "bold");
-            doc.text(`${event.code} - ${event.type}`, 14, currentY);
+            const eventTitle = getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`;
+            doc.text(eventTitle, 14, currentY);
             currentY += 10;
 
             for (const bracketResult of brackets) {
@@ -513,19 +535,29 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                 currentY += 8;
 
                 if (records.length > 0) {
-                    const isOverall = event.code === "Overall";
-                    const head = isOverall
-                        ? [["Rank", "ID", "Name", "3-3-3", "3-6-3", "Cycle", "Best Time"]]
+                    const sanitizedCodes = sanitizeEventCodes(event.codes);
+                    const legacyCode = (event as {code?: string}).code;
+                    const effectiveCodes = sanitizedCodes.length > 0 ? sanitizedCodes : legacyCode ? [legacyCode] : [];
+                    const isAggregate = effectiveCodes.length > 1;
+
+                    const head = isAggregate
+                        ? [["Rank", "ID", "Name", ...effectiveCodes, "Total Time"]]
                         : [["Rank", "ID", "Name", "Try 1", "Try 2", "Try 3", "Best Time"]];
 
                     const body = records.map((r) => {
                         const rowData: (string | number)[] = [r.rank, r.id, r.name];
-                        if (isOverall) {
-                            rowData.push(
-                                r.three?.toFixed(3) ?? "N/A",
-                                r.threeSixThree?.toFixed(3) ?? "N/A",
-                                r.cycle?.toFixed(3) ?? "N/A",
-                            );
+                        if (isAggregate) {
+                            for (const code of effectiveCodes) {
+                                const dataKey = `${normalizeCodeKey(code)}Best`;
+                                const value = (r as Record<string, unknown>)[dataKey];
+                                rowData.push(
+                                    typeof value === "number" && Number.isFinite(value)
+                                        ? value.toFixed(3)
+                                        : typeof value === "string"
+                                          ? value
+                                          : "N/A",
+                                );
+                            }
                         } else {
                             rowData.push(r.try1 ?? "N/A", r.try2 ?? "N/A", r.try3 ?? "N/A");
                         }
@@ -533,30 +565,30 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                         return rowData;
                     });
 
-                    const finalCriteria = bracket.final_criteria || [];
-                    const classificationOrder = ["advance", "intermediate", "beginner"];
-                    const classificationColors: {[key: string]: [number, number, number]} = {
-                        advance: [255, 255, 0], // Yellow
-                        intermediate: [144, 238, 144], // Light Green
-                        beginner: [173, 216, 230], // Light Blue
-                    };
-
-                    const sortedCriteria = [...finalCriteria].sort(
-                        (a, b) => classificationOrder.indexOf(a.classification) - classificationOrder.indexOf(b.classification),
-                    );
-
+                    const bracketHighlight =
+                        typeof bracket.highlightFinalists === "boolean" ? bracket.highlightFinalists : highlightFinalists;
+                    const shouldHighlightRows = round !== "Final" && bracketHighlight;
+                    const finalCriteria = shouldHighlightRows ? bracket.final_criteria || [] : [];
                     const rankGroups: {classification: string; startRank: number; endRank: number}[] = [];
-                    let currentRank = 0;
 
-                    for (const criterion of sortedCriteria) {
-                        const startRank = currentRank + 1;
-                        const endRank = currentRank + criterion.number;
-                        rankGroups.push({
-                            classification: criterion.classification,
-                            startRank,
-                            endRank,
-                        });
-                        currentRank = endRank;
+                    if (shouldHighlightRows && finalCriteria.length > 0) {
+                        const classificationOrder = ["advance", "intermediate", "beginner"];
+                        const sortedCriteria = [...finalCriteria].sort(
+                            (a, b) =>
+                                classificationOrder.indexOf(a.classification) - classificationOrder.indexOf(b.classification),
+                        );
+
+                        let currentRank = 0;
+                        for (const criterion of sortedCriteria) {
+                            const startRank = currentRank + 1;
+                            const endRank = currentRank + criterion.number;
+                            rankGroups.push({
+                                classification: criterion.classification,
+                                startRank,
+                                endRank,
+                            });
+                            currentRank = endRank;
+                        }
                     }
 
                     autoTable(doc, {
@@ -564,23 +596,29 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                         head,
                         body,
                         theme: "plain",
-                        didParseCell: (data) => {
-                            if (round === "Final") return;
-                            // Only apply to body rows, not headers
-                            if (data.section === "body") {
-                                const rank = Number.parseInt(data.row.raw[0] as string);
+                        didParseCell: shouldHighlightRows
+                            ? (data) => {
+                                  if (data.section === "body") {
+                                      const rawRank = data.row.raw[0];
+                                      const rank = typeof rawRank === "number" ? rawRank : Number.parseInt(String(rawRank), 10);
 
-                                for (const group of rankGroups) {
-                                    if (rank >= group.startRank && rank <= group.endRank) {
-                                        const color = classificationColors[group.classification];
-                                        if (color) {
-                                            data.cell.styles.fillColor = color;
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                        },
+                                      for (const group of rankGroups) {
+                                          if (rank >= group.startRank && rank <= group.endRank) {
+                                              const classificationColors: {[key: string]: [number, number, number]} = {
+                                                  advance: [255, 255, 0],
+                                                  intermediate: [144, 238, 144],
+                                                  beginner: [173, 216, 230],
+                                              };
+                                              const color = classificationColors[group.classification];
+                                              if (color) {
+                                                  data.cell.styles.fillColor = color;
+                                              }
+                                              break;
+                                          }
+                                      }
+                                  }
+                              }
+                            : undefined,
                         styles: {
                             fontSize: 9,
                             lineColor: [0, 0, 0],
@@ -679,7 +717,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
 
             doc.setFontSize(16);
             doc.setFont(undefined, "bold");
-            doc.text(`${event.code} - ${event.type}`, 14, currentY);
+            doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, currentY);
             currentY += 10;
 
             let isFirstBracketInEvent = true;
@@ -689,7 +727,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
                     currentY = await addHeader(doc);
                     doc.setFontSize(16);
                     doc.setFont(undefined, "bold");
-                    doc.text(`${event.code} - ${event.type}`, 14, currentY);
+                    doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, currentY);
                     currentY += 10;
                 }
                 isFirstBracketInEvent = false;
@@ -701,7 +739,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
                     currentY = await addHeader(doc);
                     doc.setFontSize(16);
                     doc.setFont(undefined, "bold");
-                    doc.text(`${event.code} - ${event.type}`, 14, currentY);
+                    doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, currentY);
                     currentY += 10;
                 }
 
@@ -812,7 +850,7 @@ export const exportAllBracketsListToPDF = async (
         let isFirstEvent = true;
 
         for (const event of tournament.events) {
-            const eventKey = `${event.code}-${event.type}`;
+            const eventKey = getEventKey(event);
             const isTeamEvent = isTeamEventType(event.type);
 
             if (!isFirstEvent) {
@@ -823,7 +861,7 @@ export const exportAllBracketsListToPDF = async (
 
             doc.setFontSize(16);
             doc.setFont(undefined, "bold");
-            doc.text(`${event.code} - ${event.type}`, 14, startY);
+            doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, startY);
             startY += 10;
 
             for (const bracket of event.age_brackets) {
@@ -832,12 +870,13 @@ export const exportAllBracketsListToPDF = async (
                 startY += 8;
 
                 const tableData = isTeamEvent
-                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap)
+                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, tournament.events ?? [])
                     : registrations
-                          .filter(
-                              (r) =>
-                                  r.events_registered.includes(eventKey) && r.age >= bracket.min_age && r.age <= bracket.max_age,
-                          )
+                          .filter((r) => {
+                              const matchesEvent =
+                                  r.events_registered.includes(eventKey) || matchesAnyEventKey(r.events_registered, event);
+                              return matchesEvent && r.age >= bracket.min_age && r.age <= bracket.max_age;
+                          })
                           .map((r, index) => [
                               (index + 1).toString(),
                               r.user_name || "N/A",
@@ -1327,16 +1366,25 @@ export const getCurrentEventData = (
     currentBracketTab: string,
     registrationList: Registration[],
     searchTerm: string,
+    teamList: Team[] = [],
 ): EventData | null => {
     if (!tournament || !currentEventTab || !currentBracketTab) return null;
 
-    const event = tournament.events?.find((evt) => `${evt.code}-${evt.type}` === currentEventTab);
+    const event = tournament.events?.find((evt) => matchesEventKey(currentEventTab, evt) || getEventKey(evt) === currentEventTab);
     const bracket = event?.age_brackets.find((br) => br.name === currentBracketTab);
 
     if (!event || !bracket) return null;
 
     const isTeamEvent = isTeamEventType(event.type);
-    const regs = filterRegistrations(registrationList, currentEventTab, isTeamEvent, searchTerm);
+    const regs = filterRegistrations(
+        registrationList,
+        currentEventTab,
+        isTeamEvent,
+        searchTerm,
+        event,
+        tournament.events ?? [],
+        teamList,
+    );
 
     return {event, bracket, isTeamEvent, registrations: regs};
 };
@@ -1346,20 +1394,64 @@ const filterRegistrations = (
     evtKey: string,
     isTeam: boolean,
     searchTerm: string,
+    event: TournamentEvent,
+    tournamentEvents: TournamentEvent[],
+    teamList: Team[],
 ): Registration[] => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
     if (isTeam) {
-        return registrationList.filter((r) =>
-            r.teams?.some(
-                (team) =>
-                    team.team_id === evtKey &&
-                    ((team.leader.global_id?.includes(searchTerm) ?? false) ||
-                        team.member.some((m) => m.global_id?.includes(searchTerm) ?? false)),
-            ),
+        const filteredTeams = teamList.filter((team) => {
+            if (!teamMatchesEventKey(team, evtKey, tournamentEvents)) {
+                return false;
+            }
+
+            if (normalizedSearch.length === 0) {
+                return true;
+            }
+
+            const matchesName = team.name ? team.name.toLowerCase().includes(normalizedSearch) : false;
+            const matchesLeader = team.leader_id ? team.leader_id.toLowerCase().includes(normalizedSearch) : false;
+            const matchesMembers =
+                team.members?.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch) ?? false) ?? false;
+
+            return matchesName || matchesLeader || matchesMembers;
+        });
+
+        const teamUserIds = new Set(
+            filteredTeams.flatMap((team) => [team.leader_id, ...(team.members?.map((member) => member.global_id) ?? [])]),
         );
+
+        return registrationList.filter((registration) => {
+            if (!teamUserIds.has(registration.user_id)) {
+                return false;
+            }
+
+            if (normalizedSearch.length === 0) {
+                return true;
+            }
+
+            const nameMatches = registration.user_name?.toLowerCase().includes(normalizedSearch) ?? false;
+            const idMatches = registration.user_id?.toLowerCase().includes(normalizedSearch) ?? false;
+            return nameMatches || idMatches;
+        });
     }
-    return registrationList.filter(
-        (r) => r.events_registered.includes(evtKey) && (r.user_name.includes(searchTerm) || r.user_id.includes(searchTerm)),
-    );
+
+    return registrationList.filter((registration) => {
+        const matchesEvent =
+            registration.events_registered.includes(evtKey) || matchesAnyEventKey(registration.events_registered, event);
+        if (!matchesEvent) {
+            return false;
+        }
+
+        if (normalizedSearch.length === 0) {
+            return true;
+        }
+
+        const nameMatches = registration.user_name?.toLowerCase().includes(normalizedSearch) ?? false;
+        const idMatches = registration.user_id?.toLowerCase().includes(normalizedSearch) ?? false;
+        return nameMatches || idMatches;
+    });
 };
 
 // Convenience exports

@@ -10,6 +10,7 @@ import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type * as React from "react";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
+import TeamRecruitmentManagement from "../pages/Admin/TeamRecruitmentManagement";
 import Athletes from "../pages/Athletes/Athletes";
 import Home from "../pages/Home/Home";
 import RecordsIndex from "../pages/Records";
@@ -73,6 +74,7 @@ const routes: Route[] = [
     {path: "/register", component: RegisterPage},
     {path: "/users/:id", component: UserProfile},
     {path: "/admins", component: AdminPermissionsPage},
+    {path: "/admin/team-recruitment", component: TeamRecruitmentManagement},
     {path: "/forgot-password", component: ForgotPasswordPage},
 ];
 

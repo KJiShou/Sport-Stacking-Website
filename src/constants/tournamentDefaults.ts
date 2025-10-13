@@ -2,7 +2,8 @@ import type {AgeBracket, Tournament} from "../schema";
 
 export const DEFAULT_EVENTS: Tournament["events"] = [
     {
-        code: "3-3-3",
+        id: crypto.randomUUID(),
+        codes: ["3-3-3", "3-6-3", "Cycle"],
         type: "Individual",
         age_brackets: [
             {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 10}]},
@@ -15,46 +16,8 @@ export const DEFAULT_EVENTS: Tournament["events"] = [
         ],
     },
     {
-        code: "3-6-3",
-        type: "Individual",
-        age_brackets: [
-            {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 10}]},
-            {
-                name: "10 and Above",
-                min_age: 10,
-                max_age: 99,
-                final_criteria: [{classification: "intermediate" as const, number: 10}],
-            },
-        ],
-    },
-    {
-        code: "Cycle",
-        type: "Individual",
-        age_brackets: [
-            {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 10}]},
-            {
-                name: "10 and Above",
-                min_age: 10,
-                max_age: 99,
-                final_criteria: [{classification: "intermediate" as const, number: 10}],
-            },
-        ],
-    },
-    {
-        code: "3-6-3",
-        type: "Team Relay",
-        age_brackets: [
-            {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 4}]},
-            {
-                name: "10 and Above",
-                min_age: 10,
-                max_age: 99,
-                final_criteria: [{classification: "intermediate" as const, number: 4}],
-            },
-        ],
-    },
-    {
-        code: "Cycle",
+        id: crypto.randomUUID(),
+        codes: ["3-6-3", "Cycle"],
         type: "Team Relay",
         age_brackets: [
             {name: "Under 10", min_age: 0, max_age: 9, final_criteria: [{classification: "intermediate" as const, number: 4}]},

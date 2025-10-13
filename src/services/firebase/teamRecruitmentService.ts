@@ -1,4 +1,4 @@
-import {addDoc, collection, getDocs, query, where} from "firebase/firestore";
+import {addDoc, collection, deleteDoc, doc, getDocs, query, where} from "firebase/firestore";
 import type {TeamRecruitment} from "../../schema/TeamRecruitmentSchema";
 import {db} from "./config";
 
@@ -47,6 +47,32 @@ export async function getAllTeamRecruitments() {
         })) as TeamRecruitment[];
     } catch (error) {
         console.error("Error fetching all team recruitments:", error);
+        throw error;
+    }
+}
+
+// Get team recruitment records by leader ID
+export async function getTeamRecruitmentsByLeader(leaderId: string): Promise<TeamRecruitment[]> {
+    try {
+        const q = query(collection(db, TEAM_RECRUITMENT_COLLECTION), where("leader_id", "==", leaderId));
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+        })) as TeamRecruitment[];
+    } catch (error) {
+        console.error("Error fetching team recruitments by leader:", error);
+        throw error;
+    }
+}
+
+// Delete team recruitment record
+export async function deleteTeamRecruitment(recruitmentId: string): Promise<void> {
+    try {
+        const recruitmentRef = doc(db, TEAM_RECRUITMENT_COLLECTION, recruitmentId);
+        await deleteDoc(recruitmentRef);
+    } catch (error) {
+        console.error("Error deleting team recruitment:", error);
         throw error;
     }
 }

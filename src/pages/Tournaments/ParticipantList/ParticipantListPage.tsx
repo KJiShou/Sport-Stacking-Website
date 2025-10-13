@@ -1,4 +1,4 @@
-import type {Registration, Team, Tournament} from "@/schema";
+import type {Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
@@ -11,6 +11,15 @@ import {
     generateTeamStackingSheetPDF,
     getCurrentEventData,
 } from "@/utils/PDF/pdfExport";
+import {
+    getEventKey,
+    getTeamEventLabels,
+    isTeamEvent,
+    matchesAnyEventKey,
+    matchesEventKey,
+    sanitizeEventCodes,
+    teamMatchesEventKey,
+} from "@/utils/tournament/eventUtils";
 import {Button, Dropdown, Input, Menu, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconUndo} from "@arco-design/web-react/icon";
@@ -19,7 +28,6 @@ import {nanoid} from "nanoid";
 import React, {useState, useRef} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
-import {set} from "zod";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
@@ -63,8 +71,11 @@ export default function ParticipantListPage() {
         try {
             const t = await fetchTournamentById(tournamentId);
             setTournament(t);
-            setCurrentEventTab(t?.events?.[0] ? `${t.events[0].code}-${t.events[0].type}` : "");
-            setCurrentBracketTab(t?.events?.[0].age_brackets[0] ? `${t.events[0].age_brackets[0].name}` : "");
+            const firstEvent = t?.events?.[0];
+            const firstEventKey = firstEvent ? getEventKey(firstEvent) : "";
+            setCurrentEventTab(firstEventKey);
+            const firstBracket = firstEvent?.age_brackets?.[0];
+            setCurrentBracketTab(firstBracket ? firstBracket.name : "");
             const regs = await fetchRegistrations(tournamentId);
             const teams = await fetchTeamsByTournament(tournamentId);
             setRegistrationList(regs.filter((r) => r.registration_status === "approved"));
@@ -82,17 +93,26 @@ export default function ParticipantListPage() {
         refreshParticipantList();
     });
 
-    const filterRegistrations = (evtKey: string, isTeam: boolean) => {
-        const lowerCaseSearchTerm = searchTerm.toLowerCase();
+    const filterRegistrations = (evtKey: string, isTeam: boolean, event?: TournamentEvent) => {
+        const normalizedSearch = searchTerm.trim().toLowerCase();
 
         if (isTeam) {
-            const filteredTeams = teamList.filter(
-                (team) =>
-                    team.events.includes(evtKey) &&
-                    ((team.name?.toLowerCase().includes(lowerCaseSearchTerm) ?? false) ||
-                        team.leader_id.toLowerCase().includes(lowerCaseSearchTerm) ||
-                        team.members?.some((m) => m.global_id?.toLowerCase().includes(lowerCaseSearchTerm) ?? false)),
-            );
+            const filteredTeams = teamList.filter((team) => {
+                if (!teamMatchesEventKey(team, evtKey, tournament?.events ?? [])) {
+                    return false;
+                }
+
+                if (normalizedSearch.length === 0) {
+                    return true;
+                }
+
+                const matchesName = team.name ? team.name.toLowerCase().includes(normalizedSearch) : false;
+                const matchesLeader = team.leader_id ? team.leader_id.toLowerCase().includes(normalizedSearch) : false;
+                const matchesMembers =
+                    team.members?.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch) ?? false) ?? false;
+
+                return matchesName || matchesLeader || matchesMembers;
+            });
 
             const teamUserIds = new Set(
                 filteredTeams.flatMap((team) => [team.leader_id, ...(team.members?.map((m) => m.global_id) ?? [])]),
@@ -100,16 +120,48 @@ export default function ParticipantListPage() {
 
             return registrationList.filter((r) => teamUserIds.has(r.user_id));
         }
-        return registrationList.filter(
-            (r) =>
-                r.events_registered.includes(evtKey) &&
-                (r.user_name.toLowerCase().includes(lowerCaseSearchTerm) ||
-                    r.user_id.toLowerCase().includes(lowerCaseSearchTerm)),
-        );
+
+        return registrationList.filter((r) => {
+            const matchesEvent =
+                r.events_registered.includes(evtKey) || (event ? matchesAnyEventKey(r.events_registered, event) : false);
+            if (!matchesEvent) {
+                return false;
+            }
+
+            if (normalizedSearch.length === 0) {
+                return true;
+            }
+
+            const nameMatches = r.user_name?.toLowerCase().includes(normalizedSearch) ?? false;
+            const idMatches = r.user_id?.toLowerCase().includes(normalizedSearch) ?? false;
+            return nameMatches || idMatches;
+        });
+    };
+
+    const handleEventTabChange = (key: string) => {
+        setCurrentEventTab(key);
+
+        if (!tournament?.events) {
+            return;
+        }
+
+        const selectedEvent =
+            tournament.events.find((evt) => getEventKey(evt) === key) ||
+            tournament.events.find((evt) => matchesEventKey(key, evt));
+
+        const nextBracket = selectedEvent?.age_brackets?.[0]?.name ?? "";
+        setCurrentBracketTab(nextBracket);
     };
 
     const handleExportToPDF = async () => {
-        const currentData = getCurrentEventData(tournament, currentEventTab, currentBracketTab, registrationList, searchTerm);
+        const currentData = getCurrentEventData(
+            tournament,
+            currentEventTab,
+            currentBracketTab,
+            registrationList,
+            searchTerm,
+            teamList,
+        );
 
         if (!currentData || !tournament) {
             Message.warning("Please select an event and age bracket to export");
@@ -191,6 +243,8 @@ export default function ParticipantListPage() {
 
     if (!tournament) return null;
 
+    const tournamentEvents = tournament.events ?? [];
+
     const individualColumns: TableColumnProps<Registration>[] = [
         {title: "Global ID", dataIndex: "user_id", width: 150},
         {title: "Name", dataIndex: "user_name", width: 200},
@@ -205,7 +259,8 @@ export default function ParticipantListPage() {
             width: 150,
             render: (_, record) => {
                 const {event, bracket} =
-                    getCurrentEventData(tournament, currentEventTab, currentBracketTab, registrationList, searchTerm) ?? {};
+                    getCurrentEventData(tournament, currentEventTab, currentBracketTab, registrationList, searchTerm, teamList) ??
+                    {};
 
                 if (!event || !bracket) return null;
 
@@ -311,6 +366,7 @@ export default function ParticipantListPage() {
                                                     currentBracketTab,
                                                     registrationList,
                                                     searchTerm,
+                                                    teamList,
                                                 );
                                                 if (!currentData) {
                                                     Message.error("No event data found");
@@ -323,7 +379,7 @@ export default function ParticipantListPage() {
                                                         return (
                                                             maxAge >= currentData.bracket.min_age &&
                                                             maxAge <= currentData.bracket.max_age &&
-                                                            team.events.includes(currentEventTab)
+                                                            teamMatchesEventKey(team, currentEventTab, tournamentEvents)
                                                         );
                                                     });
                                                     await generateAllTeamStackingSheetsPDF(
@@ -368,23 +424,28 @@ export default function ParticipantListPage() {
                         </Dropdown.Button>
                     </div>
                 </div>
-                <Tabs type="line" destroyOnHide className="w-full" onChange={(key) => setCurrentEventTab(key)}>
+                <Tabs type="line" destroyOnHide className="w-full" activeTab={currentEventTab} onChange={handleEventTabChange}>
                     {tournament.events?.map((evt) => {
-                        const evtKey = `${evt.code}-${evt.type}`;
-                        const isTeamEvent = ["double", "team relay", "parent & child"].includes(evt.type.toLowerCase());
+                        const tabKey = getEventKey(evt);
+                        const isTeamEventForTab = isTeamEvent(evt);
+                        const regs = filterRegistrations(tabKey, isTeamEventForTab, evt);
+                        const scoringCodes = sanitizeEventCodes(evt.codes);
+                        const hasCodes = scoringCodes.length > 0;
+                        const titleCodes = hasCodes ? scoringCodes.join(", ") : evt.codes?.join(", ") || "N/A";
                         return (
-                            <TabPane key={evtKey} title={`${evt.code} (${evt.type})`}>
+                            <TabPane key={tabKey} title={`${evt.type} (${titleCodes})`}>
+                                {" "}
                                 <Tabs
                                     type="capsule"
                                     tabPosition="top"
                                     destroyOnHide
+                                    activeTab={currentBracketTab}
                                     onChange={(key) => setCurrentBracketTab(key)}
                                 >
                                     {evt.age_brackets.map((br) => {
-                                        const regs = filterRegistrations(evtKey, isTeamEvent);
-                                        if (isTeamEvent) {
+                                        if (isTeamEventForTab) {
                                             const teamRows: TeamRow[] = teamList
-                                                .filter((team) => team.events.includes(evtKey))
+                                                .filter((team) => teamMatchesEventKey(team, tabKey, tournamentEvents))
                                                 .map((team) => ({
                                                     ...team,
                                                     registrationId: regs.find((r) => r.user_id === team.leader_id)?.id ?? "",
@@ -449,7 +510,7 @@ export default function ParticipantListPage() {
                                                                         setLoading(true);
                                                                         await exportParticipantListToPDF({
                                                                             tournament,
-                                                                            eventKey: evtKey,
+                                                                            eventKey: tabKey,
                                                                             bracketName: br.name,
                                                                             registrations: registrationList,
                                                                             ageMap,
