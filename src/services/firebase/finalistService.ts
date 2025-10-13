@@ -13,10 +13,15 @@ export interface FinalistGroupPayload {
 }
 
 const normalizeBracketKey = (bracket: string, classification: string): string => {
+    // First replace any non-alphanumeric character with a single dash
     const normalizedBracket = bracket
         .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "");
+        // Use a positive character class instead of negated one to avoid backtracking
+        .replace(/[a-z0-9]+/g, (m) => m) // Keep alphanumeric sequences
+        .replace(/[^a-z0-9]+/g, "-") // Replace everything else with single dash
+        // Remove leading/trailing dashes with substring instead of regex
+        .replace(/^-+/, "")
+        .replace(/-+$/, "");
     return `${normalizedBracket}-${classification}`;
 };
 
