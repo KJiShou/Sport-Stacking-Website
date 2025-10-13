@@ -1,4 +1,9 @@
 import type {AgeBracket, Registration, Team, Tournament, TournamentEvent} from "@/schema";
+import {
+    getEventCategoryFromType,
+    saveTournamentFinalists,
+    type FinalistGroupPayload,
+} from "@/services/firebase/finalistService";
 import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
@@ -9,12 +14,7 @@ import {
     exportAllPrelimResultsToPDF,
     exportFinalistsNameListToPDF,
 } from "@/utils/PDF/pdfExport";
-import {
-    getEventCategoryFromType,
-    saveTournamentFinalists,
-    type FinalistGroupPayload,
-} from "@/services/firebase/finalistService";
-import {sanitizeEventCodes, getEventLabel, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
+import {getEventLabel, isTeamEvent as isTournamentTeamEvent, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
 import {Button, Message, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconPrinter, IconUndo} from "@arco-design/web-react/icon";

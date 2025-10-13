@@ -1,4 +1,4 @@
-import {getDownloadURL, ref, uploadBytes, uploadBytesResumable, deleteObject, listAll} from "firebase/storage";
+import {deleteObject, getDownloadURL, listAll, ref, uploadBytes, uploadBytesResumable} from "firebase/storage";
 import {storage} from "./config";
 
 export const uploadAvatar = async (file: File, uid: string): Promise<string> => {

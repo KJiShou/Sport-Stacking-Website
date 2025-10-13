@@ -1,8 +1,8 @@
 import {Timestamp, collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where} from "firebase/firestore";
 import type {FirestoreUser, Registration} from "../../schema";
 import {db} from "./config";
-import {getIndividualRecruitmentsByParticipant, deleteIndividualRecruitment} from "./individualRecruitmentService";
-import {getTeamRecruitmentsByLeader, deleteTeamRecruitment} from "./teamRecruitmentService";
+import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
+import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
 
 export async function createRegistration(
     user: FirestoreUser,

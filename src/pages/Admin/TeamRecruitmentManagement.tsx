@@ -8,8 +8,8 @@ import {
     getIndividualRecruitmentsByTournament,
     updateIndividualRecruitmentStatus,
 } from "@/services/firebase/individualRecruitmentService";
-import {getAllTeamRecruitments, getActiveTeamRecruitments} from "@/services/firebase/teamRecruitmentService";
-import {fetchTournamentsByType, addMemberToTeam} from "@/services/firebase/tournamentsService";
+import {getActiveTeamRecruitments, getAllTeamRecruitments} from "@/services/firebase/teamRecruitmentService";
+import {addMemberToTeam, fetchTournamentsByType} from "@/services/firebase/tournamentsService";
 import {
     Button,
     Card,

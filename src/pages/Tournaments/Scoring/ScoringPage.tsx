@@ -1,7 +1,7 @@
 import type {Registration, Team, TeamMember, Tournament, TournamentEvent} from "@/schema";
+import type {TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
 import {getUserByGlobalId} from "@/services/firebase/authService";
 import {getPrelimRecords, getTournamentPrelimRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
-import type {TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {getEventKey, getTeamEvents, sanitizeEventCodes, teamMatchesEventKey} from "@/utils/tournament/eventUtils";
@@ -1464,14 +1464,20 @@ export default function ScoringPage() {
                                 {modalEventCodes.map((code) => {
                                     const codeEventKey = `${code}-${modalBaseEventKey}`;
                                     const scores = modalScores[codeEventKey] || { try1: '', try2: '', try3: '' };
+                                    const try1Id = `${codeEventKey}-try1`;
+                                    const try2Id = `${codeEventKey}-try2`;
+                                    const try3Id = `${codeEventKey}-try3`;
 
                                     return (
                                         <div key={code} className="border rounded-lg p-4">
                                             <h5 className="font-semibold mb-3">{code}</h5>
                                             <div className="grid grid-cols-4 gap-4 items-center">
                                                 <div>
-                                                    <label className="block text-sm font-medium mb-1">Try 1</label>
+                                                    <label className="block text-sm font-medium mb-1" htmlFor={try1Id}>
+                                                        Try 1
+                                                    </label>
                                                     <InputNumber
+                                                        id={try1Id}
                                                         placeholder="First try"
                                                         value={scores.try1 === "" ? undefined : Number.parseFloat(scores.try1)}
                                                         onChange={(val) =>
@@ -1487,8 +1493,11 @@ export default function ScoringPage() {
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-medium mb-1">Try 2</label>
+                                                    <label className="block text-sm font-medium mb-1" htmlFor={try2Id}>
+                                                        Try 2
+                                                    </label>
                                                     <InputNumber
+                                                        id={try2Id}
                                                         placeholder="Second try"
                                                         value={scores.try2 === "" ? undefined : Number.parseFloat(scores.try2)}
                                                         onChange={(val) =>
@@ -1504,8 +1513,11 @@ export default function ScoringPage() {
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-medium mb-1">Try 3</label>
+                                                    <label className="block text-sm font-medium mb-1" htmlFor={try3Id}>
+                                                        Try 3
+                                                    </label>
                                                     <InputNumber
+                                                        id={try3Id}
                                                         placeholder="Third try"
                                                         value={scores.try3 === "" ? undefined : Number.parseFloat(scores.try3)}
                                                         onChange={(val) =>
@@ -1521,7 +1533,7 @@ export default function ScoringPage() {
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-medium mb-1">Best Time</label>
+                                                    <span className="block text-sm font-medium mb-1">Best Time</span>
                                                     <div className="p-2 bg-gray-100 rounded text-center">
                                                         {scores ? getBestTime(scores) : "N/A"}
                                                     </div>
@@ -1537,8 +1549,14 @@ export default function ScoringPage() {
                                 <h5 className="font-semibold mb-3">{modalBaseEventKey}</h5>
                                 <div className="grid grid-cols-4 gap-4 items-center">
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">Try 1</label>
+                                        <label
+                                            className="block text-sm font-medium mb-1"
+                                            htmlFor={`${modalBaseEventKey}-try1`}
+                                        >
+                                            Try 1
+                                        </label>
                                         <InputNumber
+                                            id={`${modalBaseEventKey}-try1`}
                                             placeholder="First try"
                                             value={modalScores[modalBaseEventKey]?.try1 === "" ? undefined : Number.parseFloat(modalScores[modalBaseEventKey]?.try1 || "")}
                                             onChange={(val) =>
@@ -1554,8 +1572,14 @@ export default function ScoringPage() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">Try 2</label>
+                                        <label
+                                            className="block text-sm font-medium mb-1"
+                                            htmlFor={`${modalBaseEventKey}-try2`}
+                                        >
+                                            Try 2
+                                        </label>
                                         <InputNumber
+                                            id={`${modalBaseEventKey}-try2`}
                                             placeholder="Second try"
                                             value={modalScores[modalBaseEventKey]?.try2 === "" ? undefined : Number.parseFloat(modalScores[modalBaseEventKey]?.try2 || "")}
                                             onChange={(val) =>
@@ -1571,8 +1595,14 @@ export default function ScoringPage() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">Try 3</label>
+                                        <label
+                                            className="block text-sm font-medium mb-1"
+                                            htmlFor={`${modalBaseEventKey}-try3`}
+                                        >
+                                            Try 3
+                                        </label>
                                         <InputNumber
+                                            id={`${modalBaseEventKey}-try3`}
                                             placeholder="Third try"
                                             value={modalScores[modalBaseEventKey]?.try3 === "" ? undefined : Number.parseFloat(modalScores[modalBaseEventKey]?.try3 || "")}
                                             onChange={(val) =>
@@ -1588,7 +1618,7 @@ export default function ScoringPage() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium mb-1">Best Time</label>
+                                        <span className="block text-sm font-medium mb-1">Best Time</span>
                                         <div className="p-2 bg-gray-100 rounded text-center">
                                             {modalScores[modalBaseEventKey] ? getBestTime(modalScores[modalBaseEventKey]) : "N/A"}
                                         </div>

@@ -17,11 +17,11 @@ import {
 } from "firebase/firestore";
 import type {FirestoreUser, Team, Tournament} from "../../schema";
 import {TournamentSchema} from "../../schema";
-import {db} from "./config";
 import {removeUserRegistrationRecordsByTournament} from "./authService";
-import {getIndividualRecruitmentsByTournament, deleteIndividualRecruitment} from "./individualRecruitmentService";
-import {getActiveTeamRecruitments, deleteTeamRecruitment} from "./teamRecruitmentService";
+import {db} from "./config";
+import {deleteIndividualRecruitment, getIndividualRecruitmentsByTournament} from "./individualRecruitmentService";
 import {deleteTournamentStorage} from "./storageService";
+import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
 
 export async function createTournament(user: FirestoreUser, data: Omit<Tournament, "id">): Promise<string> {
     if (!user?.roles?.edit_tournament) {

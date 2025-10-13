@@ -3,12 +3,12 @@ import {
     collection,
     deleteDoc,
     doc,
+    getDoc,
     getDocs,
+    orderBy,
     query,
     updateDoc,
     where,
-    orderBy,
-    getDoc,
 } from "firebase/firestore";
 import type {IndividualRecruitment} from "../../schema/IndividualRecruitmentSchema";
 import {db} from "./config";
