@@ -13,16 +13,31 @@ export interface FinalistGroupPayload {
 }
 
 const normalizeBracketKey = (bracket: string, classification: string): string => {
-    // First replace any non-alphanumeric character with a single dash
-    const normalizedBracket = bracket
-        .toLowerCase()
-        // Use a positive character class instead of negated one to avoid backtracking
-        .replace(/[a-z0-9]+/g, (m) => m) // Keep alphanumeric sequences
-        .replace(/[^a-z0-9]+/g, "-") // Replace everything else with single dash
-        // Remove leading/trailing dashes with substring instead of regex
-        .replace(/^-+/, "")
-        .replace(/-+$/, "");
-    return `${normalizedBracket}-${classification}`;
+    // Convert to lowercase first
+    const lower = bracket.toLowerCase();
+
+    // Process character by character to build normalized string
+    let result = "";
+    let lastWasDash = false;
+
+    for (let i = 0; i < lower.length; i++) {
+        const char = lower[i];
+        // Keep alphanumeric characters
+        if ((char >= "a" && char <= "z") || (char >= "0" && char <= "9")) {
+            result += char;
+            lastWasDash = false;
+        }
+        // Replace other characters with dash, but avoid consecutive dashes
+        else if (!lastWasDash) {
+            result += "-";
+            lastWasDash = true;
+        }
+    }
+
+    // Trim leading/trailing dashes
+    result = result.replace(/^-+|-+$/g, "");
+
+    return `${result}-${classification}`;
 };
 
 const sortUniqueIds = (ids: string[]): string[] => {
