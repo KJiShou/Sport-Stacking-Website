@@ -1,7 +1,5 @@
 import {useAuthContext} from "@/context/AuthContext";
-import type {Tournament} from "@/schema";
-import type {IndividualRecruitment} from "@/schema/IndividualRecruitmentSchema";
-import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
+import type {AssignmentModalData, IndividualRecruitment, TeamRecruitment, Tournament} from "@/schema";
 import {
     deleteIndividualRecruitment,
     getAllIndividualRecruitments,
@@ -37,11 +35,6 @@ import {DeviceBreakpoint} from "../../utils/DeviceInspector/deviceStore";
 const {Title, Paragraph} = Typography;
 const {TabPane} = Tabs;
 const Option = Select.Option;
-
-interface AssignmentModalData {
-    individual: IndividualRecruitment;
-    availableTeams: TeamRecruitment[];
-}
 
 export default function TeamRecruitmentManagement() {
     const {user} = useAuthContext();

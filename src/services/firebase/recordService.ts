@@ -1,6 +1,12 @@
 import {collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, setDoc, updateDoc, where} from "firebase/firestore";
 import type {TeamMember} from "../../schema";
-import type {GlobalResult, GlobalTeamResult, TournamentRecord, TournamentTeamRecord} from "../../schema/RecordSchema";
+import type {
+    GetFastestRecordData,
+    GlobalResult,
+    GlobalTeamResult,
+    TournamentRecord,
+    TournamentTeamRecord,
+} from "../../schema/RecordSchema";
 import {db as firestore} from "./config";
 
 export const saveRecord = async (data: {
@@ -522,12 +528,6 @@ export const getTournamentRecords = async (tournamentId: string): Promise<(Tourn
 
     return [...prelimRecords, ...finalRecords];
 };
-
-interface GetFastestRecordData {
-    event: string;
-    round: "prelim" | "final";
-    type: "Individual" | "Team Relay";
-}
 
 export const updateRecord = async (
     recordId: string,

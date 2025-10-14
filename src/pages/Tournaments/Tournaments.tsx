@@ -1,16 +1,13 @@
 import type * as React from "react";
 
+import type {TournamentListType} from "@/schema";
 import {useLocation} from "react-router-dom";
 import TournamentList from "./Component/TournamentList";
-
-interface TournamentListProps {
-    type: "current" | "history";
-}
 
 const Tournaments: React.FC = () => {
     const location = useLocation();
     const searchParams = new URLSearchParams(location.search);
-    const type = searchParams.get("type") as TournamentListProps["type"] | null;
+    const type = searchParams.get("type") as TournamentListType | null;
 
     return (
         <div

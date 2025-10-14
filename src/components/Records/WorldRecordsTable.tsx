@@ -1,7 +1,7 @@
 import {Card, Empty, Spin, Table, Typography} from "@arco-design/web-react";
 import type React from "react";
 import {useEffect, useState} from "react";
-import type {GlobalResult} from "../../schema/RecordSchema";
+import type {GlobalResult, RecordRow} from "../../schema/RecordSchema";
 import {getBestRecordsByAgeGroup} from "../../services/firebase/recordService";
 
 // 添加CSS样式
@@ -14,17 +14,6 @@ const tableStyles = `
         background-color: #f0f8ff !important;
     }
 `;
-
-interface RecordRow {
-    key: string;
-    event: string;
-    ageGroup: string;
-    time: string;
-    athlete: string;
-    country: string;
-    year: string;
-    isHeader: boolean;
-}
 
 const {Title, Text} = Typography;
 

@@ -9,6 +9,8 @@ export type {AgeBracket, FinalCriterion, Tournament, TournamentEvent} from "./To
 export {FirestoreUserSchema} from "./UserSchema";
 export type {FirestoreUser} from "./UserSchema";
 
+export type {AuthContextValue} from "./AuthSchema";
+
 export {RoleSchema} from "./RoleSchema";
 export type {Role} from "./RoleSchema";
 
@@ -18,5 +20,79 @@ export type {Team, TeamMember} from "./TeamSchema";
 export {RegistrationSchema} from "./RegistrationSchema";
 export type {Registration} from "./RegistrationSchema";
 
+export {TeamRecruitmentSchema} from "./TeamRecruitmentSchema";
+export type {TeamRecruitment, AssignmentModalData} from "./TeamRecruitmentSchema";
+
+export {IndividualRecruitmentSchema} from "./IndividualRecruitmentSchema";
+export type {IndividualRecruitment} from "./IndividualRecruitmentSchema";
+
 export {HistorySchema} from "./HistorySchema";
 export type {History} from "./HistorySchema";
+
+export {FirebaseConfigSchema} from "./FirebaseSchema";
+export type {FirebaseConfig} from "./FirebaseSchema";
+
+export {
+    GlobalResultSchema,
+    GlobalTeamResultSchema,
+    RecordDisplaySchema,
+    TournamentRecordSchema,
+    TournamentTeamRecordSchema,
+} from "./RecordSchema";
+export type {
+    GlobalResult,
+    GlobalTeamResult,
+    RecordDisplay,
+    TournamentRecord,
+    TournamentTeamRecord,
+    RecordRow,
+    WorldRecordsOverviewProps,
+    RecordRankingTableProps,
+    GetFastestRecordData,
+} from "./RecordSchema";
+
+export type {ParticipantScore, TeamScore, Score, Finalist, ClassificationGroup} from "./TournamentScoringSchema";
+
+export type {AggregationContext} from "./TournamentResultsSchema";
+
+export type {TeamRow} from "./TournamentParticipantSchema";
+
+export type {
+    ExpandedEvent,
+    FinalCategoriesFieldsProps,
+    FinalCriteriaFieldsProps,
+    AgeBracketModalProps,
+    EventFieldProps,
+    TournamentListProps,
+    TournamentListType,
+} from "./TournamentFormSchema";
+
+export {
+    EventCategorySchema,
+    FinalistGroupPayloadSchema,
+} from "./FinalistSchema";
+export type {EventCategory, FinalistGroupPayload} from "./FinalistSchema";
+
+export type {
+    PrelimResultData,
+    BracketResults,
+    EventResults,
+    AllPrelimResultsPDFParams,
+    FinalistsPDFParams,
+    PrelimResult,
+    ExportPrelimResultsOptions,
+    ExportPDFOptions,
+    ExportMasterListOptions,
+    EventData,
+    NameListStickerOptions,
+} from "./PdfSchema";
+
+export type {AvatarUploaderProps, AllTimeStat, OnlineBest, RecordItem} from "./UserProfileSchema";
+
+export type {
+    AppRoute,
+    AthleteSummary,
+    RecordSummary,
+    MenuItemDefinition,
+    NavItemDefinition,
+} from "./AppSchema";

@@ -1,18 +1,9 @@
 // Import the functions you need from the SDKs you need
+import type {FirebaseConfig} from "@/schema";
 import {initializeApp} from "firebase/app";
 import {getAuth} from "firebase/auth";
 import {getFirestore} from "firebase/firestore";
 import {getStorage} from "firebase/storage";
-
-interface FirebaseConfig {
-    apiKey: string;
-    authDomain: string;
-    projectId: string;
-    storageBucket: string;
-    messagingSenderId: string;
-    appId: string;
-    measurementId: string;
-}
 
 const firebaseConfig: FirebaseConfig = {
     apiKey: "AIzaSyASIxz9tcaoo7_Bdoyfpgdc1akUjjTCGNU",

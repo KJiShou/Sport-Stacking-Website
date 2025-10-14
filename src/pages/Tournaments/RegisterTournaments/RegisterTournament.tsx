@@ -1,7 +1,7 @@
 // src/pages/RegisterTournamentPage.tsx
 
 import {useAuthContext} from "@/context/AuthContext";
-import type {Registration, Tournament, TournamentEvent} from "@/schema";
+import type {ExpandedEvent, Registration, Tournament, TournamentEvent} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {addUserRegistrationRecord, getUserByGlobalId, getUserEmailByGlobalId} from "@/services/firebase/authService";
@@ -48,11 +48,6 @@ type TeamEntry = {
     requiresTeam: boolean;
     event?: ExpandedEvent;
 };
-
-// Interface for expanded events that includes individual code for compatibility
-interface ExpandedEvent extends TournamentEvent {
-    code: string; // Individual code for compatibility with existing registration logic
-}
 
 export default function RegisterTournamentPage() {
     const {tournamentId} = useParams();

@@ -1,6 +1,12 @@
 import {AvatarUploader} from "@/components/common/AvatarUploader";
 import {useAuthContext} from "@/context/AuthContext";
-import type {FirestoreUser, FirestoreUserSchema} from "@/schema";
+import type {
+    AllTimeStat,
+    FirestoreUser,
+    FirestoreUserSchema,
+    OnlineBest,
+    RecordItem,
+} from "@/schema";
 import {countries} from "@/schema/Country";
 import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
 import {
@@ -31,21 +37,6 @@ import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import type {z} from "zod";
 
 const {Title, Text} = Typography;
-
-interface AllTimeStat {
-    event: string;
-    time: number;
-    rank: string;
-}
-interface OnlineBest {
-    event: string;
-    time: number;
-}
-interface RecordItem {
-    event: string;
-    time: number;
-    date: string;
-}
 
 export default function RegisterPage() {
     const {Row, Col} = Grid;

@@ -10,83 +10,20 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {nanoid} from "nanoid";
 // src/utils/pdfExportUtils.ts
+import type {
+    AllPrelimResultsPDFParams,
+    BracketResults,
+    EventData,
+    EventResults,
+    ExportMasterListOptions,
+    ExportPDFOptions,
+    ExportPrelimResultsOptions,
+    FinalistsPDFParams,
+    NameListStickerOptions,
+    PrelimResult,
+    PrelimResultData,
+} from "@/schema";
 import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, TournamentEvent} from "../../schema";
-import type {TournamentRecord} from "../../schema/RecordSchema";
-
-// Types
-export interface PrelimResultData extends TournamentRecord {
-    rank: number;
-    name: string;
-    id: string;
-    three?: number;
-    threeSixThree?: number;
-    cycle?: number;
-    try1?: number;
-    try2?: number;
-    try3?: number;
-}
-
-export interface BracketResults {
-    bracket: AgeBracket;
-    records: PrelimResultData[];
-    classification?: "beginner" | "intermediate" | "advance";
-    highlightFinalists?: boolean;
-}
-
-export interface EventResults {
-    event: TournamentEvent;
-    brackets: BracketResults[];
-}
-
-export interface AllPrelimResultsPDFParams {
-    tournament: Tournament;
-    resultsData: EventResults[];
-    round?: "Preliminary" | "Final";
-    highlightFinalists?: boolean;
-}
-
-export interface FinalistsPDFParams {
-    tournament: Tournament;
-    finalistsData: EventResults[];
-}
-
-interface PrelimResult extends TournamentRecord {
-    rank: number;
-    name: string;
-}
-interface ExportPrelimResultsOptions {
-    tournament: Tournament;
-    eventKey: string;
-    records: PrelimResult[];
-}
-
-interface ExportPDFOptions {
-    tournament: Tournament;
-    eventKey: string;
-    bracketName: string;
-    registrations: Registration[];
-    ageMap: Record<string, number>;
-    phoneMap: Record<string, string>;
-    searchTerm?: string;
-    isTeamEvent: boolean;
-    logoDataUrl?: string;
-    team?: Team;
-    teams?: Team[];
-}
-
-interface ExportMasterListOptions {
-    tournament: Tournament;
-    registrations: Registration[];
-    ageMap: Record<string, number>;
-    phoneMap: Record<string, string>;
-}
-
-interface EventData {
-    event: Tournament["events"][number];
-    bracket: Tournament["events"][number]["age_brackets"][number];
-    isTeamEvent: boolean;
-    registrations: Registration[];
-}
 
 // Utility Functions
 const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9_]/g, "");
@@ -94,7 +31,7 @@ const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[
 const getPrimaryEventCode = (event: TournamentEvent): string => {
     const sanitized = sanitizeEventCodes(event.codes);
     if (sanitized.length > 0) return sanitized[0];
-    const legacyCode = (event as {code?: string}).code;
+    const legacyCode = event.code;
     if (legacyCode) return legacyCode;
     return event.type;
 };
@@ -536,7 +473,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
 
                 if (records.length > 0) {
                     const sanitizedCodes = sanitizeEventCodes(event.codes);
-                    const legacyCode = (event as {code?: string}).code;
+                    const legacyCode = event.code;
                     const effectiveCodes = sanitizedCodes.length > 0 ? sanitizedCodes : legacyCode ? [legacyCode] : [];
                     const isAggregate = effectiveCodes.length > 1;
 
@@ -948,13 +885,7 @@ export const exportAllBracketsListToPDF = async (
     }
 };
 
-interface NameListStickerOptions {
-    tournament: Tournament;
-    registrations: Registration[];
-}
-
-export const exportNameListStickerPDF = async (options: NameListStickerOptions): Promise<void> => {
-    const {tournament, registrations} = options;
+export const exportNameListStickerPDF = async ({tournament, registrations}: NameListStickerOptions): Promise<void> => {
     try {
         const doc = new jsPDF("p", "pt", "a4");
         const pageHeight = doc.internal.pageSize.height;

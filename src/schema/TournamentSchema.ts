@@ -22,6 +22,7 @@ export const EventSchema = z.object({
     id: z
         .union([z.string().uuid(), z.string().length(0), z.undefined(), z.null()])
         .transform((value) => (typeof value === "string" && value.length > 0 ? value : crypto.randomUUID())),
+    code: z.string().optional(),
     codes: z.array(z.enum(["3-3-3", "3-6-3", "Cycle", "Overall"])),
     type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"]),
     teamSize: z.number().optional(),

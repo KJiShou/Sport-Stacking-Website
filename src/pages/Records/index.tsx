@@ -21,7 +21,7 @@ import {IconDelete, IconEdit, IconEye, IconMore, IconVideoCamera} from "@arco-de
 import type React from "react";
 import {useEffect, useState} from "react";
 import {useAuthContext} from "../../context/AuthContext";
-import type {GlobalResult, GlobalTeamResult} from "../../schema/RecordSchema";
+import type {GlobalResult, GlobalTeamResult, RecordDisplay} from "../../schema/RecordSchema";
 
 import {
     deleteRecord,
@@ -75,25 +75,6 @@ const EVENTS_FOR_CATEGORY: Record<Category, EventTypeKey[]> = {
     "Team Relay": ["Cycle", "3-6-3"],
     "Special Need": ["3-3-3", "3-6-3", "Cycle"],
 };
-
-interface RecordDisplay {
-    key: string;
-    rank: number;
-    event: string;
-    gender: string;
-    time: string;
-    athlete: string;
-    country: string;
-    flag: string;
-    date: string;
-    ageGroup: string;
-    status: "submitted" | "verified";
-    videoUrl?: string;
-    rawTime: number;
-    recordId?: string; // For calling backend services
-    participantId?: string; // For individual records
-    teamName?: string; // For team records
-}
 
 const formatTime = (time: number): string => {
     if (time === 0) return "DNF";

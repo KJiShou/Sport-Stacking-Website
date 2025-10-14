@@ -1,17 +1,12 @@
 import {Card, Empty, Select, Spin, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type React from "react";
 import {useEffect, useState} from "react";
-import type {GlobalResult} from "../../schema/RecordSchema";
+import type {GlobalResult, RecordRankingTableProps} from "../../schema/RecordSchema";
 import {getClassificationRankings, getEventRankings} from "../../services/firebase/recordService";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
 const {Option} = Select;
-
-interface RecordRankingTableProps {
-    event: string;
-    title: string;
-}
 
 const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) => {
     const [rankings, setRankings] = useState<GlobalResult[]>([]);

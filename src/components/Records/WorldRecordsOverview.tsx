@@ -1,15 +1,11 @@
 import {Card, Empty, Grid, Spin, Statistic, Tag, Typography} from "@arco-design/web-react";
 import type React from "react";
 import {useEffect, useState} from "react";
-import type {GlobalResult} from "../../schema/RecordSchema";
+import type {GlobalResult, WorldRecordsOverviewProps} from "../../schema/RecordSchema";
 import {getWorldRecords} from "../../services/firebase/recordService";
 
 const {Title, Text} = Typography;
 const {Row, Col} = Grid;
-
-interface WorldRecordsOverviewProps {
-    event?: string;
-}
 
 const WorldRecordsOverview: React.FC<WorldRecordsOverviewProps> = ({event}) => {
     const [worldRecords, setWorldRecords] = useState<Record<string, GlobalResult[]>>({});

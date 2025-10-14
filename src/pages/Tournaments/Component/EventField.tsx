@@ -1,13 +1,8 @@
+import type {EventFieldProps} from "@/schema";
 import {Button, Card, Form, Select, Typography} from "@arco-design/web-react";
 import {IconDelete, IconEdit} from "@arco-design/web-react/icon";
 
 const {Title} = Typography;
-
-interface EventFieldProps {
-    index: number;
-    onEditAgeBrackets: (index: number) => void;
-    onRemove: (index: number) => void;
-}
 
 const EVENT_TYPES = {
     Individual: ["3-3-3", "3-6-3", "Cycle"],

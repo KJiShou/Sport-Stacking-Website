@@ -1,13 +1,9 @@
 // components/FinalCategoriesFields.tsx
+import type {FinalCategoriesFieldsProps} from "@/schema";
 import {Button, Form, Input, InputNumber} from "@arco-design/web-react";
 import {IconDelete} from "@arco-design/web-react/icon";
 
-interface Props {
-    index: number;
-    onRemove: (index: number) => void;
-}
-
-export default function FinalCategoriesFields({index, onRemove}: Props) {
+export default function FinalCategoriesFields({index, onRemove}: FinalCategoriesFieldsProps) {
     return (
         <div className="flex gap-4 items-center mb-4">
             <Form.Item field={`final_categories.${index}.name`} rules={[{required: true}]} className="w-80">

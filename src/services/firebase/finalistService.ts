@@ -1,16 +1,6 @@
+import type {EventCategory, FinalistGroupPayload} from "../../schema";
 import {collection, deleteDoc, doc, getDocs, setDoc} from "firebase/firestore";
 import {db as firestore} from "./config";
-
-export type EventCategory = "individual" | "double" | "team_relay" | "parent_&_child" | "special_need";
-
-export interface FinalistGroupPayload {
-    eventCategory: EventCategory;
-    eventName: string;
-    bracketName: string;
-    classification: "beginner" | "intermediate" | "advance";
-    participantIds: string[];
-    participantType: "individual" | "team";
-}
 
 const normalizeBracketKey = (bracket: string, classification: string): string => {
     // Convert to lowercase first
@@ -92,7 +82,7 @@ export const saveTournamentFinalists = async (tournamentId: string, groups: Fina
         groupedByEvent.set(key, existing);
     }
 
-    for (const [, groupEntries] of groupedByEvent) {
+    for (const groupEntries of Array.from(groupedByEvent.values())) {
         const {eventCategory, eventName} = groupEntries[0];
         const finalistsCollection = collection(
             firestore,
@@ -129,7 +119,7 @@ export const saveTournamentFinalists = async (tournamentId: string, groups: Fina
             existingDocs.delete(docId);
         }
 
-        for (const docId of existingDocs.keys()) {
+        for (const docId of Array.from(existingDocs.keys())) {
             await deleteDoc(doc(finalistsCollection, docId));
         }
     }
