@@ -1,4 +1,3 @@
-import sgMail from "@sendgrid/mail";
 import cors from "cors";
 import {getApps, initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
@@ -10,16 +9,17 @@ import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
 const corsHandler = cors({origin: true});
 
-const SENDGRID_API_KEY = defineSecret("SENDGRID_API_KEY");
+const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "RankingStack <noreply@rankingstack.com>";
+const RESEND_API_URL = process.env.RESEND_API_URL ?? "https://api.resend.com/emails";
 
 if (!getApps().length) {
     initializeApp();
 }
 
-export const sendEmail = onRequest({secrets: [SENDGRID_API_KEY]}, (req, res) => {
+export const sendEmail = onRequest({secrets: [RESEND_API_KEY]}, (req, res) => {
     corsHandler(req, res, async () => {
-        const apiKey = SENDGRID_API_KEY.value(); // ✅ 正确：只有函数运行时才执行
-        sgMail.setApiKey(apiKey);
+        const apiKey = RESEND_API_KEY.value();
         const auth = getAuth();
 
         const authHeader = req.headers.authorization;
@@ -64,15 +64,32 @@ export const sendEmail = onRequest({secrets: [SENDGRID_API_KEY]}, (req, res) => 
 
         // Step 4: 发送邮件
         try {
-            await sgMail.send({
-                to,
-                from: "noreply@rankingstack.com",
-                subject: "Please verify your competition registration",
-                html,
+            const resendResponse = await fetch(RESEND_API_URL, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    from: RESEND_FROM_EMAIL,
+                    to: [to],
+                    subject: "Please verify your competition registration",
+                    html,
+                }),
             });
-            res.status(200).json({success: true});
+
+            const payload = await resendResponse.json().catch(() => undefined);
+
+            if (!resendResponse.ok) {
+                const message = typeof payload === "object" && payload?.error ? payload.error : "Send failed";
+                console.error("❌ Resend error:", payload || resendResponse.statusText);
+                res.status(500).json({error: message});
+                return;
+            }
+
+            res.status(200).json({success: true, id: payload?.id});
         } catch (err: unknown) {
-            console.error("❌ SendGrid error:", err);
+            console.error("❌ Resend send attempt failed:", err);
             res.status(500).json({error: (err as Error).message || "Send failed"});
         }
     });
@@ -154,13 +171,14 @@ export const updateVerification = onRequest(async (req, res) => {
 
                 const record = registrationRecords[recordIndex];
                 const existingEvents = record.events;
-                const hasConflict = teamData.events.some((event: string) => existingEvents.includes(event));
+                const teamEvents = Array.isArray(teamData.events) ? teamData.events : [];
+                const hasConflict = teamEvents.some((event: string) => existingEvents.includes(event));
 
                 if (hasConflict) {
                     throw new Error("You are already registered for one or more of these team events.");
                 }
 
-                const updatedEvents = [...new Set([...existingEvents, ...teamData.events])];
+                const updatedEvents = [...new Set([...existingEvents, ...teamEvents])];
                 const newRegistrationRecords = [...registrationRecords];
                 newRegistrationRecords[recordIndex] = {...record, events: updatedEvents};
 
@@ -175,7 +193,7 @@ export const updateVerification = onRequest(async (req, res) => {
                 const registrationData = regSnap.data() as Registration;
 
                 // Update the registration document with the new events
-                const userHasConflict = teamData.events.some((event: string) =>
+                const userHasConflict = teamEvents.some((event: string) =>
                     registrationData.events_registered.includes(event),
                 );
 
@@ -185,7 +203,7 @@ export const updateVerification = onRequest(async (req, res) => {
 
                 // Update the registration document with the new events
                 await transaction.update(regRef, {
-                    events_registered: [...new Set([...registrationData.events_registered, ...teamData.events])],
+                    events_registered: [...new Set([...registrationData.events_registered, ...teamEvents])],
                     updated_at: new Date(),
                 });
 

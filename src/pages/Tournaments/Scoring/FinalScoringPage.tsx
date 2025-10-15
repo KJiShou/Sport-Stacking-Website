@@ -45,12 +45,7 @@ const getFinalistCodes = (finalist: Finalist): string[] => {
 const buildEventCodeMap = (events?: TournamentEvent[]): Map<string, string[]> => {
     const map = new Map<string, string[]>();
     for (const event of events ?? []) {
-        const rawCodes =
-            event.codes && event.codes.length > 0
-                ? event.codes
-                : event.code
-                  ? [event.code]
-                  : [];
+        const rawCodes = event.codes && event.codes.length > 0 ? event.codes : event.code ? [event.code] : [];
         const sanitized = sanitizeEventCodes(rawCodes);
         if (sanitized.length === 0) continue;
         const key = event.type.toLowerCase();
@@ -903,9 +898,7 @@ export default function FinalScoringPage() {
                                         finalist.records.every((record) => {
                                             const isTeam = !!record.team;
                                             const id = isTeam ? record.team?.id : record.registration?.user_id;
-                                            return finalRecords.some(
-                                                (fr: (typeof finalRecords)[0]) => isTeam ?? fr.participantId === id,
-                                            );
+                                            return finalRecords.some((fr: (typeof finalRecords)[0]) => fr.participantId === id);
                                         }),
                                     );
 
