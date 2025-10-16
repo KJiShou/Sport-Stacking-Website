@@ -1,16 +1,7 @@
-import type {AgeBracket} from "@/schema";
+import type {AgeBracketModalProps} from "@/schema";
 // src/components/tournament/AgeBracketModal.tsx
 import {Button, Form, Input, InputNumber, Modal} from "@arco-design/web-react";
 import {IconDelete, IconPlus} from "@arco-design/web-react/icon";
-
-interface AgeBracketModalProps {
-    visible: boolean;
-    brackets: AgeBracket[];
-    onChange: (brackets: AgeBracket[]) => void;
-    onCancel: () => void;
-    onSave: () => void;
-    onDeleteBracket: (index: number) => void;
-}
 
 export default function AgeBracketModal({visible, brackets, onChange, onCancel, onSave, onDeleteBracket}: AgeBracketModalProps) {
     return (

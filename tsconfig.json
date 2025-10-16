@@ -19,11 +19,12 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
+      "@/schema": ["src/schema/index.ts"],
+      "@/schema/*": ["src/schema/*"],
       "@schema/*": ["src/schema/*"],
       "@hooks/*": ["src/hooks/*"],
       "@components/*": ["src/components/*"]
     }
   },
-  "include": ["src", "src/main.tsx"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["src", "src/main.tsx"]
 }

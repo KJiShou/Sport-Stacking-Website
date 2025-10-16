@@ -8,11 +8,6 @@ import {useAuthContext} from "../../context/AuthContext";
 import {logout} from "../../services/firebase/authService";
 import LoginForm from "../common/Login";
 
-interface MenuItem {
-    key: string;
-    label: string;
-}
-
 const AvatarWithLoading = ({src}: {src: string}) => {
     const [loading, setLoading] = useState(true);
     const {user} = useAuthContext();

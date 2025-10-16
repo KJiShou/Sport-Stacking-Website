@@ -90,6 +90,8 @@ export async function fetchUserRegistration(tournamentId: string, userId: string
 
 export async function updateRegistration(data: Registration): Promise<void> {
     if (!data.user_id) throw new Error("No user_id in registration data.");
+    if (!data.tournament_id) throw new Error("No tournament_id in registration data.");
+    if (!data.id) throw new Error("No registration id provided.");
 
     const registrationRef = doc(db, `tournaments/${data.tournament_id}/registrations`, data.id);
     const snap = await getDoc(registrationRef);

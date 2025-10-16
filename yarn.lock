@@ -2170,35 +2170,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@sendgrid/client@npm:^8.1.5":
-  version: 8.1.5
-  resolution: "@sendgrid/client@npm:8.1.5"
-  dependencies:
-    "@sendgrid/helpers": "npm:^8.0.0"
-    axios: "npm:^1.8.2"
-  checksum: 10c0/241c1cf023abd95f61955e0c2f373f20e1b28e2af37c4c86acc85954237dac767c9d8a6fcf993e2122ca6582b066c4b00e693fb7de02850f1118611a2e30a00e
-  languageName: node
-  linkType: hard
-
-"@sendgrid/helpers@npm:^8.0.0":
-  version: 8.0.0
-  resolution: "@sendgrid/helpers@npm:8.0.0"
-  dependencies:
-    deepmerge: "npm:^4.2.2"
-  checksum: 10c0/e7f341099c63915eb095102f8c7ec220a8f2fb66a0cd836ab91e7424005e7c5fd27b65e3a5ed43654f5b2b3608fa7d14ebba924ff86e5d0bdfeaf0248f836a50
-  languageName: node
-  linkType: hard
-
-"@sendgrid/mail@npm:^8.1.5":
-  version: 8.1.5
-  resolution: "@sendgrid/mail@npm:8.1.5"
-  dependencies:
-    "@sendgrid/client": "npm:^8.1.5"
-    "@sendgrid/helpers": "npm:^8.0.0"
-  checksum: 10c0/5abfb80878165058955a09bf06400ceeb92ed5641bbb14ea3e85e92d64037342eeaabe8fb5076676d950fb9f51028f3104f65880ff0c61dc3de354b3a702608e
-  languageName: node
-  linkType: hard
-
 "@sinclair/typebox@npm:^0.27.8":
   version: 0.27.8
   resolution: "@sinclair/typebox@npm:0.27.8"
@@ -3723,17 +3694,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"axios@npm:^1.8.2":
-  version: 1.10.0
-  resolution: "axios@npm:1.10.0"
-  dependencies:
-    follow-redirects: "npm:^1.15.6"
-    form-data: "npm:^4.0.0"
-    proxy-from-env: "npm:^1.1.0"
-  checksum: 10c0/2239cb269cc789eac22f5d1aabd58e1a83f8f364c92c2caa97b6f5cbb4ab2903d2e557d9dc670b5813e9bcdebfb149e783fb8ab3e45098635cd2f559b06bd5d8
-  languageName: node
-  linkType: hard
-
 "axobject-query@npm:^4.1.0":
   version: 4.1.0
   resolution: "axobject-query@npm:4.1.0"
@@ -4931,7 +4891,6 @@ __metadata:
     "@eslint/js": "npm:^9.13.0"
     "@hookform/resolvers": "npm:^4.1.3"
     "@react-google-maps/api": "npm:^2.20.6"
-    "@sendgrid/mail": "npm:^8.1.5"
     "@types/papaparse": "npm:^5"
     "@types/react": "npm:^18.3.12"
     "@types/react-dom": "npm:^18.3.1"
@@ -5084,13 +5043,6 @@ __metadata:
   version: 0.1.4
   resolution: "deep-is@npm:0.1.4"
   checksum: 10c0/7f0ee496e0dff14a573dc6127f14c95061b448b87b995fc96c017ce0a1e66af1675e73f1d6064407975bc4ea6ab679497a29fff7b5b9c4e99cb10797c1ad0b4c
-  languageName: node
-  linkType: hard
-
-"deepmerge@npm:^4.2.2":
-  version: 4.3.1
-  resolution: "deepmerge@npm:4.3.1"
-  checksum: 10c0/e53481aaf1aa2c4082b5342be6b6d8ad9dfe387bc92ce197a66dea08bd4265904a087e75e464f14d1347cf2ac8afe1e4c16b266e0561cc5df29382d3c5f80044
   languageName: node
   linkType: hard
 
@@ -6760,16 +6712,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"follow-redirects@npm:^1.15.6":
-  version: 1.15.9
-  resolution: "follow-redirects@npm:1.15.9"
-  peerDependenciesMeta:
-    debug:
-      optional: true
-  checksum: 10c0/5829165bd112c3c0e82be6c15b1a58fa9dcfaede3b3c54697a82fe4a62dd5ae5e8222956b448d2f98e331525f05d00404aba7d696de9e761ef6e42fdc780244f
-  languageName: node
-  linkType: hard
-
 "for-each@npm:^0.3.3, for-each@npm:^0.3.5":
   version: 0.3.5
   resolution: "for-each@npm:0.3.5"
@@ -6802,7 +6744,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"form-data@npm:^4.0.0, form-data@npm:^4.0.1":
+"form-data@npm:^4.0.1":
   version: 4.0.3
   resolution: "form-data@npm:4.0.3"
   dependencies:
@@ -6953,7 +6895,6 @@ __metadata:
   dependencies:
     "@eslint/js": "npm:^9.28.0"
     "@firebase/logger": "npm:^0.4.4"
-    "@sendgrid/mail": "npm:^8.1.5"
     "@types/nodemailer": "npm:^6.4.17"
     "@typescript-eslint/eslint-plugin": "npm:^5.62.0"
     "@typescript-eslint/parser": "npm:^5.62.0"

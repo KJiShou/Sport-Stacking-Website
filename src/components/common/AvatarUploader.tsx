@@ -1,16 +1,11 @@
 import {Avatar, Message, Spin, Upload} from "@arco-design/web-react";
 import {IconCamera} from "@arco-design/web-react/icon";
 import React, {useState} from "react";
-import type {FirestoreUser} from "../../schema";
+import type {AvatarUploaderProps} from "../../schema";
 import {updateUserProfile} from "../../services/firebase/authService";
 import {uploadAvatar} from "../../services/firebase/storageService";
 
-interface Props {
-    user: FirestoreUser;
-    setUser: (u: FirestoreUser) => void;
-}
-
-export function AvatarUploader({user, setUser}: Readonly<Props>) {
+export function AvatarUploader({user, setUser}: Readonly<AvatarUploaderProps>) {
     const [uploading, setUploading] = useState(false);
 
     return (

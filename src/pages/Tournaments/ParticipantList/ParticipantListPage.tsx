@@ -1,4 +1,4 @@
-import type {Registration, Team, Tournament, TournamentEvent} from "@/schema";
+import type {Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/schema";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
@@ -31,10 +31,6 @@ import {useMount} from "react-use";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
-
-interface TeamRow extends Team {
-    registrationId: string;
-}
 
 export default function ParticipantListPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();

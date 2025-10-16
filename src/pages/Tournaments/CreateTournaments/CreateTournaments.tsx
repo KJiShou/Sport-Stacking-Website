@@ -42,6 +42,7 @@ type DraftTournamentEvent = Partial<TournamentEvent> & {__prevType?: string};
 const cloneAgeBrackets = (brackets: AgeBracket[] = []): AgeBracket[] =>
     brackets.map((bracket) => ({
         ...bracket,
+        number_of_participants: bracket.number_of_participants ?? 0,
         final_criteria: bracket.final_criteria?.map((criterion) => ({...criterion})),
     }));
 
@@ -49,6 +50,23 @@ const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     ...event,
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
+
+const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = [
+    "Individual",
+    "Double",
+    "Team Relay",
+    "Parent & Child",
+    "Special Need",
+];
+
+const isTournamentEventType = (value: unknown): value is TournamentEvent["type"] =>
+    typeof value === "string" && EVENT_TYPE_OPTIONS.includes(value as TournamentEvent["type"]);
+
+const EVENT_CODE_OPTIONS = ["3-3-3", "3-6-3", "Cycle", "Overall"] as const;
+type EventCode = (typeof EVENT_CODE_OPTIONS)[number];
+
+const isEventCode = (value: unknown): value is EventCode =>
+    typeof value === "string" && (EVENT_CODE_OPTIONS as readonly string[]).includes(value);
 
 const {Title} = Typography;
 const {RangePicker} = DatePicker;
@@ -121,11 +139,36 @@ export default function CreateTournamentPage() {
             }
 
             const rawEvents = (form.getFieldValue("events") ?? []) as DraftTournamentEvent[];
-            const sanitizedEvents: TournamentEvent[] = rawEvents.map(({__prevType: _ignored, age_brackets, id, ...rest}) => ({
-                id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
-                age_brackets: cloneAgeBrackets(age_brackets ?? []),
-                ...rest,
-            }));
+            const sanitizedEvents: TournamentEvent[] = [];
+
+            for (const rawEvent of rawEvents) {
+                const {__prevType: _ignored, age_brackets, id, type, codes, ...rest} = rawEvent;
+                if (!isTournamentEventType(type)) {
+                    continue;
+                }
+
+                const normalizedCodes = (codes ?? []).filter(isEventCode);
+                if (normalizedCodes.length === 0) {
+                    continue;
+                }
+
+                const sanitizedEvent: TournamentEvent = {
+                    id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
+                    type,
+                    codes: normalizedCodes,
+                    age_brackets: cloneAgeBrackets(age_brackets ?? []),
+                };
+
+                if (typeof rest.teamSize === "number") {
+                    sanitizedEvent.teamSize = rest.teamSize;
+                }
+
+                if (typeof rest.code === "string" && rest.code.length > 0) {
+                    sanitizedEvent.code = rest.code;
+                }
+
+                sanitizedEvents.push(sanitizedEvent);
+            }
 
             const agendaFile = form.getFieldValue("agenda");
             const logoFile = form.getFieldValue("logo");
@@ -438,13 +481,17 @@ export default function CreateTournamentPage() {
                                                                     placeholder="Classification"
                                                                     onChange={(value) => {
                                                                         const updated = [...ageBrackets];
-                                                                        if (!updated[id].final_criteria) {
-                                                                            updated[id].final_criteria = [];
+                                                                        const targetBracket = updated[id];
+                                                                        if (!targetBracket) {
+                                                                            return;
                                                                         }
-                                                                        if (updated[id].final_criteria?.[criteriaIndex]) {
-                                                                            updated[id].final_criteria[
-                                                                                criteriaIndex
-                                                                            ].classification = value;
+                                                                        if (!targetBracket.final_criteria) {
+                                                                            targetBracket.final_criteria = [];
+                                                                        }
+                                                                        const targetCriteria =
+                                                                            targetBracket.final_criteria[criteriaIndex];
+                                                                        if (targetCriteria) {
+                                                                            targetCriteria.classification = value;
                                                                         }
                                                                         setAgeBrackets(updated);
                                                                     }}
@@ -462,12 +509,17 @@ export default function CreateTournamentPage() {
                                                                     min={0}
                                                                     onChange={(value) => {
                                                                         const updated = [...ageBrackets];
-                                                                        if (!updated[id].final_criteria) {
-                                                                            updated[id].final_criteria = [];
+                                                                        const targetBracket = updated[id];
+                                                                        if (!targetBracket) {
+                                                                            return;
                                                                         }
-                                                                        if (updated[id].final_criteria?.[criteriaIndex]) {
-                                                                            updated[id].final_criteria[criteriaIndex].number =
-                                                                                value ?? 0;
+                                                                        if (!targetBracket.final_criteria) {
+                                                                            targetBracket.final_criteria = [];
+                                                                        }
+                                                                        const targetCriteria =
+                                                                            targetBracket.final_criteria[criteriaIndex];
+                                                                        if (targetCriteria) {
+                                                                            targetCriteria.number = value ?? 0;
                                                                         }
                                                                         setAgeBrackets(updated);
                                                                     }}
@@ -477,7 +529,11 @@ export default function CreateTournamentPage() {
                                                                     status="danger"
                                                                     onClick={() => {
                                                                         const updated = [...ageBrackets];
-                                                                        updated[id].final_criteria?.splice(criteriaIndex, 1);
+                                                                        const targetBracket = updated[id];
+                                                                        if (!targetBracket?.final_criteria) {
+                                                                            return;
+                                                                        }
+                                                                        targetBracket.final_criteria.splice(criteriaIndex, 1);
                                                                         setAgeBrackets(updated);
                                                                     }}
                                                                 >
@@ -490,10 +546,14 @@ export default function CreateTournamentPage() {
                                                             size="small"
                                                             onClick={() => {
                                                                 const updated = [...ageBrackets];
-                                                                if (!updated[id].final_criteria) {
-                                                                    updated[id].final_criteria = [];
+                                                                const targetBracket = updated[id];
+                                                                if (!targetBracket) {
+                                                                    return;
                                                                 }
-                                                                updated[id].final_criteria?.push({
+                                                                if (!targetBracket.final_criteria) {
+                                                                    targetBracket.final_criteria = [];
+                                                                }
+                                                                targetBracket.final_criteria.push({
                                                                     classification: "intermediate",
                                                                     number: 10,
                                                                 });

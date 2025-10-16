@@ -1,7 +1,7 @@
 import {Card, Empty, Spin, Table, Typography} from "@arco-design/web-react";
 import type React from "react";
 import {useEffect, useState} from "react";
-import type {GlobalResult} from "../../schema/RecordSchema";
+import type {GlobalRecord, RecordRow} from "../../schema/RecordSchema";
 import {getBestRecordsByAgeGroup} from "../../services/firebase/recordService";
 
 // 添加CSS样式
@@ -15,21 +15,22 @@ const tableStyles = `
     }
 `;
 
-interface RecordRow {
-    key: string;
-    event: string;
-    ageGroup: string;
-    time: string;
-    athlete: string;
-    country: string;
-    year: string;
-    isHeader: boolean;
-}
-
 const {Title, Text} = Typography;
 
+const getDisplayName = (record: GlobalRecord): string => {
+    if ("participantName" in record && record.participantName) {
+        return record.participantName;
+    }
+    if ("teamName" in record && record.teamName) {
+        return record.teamName;
+    }
+    return "Unknown";
+};
+
+const getBestTime = (record: GlobalRecord): number | undefined => record.bestTime ?? record.time;
+
 const WorldRecordsTable: React.FC = () => {
-    const [allRecords, setAllRecords] = useState<Record<string, GlobalResult[]>>({});
+    const [allRecords, setAllRecords] = useState<Record<string, GlobalRecord[]>>({});
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -40,7 +41,19 @@ const WorldRecordsTable: React.FC = () => {
         setLoading(true);
         try {
             const records = await getBestRecordsByAgeGroup();
-            setAllRecords(records);
+            const normalized: Record<string, GlobalRecord[]> = {};
+            for (const eventGroups of Object.values(records)) {
+                if (!eventGroups) {
+                    continue;
+                }
+                for (const [eventKey, groupRecords] of Object.entries(eventGroups)) {
+                    normalized[eventKey] = (groupRecords ?? []).map((record) => ({
+                        ...record,
+                        bestTime: record.bestTime ?? record.time,
+                    }));
+                }
+            }
+            setAllRecords(normalized);
         } catch (error) {
             console.error("Failed to load world records:", error);
         } finally {
@@ -48,8 +61,8 @@ const WorldRecordsTable: React.FC = () => {
         }
     };
 
-    const formatTime = (time: number): string => {
-        if (time === 0) return "DNF";
+    const formatTime = (time?: number): string => {
+        if (time === undefined || time === null || time === 0) return "DNF";
         const minutes = Math.floor(time / 60);
         const seconds = Math.floor(time % 60);
         const milliseconds = Math.floor((time % 1) * 100);
@@ -60,7 +73,7 @@ const WorldRecordsTable: React.FC = () => {
         return `${seconds}.${milliseconds.toString().padStart(2, "0")}`;
     };
 
-    const formatDate = (dateString: string): string => {
+    const formatDate = (dateString?: string): string => {
         if (!dateString) return "N/A";
         const date = new Date(dateString);
         return date.toLocaleDateString("en-US", {
@@ -111,10 +124,10 @@ const WorldRecordsTable: React.FC = () => {
                         key: `${event}-${index}`,
                         event: index === 0 ? event : "",
                         ageGroup: record.ageGroup || "Overall",
-                        time: formatTime(record.bestTime),
-                        athlete: record.participantName || "Unknown",
+                        time: formatTime(getBestTime(record)),
+                        athlete: getDisplayName(record),
                         country: record.country || "Unknown",
-                        year: formatDate(record.created_at || new Date().toISOString()),
+                        year: formatDate(record.created_at),
                         isHeader: false,
                     });
                 }
@@ -140,10 +153,10 @@ const WorldRecordsTable: React.FC = () => {
                         key: `doubles-cycle-${index}`,
                         event: "Cycle",
                         ageGroup: record.ageGroup || "Overall",
-                        time: formatTime(record.bestTime),
-                        athlete: record.teamName || "Team",
+                        time: formatTime(getBestTime(record)),
+                        athlete: getDisplayName(record),
                         country: record.country || "Unknown",
-                        year: formatDate(record.created_at || new Date().toISOString()),
+                        year: formatDate(record.created_at),
                         isHeader: false,
                     });
                 }

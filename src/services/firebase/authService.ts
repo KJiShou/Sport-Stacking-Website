@@ -49,11 +49,18 @@ async function getNextGlobalId(): Promise<string> {
     return String(newCount).padStart(5, "0");
 }
 
-function extractActiveRoles(roles: FirestoreUser["roles"]): FirestoreUser["roles"] | null {
-    const activeRoles: Partial<FirestoreUser["roles"]> = {};
+type UserRoles = NonNullable<FirestoreUser["roles"]>;
 
-    for (const [key, value] of Object.entries(roles) as [keyof FirestoreUser["roles"], boolean][]) {
-        if (value) {
+function extractActiveRoles(roles: FirestoreUser["roles"] | null | undefined): Partial<UserRoles> | null {
+    if (!roles) {
+        return null;
+    }
+
+    const definedRoles = roles as UserRoles;
+    const activeRoles: Partial<UserRoles> = {};
+
+    for (const key of Object.keys(definedRoles) as Array<keyof UserRoles>) {
+        if (definedRoles[key]) {
             activeRoles[key] = true;
         }
     }

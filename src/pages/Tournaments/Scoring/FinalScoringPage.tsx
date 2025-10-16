@@ -1,4 +1,17 @@
-import type {AgeBracket, Registration, Team, TeamMember, Tournament, TournamentEvent} from "@/schema";
+import type {
+    AgeBracket,
+    ClassificationGroup,
+    Finalist,
+    ParticipantScore,
+    PrelimResultData,
+    Registration,
+    Score,
+    Team,
+    TeamMember,
+    TeamScore,
+    Tournament,
+    TournamentEvent,
+} from "@/schema";
 import type {TournamentTeamRecord} from "@/schema/RecordSchema";
 import {
     getTournamentFinalRecords,
@@ -8,7 +21,6 @@ import {
 } from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
-import type {PrelimResultData} from "@/utils/PDF/pdfExport";
 import {Button, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconUndo} from "@arco-design/web-react/icon";
@@ -19,29 +31,7 @@ import {useLocation, useNavigate, useParams} from "react-router-dom";
 const {Title} = Typography;
 const {TabPane} = Tabs;
 
-interface Score {
-    try1: string;
-    try2: string;
-    try3: string;
-    [key: string]: string | undefined;
-}
-
-interface ParticipantScore extends Registration {
-    scores: Record<string, Score>;
-}
-
-interface TeamScore extends Team {
-    scores: Record<string, Score>;
-}
-
-interface Finalist {
-    event: TournamentEvent;
-    eventCode: string;
-    eventCodes: string[];
-    bracket: AgeBracket;
-    records: (PrelimResultData & {team?: Team; registration?: Registration})[];
-    classification: "beginner" | "intermediate" | "advance";
-}
+const sanitizeEventCodes = (codes?: string[]): string[] => (codes ?? []).filter((code) => code !== "Overall");
 
 const normalizeEventKey = (code: string, type: string): string => `${code.toLowerCase()}-${type.toLowerCase()}`;
 
@@ -52,24 +42,10 @@ const getFinalistCodes = (finalist: Finalist): string[] => {
     return fallback.length > 0 ? fallback : [finalist.event.type];
 };
 
-interface ClassificationGroup {
-    event: TournamentEvent;
-    bracket: AgeBracket;
-    classification: "beginner" | "intermediate" | "advance";
-    finalists: Finalist[];
-}
-
-const sanitizeEventCodes = (codes?: string[]): string[] => (codes ?? []).filter((code) => code !== "Overall");
-
 const buildEventCodeMap = (events?: TournamentEvent[]): Map<string, string[]> => {
     const map = new Map<string, string[]>();
     for (const event of events ?? []) {
-        const rawCodes =
-            event.codes && event.codes.length > 0
-                ? event.codes
-                : (event as {code?: string}).code
-                  ? [(event as {code: string}).code]
-                  : [];
+        const rawCodes = event.codes && event.codes.length > 0 ? event.codes : event.code ? [event.code] : [];
         const sanitized = sanitizeEventCodes(rawCodes);
         if (sanitized.length === 0) continue;
         const key = event.type.toLowerCase();
@@ -205,9 +181,6 @@ const BracketContent: React.FC<{
                             <Button size="small" type="primary" onClick={() => openModal({participant: record, group})}>
                                 Edit
                             </Button>
-                            <Button size="small" status="danger" onClick={() => handleClearScores(record.user_id, group)}>
-                                Clear
-                            </Button>
                         </div>
                     ),
                 },
@@ -260,9 +233,6 @@ const BracketContent: React.FC<{
                     <div style={{display: "flex", gap: "8px", flexWrap: "wrap"}}>
                         <Button size="small" type="primary" onClick={() => openModal({team: record, group})}>
                             Edit
-                        </Button>
-                        <Button size="small" status="danger" onClick={() => handleClearTeamScores(record.id, group)}>
-                            Clear
                         </Button>
                     </div>
                 ),
@@ -564,7 +534,7 @@ export default function FinalScoringPage() {
                 if (location.state) {
                     // Use state if available
                     ({finalists: finalistData, tournament: tournamentData, registrations, teams} = location.state);
-                    eventCodesByType = buildEventCodeMap(tournamentData.events);
+                    eventCodesByType = buildEventCodeMap(tournamentData.events ?? undefined);
                 } else {
                     // Fallback: fetch all required data
                     const [fetchedTournament, fetchedRegistrations, fetchedTeams, prelimRecords] = await Promise.all([
@@ -582,7 +552,7 @@ export default function FinalScoringPage() {
                     tournamentData = fetchedTournament;
                     registrations = fetchedRegistrations;
                     teams = fetchedTeams;
-                    eventCodesByType = buildEventCodeMap(tournamentData.events);
+                    eventCodesByType = buildEventCodeMap(tournamentData.events ?? undefined);
 
                     // Create name and age maps
                     const nameMap = registrations.reduce(
@@ -928,9 +898,7 @@ export default function FinalScoringPage() {
                                         finalist.records.every((record) => {
                                             const isTeam = !!record.team;
                                             const id = isTeam ? record.team?.id : record.registration?.user_id;
-                                            return finalRecords.some(
-                                                (fr: (typeof finalRecords)[0]) => isTeam ?? fr.participantId === id,
-                                            );
+                                            return finalRecords.some((fr: (typeof finalRecords)[0]) => fr.participantId === id);
                                         }),
                                     );
 

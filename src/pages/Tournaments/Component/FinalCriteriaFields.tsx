@@ -1,13 +1,9 @@
 // components/FinalCriteriaFields.tsx
+import type {FinalCriteriaFieldsProps} from "@/schema";
 import {Button, Form, InputNumber, Select} from "@arco-design/web-react";
 import {IconDelete} from "@arco-design/web-react/icon";
 
-interface Props {
-    index: number;
-    onRemove: (index: number) => void;
-}
-
-export default function FinalCriteriaFields({index, onRemove}: Props) {
+export default function FinalCriteriaFields({index, onRemove}: FinalCriteriaFieldsProps) {
     return (
         <div className="flex gap-4 items-center mb-4">
             <Form.Item

@@ -1,4 +1,4 @@
-import type {Registration, Team, TeamMember, Tournament, TournamentEvent} from "@/schema";
+import type {ParticipantScore, Registration, Score, Team, TeamMember, TeamScore, Tournament, TournamentEvent} from "@/schema";
 import type {TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
 import {getUserByGlobalId} from "@/services/firebase/authService";
 import {getPrelimRecords, getTournamentPrelimRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
@@ -14,20 +14,6 @@ import {useMount} from "react-use";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
-
-interface Score {
-    try1: string;
-    try2: string;
-    try3: string;
-}
-
-interface ParticipantScore extends Registration {
-    scores: Record<string, Score>;
-}
-
-interface TeamScore extends Team {
-    scores: Record<string, Score>;
-}
 
 export default function ScoringPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();

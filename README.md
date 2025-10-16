@@ -118,3 +118,13 @@ A modern web application for managing sport stacking tournaments, built with **R
 │   └── utils/          # Utility functions
 ├── firebase.json       # Firebase configuration
 └── vite.config.js      # Vite configuration
+```
+
+---
+
+## 🗃️ Hybrid User History Cache
+
+- Cloud Functions now maintain a cached history document for each athlete at `user_tournament_history/{globalId}` by aggregating tournament record writes.
+- The trigger `syncUserTournamentHistory` listens to updates under `tournaments/{id}/events/**/records` and rebuilds the cache for every affected participant, leader, and team member.
+- Consume the cache from the client with `fetchUserTournamentHistory` or `subscribeUserTournamentHistory` in `src/services/firebase/userHistoryService.ts` to avoid scanning tournament subcollections on every page load.
+- The cached payload is validated through `UserTournamentHistorySchema`, ensuring a consistent shape across both Cloud Functions and client consumers.

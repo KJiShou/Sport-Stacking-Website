@@ -1,20 +1,41 @@
 import {Card, Empty, Select, Spin, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type React from "react";
 import {useEffect, useState} from "react";
-import type {GlobalResult} from "../../schema/RecordSchema";
+import type {GlobalRecord, RecordRankingTableProps} from "../../schema/RecordSchema";
 import {getClassificationRankings, getEventRankings} from "../../services/firebase/recordService";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
 const {Option} = Select;
 
-interface RecordRankingTableProps {
-    event: string;
-    title: string;
-}
+type RankingRecord = GlobalRecord;
+
+const getDisplayName = (record: RankingRecord): string => {
+    if ("participantName" in record && record.participantName) {
+        return record.participantName;
+    }
+    if ("teamName" in record && record.teamName) {
+        return record.teamName;
+    }
+    return "Unknown";
+};
+
+const getParticipantId = (record: RankingRecord): string | undefined => {
+    if ("participantId" in record) {
+        return record.participantId ?? undefined;
+    }
+    return undefined;
+};
+
+const getTeamId = (record: RankingRecord): string | undefined => {
+    if ("teamId" in record) {
+        return record.teamId ?? undefined;
+    }
+    return undefined;
+};
 
 const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) => {
-    const [rankings, setRankings] = useState<GlobalResult[]>([]);
+    const [rankings, setRankings] = useState<RankingRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [round, setRound] = useState<"prelim" | "final">("final");
     const [classification, setClassification] = useState<"all" | "beginner" | "intermediate" | "advance">("all");
@@ -26,13 +47,17 @@ const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) =
     const loadRankings = async () => {
         setLoading(true);
         try {
-            let data: GlobalResult[];
+            let data: RankingRecord[];
             if (classification === "all") {
                 data = await getEventRankings(event, round);
             } else {
                 data = await getClassificationRankings(event, classification, round);
             }
-            setRankings(data);
+            const normalized = data.map((record) => ({
+                ...record,
+                bestTime: record.bestTime ?? record.time,
+            }));
+            setRankings(normalized);
         } catch (error) {
             console.error("加载排名失败:", error);
         } finally {
@@ -40,8 +65,8 @@ const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) =
         }
     };
 
-    const formatTime = (time: number): string => {
-        if (time === 0) return "DNF";
+    const formatTime = (time?: number): string => {
+        if (time === undefined || time === null) return "DNF";
         const minutes = Math.floor(time / 60);
         const seconds = Math.floor(time % 60);
         const milliseconds = Math.floor((time % 1) * 100);
@@ -75,64 +100,77 @@ const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) =
             title: "Name/Team",
             dataIndex: "participantName",
             key: "participantName",
-            render: (name: string, record: GlobalResult) => (
-                <div>
-                    <div style={{fontWeight: "bold"}}>{record.participantName || record.teamName || "Unknown"}</div>
-                    {record.classification && (
-                        <Tag size="small" color="blue">
-                            {record.classification === "beginner"
-                                ? "Beginner"
-                                : record.classification === "intermediate"
-                                  ? "Intermediate"
-                                  : "Advanced"}
-                        </Tag>
-                    )}
-                </div>
-            ),
+            render: (_: string, record: RankingRecord) => {
+                const name = getDisplayName(record);
+                return (
+                    <div>
+                        <div style={{fontWeight: "bold"}}>{name}</div>
+                        {record.classification && (
+                            <Tag size="small" color="blue">
+                                {record.classification === "beginner"
+                                    ? "Beginner"
+                                    : record.classification === "intermediate"
+                                      ? "Intermediate"
+                                      : "Advanced"}
+                            </Tag>
+                        )}
+                    </div>
+                );
+            },
         },
         {
             title: "Best Time",
             dataIndex: "bestTime",
             key: "bestTime",
             width: 120,
-            render: (time: number) => <Text style={{fontWeight: "bold", color: "#1890ff"}}>{formatTime(time)}</Text>,
+            render: (time: number, record: RankingRecord) => (
+                <Text style={{fontWeight: "bold", color: "#1890ff"}}>{formatTime(time ?? record.time)}</Text>
+            ),
         },
         {
             title: "Try 1",
             dataIndex: "try1",
             key: "try1",
             width: 100,
-            render: (time: number) => formatTime(time),
+            render: (time?: number, record?: RankingRecord) => formatTime(time ?? record?.time),
         },
         {
             title: "Try 2",
             dataIndex: "try2",
             key: "try2",
             width: 100,
-            render: (time: number) => formatTime(time),
+            render: (time?: number, record?: RankingRecord) => formatTime(time ?? record?.time),
         },
         {
             title: "Try 3",
             dataIndex: "try3",
             key: "try3",
             width: 100,
-            render: (time: number) => formatTime(time),
+            render: (time?: number, record?: RankingRecord) => formatTime(time ?? record?.time),
         },
         {
             title: "Round",
             dataIndex: "round",
             key: "round",
             width: 80,
-            render: (round: string) => (
-                <Tag color={round === "final" ? "green" : "orange"}>{round === "final" ? "Final" : "Preliminary"}</Tag>
-            ),
+            render: (round?: string) =>
+                round ? (
+                    <Tag color={round === "final" ? "green" : "orange"}>{round === "final" ? "Final" : "Preliminary"}</Tag>
+                ) : (
+                    <Tag color="purple">N/A</Tag>
+                ),
         },
     ];
 
     const dataSource = rankings.map((record, index) => ({
         ...record,
         rank: index + 1,
-        key: `${record.tournamentId}_${record.participantId || record.teamId}_${record.round}`,
+        key: (() => {
+            const tournamentPart = record.tournamentId ?? event;
+            const entityPart = getParticipantId(record) ?? getTeamId(record) ?? `${index}`;
+            const roundPart = record.round ?? "unknown";
+            return `${tournamentPart}_${entityPart}_${roundPart}`;
+        })(),
     }));
 
     return (

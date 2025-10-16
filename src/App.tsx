@@ -1,10 +1,11 @@
-import {useEffect, useRef, useState} from "react";
-import type * as React from "react";
+import {useEffect, useRef} from "react";
+import type {FC} from "react";
 import {Route, BrowserRouter as Router, Routes} from "react-router-dom";
 import "@arco-design/web-react/dist/css/arco.css";
 import {ConfigProvider, Layout} from "@arco-design/web-react";
 import enUS from "@arco-design/web-react/es/locale/en-US";
-import {Helmet} from "react-helmet";
+import {Helmet as HelmetBase} from "react-helmet";
+import type {HelmetProps} from "react-helmet";
 import {useLocation, useNavigate} from "react-router-dom";
 import image from "./assets/icon.avif";
 import ProtectedRoute from "./components/common/ProtectedRoute";
@@ -14,7 +15,10 @@ import {useAuthContext} from "./context/AuthContext";
 import {logout} from "./services/firebase/authService";
 import {DeviceInspector} from "./utils/DeviceInspector";
 
-const App: React.FC = () => {
+const HelmetComponent = HelmetBase as unknown as FC<HelmetProps>;
+const Helmet: FC<HelmetProps> = (props) => <HelmetComponent {...props} />;
+
+const App: FC = () => {
     const Content = Layout.Content;
 
     const AutoLogoutOnLeaveRegister = () => {

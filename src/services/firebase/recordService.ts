@@ -1,7 +1,16 @@
 import {collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, setDoc, updateDoc, where} from "firebase/firestore";
 import type {TeamMember} from "../../schema";
-import type {GlobalResult, GlobalTeamResult, TournamentRecord, TournamentTeamRecord} from "../../schema/RecordSchema";
+import type {
+    GetFastestRecordData,
+    GlobalResult,
+    GlobalTeamResult,
+    TournamentRecord,
+    TournamentTeamRecord,
+} from "../../schema/RecordSchema";
 import {db as firestore} from "./config";
+
+// Event types constant for maintainability
+const EVENT_TYPES: EventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
 
 export const saveRecord = async (data: {
     tournamentId: string;
@@ -41,6 +50,9 @@ export const saveRecord = async (data: {
         submitted_at,
         verified_by,
         verified_at,
+        memberIds: providedMemberIds,
+        memberNames: providedMemberNames,
+        leaderId: providedLeaderId,
     } = data;
 
     const bestTime = Math.min(try1, try2, try3);
@@ -103,7 +115,7 @@ export const saveRecord = async (data: {
     );
 
     // Base record data
-    const baseRecordData = {
+    const baseRecordData: TournamentRecord = {
         participantId,
         participantAge,
         country,
@@ -113,7 +125,7 @@ export const saveRecord = async (data: {
         try3,
         bestTime,
         status,
-        classification: data.classification ?? null,
+        classification: data.classification ?? undefined,
         videoUrl: videoUrl ?? null,
         submitted_at,
         verified_by: verified_by ?? null,
@@ -122,15 +134,20 @@ export const saveRecord = async (data: {
         updated_at: now,
     };
 
-    // Add team-specific fields if it's a team event
-    const recordData = isTeamEvent
-        ? ({
-              ...baseRecordData,
-              memberIds: (data as TournamentTeamRecord).memberIds,
-              memberNames: (data as TournamentTeamRecord).memberNames,
-              leaderId: (data as TournamentTeamRecord).leaderId,
-          } as TournamentTeamRecord)
-        : (baseRecordData as TournamentRecord);
+    let recordData: TournamentRecord | TournamentTeamRecord = baseRecordData;
+
+    if (isTeamEvent) {
+        const memberIds = providedMemberIds ?? [];
+        const memberNames = providedMemberNames ?? [];
+
+        recordData = {
+            ...baseRecordData,
+            memberIds,
+            memberNames,
+            leaderId: providedLeaderId,
+            leaderName: memberNames.find((_, index) => memberIds[index] === providedLeaderId),
+        } as TournamentTeamRecord;
+    }
     await setDoc(recordRef, recordData, {merge: true});
 
     // Save to global results using new structure: globalResult/Category/Event
@@ -150,22 +167,41 @@ export const saveRecord = async (data: {
 
     const globalResultId = `${tournamentId}_${event}_${participantId}_${round}`;
     const globalResultRef = doc(firestore, `globalResult/${eventType}/${globalEventName}`, globalResultId);
-    const globalResultData: GlobalResult = {
-        event: `${globalEventName}-${eventType}`,
-        gender: data.gender,
-        participantId,
-        participantName,
-        country,
-        time: bestTime, // Schema uses 'time' not 'bestTime'
-        status: data.status,
-        videoUrl: data.videoUrl ?? null,
-        verified_by: data.verified_by ?? null,
-        verified_at: data.verified_at ?? null,
-        created_at: now,
-        updated_at: now,
-        age: participantAge || 0, // Required by schema
-    };
-    await setDoc(globalResultRef, globalResultData);
+    if (isTeamEvent) {
+        const globalTeamResult: GlobalTeamResult = {
+            event: `${globalEventName}-${eventType}`,
+            country,
+            teamName: participantName,
+            leaderId: providedLeaderId,
+            members: (providedMemberIds ?? []).map((memberId) => memberId || ""),
+            time: bestTime,
+            status: data.status,
+            videoUrl: data.videoUrl ?? null,
+            verified_by: data.verified_by ?? null,
+            verified_at: data.verified_at ?? null,
+            created_at: now,
+            updated_at: now,
+            age: participantAge || 0,
+        };
+        await setDoc(globalResultRef, globalTeamResult);
+    } else {
+        const globalResultData: GlobalResult = {
+            event: `${globalEventName}-${eventType}`,
+            gender: data.gender ?? "Overall",
+            participantId,
+            participantName,
+            country,
+            time: bestTime,
+            status: data.status,
+            videoUrl: data.videoUrl ?? null,
+            verified_by: data.verified_by ?? null,
+            verified_at: data.verified_at ?? null,
+            created_at: now,
+            updated_at: now,
+            age: participantAge || 0,
+        };
+        await setDoc(globalResultRef, globalResultData);
+    }
 };
 
 export const saveTeamRecord = async (data: {
@@ -271,7 +307,7 @@ export const saveTeamRecord = async (data: {
         try3,
         bestTime,
         status,
-        classification: data.classification ?? null,
+        classification: data.classification ?? undefined,
         videoUrl: videoUrl || null,
         submitted_at,
         verified_by: verified_by || null,
@@ -523,12 +559,6 @@ export const getTournamentRecords = async (tournamentId: string): Promise<(Tourn
     return [...prelimRecords, ...finalRecords];
 };
 
-interface GetFastestRecordData {
-    event: string;
-    round: "prelim" | "final";
-    type: "Individual" | "Team Relay";
-}
-
 export const updateRecord = async (
     recordId: string,
     event: string,
@@ -766,10 +796,10 @@ export const getRecords = async (
 
 // 获取事件排名记录 - 修正版本
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
-type EventType = "3-3-3" | "3-6-3" | "Cycle";
+type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
 const CATEGORIES: Category[] = ["individual", "double", "parent_&_child", "team_relay", "special_need"];
-const EVENT_TYPES: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
+// (Moved to top of file for maintainability)
 
 function isCategory(x: string): x is Category {
     return (CATEGORIES as string[]).includes(x);
@@ -801,14 +831,9 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
 
             for (const d of snap.docs) {
                 const data = d.data();
-                if (category === "individual") {
-                    rows.push({
-                        id: d.id, // Add the Firestore document ID
+                    const common = {
+                        id: d.id,
                         event: data.event || `${eventType}-${category}`,
-                        gender: data.gender || "Overall",
-                        participantId: data.participantId || "",
-                        participantName: data.participantName || "Unknown",
-                        country: data.country || "Unknown",
                         time: data.time || 0,
                         status: data.status || "submitted",
                         videoUrl: data.videoUrl || null,
@@ -817,25 +842,34 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
                         created_at: data.created_at || new Date().toISOString(),
                         updated_at: data.updated_at || new Date().toISOString(),
                         age: data.age || 0,
-                    } as GlobalResult & {id: string});
-                } else {
-                    rows.push({
-                        id: d.id, // Add the Firestore document ID
-                        event: data.event || `${eventType}-${category}`,
-                        country: data.country || "Unknown",
-                        teamName: data.teamName || "Unknown Team",
-                        leaderId: data.leaderId || "",
-                        members: data.members || [],
-                        time: data.time || 0,
-                        status: data.status || "submitted",
-                        videoUrl: data.videoUrl || null,
-                        verified_by: data.verified_by || null,
-                        verified_at: data.verified_at || null,
-                        created_at: data.created_at || new Date().toISOString(),
-                        updated_at: data.updated_at || new Date().toISOString(),
-                        age: data.age || 0,
-                    } as GlobalTeamResult & {id: string});
-                }
+                        classification: data.classification,
+                        bestTime: data.bestTime ?? data.time,
+                        try1: data.try1,
+                        try2: data.try2,
+                        try3: data.try3,
+                        round: data.round,
+                        tournamentId: data.tournamentId,
+                        teamId: data.teamId,
+                        ageGroup: data.ageGroup,
+                    } as Partial<GlobalResult & GlobalTeamResult>;
+
+                    if (category === "individual") {
+                        rows.push({
+                            gender: data.gender || "Overall",
+                            participantId: data.participantId || "",
+                            participantName: data.participantName || "Unknown",
+                            country: data.country || "Unknown",
+                            ...common,
+                        } as GlobalResult & {id: string});
+                    } else {
+                        rows.push({
+                            country: data.country || "Unknown",
+                            teamName: data.teamName || "Unknown Team",
+                            leaderId: data.leaderId || "",
+                            members: data.members || [],
+                            ...common,
+                        } as GlobalTeamResult & {id: string});
+                    }
             }
 
             // Sort fastest first, filter invalid times
@@ -856,39 +890,43 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
                 const snap = await getDocs(qCol);
                 for (const d of snap.docs) {
                     const data = d.data();
+                    const common = {
+                        id: d.id,
+                        event: data.event || `${eventOnly}-${cat}`,
+                        time: data.time || 0,
+                        status: data.status || "submitted",
+                        videoUrl: data.videoUrl || null,
+                        verified_by: data.verified_by || null,
+                        verified_at: data.verified_at || null,
+                        created_at: data.created_at || new Date().toISOString(),
+                        updated_at: data.updated_at || new Date().toISOString(),
+                        age: data.age || 0,
+                        classification: data.classification,
+                        bestTime: data.bestTime ?? data.time,
+                        try1: data.try1,
+                        try2: data.try2,
+                        try3: data.try3,
+                        round: data.round,
+                        tournamentId: data.tournamentId,
+                        teamId: data.teamId,
+                        ageGroup: data.ageGroup,
+                    } as Partial<GlobalResult & GlobalTeamResult>;
+
                     if (cat === "individual") {
                         resultsAcross.push({
-                            id: d.id, // Add the Firestore document ID
-                            event: data.event || `${eventOnly}-${cat}`,
                             gender: data.gender || "Overall",
                             participantId: data.participantId || "",
                             participantName: data.participantName || "Unknown",
                             country: data.country || "Unknown",
-                            time: data.time || 0,
-                            status: data.status || "submitted",
-                            videoUrl: data.videoUrl || null,
-                            verified_by: data.verified_by || null,
-                            verified_at: data.verified_at || null,
-                            created_at: data.created_at || new Date().toISOString(),
-                            updated_at: data.updated_at || new Date().toISOString(),
-                            age: data.age || 0,
+                            ...common,
                         } as GlobalResult & {id: string});
                     } else {
                         resultsAcross.push({
-                            id: d.id, // Add the Firestore document ID
-                            event: data.event || `${eventOnly}-${cat}`,
                             country: data.country || "Unknown",
                             teamName: data.teamName || "Unknown Team",
                             leaderId: data.leaderId || "",
                             members: data.members || [],
-                            time: data.time || 0,
-                            status: data.status || "submitted",
-                            videoUrl: data.videoUrl || null,
-                            verified_by: data.verified_by || null,
-                            verified_at: data.verified_at || null,
-                            created_at: data.created_at || new Date().toISOString(),
-                            updated_at: data.updated_at || new Date().toISOString(),
-                            age: data.age || 0,
+                            ...common,
                         } as GlobalTeamResult & {id: string});
                     }
                 }
@@ -963,6 +1001,7 @@ export const getBestRecordsByAgeGroup = async (): Promise<
 export const getClassificationRankings = async (
     event: string,
     classification: "beginner" | "intermediate" | "advance",
+    round?: "prelim" | "final",
 ): Promise<(GlobalResult | GlobalTeamResult)[]> => {
     const rankings: (GlobalResult | GlobalTeamResult)[] = [];
 
@@ -979,9 +1018,11 @@ export const getClassificationRankings = async (
                     const data = doc.data();
 
                     // Filter by classification in memory
-                    if (data.classification === classification) {
-                        if (category === "Individual") {
-                            // Individual records
+                    const matchesClassification = data.classification === classification;
+                    const matchesRound = round ? data.round === round : true;
+
+                    if (matchesClassification && matchesRound) {
+                        if (category === "individual") {
                             rankings.push({
                                 event: data.event || `${event}-${category}`,
                                 gender: data.gender || "Overall",
@@ -992,6 +1033,15 @@ export const getClassificationRankings = async (
                                 created_at: data.created_at || new Date().toISOString(),
                                 updated_at: data.updated_at || new Date().toISOString(),
                                 age: data.age || 0,
+                                classification: data.classification,
+                                bestTime: data.bestTime ?? data.time,
+                                try1: data.try1,
+                                try2: data.try2,
+                                try3: data.try3,
+                                round: data.round,
+                                tournamentId: data.tournamentId,
+                                teamId: data.teamId,
+                                ageGroup: data.ageGroup,
                             } as GlobalResult);
                         } else {
                             // Team records
@@ -1005,6 +1055,15 @@ export const getClassificationRankings = async (
                                 created_at: data.created_at || new Date().toISOString(),
                                 updated_at: data.updated_at || new Date().toISOString(),
                                 age: data.age || 0,
+                                classification: data.classification,
+                                bestTime: data.bestTime ?? data.time,
+                                try1: data.try1,
+                                try2: data.try2,
+                                try3: data.try3,
+                                round: data.round,
+                                tournamentId: data.tournamentId,
+                                teamId: data.teamId,
+                                ageGroup: data.ageGroup,
                             } as GlobalTeamResult);
                         }
                     }

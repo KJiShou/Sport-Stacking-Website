@@ -1,4 +1,4 @@
-import type {FirestoreUser} from "@/schema/UserSchema";
+import type {AuthContextValue, FirestoreUser} from "@/schema";
 import {type User, onAuthStateChanged} from "firebase/auth";
 import {doc, getDoc} from "firebase/firestore";
 // src/context/AuthContext.tsx
@@ -6,14 +6,7 @@ import type React from "react";
 import {createContext, useContext, useEffect, useState} from "react";
 import {auth, db} from "../services/firebase/config";
 
-interface AuthContextType {
-    user: FirestoreUser | null;
-    loading: boolean;
-    firebaseUser: User | null;
-    setUser: React.Dispatch<React.SetStateAction<FirestoreUser | null>>;
-}
-
-const AuthContext = createContext<AuthContextType>({
+const AuthContext = createContext<AuthContextValue>({
     user: null,
     loading: true,
     firebaseUser: null,
