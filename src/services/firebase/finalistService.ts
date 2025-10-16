@@ -42,7 +42,7 @@ const normalizeBracketKey = (bracket: string, classification: string): string =>
 
 const sortUniqueIds = (ids: string[]): string[] => {
     const unique = Array.from(new Set(ids.filter((id) => id && id.length > 0)));
-    return unique.sort();
+    return unique.sort((a, b) => a.localeCompare(b));
 };
 
 const arraysEqual = (a: string[] | undefined, b: string[] | undefined): boolean => {
