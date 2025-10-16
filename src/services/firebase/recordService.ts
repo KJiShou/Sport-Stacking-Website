@@ -9,6 +9,9 @@ import type {
 } from "../../schema/RecordSchema";
 import {db as firestore} from "./config";
 
+// Event types constant for maintainability
+const EVENT_TYPES: EventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
+
 export const saveRecord = async (data: {
     tournamentId: string;
     event: string;
@@ -769,7 +772,7 @@ type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "spe
 type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
 const CATEGORIES: Category[] = ["individual", "double", "parent_&_child", "team_relay", "special_need"];
-const EVENT_TYPES: EventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
+// (Moved to top of file for maintainability)
 
 function isCategory(x: string): x is Category {
     return (CATEGORIES as string[]).includes(x);

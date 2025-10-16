@@ -377,10 +377,10 @@ async function loadRankingData(): Promise<AthleteRankingEntry[]> {
             try {
                 const rows = await getEventRankings(option.category, option.event as "3-3-3" | "3-6-3" | "Cycle" | "Overall");
                 if (option.category === "individual") {
-                    (rows as (GlobalResult & {id: string})[]).forEach((record) => {
+                    for (const record of rows as (GlobalResult & {id: string})[]) {
                         const stats = buildEventStats(record);
                         if (!stats) {
-                            return;
+                            continue;
                         }
                         const participantKey = record.participantId || record.participantName || record.id;
                         const key = `${option.category}:${participantKey}`;
@@ -396,12 +396,12 @@ async function loadRankingData(): Promise<AthleteRankingEntry[]> {
                             country: record.country ?? "Unknown",
                         });
                         entry.events[option.key] = stats;
-                    });
+                    }
                 } else {
-                    (rows as (GlobalTeamResult & {id: string})[]).forEach((record) => {
+                    for (const record of rows as (GlobalTeamResult & {id: string})[]) {
                         const stats = buildEventStats(record);
                         if (!stats) {
-                            return;
+                            continue;
                         }
                         const teamIdentifier = record.leaderId || record.teamName || record.id;
                         const key = `${option.category}:${teamIdentifier}`;
@@ -418,7 +418,7 @@ async function loadRankingData(): Promise<AthleteRankingEntry[]> {
                             members: record.members ?? [],
                         });
                         entry.events[option.key] = stats;
-                    });
+                    }
                 }
             } catch (error) {
                 console.warn(`Failed to fetch rankings for ${option.label}`, error);
@@ -474,13 +474,13 @@ const Athletes: React.FC = () => {
                 setLocationOptions(countries);
 
                 const seasonStartYears = new Set<number>();
-                data.forEach((entry) => {
-                    Object.values(entry.events).forEach((stats) => {
+                for (const entry of data) {
+                    for (const stats of Object.values(entry.events)) {
                         if (stats?.season) {
                             seasonStartYears.add(seasonLabelToStartYear(stats.season));
                         }
-                    });
-                });
+                    }
+                }
                 if (seasonStartYears.size > 0) {
                     const minYear = Math.min(...seasonStartYears);
                     const maxYear = Math.max(...seasonStartYears);

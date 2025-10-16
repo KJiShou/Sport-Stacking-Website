@@ -1,4 +1,4 @@
-import {auth} from "@/services/firebase/config";
+import {auth} from "../../services/firebase/config";
 
 const DEFAULT_ENDPOINT = "https://sendemail-jzbhzqtcdq-uc.a.run.app";
 
@@ -22,19 +22,24 @@ const parseResponse = async (response: Response): Promise<SendEmailPayload | str
     }
 
     try {
-        return JSON.parse(text) as SendEmailPayload;
+        const parsed = JSON.parse(text);
+        if (
+            typeof parsed === "object" &&
+            (parsed.success === undefined || typeof parsed.success === "boolean") &&
+            (parsed.error === undefined || typeof parsed.error === "string")
+        ) {
+            return parsed as SendEmailPayload;
+        } else {
+            console.warn("sendProtectedEmail received invalid payload structure", parsed);
+            return text;
+        }
     } catch (error) {
         console.warn("sendProtectedEmail received non-JSON response", error);
         return text;
     }
 };
 
-export async function sendProtectedEmail(
-    gmail: string,
-    tournamentId: string,
-    teamId: string,
-    memberId: string,
-): Promise<void> {
+export async function sendProtectedEmail(gmail: string, tournamentId: string, teamId: string, memberId: string): Promise<void> {
     if (!gmail) {
         console.warn("sendProtectedEmail skipped: missing recipient email");
         return;

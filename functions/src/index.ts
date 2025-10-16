@@ -86,7 +86,10 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY]}, (req, res) => {
                 }),
             });
 
-            const payload = await resendResponse.json().catch(() => undefined);
+            const payload = await resendResponse.json().catch((err) => {
+                console.error("❌ Failed to parse Resend response JSON:", err);
+                return undefined;
+            });
 
             if (!resendResponse.ok) {
                 const message = typeof payload === "object" && payload?.error ? payload.error : "Send failed";
@@ -195,9 +198,7 @@ function extractParticipantGlobalIds(data: RecordLike): string[] {
     const ids = new Set<string>();
     const leaderId = typeof data.leaderId === "string" ? data.leaderId.trim() : "";
     const memberIds = Array.isArray(data.memberIds)
-        ? (data.memberIds as unknown[])
-              .map((id) => (typeof id === "string" ? id.trim() : ""))
-              .filter((id) => id.length > 0)
+        ? (data.memberIds as unknown[]).map((id) => (typeof id === "string" ? id.trim() : "")).filter((id) => id.length > 0)
         : [];
     const hasTeamShape = leaderId.length > 0 || memberIds.length > 0;
 
@@ -318,7 +319,9 @@ async function rebuildUserTournamentHistory(globalIdRaw: string): Promise<void> 
         const status = typeof data.status === "string" ? data.status : null;
         const leaderId = typeof data.leaderId === "string" ? data.leaderId : null;
         const memberIds = Array.isArray(data.memberIds)
-            ? (data.memberIds as unknown[]).map((id) => (typeof id === "string" ? id : null)).filter((id): id is string => id != null)
+            ? (data.memberIds as unknown[])
+                  .map((id) => (typeof id === "string" ? id : null))
+                  .filter((id): id is string => id != null)
             : [];
         const isTeam = leaderId != null || memberIds.length > 0;
         const participantRole: CachedTournamentResult["participantRole"] = !isTeam
@@ -382,20 +385,17 @@ async function rebuildUserTournamentHistory(globalIdRaw: string): Promise<void> 
     }
 
     if (tournaments.size === 0) {
-        await db
-            .collection("user_tournament_history")
-            .doc(globalId)
-            .set(
-                {
-                    globalId,
-                    userId: userDoc.id,
-                    updatedAt: FirestoreTimestamp.now(),
-                    tournamentCount: 0,
-                    recordCount: 0,
-                    tournaments: [],
-                },
-                {merge: false},
-            );
+        await db.collection("user_tournament_history").doc(globalId).set(
+            {
+                globalId,
+                userId: userDoc.id,
+                updatedAt: FirestoreTimestamp.now(),
+                tournamentCount: 0,
+                recordCount: 0,
+                tournaments: [],
+            },
+            {merge: false},
+        );
         return;
     }
 
@@ -443,20 +443,17 @@ async function rebuildUserTournamentHistory(globalIdRaw: string): Promise<void> 
 
     const recordCount = sortedSummaries.reduce((total, summary) => total + summary.results.length, 0);
 
-    await db
-        .collection("user_tournament_history")
-        .doc(globalId)
-        .set(
-            {
-                globalId,
-                userId: userDoc.id,
-                updatedAt: FirestoreTimestamp.now(),
-                tournamentCount: sortedSummaries.length,
-                recordCount,
-                tournaments: sortedSummaries,
-            },
-            {merge: false},
-        );
+    await db.collection("user_tournament_history").doc(globalId).set(
+        {
+            globalId,
+            userId: userDoc.id,
+            updatedAt: FirestoreTimestamp.now(),
+            tournamentCount: sortedSummaries.length,
+            recordCount,
+            tournaments: sortedSummaries,
+        },
+        {merge: false},
+    );
 }
 
 export const updateVerification = onRequest(async (req, res) => {
@@ -555,9 +552,7 @@ export const updateVerification = onRequest(async (req, res) => {
                 const registrationData = regSnap.data() as Registration;
 
                 // Update the registration document with the new events
-                const userHasConflict = teamEvents.some((event: string) =>
-                    registrationData.events_registered.includes(event),
-                );
+                const userHasConflict = teamEvents.some((event: string) => registrationData.events_registered.includes(event));
 
                 if (userHasConflict) {
                     throw new Error("You are already registered for one or more of these team events.");

@@ -233,7 +233,10 @@ export default function EditTournamentRegistrationPage() {
                 rejection_reason: values?.registration_status === "rejected" ? rejection_reason : null,
             };
 
-            await updateUserRegistrationRecord(registrationId ?? "", tournamentId ?? "", userRegistrationData);
+            if (!registrationId || !tournamentId) {
+                throw new Error("Missing registrationId or tournamentId for updating user registration record.");
+            }
+            await updateUserRegistrationRecord(registrationId, tournamentId, userRegistrationData);
 
             Message.success("Completely save the changes!");
         } catch (err) {

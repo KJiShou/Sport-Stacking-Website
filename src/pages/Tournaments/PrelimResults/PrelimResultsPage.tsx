@@ -691,7 +691,12 @@ export default function PrelimResultsPage() {
 
             if (finalistPayloads.length > 0) {
                 try {
-                    await saveTournamentFinalists(tournamentId ?? "", finalistPayloads);
+                    if (!tournamentId) {
+                        Message.error("Tournament ID is missing. Cannot save finalists.");
+                        setLoading(false);
+                        return;
+                    }
+                    await saveTournamentFinalists(tournamentId, finalistPayloads);
                 } catch (error) {
                     console.error("Failed to save finalists:", error);
                     Message.error("Failed to save finalists. Please try again.");

@@ -1,10 +1,10 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {AgeBracket, Registration, Team, Tournament, TournamentEvent} from "@/schema";
+import type {EventResults, PrelimResultData} from "@/schema";
 import type {TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
 import {getTournamentFinalRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, updateTournamentStatus} from "@/services/firebase/tournamentsService";
-import type {EventResults, PrelimResultData} from "@/schema";
 import {exportAllPrelimResultsToPDF} from "@/utils/PDF/pdfExport";
 import {getEventLabel, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
 import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
@@ -105,8 +105,6 @@ const getRecordEventCode = (record: AnyTournamentRecord, event?: TournamentEvent
     }
     return undefined;
 };
-
-const formatTime = (value?: number): string => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(3) : "N/A");
 
 const buildIndividualColumns = (event: TournamentEvent): TableColumnProps<FinalResultRow>[] => {
     const columns: TableColumnProps<FinalResultRow>[] = [
@@ -1305,4 +1303,14 @@ export default function FinalResultsPage() {
             </div>
         </div>
     );
+}
+
+/**
+ * Formats a time value (number or undefined) to a string with 3 decimal places, or "N/A" if invalid.
+ */
+export function formatTime(time?: number): string {
+    if (typeof time !== "number" || Number.isNaN(time) || time <= 0) {
+        return "N/A";
+    }
+    return time.toFixed(3);
 }
