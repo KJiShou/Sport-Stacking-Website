@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // TODO: tighten rules; placeholder file created by automation.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

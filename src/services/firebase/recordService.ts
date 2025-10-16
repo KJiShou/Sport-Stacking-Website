@@ -766,10 +766,10 @@ export const getRecords = async (
 
 // 获取事件排名记录 - 修正版本
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
-type EventType = "3-3-3" | "3-6-3" | "Cycle";
+type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
 const CATEGORIES: Category[] = ["individual", "double", "parent_&_child", "team_relay", "special_need"];
-const EVENT_TYPES: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
+const EVENT_TYPES: EventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
 
 function isCategory(x: string): x is Category {
     return (CATEGORIES as string[]).includes(x);

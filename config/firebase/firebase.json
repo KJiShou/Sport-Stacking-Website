@@ -11,6 +11,10 @@
       }
     ]
   },
+  "firestore": {
+    "indexes": "firestore.indexes.json",
+    "rules": "firestore.rules"
+  },
   "functions": [
     {
       "source": "functions",

@@ -233,7 +233,7 @@ export default function EditTournamentRegistrationPage() {
                 rejection_reason: values?.registration_status === "rejected" ? rejection_reason : null,
             };
 
-            await updateUserRegistrationRecord(registration?.id ?? "", tournamentId ?? "", userRegistrationData);
+            await updateUserRegistrationRecord(registrationId ?? "", tournamentId ?? "", userRegistrationData);
 
             Message.success("Completely save the changes!");
         } catch (err) {
@@ -261,7 +261,7 @@ export default function EditTournamentRegistrationPage() {
                 navigate("/tournaments");
                 return;
             }
-            setRegistration(userReg);
+            setRegistration({...userReg, id: registrationId});
 
             const allTeamsData = await fetchTeamsByTournament(tournamentId);
             const registrantsUserId = userReg.user_id;

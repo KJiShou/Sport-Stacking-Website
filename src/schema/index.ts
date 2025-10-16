@@ -51,6 +51,17 @@ export type {
     GetFastestRecordData,
 } from "./RecordSchema";
 
+export {
+    CachedTournamentResultSchema,
+    CachedTournamentSummarySchema,
+    UserTournamentHistorySchema,
+} from "./UserHistorySchema";
+export type {
+    CachedTournamentResult,
+    CachedTournamentSummary,
+    UserTournamentHistory,
+} from "./UserHistorySchema";
+
 export type {ParticipantScore, TeamScore, Score, Finalist, ClassificationGroup} from "./TournamentScoringSchema";
 
 export type {AggregationContext} from "./TournamentResultsSchema";
