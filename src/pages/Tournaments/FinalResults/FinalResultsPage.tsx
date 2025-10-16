@@ -708,7 +708,8 @@ export default function FinalResultsPage() {
                                     })
                                     .sort((a, b) => a.bestTime - b.bestTime)
                                     .map((record, index) => {
-                                        const teamId = typeof record.participantId === "string" ? record.participantId : "";
+                                        const teamId: string =
+                                            typeof record.participantId === "string" ? record.participantId : "";
                                         const team = teamId ? teamMap[teamId] : undefined;
                                         const eventCode = getRecordEventCode(record, event);
                                         return {
@@ -926,7 +927,9 @@ export default function FinalResultsPage() {
         const codeKey = result.eventCode
             ? result.eventCode
             : result.expandedRecords
-              ? Object.keys(result.expandedRecords).sort().join("|")
+              ? Object.keys(result.expandedRecords)
+                    .sort((a, b) => a.localeCompare(b))
+                    .join("|")
               : (result.event ?? "single");
         return `${eventKey}-${participantKey}-${codeKey}`;
     };
@@ -1259,16 +1262,6 @@ export default function FinalResultsPage() {
                                                             pagination={false}
                                                             loading={loading}
                                                             rowKey={getRowKey}
-                                                        />
-                                                    ) : eventIsTeam ? (
-                                                        <Table
-                                                            style={{width: "100%"}}
-                                                            columns={tableColumns}
-                                                            data={[]}
-                                                            pagination={false}
-                                                            loading={loading}
-                                                            rowKey={getRowKey}
-                                                            expandedRowRender={expandedRowRender}
                                                         />
                                                     ) : (
                                                         <Table
