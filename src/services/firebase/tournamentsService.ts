@@ -52,7 +52,7 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("Registration dates must be within the tournament dates.");
     }
 
-    if (data.max_participants < 0) {
+    if (typeof data.max_participants === "number" && data.max_participants < 0) {
         throw new Error("Max participants must be greater than or equal 0.");
     }
 

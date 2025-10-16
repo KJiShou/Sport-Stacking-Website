@@ -2,19 +2,21 @@ import cors from "cors";
 import {getApps, initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {
-    Timestamp as FirestoreTimestamp,
-    getFirestore,
+    type DocumentData,
     type Firestore,
+    Timestamp as FirestoreTimestamp,
+    type QueryDocumentSnapshot,
     type QuerySnapshot,
     type WhereFilterOp,
+    getFirestore,
 } from "firebase-admin/firestore";
 import {defineSecret} from "firebase-functions/params";
+import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
+import type {TournamentRecord, TournamentTeamRecord} from "./../../src/schema/RecordSchema.js";
 import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
-import type {TournamentRecord, TournamentTeamRecord} from "./../../src/schema/RecordSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
-import {onDocumentWritten} from "firebase-functions/v2/firestore";
 const corsHandler = cors({origin: true});
 
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
@@ -277,7 +279,7 @@ async function rebuildUserTournamentHistory(globalIdRaw: string): Promise<void> 
     const queryResults = await Promise.all(querySpecs.map((spec) => runRecordQuery(db, spec)));
     const hadQueryFailure = queryResults.some((result) => result.skipped);
 
-    const recordDocs = new Map<string, FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>>();
+    const recordDocs = new Map<string, QueryDocumentSnapshot<DocumentData>>();
     for (const {snapshot} of queryResults) {
         if (!snapshot) {
             continue;

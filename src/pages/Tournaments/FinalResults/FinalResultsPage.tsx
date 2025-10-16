@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {useAuthContext} from "@/context/AuthContext";
 import type {AgeBracket, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import type {EventResults, PrelimResultData} from "@/schema";

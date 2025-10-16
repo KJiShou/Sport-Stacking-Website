@@ -1,5 +1,5 @@
-import type {EventCategory, FinalistGroupPayload} from "../../schema";
 import {collection, deleteDoc, doc, getDocs, setDoc} from "firebase/firestore";
+import type {EventCategory, FinalistGroupPayload} from "../../schema";
 import {db as firestore} from "./config";
 
 const normalizeBracketKey = (bracket: string, classification: string): string => {

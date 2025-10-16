@@ -1,6 +1,6 @@
-import {doc, getDoc, onSnapshot, type Unsubscribe} from "firebase/firestore";
 import type {UserTournamentHistory} from "@/schema";
 import {UserTournamentHistorySchema} from "@/schema";
+import {type Unsubscribe, doc, getDoc, onSnapshot} from "firebase/firestore";
 import {db} from "./config";
 
 export async function fetchUserTournamentHistory(globalId: string): Promise<UserTournamentHistory | null> {
@@ -31,7 +31,7 @@ export function subscribeUserTournamentHistory(
     const trimmed = globalId.trim();
     if (!trimmed) {
         callback(null);
-        return () => {};
+        return () => undefined;
     }
 
     const historyRef = doc(db, "user_tournament_history", trimmed);

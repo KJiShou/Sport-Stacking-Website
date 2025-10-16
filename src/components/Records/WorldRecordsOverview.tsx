@@ -1,14 +1,26 @@
 import {Card, Empty, Grid, Spin, Statistic, Tag, Typography} from "@arco-design/web-react";
 import type React from "react";
 import {useEffect, useState} from "react";
-import type {GlobalResult, WorldRecordsOverviewProps} from "../../schema/RecordSchema";
+import type {GlobalRecord, WorldRecordsOverviewProps} from "../../schema/RecordSchema";
 import {getWorldRecords} from "../../services/firebase/recordService";
 
 const {Title, Text} = Typography;
 const {Row, Col} = Grid;
 
+const getDisplayName = (record: GlobalRecord): string => {
+    if ("participantName" in record && record.participantName) {
+        return record.participantName;
+    }
+    if ("teamName" in record && record.teamName) {
+        return record.teamName;
+    }
+    return "Unknown";
+};
+
+const getBestTime = (record: GlobalRecord): number | undefined => record.bestTime ?? record.time;
+
 const WorldRecordsOverview: React.FC<WorldRecordsOverviewProps> = ({event}) => {
-    const [worldRecords, setWorldRecords] = useState<Record<string, GlobalResult[]>>({});
+    const [worldRecords, setWorldRecords] = useState<Record<string, GlobalRecord[]>>({});
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -19,7 +31,14 @@ const WorldRecordsOverview: React.FC<WorldRecordsOverviewProps> = ({event}) => {
         setLoading(true);
         try {
             const records = await getWorldRecords();
-            setWorldRecords(records);
+            const normalized: Record<string, GlobalRecord[]> = {};
+            for (const [eventName, eventRecords] of Object.entries(records)) {
+                normalized[eventName] = eventRecords.map((record) => ({
+                    ...record,
+                    bestTime: record.bestTime ?? record.time,
+                }));
+            }
+            setWorldRecords(normalized);
         } catch (error) {
             console.error("加载世界记录失败:", error);
         } finally {
@@ -27,8 +46,8 @@ const WorldRecordsOverview: React.FC<WorldRecordsOverviewProps> = ({event}) => {
         }
     };
 
-    const formatTime = (time: number): string => {
-        if (time === 0) return "DNF";
+    const formatTime = (time?: number): string => {
+        if (time === undefined || time === null || time === 0) return "DNF";
         const minutes = Math.floor(time / 60);
         const seconds = Math.floor(time % 60);
         const milliseconds = Math.floor((time % 1) * 100);
@@ -85,7 +104,7 @@ const WorldRecordsOverview: React.FC<WorldRecordsOverviewProps> = ({event}) => {
                                     <div style={{marginBottom: 16}}>
                                         <Statistic
                                             title="World Record"
-                                            value={formatTime(records[0].bestTime)}
+                                            value={formatTime(records[0] ? getBestTime(records[0]) : undefined)}
                                             style={{color: "#cf1322", fontSize: "18px", fontWeight: "bold"}}
                                         />
                                     </div>
@@ -96,7 +115,7 @@ const WorldRecordsOverview: React.FC<WorldRecordsOverviewProps> = ({event}) => {
 
                                     {records.slice(0, 3).map((record, index) => (
                                         <div
-                                            key={`${record.participantName || record.teamName || "unknown"}-${record.bestTime}-${index}`}
+                                            key={`${getDisplayName(record)}-${getBestTime(record) ?? "na"}-${index}`}
                                             style={{
                                                 display: "flex",
                                                 justifyContent: "space-between",
@@ -123,10 +142,10 @@ const WorldRecordsOverview: React.FC<WorldRecordsOverviewProps> = ({event}) => {
                                                     {index + 1}
                                                 </Tag>
                                                 <Text style={{maxWidth: "80px", overflow: "hidden", textOverflow: "ellipsis"}}>
-                                                    {record.participantName || record.teamName || "Unknown"}
+                                                    {getDisplayName(record)}
                                                 </Text>
                                             </div>
-                                            <Text style={{fontWeight: "bold"}}>{formatTime(record.bestTime)}</Text>
+                                            <Text style={{fontWeight: "bold"}}>{formatTime(getBestTime(record))}</Text>
                                         </div>
                                     ))}
 

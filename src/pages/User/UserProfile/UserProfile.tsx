@@ -1,12 +1,6 @@
 import {AvatarUploader} from "@/components/common/AvatarUploader";
 import {useAuthContext} from "@/context/AuthContext";
-import type {
-    AllTimeStat,
-    FirestoreUser,
-    FirestoreUserSchema,
-    OnlineBest,
-    RecordItem,
-} from "@/schema";
+import type {AllTimeStat, FirestoreUser, FirestoreUserSchema, OnlineBest, RecordItem} from "@/schema";
 import {countries} from "@/schema/Country";
 import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
 import {

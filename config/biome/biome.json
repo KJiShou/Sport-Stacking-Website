@@ -15,6 +15,7 @@
       "**/public/sw.js",
       "public/sw.js",
       ".yarn/**",
+      "functions/lib/**",
       "apps/website-builder/**",
       "dist/**/*"
     ]

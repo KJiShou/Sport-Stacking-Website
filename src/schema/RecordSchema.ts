@@ -56,6 +56,16 @@ export const GlobalResultSchema = z.object({
     created_at: z.string(),
     updated_at: z.string(),
     age: z.number(),
+    id: z.string().optional(),
+    round: z.enum(["prelim", "final"]).optional(),
+    classification: z.enum(["advance", "intermediate", "beginner"]).optional(),
+    bestTime: z.number().optional(),
+    try1: z.number().optional(),
+    try2: z.number().optional(),
+    try3: z.number().optional(),
+    tournamentId: z.string().optional(),
+    teamId: z.string().optional(),
+    ageGroup: z.string().optional(),
 });
 
 export const GlobalTeamResultSchema = z.object({
@@ -72,6 +82,16 @@ export const GlobalTeamResultSchema = z.object({
     created_at: z.string(),
     updated_at: z.string(),
     age: z.number(),
+    id: z.string().optional(),
+    round: z.enum(["prelim", "final"]).optional(),
+    classification: z.enum(["advance", "intermediate", "beginner"]).optional(),
+    bestTime: z.number().optional(),
+    try1: z.number().optional(),
+    try2: z.number().optional(),
+    try3: z.number().optional(),
+    tournamentId: z.string().optional(),
+    teamId: z.string().optional(),
+    ageGroup: z.string().optional(),
 });
 
 export const RecordDisplaySchema = z.object({
@@ -98,6 +118,20 @@ export type TournamentTeamRecord = z.infer<typeof TournamentTeamRecordSchema>;
 export type GlobalResult = z.infer<typeof GlobalResultSchema>;
 export type GlobalTeamResult = z.infer<typeof GlobalTeamResultSchema>;
 export type RecordDisplay = z.infer<typeof RecordDisplaySchema>;
+
+export type GlobalRecord = (GlobalResult | GlobalTeamResult) & {
+    bestTime?: number;
+    try1?: number;
+    try2?: number;
+    try3?: number;
+    tournamentId?: string;
+    teamId?: string;
+    round?: "prelim" | "final";
+    participantName?: string;
+    teamName?: string;
+    memberIds?: string[];
+    memberNames?: string[];
+};
 
 export interface RecordRow {
     key: string;

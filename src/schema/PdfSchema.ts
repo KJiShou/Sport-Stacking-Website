@@ -1,9 +1,10 @@
-import type {AgeBracket, Tournament, TournamentEvent} from "./TournamentSchema";
+import type {TournamentRecord} from "./RecordSchema";
 import type {Registration} from "./RegistrationSchema";
 import type {Team} from "./TeamSchema";
-import type {TournamentRecord} from "./RecordSchema";
+import type {AgeBracket, Tournament, TournamentEvent} from "./TournamentSchema";
 
-export interface PrelimResultData extends TournamentRecord {
+export interface PrelimResultData
+    extends Omit<TournamentRecord, "try1" | "try2" | "try3" | "bestTime" | "classification"> {
     rank: number;
     name: string;
     id: string;
@@ -13,6 +14,9 @@ export interface PrelimResultData extends TournamentRecord {
     try1?: number;
     try2?: number;
     try3?: number;
+    bestTime?: number;
+    classification?: "beginner" | "intermediate" | "advance";
+    round?: "prelim" | "final";
 }
 
 export interface BracketResults {
@@ -72,19 +76,19 @@ export interface ExportMasterListOptions {
 }
 
 export interface EventData {
-    event: Tournament["events"][number];
-    bracket: Tournament["events"][number]["age_brackets"][number];
+    event: TournamentEvent;
+    bracket: AgeBracket;
     isTeamEvent: boolean;
     registrations: Registration[];
 }
 
 export interface NameListStickerOptions {
     tournament: Tournament;
-    eventKey: string;
-    bracketName: string;
     registrations: Registration[];
+    eventKey?: string;
+    bracketName?: string;
     searchTerm?: string;
-    teams: Team[];
-    isTeamEvent: boolean;
+    teams?: Team[];
+    isTeamEvent?: boolean;
     logoDataUrl?: string;
 }

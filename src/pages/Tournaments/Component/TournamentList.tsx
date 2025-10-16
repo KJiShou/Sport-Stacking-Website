@@ -1064,18 +1064,22 @@ export default function TournamentList() {
                                                                     <Select
                                                                         value={criteria.classification}
                                                                         placeholder="Classification"
-                                                                        onChange={(value) => {
-                                                                            const updated = [...ageBrackets];
-                                                                            if (!updated[id].final_criteria) {
-                                                                                updated[id].final_criteria = [];
-                                                                            }
-                                                                            if (updated[id].final_criteria?.[criteriaIndex]) {
-                                                                                updated[id].final_criteria[
-                                                                                    criteriaIndex
-                                                                                ].classification = value;
-                                                                            }
-                                                                            setAgeBrackets(updated);
-                                                                        }}
+                                                                    onChange={(value) => {
+                                                                        const updated = [...ageBrackets];
+                                                                        const targetBracket = updated[id];
+                                                                        if (!targetBracket) {
+                                                                            return;
+                                                                        }
+                                                                        if (!targetBracket.final_criteria) {
+                                                                            targetBracket.final_criteria = [];
+                                                                        }
+                                                                        const targetCriteria =
+                                                                            targetBracket.final_criteria[criteriaIndex];
+                                                                        if (targetCriteria) {
+                                                                            targetCriteria.classification = value;
+                                                                        }
+                                                                        setAgeBrackets(updated);
+                                                                    }}
                                                                         style={{width: 150}}
                                                                     >
                                                                         <Select.Option value="advance">Advanced</Select.Option>
@@ -1090,12 +1094,17 @@ export default function TournamentList() {
                                                                         min={0}
                                                                         onChange={(value) => {
                                                                             const updated = [...ageBrackets];
-                                                                            if (!updated[id].final_criteria) {
-                                                                                updated[id].final_criteria = [];
+                                                                            const targetBracket = updated[id];
+                                                                            if (!targetBracket) {
+                                                                                return;
                                                                             }
-                                                                            if (updated[id].final_criteria?.[criteriaIndex]) {
-                                                                                updated[id].final_criteria[criteriaIndex].number =
-                                                                                    value ?? 0;
+                                                                            if (!targetBracket.final_criteria) {
+                                                                                targetBracket.final_criteria = [];
+                                                                            }
+                                                                            const targetCriteria =
+                                                                                targetBracket.final_criteria[criteriaIndex];
+                                                                            if (targetCriteria) {
+                                                                                targetCriteria.number = value ?? 0;
                                                                             }
                                                                             setAgeBrackets(updated);
                                                                         }}
@@ -1105,7 +1114,11 @@ export default function TournamentList() {
                                                                         status="danger"
                                                                         onClick={() => {
                                                                             const updated = [...ageBrackets];
-                                                                            updated[id].final_criteria?.splice(criteriaIndex, 1);
+                                                                            const targetBracket = updated[id];
+                                                                            if (!targetBracket?.final_criteria) {
+                                                                                return;
+                                                                            }
+                                                                            targetBracket.final_criteria.splice(criteriaIndex, 1);
                                                                             setAgeBrackets(updated);
                                                                         }}
                                                                     >
@@ -1118,10 +1131,14 @@ export default function TournamentList() {
                                                                 size="small"
                                                                 onClick={() => {
                                                                     const updated = [...ageBrackets];
-                                                                    if (!updated[id].final_criteria) {
-                                                                        updated[id].final_criteria = [];
+                                                                    const targetBracket = updated[id];
+                                                                    if (!targetBracket) {
+                                                                        return;
                                                                     }
-                                                                    updated[id].final_criteria.push({
+                                                                    if (!targetBracket.final_criteria) {
+                                                                        targetBracket.final_criteria = [];
+                                                                    }
+                                                                    targetBracket.final_criteria.push({
                                                                         classification: "intermediate",
                                                                         number: 10,
                                                                     });

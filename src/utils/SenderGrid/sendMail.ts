@@ -29,10 +29,9 @@ const parseResponse = async (response: Response): Promise<SendEmailPayload | str
             (parsed.error === undefined || typeof parsed.error === "string")
         ) {
             return parsed as SendEmailPayload;
-        } else {
-            console.warn("sendProtectedEmail received invalid payload structure", parsed);
-            return text;
         }
+        console.warn("sendProtectedEmail received invalid payload structure", parsed);
+        return text;
     } catch (error) {
         console.warn("sendProtectedEmail received non-JSON response", error);
         return text;

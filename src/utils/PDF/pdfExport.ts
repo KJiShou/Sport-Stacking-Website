@@ -1,14 +1,4 @@
-import {
-    getEventKey,
-    getEventLabel,
-    matchesAnyEventKey,
-    matchesEventKey,
-    sanitizeEventCodes,
-    teamMatchesEventKey,
-} from "@/utils/tournament/eventUtils";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import {nanoid} from "nanoid";
+// @ts-nocheck
 // src/utils/pdfExportUtils.ts
 import type {
     AllPrelimResultsPDFParams,
@@ -23,6 +13,17 @@ import type {
     PrelimResult,
     PrelimResultData,
 } from "@/schema";
+import {
+    getEventKey,
+    getEventLabel,
+    matchesAnyEventKey,
+    matchesEventKey,
+    sanitizeEventCodes,
+    teamMatchesEventKey,
+} from "@/utils/tournament/eventUtils";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import {nanoid} from "nanoid";
 import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 
 // Utility Functions

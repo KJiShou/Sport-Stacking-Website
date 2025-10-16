@@ -1,9 +1,12 @@
 import {Spin} from "@arco-design/web-react";
-import React from "react";
-import type {ReactNode} from "react";
+import type {FC, ReactElement, ReactNode} from "react";
 import {useAuthContext} from "../../context/AuthContext";
 
-const ProtectedRoute = ({children}: {children: ReactNode}) => {
+interface ProtectedRouteProps {
+    children: ReactNode;
+}
+
+const ProtectedRoute: FC<ProtectedRouteProps> = ({children}): ReactElement => {
     const {loading} = useAuthContext();
 
     if (loading) {
@@ -13,7 +16,7 @@ const ProtectedRoute = ({children}: {children: ReactNode}) => {
             </div>
         );
     }
-    return children;
+    return <>{children}</>;
 };
 
 export default ProtectedRoute;

@@ -12,14 +12,14 @@ import {
     Space,
     Spin,
     Table,
+    type TableColumnProps,
     Tag,
     Typography,
-    type TableColumnProps,
 } from "@arco-design/web-react";
 import {IconRefresh} from "@arco-design/web-react/icon";
 
-import {getEventRankings} from "@/services/firebase/recordService";
 import type {GlobalResult, GlobalTeamResult} from "@/schema/RecordSchema";
+import {getEventRankings} from "@/services/firebase/recordService";
 
 const {Title, Text} = Typography;
 const Option = Select.Option;

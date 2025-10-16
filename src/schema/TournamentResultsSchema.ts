@@ -1,6 +1,6 @@
+import type {TournamentRecord, TournamentTeamRecord} from "./RecordSchema";
 import type {Registration} from "./RegistrationSchema";
 import type {Team} from "./TeamSchema";
-import type {TournamentRecord, TournamentTeamRecord} from "./RecordSchema";
 
 export interface AggregationContext {
     allRecords: (TournamentRecord | TournamentTeamRecord)[];

@@ -1,7 +1,7 @@
-import type {AgeBracket, TournamentEvent} from "./TournamentSchema";
+import type {PrelimResultData} from "./PdfSchema";
 import type {Registration} from "./RegistrationSchema";
 import type {Team} from "./TeamSchema";
-import type {PrelimResultData} from "./PdfSchema";
+import type {AgeBracket, TournamentEvent} from "./TournamentSchema";
 
 export interface Score {
     try1: string;

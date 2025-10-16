@@ -1,4 +1,3 @@
-import type {AppRoute} from "@/schema";
 import FinalResultsPage from "@/pages/Tournaments/FinalResults/FinalResultsPage";
 import ParticipantListPage from "@/pages/Tournaments/ParticipantList/ParticipantListPage";
 import PrelimResultsPage from "@/pages/Tournaments/PrelimResults/PrelimResultsPage";
@@ -9,6 +8,7 @@ import FinalScoringPage from "@/pages/Tournaments/Scoring/FinalScoringPage";
 import ScoringPage from "@/pages/Tournaments/Scoring/ScoringPage";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
+import type {AppRoute} from "@/schema";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import TeamRecruitmentManagement from "../pages/Admin/TeamRecruitmentManagement";
 import Athletes from "../pages/Athletes/Athletes";
