@@ -7,7 +7,7 @@ import type {Team} from "@/schema/TeamSchema";
 import {deleteRegistrationById, fetchUserRegistration, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
-import {getEventKey, getEventLabel, getTeamEventLabels, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
+import {getEventKey, getEventLabel, getTeamEventLabels, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Checkbox,
@@ -86,17 +86,12 @@ export default function ViewTournamentRegistrationPage() {
                 );
                 setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
-                const eventIds =
-                    tournamentData?.events
-                        ?.filter((event) => matchesAnyEventKey(userReg.events_registered, event))
-                        .map((event) => getEventKey(event)) ?? userReg.events_registered;
-
                 form.setFieldsValue({
                     user_name: userReg.user_name,
                     id: userReg.user_id,
                     age: userReg.age,
                     phone_number: userReg.phone_number,
-                    events_registered: eventIds,
+                    events_registered: userReg.events_registered ?? [],
                 });
             } catch (err) {
                 Message.error("Failed to load data.");
@@ -110,6 +105,15 @@ export default function ViewTournamentRegistrationPage() {
     if (!loading && !registration) {
         return <Result status="404" title="Not Registered" subTitle="You haven't registered for this tournament." />;
     }
+
+    const getEventDisplayLabel = (eventId: string): string => {
+        const event = tournament?.events?.find((evt) => getEventKey(evt) === eventId);
+        return event ? getEventLabel(event) : eventId;
+    };
+
+    const extraEventIds = (registration?.events_registered ?? []).filter(
+        (eventId) => !tournament?.events?.some((event) => getEventKey(event) === eventId),
+    );
 
     return (
         <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
@@ -148,6 +152,11 @@ export default function ViewTournamentRegistrationPage() {
                                         </Option>
                                     );
                                 })}
+                                {extraEventIds.map((eventId) => (
+                                    <Option key={`extra-${eventId}`} value={eventId}>
+                                        {getEventDisplayLabel(eventId)}
+                                    </Option>
+                                ))}
                             </Select>
                         </Form.Item>
 

@@ -29,6 +29,18 @@ import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, Tournam
 // Utility Functions
 const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9_]/g, "");
 
+const inferImageFormat = (imageDataUrl: string | undefined): jsPDF.ImageFormat => {
+    if (!imageDataUrl) {
+        return "PNG";
+    }
+    const match = /^data:image\/([a-z0-9+]+);/i.exec(imageDataUrl);
+    const rawFormat = match?.[1]?.toLowerCase() ?? "png";
+    if (rawFormat === "jpg") {
+        return "JPEG";
+    }
+    return rawFormat.toUpperCase() as jsPDF.ImageFormat;
+};
+
 const getPrimaryEventCode = (event: TournamentEvent): string => {
     const sanitized = sanitizeEventCodes(event.codes);
     if (sanitized.length > 0) return sanitized[0];
@@ -208,7 +220,14 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
 
         if (logoDataUrl) {
             try {
-                doc.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, marginY + 5, 30, 30);
+                doc.addImage(
+                    logoDataUrl,
+                    inferImageFormat(logoDataUrl),
+                    pageWidth - marginX - logoWidth + 5,
+                    marginY + 5,
+                    30,
+                    30,
+                );
             } catch (error) {
                 console.error("Error adding logo to PDF:", error);
                 doc.setFontSize(8);
@@ -307,6 +326,66 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
         const logoWidth = 40;
         const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
 
+        const eventMetadataMap = new Map<string, {label: string; type: string; code?: string}>();
+        if (tournament.events) {
+            for (const event of tournament.events) {
+                const label = getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`;
+                if (event.id) {
+                    eventMetadataMap.set(event.id, {label, type: event.type});
+                }
+                const eventKey = getEventKey(event);
+                eventMetadataMap.set(eventKey, {label, type: event.type});
+                eventMetadataMap.set(event.type, {label: event.type, type: event.type});
+                for (const code of sanitizeEventCodes(event.codes)) {
+                    const codeLabel = `${code} (${event.type})`;
+                    eventMetadataMap.set(`${code}-${event.type}`, {label: codeLabel, type: event.type, code});
+                    eventMetadataMap.set(code, {label: code, type: event.type, code});
+                }
+            }
+        }
+
+        const formatEventsRegistered = (registration: Registration): string => {
+            const events = registration.events_registered ?? [];
+            if (events.length === 0) {
+                return "None";
+            }
+            const grouped = new Map<string, Set<string>>();
+            const fallbacks = new Set<string>();
+
+            for (const eventKey of events) {
+                const metadata = eventMetadataMap.get(eventKey);
+                if (metadata) {
+                    const typeKey = metadata.type;
+                    if (metadata.code) {
+                        if (!grouped.has(typeKey)) {
+                            grouped.set(typeKey, new Set());
+                        }
+                        const bucket = grouped.get(typeKey);
+                        if (bucket) {
+                            bucket.add(metadata.code);
+                        }
+                    } else {
+                        fallbacks.add(metadata.label);
+                    }
+                } else {
+                    fallbacks.add(eventKey);
+                }
+            }
+
+            const parts: string[] = [];
+            const sortedTypes = Array.from(grouped.keys()).sort();
+            for (const type of sortedTypes) {
+                const codes = Array.from(grouped.get(type) ?? []).sort((a, b) => a.localeCompare(b));
+                parts.push(codes.length > 0 ? `${type} (${codes.join(", ")})` : type);
+            }
+
+            const fallbackLabels = Array.from(fallbacks).filter((label) => !grouped.has(label));
+            fallbackLabels.sort((a, b) => a.localeCompare(b));
+            parts.push(...fallbackLabels);
+
+            return parts.length > 0 ? parts.join(", ") : "None";
+        };
+
         // Header
         doc.setFont("times", "bold");
         doc.setFontSize(25);
@@ -323,17 +402,29 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
             }
         }
 
+        const logoDisplayWidth = 30;
+        const logoDisplayHeight = 30;
+        const logoX = pageWidth - marginX - logoDisplayWidth;
+        const logoY = marginY + 5;
+
         if (logoDataUrl) {
             try {
-                doc.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, marginY + 5, 30, 30);
+                doc.addImage(
+                    logoDataUrl,
+                    inferImageFormat(logoDataUrl),
+                    logoX,
+                    logoY,
+                    logoDisplayWidth,
+                    logoDisplayHeight,
+                );
             } catch (error) {
                 console.error("Error adding logo to PDF:", error);
                 doc.setFontSize(8);
-                doc.text("LOGO", pageWidth - marginX - logoWidth + 15, marginY + 20);
+                doc.text("LOGO", logoX + 5, logoY + 15);
             }
         } else {
             doc.setFontSize(8);
-            doc.text("LOGO", pageWidth - marginX - logoWidth + 15, marginY + 20);
+            doc.text("LOGO", logoX + 5, logoY + 15);
         }
 
         const titleHeight = titleLines.length * 10; // Approximate height of the title
@@ -353,7 +444,7 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
             r.user_name || "N/A",
             ageMap[r.user_id]?.toString() || "N/A",
             phoneMap[r.user_id] || "N/A",
-            (r.events_registered || []).join(", ") || "None",
+            formatEventsRegistered(r),
         ]);
 
         autoTable(doc, {
@@ -382,7 +473,7 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
                 2: {cellWidth: 40},
                 3: {cellWidth: 15},
                 4: {cellWidth: 30},
-                5: {cellWidth: 60},
+                5: {cellWidth: 75},
             },
         });
 
@@ -424,7 +515,14 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
 
             if (logoDataUrl) {
                 try {
-                    docInstance.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, 10, 30, 30);
+                    docInstance.addImage(
+                        logoDataUrl,
+                        inferImageFormat(logoDataUrl),
+                        pageWidth - marginX - logoWidth + 5,
+                        10,
+                        30,
+                        30,
+                    );
                 } catch (error) {
                     console.error("Error adding logo to PDF:", error);
                     docInstance.setFontSize(8);
@@ -497,7 +595,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                                 );
                             }
                         } else {
-                            rowData.push(r.try1 ?? "N/A", r.try2 ?? "N/A", r.try3 ?? "N/A");
+                            rowData.push(r.try1?.toFixed(3) ?? "N/A", r.try2?.toFixed(3) ?? "N/A", r.try3?.toFixed(3) ?? "N/A");
                         }
                         rowData.push(r.bestTime.toFixed(3));
                         return rowData;
@@ -623,7 +721,14 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
 
             if (logoDataUrl) {
                 try {
-                    docInstance.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, 10, 30, 30);
+                    docInstance.addImage(
+                        logoDataUrl,
+                        inferImageFormat(logoDataUrl),
+                        pageWidth - marginX - logoWidth + 5,
+                        10,
+                        30,
+                        30,
+                    );
                 } catch (error) {
                     console.error("Error adding logo to PDF:", error);
                     docInstance.setFontSize(8);
@@ -764,7 +869,7 @@ export const exportAllBracketsListToPDF = async (
 
         if (logoDataUrl) {
             try {
-                doc.addImage(logoDataUrl, undefined, pageWidth - marginX - logoWidth + 5, 10, 30, 30);
+                doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), pageWidth - marginX - logoWidth + 5, 10, 30, 30);
             } catch (error) {
                 console.error("Error adding logo to PDF:", error);
                 doc.setFontSize(8);
@@ -1068,7 +1173,7 @@ const generateSingleStackingSheet = (
     // Add logo image if available
     if (logoDataUrl) {
         try {
-            doc.addImage(logoDataUrl, undefined, marginX + 2, startY + 2, 36, titleHeight - 4);
+            doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), marginX + 2, startY + 2, 36, titleHeight - 4);
         } catch (error) {
             console.error("Error adding logo to PDF:", error);
             doc.setFontSize(8);

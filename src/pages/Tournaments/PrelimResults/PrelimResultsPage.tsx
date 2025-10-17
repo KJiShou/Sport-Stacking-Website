@@ -794,6 +794,7 @@ export default function PrelimResultsPage() {
                                                 <TabPane key={bracket.name} title={bracket.name}>
                                                     <Table
                                                         style={{width: "100%"}}
+                                                        rowKey={(record) => record.id}
                                                         columns={columns}
                                                         data={bracketResults}
                                                         pagination={false}
@@ -807,6 +808,7 @@ export default function PrelimResultsPage() {
                                 ) : (
                                     <Table
                                         style={{width: "100%"}}
+                                        rowKey={(record) => record.id}
                                         columns={columns}
                                         data={[]}
                                         pagination={false}

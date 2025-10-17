@@ -125,13 +125,13 @@ export const saveRecord = async (data: {
         try3,
         bestTime,
         status,
-        classification: data.classification ?? undefined,
         videoUrl: videoUrl ?? null,
         submitted_at,
         verified_by: verified_by ?? null,
         verified_at: verified_at ?? null,
         created_at: now,
         updated_at: now,
+        ...(data.classification ? {classification: data.classification} : {}),
     };
 
     let recordData: TournamentRecord | TournamentTeamRecord = baseRecordData;
@@ -147,6 +147,9 @@ export const saveRecord = async (data: {
             leaderId: providedLeaderId,
             leaderName: memberNames.find((_, index) => memberIds[index] === providedLeaderId),
         } as TournamentTeamRecord;
+        if (data.classification) {
+            (recordData as TournamentTeamRecord).classification = data.classification;
+        }
     }
     await setDoc(recordRef, recordData, {merge: true});
 
@@ -307,13 +310,13 @@ export const saveTeamRecord = async (data: {
         try3,
         bestTime,
         status,
-        classification: data.classification ?? undefined,
         videoUrl: videoUrl || null,
         submitted_at,
         verified_by: verified_by || null,
         verified_at: verified_at || null,
         created_at: now,
         updated_at: now,
+        ...(data.classification ? {classification: data.classification} : {}),
     };
     await setDoc(recordRef, recordData, {merge: true});
 

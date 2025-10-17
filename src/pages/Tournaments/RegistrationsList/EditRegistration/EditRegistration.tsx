@@ -1,7 +1,7 @@
 // src/pages/ViewTournamentRegistrationPage.tsx
 
 import {useAuthContext} from "@/context/AuthContext";
-import type {Registration, Tournament} from "@/schema";
+import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
@@ -15,7 +15,6 @@ import {
     getTeamEventLabels,
     getTeamEvents,
     isTeamEvent,
-    matchesAnyEventKey,
     matchesEventKey,
     sanitizeEventCodes,
     teamMatchesEventKey,
@@ -100,19 +99,6 @@ export default function EditTournamentRegistrationPage() {
                 );
             }
             setPaymentProofUrl(tempPaymentProofUrl);
-            const expandedEventSelections = new Set<string>();
-            for (const eventId of values.events_registered ?? []) {
-                expandedEventSelections.add(eventId);
-                const eventDetails = tournament?.events?.find((event) => matchesEventKey(eventId, event));
-                if (eventDetails) {
-                    expandedEventSelections.add(eventDetails.type);
-                    for (const code of sanitizeEventCodes(eventDetails.codes)) {
-                        expandedEventSelections.add(code);
-                        expandedEventSelections.add(`${code}-${eventDetails.type}`);
-                    }
-                }
-            }
-
             const registrationData: Registration = {
                 id: registrationId,
                 tournament_id: tournamentId ?? "",
@@ -123,7 +109,7 @@ export default function EditTournamentRegistrationPage() {
                 country: registration?.country ?? "MY",
                 phone_number: values.phone_number ?? "",
                 organizer: values?.organizer ?? "",
-                events_registered: Array.from(expandedEventSelections),
+                events_registered: values.events_registered ?? [],
                 payment_proof_url: tempPaymentProofUrl,
                 registration_status: values?.registration_status ?? "pending",
                 rejection_reason: values?.registration_status === "rejected" ? rejection_reason : null,
@@ -277,11 +263,6 @@ export default function EditTournamentRegistrationPage() {
 
             setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
-            const eventIds =
-                tournamentData?.events
-                    ?.filter((event) => matchesAnyEventKey(userReg.events_registered, event))
-                    .map((event) => getEventKey(event)) ?? userReg.events_registered;
-
             form.setFieldsValue({
                 user_name: userReg.user_name,
                 id: userReg.user_id,
@@ -289,7 +270,7 @@ export default function EditTournamentRegistrationPage() {
                 gender: userReg.gender,
                 phone_number: userReg.phone_number,
                 organizer: userReg.organizer,
-                events_registered: eventIds,
+                events_registered: userReg.events_registered ?? [],
                 registration_status: userReg.registration_status,
                 rejection_reason: userReg.rejection_reason,
             });
@@ -315,6 +296,15 @@ export default function EditTournamentRegistrationPage() {
 
         handleMount().finally(() => setIsMounted(true));
     });
+
+    const getEventDisplayLabel = (eventId: string): string => {
+        const event = tournament?.events?.find((evt) => getEventKey(evt) === eventId);
+        return event ? getEventLabel(event) : eventId;
+    };
+
+    const extraEventIds = (registration?.events_registered ?? []).filter(
+        (eventId) => !tournament?.events?.some((event) => getEventKey(event) === eventId),
+    );
 
     if (!isMounted && !loading && !registration) {
         return <Result status="404" title="Not Registered" subTitle="You haven't registered for this tournament." />;
@@ -415,14 +405,14 @@ export default function EditTournamentRegistrationPage() {
                                     );
 
                                     if (newTeamEvents.length > 0) {
-                                        const newTeamsToAdd: Team[] = newTeamEvents.map((event) => {
-                                            const eventKey = getEventKey(event);
-                                            const eventType = event.type;
-                                            const teamEventKeys = new Set<string>([eventKey, eventType]);
-                                            for (const code of sanitizeEventCodes(event.codes)) {
-                                                teamEventKeys.add(code);
-                                                teamEventKeys.add(`${code}-${event.type}`);
-                                            }
+                                    const newTeamsToAdd: Team[] = newTeamEvents.map((event) => {
+                                        const eventKey = getEventKey(event);
+                                        const eventType = event.type;
+                                        const teamEventKeys = new Set<string>([eventKey, eventType]);
+                                        for (const code of sanitizeEventCodes(event.codes)) {
+                                            teamEventKeys.add(code);
+                                            teamEventKeys.add(`${code}-${event.type}`);
+                                        }
                                             return {
                                                 id: nanoid(),
                                                 tournament_id: tournamentId ?? "",
@@ -461,6 +451,11 @@ export default function EditTournamentRegistrationPage() {
                                         </Option>
                                     );
                                 })}
+                                {extraEventIds.map((eventId) => (
+                                    <Option key={`extra-${eventId}`} value={eventId}>
+                                        {getEventDisplayLabel(eventId)}
+                                    </Option>
+                                ))}
                             </Select>
                         </Form.Item>
 

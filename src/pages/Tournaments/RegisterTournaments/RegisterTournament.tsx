@@ -150,19 +150,6 @@ export default function RegisterTournamentPage() {
                 }
             }
 
-            const expandedEventSelections = new Set<string>();
-            for (const eventId of values.events_registered ?? []) {
-                expandedEventSelections.add(eventId);
-                const eventDetails = findEventByKey(eventId);
-                if (eventDetails) {
-                    expandedEventSelections.add(eventDetails.type);
-                    for (const code of sanitizeEventCodes(eventDetails.codes)) {
-                        expandedEventSelections.add(code);
-                        expandedEventSelections.add(`${code}-${eventDetails.type}`);
-                    }
-                }
-            }
-
             const registrationData: Registration = {
                 tournament_id: tournamentId,
                 user_id: user?.global_id ?? "",
@@ -171,7 +158,7 @@ export default function RegisterTournamentPage() {
                 country: user?.country?.[0] ?? "",
                 phone_number: values.phone_number,
                 organizer: values.organizer ?? "",
-                events_registered: Array.from(expandedEventSelections),
+                events_registered: values.events_registered ?? [],
                 registrationFee: tournament.registration_fee,
                 memberRegistrationFee: tournament.member_registration_fee,
                 payment_proof_url: paymentProofUrl,

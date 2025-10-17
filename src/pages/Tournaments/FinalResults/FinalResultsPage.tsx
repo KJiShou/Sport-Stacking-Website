@@ -1192,8 +1192,9 @@ export default function FinalResultsPage() {
                         const eventIsTeam = ["double", "team relay", "parent & child"].includes(event.type.toLowerCase());
                         const eventIsPureIndividual = event.type === "Individual" && event.code !== "Overall";
                         const eventCodes = getEventCodes(event);
-                        const expandedRowRender = (record: FinalResultRow) =>
+                        const expandedRowRender = (record: FinalResultRow) => {
                             buildMultiCodeExpandedRows(record, event, eventCodes, eventIsTeam, allRecords);
+                        };
                         const isActiveEvent = eventKey === currentEventTab;
                         const eventHasBrackets = (event.age_brackets?.length ?? 0) > 0;
                         const tableColumns = eventIsOverall
@@ -1225,7 +1226,7 @@ export default function FinalResultsPage() {
                                                             pagination={false}
                                                             loading={loading}
                                                             rowKey={getRowKey}
-                                                            expandedRowRender={expandedRowRender}
+                                                            expandedRowRender={eventCodes.length > 1 ? expandedRowRender : null}
                                                         />
                                                     ) : isActiveBracket && availableClassifications.length > 0 ? (
                                                         <Tabs
@@ -1249,7 +1250,9 @@ export default function FinalResultsPage() {
                                                                             pagination={false}
                                                                             loading={loading}
                                                                             rowKey={getRowKey}
-                                                                            expandedRowRender={expandedRowRender}
+                                                                            expandedRowRender={
+                                                                                eventCodes.length > 1 ? expandedRowRender : null
+                                                                            }
                                                                         />
                                                                     </TabPane>
                                                                 );
@@ -1272,7 +1275,7 @@ export default function FinalResultsPage() {
                                                             pagination={false}
                                                             loading={loading}
                                                             rowKey={getRowKey}
-                                                            expandedRowRender={expandedRowRender}
+                                                            expandedRowRender={eventCodes.length > 1 ? expandedRowRender : null}
                                                         />
                                                     )}
                                                 </TabPane>
@@ -1287,7 +1290,7 @@ export default function FinalResultsPage() {
                                         pagination={false}
                                         loading={loading}
                                         rowKey={getRowKey}
-                                        expandedRowRender={expandedRowRender}
+                                        expandedRowRender={eventCodes.length > 1 ? expandedRowRender : null}
                                     />
                                 )}
                             </TabPane>
