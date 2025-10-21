@@ -26,6 +26,7 @@ export const DEFAULT_EVENTS: TournamentEvent[] = [
         id: crypto.randomUUID(),
         codes: ["3-6-3", "Cycle"],
         type: "Team Relay",
+        teamSize: 4,
         age_brackets: [
             {
                 name: "Under 10",

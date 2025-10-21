@@ -12,18 +12,23 @@ import {
     getDocs,
     orderBy,
     query,
+    setDoc,
     updateDoc,
     where,
 } from "firebase/firestore";
-import type {FirestoreUser, Team, Tournament} from "../../schema";
-import {TournamentSchema} from "../../schema";
+import type {FirestoreUser, Team, Tournament, TournamentEvent} from "../../schema";
+import {EventSchema, TournamentSchema} from "../../schema";
 import {removeUserRegistrationRecordsByTournament} from "./authService";
 import {db} from "./config";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByTournament} from "./individualRecruitmentService";
 import {deleteTournamentStorage} from "./storageService";
 import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
 
-export async function createTournament(user: FirestoreUser, data: Omit<Tournament, "id">): Promise<string> {
+export async function createTournament(
+    user: FirestoreUser,
+    data: Omit<Tournament, "id">,
+    events: TournamentEvent[],
+): Promise<string> {
     if (!user?.roles?.edit_tournament) {
         throw new Error("Unauthorized: You do not have permission to create a tournament.");
     }
@@ -56,10 +61,6 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("Max participants must be greater than or equal 0.");
     }
 
-    if (!data.events || data.events.length === 0) {
-        throw new Error("At least one event is required.");
-    }
-
     if (!data.country) {
         throw new Error("Country is required.");
     }
@@ -72,14 +73,9 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("Address is required.");
     }
 
-    function generateEventId(existingId?: string): string {
-        return existingId && existingId.length > 0 ? existingId : crypto.randomUUID();
+    if (!events || events.length === 0) {
+        throw new Error("At least one event is required.");
     }
-
-    const eventsWithIds = (data.events ?? []).map((event) => ({
-        ...event,
-        id: generateEventId(event.id),
-    }));
 
     const docRef = await addDoc(collection(db, "tournaments"), {
         registration_fee: data.registration_fee,
@@ -93,18 +89,62 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         registration_start_date: data.registration_start_date,
         registration_end_date: data.registration_end_date,
         max_participants: data.max_participants,
-        events: eventsWithIds,
         description: data.description ?? null,
         agenda: data.agenda ?? null,
         logo: data.logo ?? null,
         editor: data.editor ?? "",
         recorder: data.recorder ?? "",
-        participants: 0, // 初始参与者数为0
+        participants: 0,
         status: "Up Coming",
         created_at: Timestamp.now(),
     });
 
+    events.map(async (event) => {
+        await addDoc(collection(db, "events"), {
+            ...event,
+            tournament_id: docRef.id,
+        });
+    });
+
     return docRef.id;
+}
+
+export async function fetchTournamentEvents(tournamentId: string): Promise<TournamentEvent[]> {
+    const eventsQuery = query(collection(db, "events"), where("tournament_id", "==", tournamentId));
+    const snapshot = await getDocs(eventsQuery);
+
+    return snapshot.docs
+        .map((docSnapshot) => {
+            const parsed = EventSchema.safeParse({id: docSnapshot.id, ...docSnapshot.data()});
+            if (!parsed.success) {
+                console.warn(`Failed to parse event ${docSnapshot.id}`, parsed.error.flatten());
+                return null;
+            }
+
+            return parsed.data;
+        })
+        .filter((event): event is TournamentEvent => event !== null);
+}
+
+export async function saveTournamentEvents(tournamentId: string, events: TournamentEvent[]): Promise<void> {
+    const eventsCollection = collection(db, "events");
+    const snapshot = await getDocs(query(eventsCollection, where("tournament_id", "==", tournamentId)));
+
+    const incomingIds = new Set(events.map((event) => event.id).filter((id): id is string => typeof id === "string"));
+
+    const deletions = snapshot.docs.filter((docSnapshot) => !incomingIds.has(docSnapshot.id));
+    await Promise.all(deletions.map((docSnapshot) => deleteDoc(docSnapshot.ref)));
+
+    await Promise.all(
+        events.map(async (event) => {
+            const eventId = event.id && event.id.length > 0 ? event.id : crypto.randomUUID();
+            await setDoc(doc(db, "events", eventId), {
+                ...event,
+                id: eventId,
+                tournament_id: tournamentId,
+            });
+        }),
+    );
 }
 
 export async function updateTournament(user: FirestoreUser, tournamentId: string, data: Omit<Tournament, "id">): Promise<void> {
@@ -302,7 +342,17 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
-    // 7. Delete all tournament storage files (agenda, logo, payment proofs, etc.)
+    // 7. Delete tournament events stored in the shared events collection
+    try {
+        const eventSnapshots = await getDocs(query(collection(db, "events"), where("tournament_id", "==", tournamentId)));
+        const eventDeletePromises = eventSnapshots.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref));
+        await Promise.all(eventDeletePromises);
+    } catch (error) {
+        console.error("Error deleting tournament events:", error);
+        throw new Error("Failed to delete tournament events");
+    }
+
+    // 8. Delete all tournament storage files (agenda, logo, payment proofs, etc.)
     try {
         await deleteTournamentStorage(tournamentId);
     } catch (error) {
@@ -310,7 +360,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as storage deletion shouldn't block tournament deletion
     }
 
-    // 8. Finally, delete the tournament document itself
+    // 9. Finally, delete the tournament document itself
     try {
         const tournamentRef = doc(db, "tournaments", tournamentId);
         await deleteDoc(tournamentRef);

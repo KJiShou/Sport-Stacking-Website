@@ -19,14 +19,12 @@ export const AgeBracketSchema = z.object({
 });
 
 export const EventSchema = z.object({
-    id: z
-        .union([z.string().uuid(), z.string().length(0), z.undefined(), z.null()])
-        .transform((value) => (typeof value === "string" && value.length > 0 ? value : crypto.randomUUID())),
-    code: z.string().optional(),
-    codes: z.array(z.enum(["3-3-3", "3-6-3", "Cycle", "Overall"])),
+    id: z.string().optional().nullable(),
+    tournament_id: z.string().optional().nullable(),
+    codes: z.array(z.enum(["3-3-3", "3-6-3", "Cycle"])),
     type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"]),
-    teamSize: z.number().optional(),
-    age_brackets: z.array(AgeBracketSchema), // 直接放进每个 event
+    team_size: z.number().optional(),
+    age_brackets: z.array(AgeBracketSchema),
 });
 
 export type AgeBracket = z.infer<typeof AgeBracketSchema>;
@@ -36,6 +34,13 @@ export type TournamentEvent = z.infer<typeof EventSchema>;
 export const TournamentSchema = z.object({
     id: z.string().optional().nullable(),
     name: z.string().optional().nullable(),
+    country: z.array(z.string(), z.string()).optional().nullable(),
+    address: z.string().optional().nullable(),
+    venue: z.string().optional().nullable(),
+    agenda: z.string().optional().nullable(),
+    description: z.string().optional().nullable(),
+    logo: z.string().optional().nullable(),
+    status: z.enum(["Up Coming", "On Going", "Close Registration", "End"]).optional().nullable(),
     start_date: z
         .union([z.instanceof(Timestamp), z.instanceof(Date)])
         .optional()
@@ -44,15 +49,9 @@ export const TournamentSchema = z.object({
         .union([z.instanceof(Timestamp), z.instanceof(Date)])
         .optional()
         .nullable(),
-    country: z.array(z.string(), z.string()).optional().nullable(),
-    venue: z.string().optional().nullable(),
-    address: z.string().optional().nullable(),
-
-    events: z.array(EventSchema).optional().nullable(),
-    description: z.string().optional().nullable(),
-    agenda: z.string().optional().nullable(),
-    logo: z.string().optional().nullable(),
-
+    max_participants: z.number().optional().nullable(),
+    editor: z.string().optional().nullable(),
+    recorder: z.string().optional().nullable(),
     registration_start_date: z
         .union([z.instanceof(Timestamp), z.instanceof(Date)])
         .optional()
@@ -61,14 +60,8 @@ export const TournamentSchema = z.object({
         .union([z.instanceof(Timestamp), z.instanceof(Date)])
         .optional()
         .nullable(),
-    status: z.enum(["Up Coming", "On Going", "Close Registration", "End"]).optional().nullable(),
-    participants: z.number().optional().nullable(),
-    max_participants: z.number().optional().nullable(),
-    editor: z.string().optional().nullable(),
-    recorder: z.string().optional().nullable(),
     registration_fee: z.number().optional().nullable(),
     member_registration_fee: z.number().optional().nullable(),
-
     create_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
 });

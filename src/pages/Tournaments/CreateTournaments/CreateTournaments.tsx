@@ -35,6 +35,7 @@ import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
 type TournamentFormData = Tournament & {
     date_range: [Timestamp, Timestamp];
     registration_date_range: [Timestamp, Timestamp];
+    events: DraftTournamentEvent[];
 };
 
 type DraftTournamentEvent = Partial<TournamentEvent> & {__prevType?: string};
@@ -56,7 +57,7 @@ const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = ["Individual", "Double", "
 const isTournamentEventType = (value: unknown): value is TournamentEvent["type"] =>
     typeof value === "string" && EVENT_TYPE_OPTIONS.includes(value as TournamentEvent["type"]);
 
-const EVENT_CODE_OPTIONS = ["3-3-3", "3-6-3", "Cycle", "Overall"] as const;
+const EVENT_CODE_OPTIONS = ["3-3-3", "3-6-3", "Cycle"] as const;
 type EventCode = (typeof EVENT_CODE_OPTIONS)[number];
 
 const isEventCode = (value: unknown): value is EventCode =>
@@ -132,11 +133,11 @@ export default function CreateTournamentPage() {
                 return;
             }
 
-            const rawEvents = (form.getFieldValue("events") ?? []) as DraftTournamentEvent[];
+            const rawEvents = values.events ?? [];
             const sanitizedEvents: TournamentEvent[] = [];
 
             for (const rawEvent of rawEvents) {
-                const {__prevType: _ignored, age_brackets, id, type, codes, ...rest} = rawEvent;
+                const {age_brackets, id, type, codes, team_size} = rawEvent;
                 if (!isTournamentEventType(type)) {
                     continue;
                 }
@@ -147,19 +148,10 @@ export default function CreateTournamentPage() {
                 }
 
                 const sanitizedEvent: TournamentEvent = {
-                    id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
                     type,
                     codes: normalizedCodes,
                     age_brackets: cloneAgeBrackets(age_brackets ?? []),
                 };
-
-                if (typeof rest.teamSize === "number") {
-                    sanitizedEvent.teamSize = rest.teamSize;
-                }
-
-                if (typeof rest.code === "string" && rest.code.length > 0) {
-                    sanitizedEvent.code = rest.code;
-                }
 
                 sanitizedEvents.push(sanitizedEvent);
             }
@@ -170,24 +162,27 @@ export default function CreateTournamentPage() {
             let agendaUrl = "";
             let logoUrl = "";
 
-            const tournamentId = await createTournament(user, {
-                name: values.name,
-                start_date: values.date_range[0],
-                end_date: values.date_range[1],
-                country: values.country,
-                venue: values.venue,
-                address: values.address,
-                registration_start_date: values.registration_date_range[0],
-                registration_end_date: values.registration_date_range[1],
-                max_participants: values.max_participants,
-                events: sanitizedEvents,
-                description: values.description,
-                editor: values.editor ?? null,
-                recorder: values.recorder ?? null,
-                status: "Up Coming",
-                registration_fee: values.registration_fee,
-                member_registration_fee: values.member_registration_fee,
-            });
+            const tournamentId = await createTournament(
+                user,
+                {
+                    name: values.name,
+                    start_date: values.date_range[0],
+                    end_date: values.date_range[1],
+                    country: values.country,
+                    venue: values.venue,
+                    address: values.address,
+                    registration_start_date: values.registration_date_range[0],
+                    registration_end_date: values.registration_date_range[1],
+                    max_participants: values.max_participants,
+                    description: values.description,
+                    editor: values.editor ?? null,
+                    recorder: values.recorder ?? null,
+                    status: "Up Coming",
+                    registration_fee: values.registration_fee,
+                    member_registration_fee: values.member_registration_fee,
+                },
+                sanitizedEvents,
+            );
 
             if (agendaFile instanceof File) {
                 agendaUrl = await uploadFile(agendaFile, `agendas/${tournamentId}`);
