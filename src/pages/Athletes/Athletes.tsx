@@ -15,11 +15,13 @@ import {
     type TableColumnProps,
     Tag,
     Typography,
+    Link,
 } from "@arco-design/web-react";
 import {IconRefresh} from "@arco-design/web-react/icon";
 
 import type {GlobalResult, GlobalTeamResult} from "@/schema/RecordSchema";
 import {getEventRankings} from "@/services/firebase/recordService";
+import {formatStackingTime} from "@/utils/time";
 
 const {Title, Text} = Typography;
 const Option = Select.Option;
@@ -74,6 +76,7 @@ interface AthleteRankingEntry {
     country: string;
     events: Record<string, EventStats>;
     members: string[];
+    memberNames: string[];
 }
 
 interface AthleteTableRow extends AthleteRankingEntry {
@@ -246,9 +249,42 @@ function determineSeason(date: Date): SeasonValue | null {
     return `${seasonStartYear}-${seasonStartYear + 1}` as SeasonValue;
 }
 
-function buildEventStats(record: {time?: number; created_at?: unknown; updated_at?: unknown}): EventStats | null {
-    const time = typeof record.time === "number" ? record.time : Number(record.time ?? 0);
-    if (!Number.isFinite(time) || time <= 0) {
+function extractBestTime(record: {
+    bestTime?: unknown;
+    time?: unknown;
+    try1?: unknown;
+    try2?: unknown;
+    try3?: unknown;
+}): number | null {
+    const candidates = [record.bestTime, record.time, record.try1, record.try2, record.try3]
+        .map((value) => {
+            if (typeof value === "number") {
+                return value;
+            }
+            if (typeof value === "string" && value.trim().length > 0) {
+                const numeric = Number.parseFloat(value);
+                return Number.isFinite(numeric) ? numeric : Number.NaN;
+            }
+            return Number.NaN;
+        })
+        .filter((value) => Number.isFinite(value) && value > 0);
+    if (candidates.length === 0) {
+        return null;
+    }
+    return Math.min(...candidates);
+}
+
+function buildEventStats(record: {
+    time?: unknown;
+    bestTime?: unknown;
+    try1?: unknown;
+    try2?: unknown;
+    try3?: unknown;
+    created_at?: unknown;
+    updated_at?: unknown;
+}): EventStats | null {
+    const time = extractBestTime(record);
+    if (time === null) {
         return null;
     }
     const createdAt = normalizeTimestamp(record.created_at);
@@ -324,6 +360,7 @@ function ensureEntry(
             country: base.country ?? "Unknown",
             events: {},
             members: base.members ?? [],
+            memberNames: base.memberNames ?? [],
         };
         map.set(key, entry);
         return entry;
@@ -353,20 +390,10 @@ function ensureEntry(
     if (base.members && base.members.length > 0) {
         entry.members = base.members;
     }
+    if (base.memberNames && base.memberNames.length > 0) {
+        entry.memberNames = base.memberNames;
+    }
     return entry;
-}
-
-function formatStackingTime(time: number | null | undefined): string {
-    if (!time || time <= 0) {
-        return "—";
-    }
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    const hundredths = Math.floor((time % 1) * 100);
-    if (minutes > 0) {
-        return `${minutes}:${seconds.toString().padStart(2, "0")}.${hundredths.toString().padStart(2, "0")}`;
-    }
-    return `${seconds}.${hundredths.toString().padStart(2, "0")}`;
 }
 
 async function loadRankingData(): Promise<AthleteRankingEntry[]> {
@@ -395,7 +422,10 @@ async function loadRankingData(): Promise<AthleteRankingEntry[]> {
                             ageGroup: getAgeGroup(age),
                             country: record.country ?? "Unknown",
                         });
-                        entry.events[option.key] = stats;
+                        const existingStats = entry.events[option.key];
+                        if (!existingStats || stats.time < existingStats.time) {
+                            entry.events[option.key] = stats;
+                        }
                     }
                 } else {
                     for (const record of rows as (GlobalTeamResult & {id: string})[]) {
@@ -416,8 +446,14 @@ async function loadRankingData(): Promise<AthleteRankingEntry[]> {
                             ageGroup: getAgeGroup(age),
                             country: record.country ?? "Unknown",
                             members: record.members ?? [],
+                            memberNames: Array.isArray((record as {memberNames?: string[]}).memberNames)
+                                ? ((record as {memberNames?: string[]}).memberNames ?? [])
+                                : [],
                         });
-                        entry.events[option.key] = stats;
+                        const existingStats = entry.events[option.key];
+                        if (!existingStats || stats.time < existingStats.time) {
+                            entry.events[option.key] = stats;
+                        }
                     }
                 }
             } catch (error) {
@@ -434,7 +470,6 @@ async function loadRankingData(): Promise<AthleteRankingEntry[]> {
             }
         }
     }
-
     return Array.from(map.values());
 }
 
@@ -510,10 +545,8 @@ const Athletes: React.FC = () => {
         };
     }, []);
 
-    const filteredRows = useMemo<AthleteTableRow[]>(() => {
+    const rankedRows = useMemo<AthleteTableRow[]>(() => {
         const eventKey = selectedEvent.key;
-        const normalizedSearch = searchTerm.trim().toLowerCase();
-
         return rankings
             .map((entry) => {
                 const stats = entry.events[eventKey];
@@ -537,13 +570,6 @@ const Athletes: React.FC = () => {
                     return null;
                 }
 
-                if (normalizedSearch) {
-                    const haystacks = [entry.name, ...entry.members].filter(Boolean).map((value) => value.toLowerCase());
-                    if (!haystacks.some((value) => value.includes(normalizedSearch))) {
-                        return null;
-                    }
-                }
-
                 return {
                     ...entry,
                     rank: 0,
@@ -558,10 +584,28 @@ const Athletes: React.FC = () => {
                 ...entry,
                 rank: index + 1,
             }));
-    }, [rankings, selectedEvent, searchTerm, ageFilter, genderFilter, locationFilter, seasonFilter]);
+    }, [rankings, selectedEvent, ageFilter, genderFilter, locationFilter, seasonFilter]);
 
-    const columns: TableColumnProps<AthleteTableRow>[] = useMemo(() => {
-        return [
+    const filteredRows = useMemo<AthleteTableRow[]>(() => {
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) {
+            return rankedRows;
+        }
+        return rankedRows.filter((entry) => {
+            const haystacks = [entry.name, ...entry.memberNames, ...entry.members]
+                .filter(Boolean)
+                .map((value) => value.toLowerCase());
+            return haystacks.some((value) => value.includes(normalizedSearch));
+        });
+    }, [rankedRows, searchTerm]);
+
+    const hasTeamMembers = useMemo(
+        () => filteredRows.some((row) => row.isTeam && (row.memberNames.length > 0 || row.members.length > 0)),
+        [filteredRows],
+    );
+
+    const columns = useMemo<TableColumnProps<AthleteTableRow>[]>(() => {
+        const base: TableColumnProps<AthleteTableRow>[] = [
             {
                 title: "Rank",
                 dataIndex: "rank",
@@ -571,18 +615,55 @@ const Athletes: React.FC = () => {
             {
                 title: selectedEvent.category === "team_relay" ? "Team" : "Athlete",
                 dataIndex: "name",
-                render: (name: string, row) => (
-                    <div className="flex flex-col">
-                        <span className="font-medium text-sm md:text-base">{name}</span>
-                        {row.isTeam && row.members.length > 0 ? (
-                            <span className="text-xs text-neutral-500 mt-1">Members: {row.members.join(", ")}</span>
-                        ) : null}
-                        {!row.isTeam && row.participantId ? (
-                            <span className="text-xs text-neutral-500 mt-1">ID: {row.participantId}</span>
-                        ) : null}
-                    </div>
-                ),
+                render: (name: string, row) => {
+                    if (!row.isTeam && row.participantId) {
+                        return (
+                            <Link href={`/athletes/${row.participantId}`} hoverable={false}>
+                                {name}
+                            </Link>
+                        );
+                    }
+                    return <span>{name}</span>;
+                },
             },
+        ];
+
+        if (hasTeamMembers) {
+            base.push({
+                title: "Members",
+                dataIndex: "members",
+                width: 240,
+                render: (_: string[], row) => {
+                    if (!row.isTeam) {
+                        return "—";
+                    }
+                    const ids = Array.isArray(row.members) ? row.members : [];
+                    const labels = row.memberNames.length > 0 ? row.memberNames : ids;
+                    if (!labels || labels.length === 0) {
+                        return "—";
+                    }
+                    return (
+                        <Space size={6} wrap>
+                            {labels.map((label, index) => {
+                                const memberLabel = label || ids[index] || "Unknown";
+                                const memberId = ids[index];
+                                const key = `${row.key}-member-${index}-${memberId ?? memberLabel}`;
+                                if (typeof memberId === "string" && memberId.length > 0) {
+                                    return (
+                                        <Link key={key} href={`/athletes/${memberId}`}>
+                                            {memberLabel}
+                                        </Link>
+                                    );
+                                }
+                                return <span key={key}>{memberLabel}</span>;
+                            })}
+                        </Space>
+                    );
+                },
+            });
+        }
+
+        base.push(
             {
                 title: "Country",
                 dataIndex: "country",
@@ -632,8 +713,10 @@ const Athletes: React.FC = () => {
                     <Tag color={source === "record" ? "blue" : "orange"}>{source === "record" ? "Recorded" : "Derived"}</Tag>
                 ),
             },
-        ];
-    }, [selectedEvent]);
+        );
+
+        return base;
+    }, [selectedEvent, hasTeamMembers]);
 
     const handleResetFilters = () => {
         setSearchTerm("");

@@ -12,6 +12,7 @@ import type {AppRoute} from "@/schema";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import TeamRecruitmentManagement from "../pages/Admin/TeamRecruitmentManagement";
 import Athletes from "../pages/Athletes/Athletes";
+import AthleteProfilePage from "../pages/Athletes/AthleteProfile";
 import Home from "../pages/Home/Home";
 import RecordsIndex from "../pages/Records";
 import CreateTournamentPage from "../pages/Tournaments/CreateTournaments/CreateTournaments";
@@ -23,6 +24,7 @@ import UserProfile from "../pages/User/UserProfile/UserProfile";
 const routes: AppRoute[] = [
     {path: "/", component: Home},
     {path: "/athletes", component: Athletes},
+    {path: "/athletes/:athleteId", component: AthleteProfilePage},
     {path: "/tournaments", component: Tournaments},
     {path: "/tournaments/create", component: CreateTournamentPage},
     {

@@ -405,14 +405,14 @@ export default function EditTournamentRegistrationPage() {
                                     );
 
                                     if (newTeamEvents.length > 0) {
-                                    const newTeamsToAdd: Team[] = newTeamEvents.map((event) => {
-                                        const eventKey = getEventKey(event);
-                                        const eventType = event.type;
-                                        const teamEventKeys = new Set<string>([eventKey, eventType]);
-                                        for (const code of sanitizeEventCodes(event.codes)) {
-                                            teamEventKeys.add(code);
-                                            teamEventKeys.add(`${code}-${event.type}`);
-                                        }
+                                        const newTeamsToAdd: Team[] = newTeamEvents.map((event) => {
+                                            const eventKey = getEventKey(event);
+                                            const eventType = event.type;
+                                            const teamEventKeys = new Set<string>([eventKey, eventType]);
+                                            for (const code of sanitizeEventCodes(event.codes)) {
+                                                teamEventKeys.add(code);
+                                                teamEventKeys.add(`${code}-${event.type}`);
+                                            }
                                             return {
                                                 id: nanoid(),
                                                 tournament_id: tournamentId ?? "",

@@ -834,45 +834,46 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
 
             for (const d of snap.docs) {
                 const data = d.data();
-                    const common = {
-                        id: d.id,
-                        event: data.event || `${eventType}-${category}`,
-                        time: data.time || 0,
-                        status: data.status || "submitted",
-                        videoUrl: data.videoUrl || null,
-                        verified_by: data.verified_by || null,
-                        verified_at: data.verified_at || null,
-                        created_at: data.created_at || new Date().toISOString(),
-                        updated_at: data.updated_at || new Date().toISOString(),
-                        age: data.age || 0,
-                        classification: data.classification,
-                        bestTime: data.bestTime ?? data.time,
-                        try1: data.try1,
-                        try2: data.try2,
-                        try3: data.try3,
-                        round: data.round,
-                        tournamentId: data.tournamentId,
-                        teamId: data.teamId,
-                        ageGroup: data.ageGroup,
-                    } as Partial<GlobalResult & GlobalTeamResult>;
+                const common = {
+                    id: d.id,
+                    event: data.event || `${eventType}-${category}`,
+                    time: data.time || 0,
+                    status: data.status || "submitted",
+                    videoUrl: data.videoUrl || null,
+                    verified_by: data.verified_by || null,
+                    verified_at: data.verified_at || null,
+                    created_at: data.created_at || new Date().toISOString(),
+                    updated_at: data.updated_at || new Date().toISOString(),
+                    age: data.age || 0,
+                    classification: data.classification,
+                    bestTime: data.bestTime ?? data.time,
+                    try1: data.try1,
+                    try2: data.try2,
+                    try3: data.try3,
+                    round: data.round,
+                    tournamentId: data.tournamentId,
+                    teamId: data.teamId,
+                    ageGroup: data.ageGroup,
+                } as Partial<GlobalResult & GlobalTeamResult>;
 
-                    if (category === "individual") {
-                        rows.push({
-                            gender: data.gender || "Overall",
-                            participantId: data.participantId || "",
-                            participantName: data.participantName || "Unknown",
-                            country: data.country || "Unknown",
-                            ...common,
-                        } as GlobalResult & {id: string});
-                    } else {
-                        rows.push({
-                            country: data.country || "Unknown",
-                            teamName: data.teamName || "Unknown Team",
-                            leaderId: data.leaderId || "",
-                            members: data.members || [],
-                            ...common,
-                        } as GlobalTeamResult & {id: string});
-                    }
+                if (category === "individual") {
+                    rows.push({
+                        gender: data.gender || "Overall",
+                        participantId: data.participantId || "",
+                        participantName: data.participantName || "Unknown",
+                        country: data.country || "Unknown",
+                        ...common,
+                    } as GlobalResult & {id: string});
+                } else {
+                    rows.push({
+                        country: data.country || "Unknown",
+                        teamName: data.teamName || "Unknown Team",
+                        leaderId: data.leaderId || "",
+                        members: data.members || [],
+                        memberNames: data.memberNames || [],
+                        ...common,
+                    } as GlobalTeamResult & {id: string});
+                }
             }
 
             // Sort fastest first, filter invalid times
@@ -929,6 +930,7 @@ export async function getEventRankings(a: string, b?: string): Promise<(GlobalRe
                             teamName: data.teamName || "Unknown Team",
                             leaderId: data.leaderId || "",
                             members: data.members || [],
+                            memberNames: data.memberNames || [],
                             ...common,
                         } as GlobalTeamResult & {id: string});
                     }

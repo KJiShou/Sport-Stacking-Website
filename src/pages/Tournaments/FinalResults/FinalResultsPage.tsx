@@ -1192,9 +1192,7 @@ export default function FinalResultsPage() {
                         const eventIsTeam = ["double", "team relay", "parent & child"].includes(event.type.toLowerCase());
                         const eventIsPureIndividual = event.type === "Individual" && event.code !== "Overall";
                         const eventCodes = getEventCodes(event);
-                        const expandedRowRender = (record: FinalResultRow) => {
-                            buildMultiCodeExpandedRows(record, event, eventCodes, eventIsTeam, allRecords);
-                        };
+                        const expandedRowRender = buildExpandedRowRenderer(event, eventCodes);
                         const isActiveEvent = eventKey === currentEventTab;
                         const eventHasBrackets = (event.age_brackets?.length ?? 0) > 0;
                         const tableColumns = eventIsOverall
@@ -1226,7 +1224,9 @@ export default function FinalResultsPage() {
                                                             pagination={false}
                                                             loading={loading}
                                                             rowKey={getRowKey}
-                                                            expandedRowRender={eventCodes.length > 1 ? expandedRowRender : null}
+                                                            expandedRowRender={
+                                                                eventCodes.length > 1 ? expandedRowRender : undefined
+                                                            }
                                                         />
                                                     ) : isActiveBracket && availableClassifications.length > 0 ? (
                                                         <Tabs
@@ -1251,7 +1251,9 @@ export default function FinalResultsPage() {
                                                                             loading={loading}
                                                                             rowKey={getRowKey}
                                                                             expandedRowRender={
-                                                                                eventCodes.length > 1 ? expandedRowRender : null
+                                                                                eventCodes.length > 1
+                                                                                    ? expandedRowRender
+                                                                                    : undefined
                                                                             }
                                                                         />
                                                                     </TabPane>
@@ -1275,7 +1277,9 @@ export default function FinalResultsPage() {
                                                             pagination={false}
                                                             loading={loading}
                                                             rowKey={getRowKey}
-                                                            expandedRowRender={eventCodes.length > 1 ? expandedRowRender : null}
+                                                            expandedRowRender={
+                                                                eventCodes.length > 1 ? expandedRowRender : undefined
+                                                            }
                                                         />
                                                     )}
                                                 </TabPane>
@@ -1290,7 +1294,7 @@ export default function FinalResultsPage() {
                                         pagination={false}
                                         loading={loading}
                                         rowKey={getRowKey}
-                                        expandedRowRender={eventCodes.length > 1 ? expandedRowRender : null}
+                                        expandedRowRender={eventCodes.length > 1 ? expandedRowRender : undefined}
                                     />
                                 )}
                             </TabPane>

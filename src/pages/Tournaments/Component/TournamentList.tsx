@@ -1064,22 +1064,22 @@ export default function TournamentList() {
                                                                     <Select
                                                                         value={criteria.classification}
                                                                         placeholder="Classification"
-                                                                    onChange={(value) => {
-                                                                        const updated = [...ageBrackets];
-                                                                        const targetBracket = updated[id];
-                                                                        if (!targetBracket) {
-                                                                            return;
-                                                                        }
-                                                                        if (!targetBracket.final_criteria) {
-                                                                            targetBracket.final_criteria = [];
-                                                                        }
-                                                                        const targetCriteria =
-                                                                            targetBracket.final_criteria[criteriaIndex];
-                                                                        if (targetCriteria) {
-                                                                            targetCriteria.classification = value;
-                                                                        }
-                                                                        setAgeBrackets(updated);
-                                                                    }}
+                                                                        onChange={(value) => {
+                                                                            const updated = [...ageBrackets];
+                                                                            const targetBracket = updated[id];
+                                                                            if (!targetBracket) {
+                                                                                return;
+                                                                            }
+                                                                            if (!targetBracket.final_criteria) {
+                                                                                targetBracket.final_criteria = [];
+                                                                            }
+                                                                            const targetCriteria =
+                                                                                targetBracket.final_criteria[criteriaIndex];
+                                                                            if (targetCriteria) {
+                                                                                targetCriteria.classification = value;
+                                                                            }
+                                                                            setAgeBrackets(updated);
+                                                                        }}
                                                                         style={{width: 150}}
                                                                     >
                                                                         <Select.Option value="advance">Advanced</Select.Option>

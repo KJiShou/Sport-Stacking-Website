@@ -1,6 +1,7 @@
 import {Card, Empty, Select, Spin, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type React from "react";
 import {useEffect, useState} from "react";
+import {Link} from "react-router-dom";
 import type {GlobalRecord, RecordRankingTableProps} from "../../schema/RecordSchema";
 import {getClassificationRankings, getEventRankings} from "../../services/firebase/recordService";
 
@@ -102,9 +103,18 @@ const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) =
             key: "participantName",
             render: (_: string, record: RankingRecord) => {
                 const name = getDisplayName(record);
+                const participantId = getParticipantId(record);
                 return (
                     <div>
-                        <div style={{fontWeight: "bold"}}>{name}</div>
+                        <div style={{fontWeight: "bold"}}>
+                            {participantId ? (
+                                <Link to={`/athletes/${participantId}`} style={{color: "inherit"}}>
+                                    {name}
+                                </Link>
+                            ) : (
+                                name
+                            )}
+                        </div>
                         {record.classification && (
                             <Tag size="small" color="blue">
                                 {record.classification === "beginner"

@@ -3,8 +3,7 @@ import type {Registration} from "./RegistrationSchema";
 import type {Team} from "./TeamSchema";
 import type {AgeBracket, Tournament, TournamentEvent} from "./TournamentSchema";
 
-export interface PrelimResultData
-    extends Omit<TournamentRecord, "try1" | "try2" | "try3" | "bestTime" | "classification"> {
+export interface PrelimResultData extends Omit<TournamentRecord, "try1" | "try2" | "try3" | "bestTime" | "classification"> {
     rank: number;
     name: string;
     id: string;

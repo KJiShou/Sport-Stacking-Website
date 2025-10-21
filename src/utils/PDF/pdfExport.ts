@@ -409,14 +409,7 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
 
         if (logoDataUrl) {
             try {
-                doc.addImage(
-                    logoDataUrl,
-                    inferImageFormat(logoDataUrl),
-                    logoX,
-                    logoY,
-                    logoDisplayWidth,
-                    logoDisplayHeight,
-                );
+                doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), logoX, logoY, logoDisplayWidth, logoDisplayHeight);
             } catch (error) {
                 console.error("Error adding logo to PDF:", error);
                 doc.setFontSize(8);
