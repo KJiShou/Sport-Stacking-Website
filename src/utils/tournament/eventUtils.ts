@@ -1,6 +1,71 @@
 import type {Team, TournamentEvent} from "@/schema";
 
-type TeamEventRefs = Partial<Pick<Team, "event_ids" | "events">>;
+type LegacyTeamFields = {
+    event_ids?: string[];
+    events?: string[];
+    largest_age?: number;
+};
+
+type TeamEventRefs = Partial<Pick<Team, "event_id" | "event">> & LegacyTeamFields;
+
+const addStringToSet = (set: Set<string>, value: unknown): void => {
+    if (typeof value !== "string") {
+        return;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+        return;
+    }
+
+    set.add(trimmed);
+};
+
+const addArrayToSet = (set: Set<string>, values: unknown): void => {
+    if (!Array.isArray(values)) {
+        return;
+    }
+
+    for (const value of values) {
+        addStringToSet(set, value);
+    }
+};
+
+const getTeamEventIdReferences = (team: TeamEventRefs | null | undefined): string[] => {
+    if (!team) {
+        return [];
+    }
+
+    const ids = new Set<string>();
+    addStringToSet(ids, team.event_id);
+    addArrayToSet(ids, team.event_ids);
+
+    return Array.from(ids);
+};
+
+const getTeamEventNameReferences = (team: TeamEventRefs | null | undefined): string[] => {
+    if (!team) {
+        return [];
+    }
+
+    const names = new Set<string>();
+    addArrayToSet(names, team.event);
+    addArrayToSet(names, team.events);
+
+    return Array.from(names);
+};
+
+const getAllTeamEventReferences = (team: TeamEventRefs | null | undefined): string[] => {
+    const references = new Set<string>();
+    for (const reference of getTeamEventIdReferences(team)) {
+        references.add(reference);
+    }
+    for (const reference of getTeamEventNameReferences(team)) {
+        references.add(reference);
+    }
+
+    return Array.from(references);
+};
 
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
 
@@ -63,14 +128,13 @@ export const matchesAnyEventKey = (values: string[] | null | undefined, event: T
     return values.some((value) => matchesEventKey(value, event));
 };
 
-export const getTeamEventIds = (team: Pick<Team, "event_ids" | "events"> | null | undefined): string[] => {
-    if (!team) {
-        return [];
+export const getTeamEventIds = (team: TeamEventRefs | null | undefined): string[] => {
+    const ids = getTeamEventIdReferences(team);
+    if (ids.length > 0) {
+        return ids;
     }
-    if (team.event_ids && team.event_ids.length > 0) {
-        return team.event_ids;
-    }
-    return team.events ?? [];
+
+    return getTeamEventNameReferences(team);
 };
 
 export const getTeamEvents = (
@@ -81,25 +145,23 @@ export const getTeamEvents = (
         return [];
     }
 
-    const byId = new Map<string, TournamentEvent>();
+    const matchedEvents = new Map<string, TournamentEvent>();
+    const references = getAllTeamEventReferences(team);
 
-    for (const eventId of team.event_ids ?? []) {
-        const match = tournamentEvents.find((event) => event.id === eventId);
-        if (match) {
-            byId.set(match.id ?? getEventKey(match), match);
+    for (const reference of references) {
+        const matchById = tournamentEvents.find((event) => event.id === reference);
+        if (matchById) {
+            matchedEvents.set(getEventKey(matchById), matchById);
+            continue;
+        }
+
+        const matchByKey = tournamentEvents.find((event) => matchesEventKey(reference, event));
+        if (matchByKey) {
+            matchedEvents.set(getEventKey(matchByKey), matchByKey);
         }
     }
 
-    if (byId.size === 0) {
-        for (const legacy of team.events ?? []) {
-            const match = tournamentEvents.find((event) => matchesEventKey(legacy, event));
-            if (match) {
-                byId.set(match.id ?? getEventKey(match), match);
-            }
-        }
-    }
-
-    return Array.from(byId.values());
+    return Array.from(matchedEvents.values());
 };
 
 export const teamMatchesEventKey = (
@@ -116,7 +178,19 @@ export const teamMatchesEventKey = (
         return false;
     }
 
-    if (team.event_ids?.includes(trimmedKey)) {
+    const normalizedKey = trimmedKey.toLowerCase();
+
+    const eventId = typeof team.event_id === "string" ? team.event_id.trim().toLowerCase() : "";
+    if (eventId && eventId === normalizedKey) {
+        return true;
+    }
+
+    const eventNameReferences = getTeamEventNameReferences(team);
+    if (eventNameReferences.includes(trimmedKey)) {
+        return true;
+    }
+
+    if (eventNameReferences.some((value) => value.toLowerCase() === normalizedKey)) {
         return true;
     }
 
@@ -127,12 +201,8 @@ export const teamMatchesEventKey = (
         }
     }
 
-    if (team.events?.includes(trimmedKey)) {
-        return true;
-    }
-
     if (tournamentEvents && tournamentEvents.length > 0) {
-        return (team.events ?? []).some((value) => {
+        return eventNameReferences.some((value) => {
             const event = tournamentEvents.find((evt) => matchesEventKey(value, evt));
             return event ? matchesEventKey(trimmedKey, event) : false;
         });
@@ -154,9 +224,26 @@ export const getTeamEventLabels = (
         return resolvedEvents.map(getEventLabel);
     }
 
-    if (team.event_ids && team.event_ids.length > 0) {
-        return team.event_ids;
+    const ids = getTeamEventIdReferences(team);
+    if (ids.length > 0) {
+        return ids;
     }
 
-    return team.events ?? [];
+    return getTeamEventNameReferences(team);
+};
+
+export const getTeamMaxAge = (team: (Partial<Pick<Team, "team_age">> & LegacyTeamFields) | null | undefined): number | undefined => {
+    if (!team) {
+        return undefined;
+    }
+
+    if (typeof team.largest_age === "number") {
+        return team.largest_age;
+    }
+
+    if (typeof team.team_age === "number") {
+        return team.team_age;
+    }
+
+    return undefined;
 };

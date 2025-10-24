@@ -25,6 +25,7 @@ import type {GlobalResult, GlobalTeamResult, RecordDisplay} from "../../schema/R
 
 import {
     deleteRecord,
+    getBestRecords,
     getBestRecordsByAgeGroup,
     toggleRecordVerification,
     updateRecordVideoUrl,
@@ -53,15 +54,6 @@ const CATEGORY_MAP: Record<RecordCategory, Category> = {
     team_relay: "Team Relay",
     "parent_&_child": "Parent & Child",
     special_need: "Special Need",
-};
-
-// Map display categories to backend system categories
-const BACKEND_CATEGORY_MAP: Record<Category, string> = {
-    Individual: "individual",
-    Double: "double",
-    "Team Relay": "team_relay",
-    "Parent & Child": "parent_&_child",
-    "Special Need": "special_need",
 };
 
 // Shape returned by getBestRecordsByAgeGroup()
@@ -155,8 +147,9 @@ const RecordsIndex: React.FC = () => {
     const loadRecords = async () => {
         setLoading(true);
         try {
-            const records = await getBestRecordsByAgeGroup();
-            setAllRecords(records);
+            const records = await getBestRecords();
+            console.log(records);
+            //setAllRecords(records);
         } catch (error) {
             console.error("Failed to load records:", error);
         } finally {
@@ -186,21 +179,10 @@ const RecordsIndex: React.FC = () => {
         }
 
         try {
-            // Determine category and eventType based on current tab and event
-            const displayCategory = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
-            const backendCategory = BACKEND_CATEGORY_MAP[displayCategory];
-            const eventType = (activeCategory === "individual" ? selectedIndividualEvent : record.event) as EventTypeKey;
-
-            await toggleRecordVerification(
-                backendCategory as "individual" | "double" | "parent_&_child" | "team_relay" | "special_need",
-                eventType,
-                record.recordId,
-                user.global_id,
-                record.status,
-            );
+            await toggleRecordVerification(record.recordId, user.global_id, record.status);
             const action = record.status === "submitted" ? "verified" : "unverified";
             Message.success(`Record ${action} successfully for ${record.athlete}`);
-            window.location.reload(); // Refresh the entire page
+            await loadRecords();
         } catch (error) {
             console.error("Failed to toggle verification:", error);
             Message.error("Failed to update record verification");
@@ -220,16 +202,7 @@ const RecordsIndex: React.FC = () => {
             okButtonProps: {status: "danger"},
             onOk: async () => {
                 try {
-                    // Determine category and eventType based on current tab and event
-                    const displayCategory = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
-                    const backendCategory = BACKEND_CATEGORY_MAP[displayCategory];
-                    const eventType = (activeCategory === "individual" ? selectedIndividualEvent : record.event) as EventTypeKey;
-
-                    await deleteRecord(
-                        backendCategory as "individual" | "double" | "parent_&_child" | "team_relay" | "special_need",
-                        eventType,
-                        record.recordId ?? "",
-                    );
+                    await deleteRecord(record.recordId ?? "");
                     Message.success("Record deleted successfully");
                     loadRecords(); // Refresh records
                 } catch (error) {
@@ -249,17 +222,7 @@ const RecordsIndex: React.FC = () => {
         try {
             const values = await videoForm.validate();
 
-            // Determine category and eventType based on current tab and event
-            const displayCategory = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
-            const backendCategory = BACKEND_CATEGORY_MAP[displayCategory];
-            const eventType = (activeCategory === "individual" ? selectedIndividualEvent : selectedRecord.event) as EventTypeKey;
-
-            await updateRecordVideoUrl(
-                backendCategory as "individual" | "double" | "parent_&_child" | "team_relay" | "special_need",
-                eventType,
-                selectedRecord.recordId,
-                values.videoUrl,
-            );
+            await updateRecordVideoUrl(selectedRecord.recordId, values.videoUrl);
             Message.success("Video URL updated successfully");
             setEditVideoModalVisible(false);
             videoForm.resetFields();

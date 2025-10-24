@@ -14,14 +14,14 @@ export interface PrelimResultData extends Omit<TournamentRecord, "try1" | "try2"
     try2?: number;
     try3?: number;
     bestTime?: number;
-    classification?: "beginner" | "intermediate" | "advance";
+    classification?: "beginner" | "intermediate" | "advance" | "prelim";
     round?: "prelim" | "final";
 }
 
 export interface BracketResults {
     bracket: AgeBracket;
     records: PrelimResultData[];
-    classification?: "beginner" | "intermediate" | "advance";
+    classification?: "beginner" | "intermediate" | "advance" | "prelim";
     highlightFinalists?: boolean;
 }
 

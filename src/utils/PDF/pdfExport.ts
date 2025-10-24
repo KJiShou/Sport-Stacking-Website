@@ -112,6 +112,35 @@ async function fetchImageFixedOrientation(url: string): Promise<string> {
 }
 
 // Core PDF Generation Functions
+const resolveTeamMaxAge = (team: Team, ageMap: Record<string, number>): number | null => {
+    const largestAge =
+        typeof (team as unknown as {largest_age?: number}).largest_age === "number"
+            ? (team as unknown as {largest_age?: number}).largest_age
+            : null;
+    if (largestAge !== null && !Number.isNaN(largestAge) && largestAge >= 0) {
+        return largestAge;
+    }
+
+    const teamAge = typeof (team as {team_age?: number}).team_age === "number" ? (team as {team_age?: number}).team_age : null;
+    if (teamAge !== null && !Number.isNaN(teamAge) && teamAge >= 0) {
+        return teamAge;
+    }
+
+    const memberIds = [team.leader_id, ...(team.members ?? []).map((member) => member.global_id)].filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0,
+    );
+
+    const memberAges = memberIds
+        .map((id) => ageMap[id])
+        .filter((age): age is number => typeof age === "number" && !Number.isNaN(age));
+
+    if (memberAges.length > 0) {
+        return Math.max(...memberAges);
+    }
+
+    return null;
+};
+
 const generateTeamTableData = (
     teams: Team[],
     eventKey: string,
@@ -120,24 +149,35 @@ const generateTeamTableData = (
     phoneMap: Record<string, string>,
     tournamentEvents: TournamentEvent[],
 ): string[][] => {
-    return teams
-        .filter((team) => {
-            if (!teamMatchesEventKey(team, eventKey, tournamentEvents)) return false;
-            const maxAge = team.largest_age;
-            return maxAge >= bracket.min_age && maxAge <= bracket.max_age;
-        })
-        .map((team, index) => {
-            const leaderPhone = team.leader_id ? phoneMap[team.leader_id] || "N/A" : "N/A";
-            const maxAge = team.largest_age;
-            return [
-                (index + 1).toString(),
-                team.leader_id ?? "N/A",
-                team.name,
-                team.members.map((m) => m.global_id).join(", "),
-                leaderPhone,
-                maxAge === -1 ? "N/A" : maxAge.toString(),
-            ];
-        });
+    const filteredTeams = teams.filter((team) => {
+        if (!teamMatchesEventKey(team, eventKey, tournamentEvents)) {
+            return false;
+        }
+
+        const maxAge = resolveTeamMaxAge(team, ageMap);
+        if (maxAge === null) {
+            return true;
+        }
+
+        return maxAge >= bracket.min_age && maxAge <= bracket.max_age;
+    });
+
+    return filteredTeams.map((team, index) => {
+        const leaderPhone = team.leader_id ? phoneMap[team.leader_id] || "N/A" : "N/A";
+        const maxAge = resolveTeamMaxAge(team, ageMap);
+
+        return [
+            (index + 1).toString(),
+            team.leader_id ?? "N/A",
+            team.name,
+            (team.members ?? [])
+                .map((member) => member.global_id)
+                .filter(Boolean)
+                .join(", "),
+            leaderPhone,
+            maxAge === null ? "N/A" : maxAge.toString(),
+        ];
+    });
 };
 
 const generateIndividualTableData = (
@@ -147,7 +187,13 @@ const generateIndividualTableData = (
 ): string[][] => {
     return registrations
         .filter((r) => r.age >= bracket.min_age && r.age <= bracket.max_age)
-        .map((r, index) => [(index + 1).toString(), r.user_id, r.user_name, r.age.toString(), phoneMap[r.user_id] || "N/A"]);
+        .map((r, index) => [
+            (index + 1).toString(),
+            r.user_global_id,
+            r.user_name,
+            r.age.toString(),
+            phoneMap[r.user_global_id] || "N/A",
+        ]);
 };
 
 const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string>): string[][] => {
@@ -205,7 +251,8 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         // Header
         doc.setFont("times", "bold");
         doc.setFontSize(25);
-        const title = team ? `${team.name} Member List` : `${event.type} ${bracket.name} Name List`;
+        const eventLabel = getEventLabel(event) || event.type;
+        const title = team ? `${team.name} Member List` : `${eventLabel} ${bracket.name} Name List`;
         const titleLines = doc.splitTextToSize(title, titleMaxWidth);
         doc.text(titleLines, marginX, marginY + 20);
 
@@ -255,11 +302,21 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
 
         const startY = currentY;
 
+        const ageLookup: Record<string, number> = {...ageMap};
+        registrations.forEach((registration) => {
+            if (registration.user_id) {
+                ageLookup[registration.user_id] = registration.age;
+            }
+            if (registration.user_global_id) {
+                ageLookup[registration.user_global_id] = registration.age;
+            }
+        });
+
         // Generate table data
         const tableData = team
             ? generateSingleTeamTableData(team, phoneMap)
             : isTeamEvent
-              ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, tournament.events ?? [])
+              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, tournament.events ?? [])
               : generateIndividualTableData(registrations, bracket, phoneMap);
 
         const headers = team
@@ -433,10 +490,10 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
 
         const tableData = registrations.map((r, index) => [
             (index + 1).toString(),
-            r.user_id || "N/A",
+            r.user_global_id || "N/A",
             r.user_name || "N/A",
             ageMap[r.user_id]?.toString() || "N/A",
-            phoneMap[r.user_id] || "N/A",
+            phoneMap[r.user_global_id] || "N/A",
             formatEventsRegistered(r),
         ]);
 
@@ -466,7 +523,7 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
                 2: {cellWidth: 40},
                 3: {cellWidth: 15},
                 4: {cellWidth: 30},
-                5: {cellWidth: 75},
+                5: {cellWidth: 65},
             },
         });
 
@@ -568,13 +625,24 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                     const legacyCode = event.code;
                     const effectiveCodes = sanitizedCodes.length > 0 ? sanitizedCodes : legacyCode ? [legacyCode] : [];
                     const isAggregate = effectiveCodes.length > 1;
+                    const isTeamEvent = isTeamEventType(event.type);
 
                     const head = isAggregate
-                        ? [["Rank", "ID", "Name", ...effectiveCodes, "Total Time"]]
-                        : [["Rank", "ID", "Name", "Try 1", "Try 2", "Try 3", "Best Time"]];
+                        ? [["Rank", isTeamEvent ? "Leader ID" : "Global ID", "Name", ...effectiveCodes, "Total Time"]]
+                        : [["Rank", isTeamEvent ? "Leader ID" : "Global ID", "Name", "Try 1", "Try 2", "Try 3", "Best Time"]];
 
                     const body = records.map((r) => {
-                        const rowData: (string | number)[] = [r.rank, r.id, r.name];
+                        const leaderId =
+                            (r as {team?: {leader_id?: string | null}}).team?.leader_id ??
+                            (r as {leaderId?: string | null}).leaderId ??
+                            (typeof r.participantId === "string" ? r.participantId : "N/A");
+                        const participantGlobalId =
+                            (r as {participant_global_id?: string}).participant_global_id ??
+                            (r as {globalId?: string}).globalId ??
+                            (r as {registration?: {user_global_id?: string}}).registration?.user_global_id ??
+                            (typeof r.participantId === "string" ? r.participantId : "N/A");
+                        const identifier = isTeamEvent ? (leaderId ?? "N/A") : (participantGlobalId ?? "N/A");
+                        const rowData: (string | number)[] = [r.rank, identifier, r.name];
                         if (isAggregate) {
                             for (const code of effectiveCodes) {
                                 const dataKey = `${normalizeCodeKey(code)}Best`;
@@ -601,7 +669,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                     const rankGroups: {classification: string; startRank: number; endRank: number}[] = [];
 
                     if (shouldHighlightRows && finalCriteria.length > 0) {
-                        const classificationOrder = ["advance", "intermediate", "beginner"];
+                        const classificationOrder = ["advance", "intermediate", "beginner", "prelim"];
                         const sortedCriteria = [...finalCriteria].sort(
                             (a, b) =>
                                 classificationOrder.indexOf(a.classification) - classificationOrder.indexOf(b.classification),
@@ -637,6 +705,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                                                   advance: [255, 255, 0],
                                                   intermediate: [144, 238, 144],
                                                   beginner: [173, 216, 230],
+                                                  prelim: [255, 218, 185],
                                               };
                                               const color = classificationColors[group.classification];
                                               if (color) {
@@ -788,8 +857,17 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
                 currentY += 8;
 
                 if (records.length > 0) {
+                    const isTeamEvent = isTeamEventType(event.type);
                     const head = [["Rank", "ID", "Name", "Try 1", "Try 2", "Try 3", "Best Time"]];
-                    const body = records.map((r) => [r.rank, r.id, r.name, "", "", "", ""]);
+                    const body = records.map((r) => [
+                        r.rank,
+                        isTeamEvent ? r.id : r.participant_global_id,
+                        r.name,
+                        "",
+                        "",
+                        "",
+                        "",
+                    ]);
 
                     autoTable(doc, {
                         startY: currentY,
@@ -916,9 +994,9 @@ export const exportAllBracketsListToPDF = async (
                           .map((r, index) => [
                               (index + 1).toString(),
                               r.user_name || "N/A",
-                              r.user_id || "N/A",
+                              r.user_global_id || "N/A",
                               r.age?.toString() || "N/A",
-                              phoneMap[r.user_id] || "N/A",
+                              phoneMap[r.user_global_id] || "N/A",
                           ]);
 
                 if (tableData.length > 0) {
@@ -1038,7 +1116,7 @@ export const exportNameListStickerPDF = async ({tournament, registrations}: Name
                     // 2. Global ID (Largest)
                     doc.setFontSize(95);
                     doc.setFont("times", "bold");
-                    doc.text(registration.user_id, centerX, currentY, {align: "center"});
+                    doc.text(registration.user_global_id, centerX, currentY, {align: "center"});
                     currentY += 10;
 
                     // 3. Line separator
@@ -1072,7 +1150,7 @@ export const generateStackingSheetPDF = async (
     participants: Registration[],
     ageMap: Record<string, number>,
     division: string,
-    options: {logoUrl?: string; includeAllParticipants?: boolean; participantId?: string} = {},
+    options: {logoUrl?: string; includeAllParticipants?: boolean; participantId?: string; eventCodes?: string[]} = {},
     sheetType = "Individual",
 ): Promise<void> => {
     try {
@@ -1096,7 +1174,16 @@ export const generateStackingSheetPDF = async (
 
         targetParticipants.forEach((participant, index) => {
             if (index > 0) doc.addPage();
-            generateSingleStackingSheet(doc, tournament, participant, ageMap, logoDataUrl, division, sheetType);
+            generateSingleStackingSheet(
+                doc,
+                tournament,
+                participant,
+                ageMap,
+                logoDataUrl,
+                division,
+                sheetType,
+                options.eventCodes ?? [],
+            );
         });
 
         const filename = options.participantId
@@ -1115,7 +1202,7 @@ export const generateTeamStackingSheetPDF = async (
     team: Team,
     ageMap: Record<string, number>,
     division: string,
-    options: {logoUrl?: string} = {},
+    options: {logoUrl?: string; eventCodes?: string[]} = {},
     sheetType = "Team",
 ): Promise<void> => {
     try {
@@ -1129,13 +1216,32 @@ export const generateTeamStackingSheetPDF = async (
             }
         }
 
-        generateSingleStackingSheet(doc, tournament, team, ageMap, logoDataUrl, division, sheetType);
+        generateSingleStackingSheet(doc, tournament, team, ageMap, logoDataUrl, division, sheetType, options.eventCodes ?? []);
 
         const filename = createPDFFilename([tournament.name, team.name, "timesheet.pdf"]);
         openPDFInNewTab(doc, filename);
     } catch (error) {
         console.error("Error generating stacking sheet PDF:", error);
         throw error;
+    }
+};
+
+const resolveStackLabels = (sheetType: string, eventCodes: string[]): string[] => {
+    const sanitizedCodes = sanitizeEventCodes(eventCodes);
+    if (sanitizedCodes.length > 0) {
+        return sanitizedCodes;
+    }
+
+    switch (sheetType.toLowerCase()) {
+        case "individual":
+            return ["3-3-3", "3-6-3", "Cycle"];
+        case "double":
+        case "parent & child":
+        case "team relay":
+        case "team":
+            return ["Cycle"];
+        default:
+            return ["Cycle"];
     }
 };
 
@@ -1147,6 +1253,7 @@ const generateSingleStackingSheet = (
     logoDataUrl: string,
     division: string,
     sheetType = "",
+    eventCodes: string[] = [],
 ): void => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginX = 5;
@@ -1248,7 +1355,7 @@ const generateSingleStackingSheet = (
         doc.setFont("times", "bold");
         doc.setFontSize(14);
         doc.text("ID:", pageWidth - marginX - idBoxW + 3, startY + titleHeight + 9);
-        doc.text(individual.user_id || "____", pageWidth - marginX - idBoxW + 10, startY + titleHeight + 9);
+        doc.text(individual.user_global_id || "____", pageWidth - marginX - idBoxW + 10, startY + titleHeight + 9);
     }
 
     // === 4. Time Table ===
@@ -1276,19 +1383,7 @@ const generateSingleStackingSheet = (
     });
 
     // Stack rows
-    const getStacks = () => {
-        switch (sheetType) {
-            case "Individual":
-                return ["3-3-3", "3-6-3", "Cycle"];
-            case "Double":
-            case "Parent & Child":
-            case "Team Relay":
-                return ["Cycle"];
-            default:
-                return ["Cycle"];
-        }
-    };
-    const stacks = getStacks();
+    const stacks = resolveStackLabels(sheetType, eventCodes);
     doc.setFont("times", "normal");
     doc.setFontSize(15);
     stacks.forEach((label, rowIndex) => {
@@ -1308,7 +1403,7 @@ const generateSingleStackingSheet = (
     });
 
     // === 5. Notes / Instructions ===
-    const notesY = tableY - 3 + rowHeight * 4;
+    const notesY = tableY - 3 + rowHeight * (stacks.length + 1);
     doc.setFontSize(7.5);
     const lines = [
         "*Allow up to 2 warm-ups prior to the first “try” of each stack. (Warm-ups must match the stack)",
@@ -1500,7 +1595,7 @@ export const generateAllTeamStackingSheetsPDF = async (
     teams: Team[],
     ageMap: Record<string, number>,
     division: string,
-    options: {logoUrl?: string} = {},
+    options: {logoUrl?: string; eventCodes?: string[]} = {},
     sheetType = "Team",
 ): Promise<void> => {
     try {
@@ -1516,7 +1611,16 @@ export const generateAllTeamStackingSheetsPDF = async (
 
         teams.forEach((team, index) => {
             if (index > 0) doc.addPage();
-            generateSingleStackingSheet(doc, tournament, team, ageMap, logoDataUrl, division, sheetType);
+            generateSingleStackingSheet(
+                doc,
+                tournament,
+                team,
+                ageMap,
+                logoDataUrl,
+                division,
+                sheetType,
+                options.eventCodes ?? [],
+            );
         });
 
         const filename = createPDFFilename([tournament.name, division, "all_team_timesheets.pdf"]);

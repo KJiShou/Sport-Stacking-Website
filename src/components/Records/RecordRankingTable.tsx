@@ -10,6 +10,22 @@ const {TabPane} = Tabs;
 const {Option} = Select;
 
 type RankingRecord = GlobalRecord;
+type ClassificationLevel = "beginner" | "intermediate" | "advance" | "prelim";
+type ClassificationFilter = "all" | ClassificationLevel;
+
+const CLASSIFICATION_LABELS: Record<ClassificationLevel, string> = {
+    beginner: "Beginner",
+    intermediate: "Intermediate",
+    advance: "Advanced",
+    prelim: "Prelim",
+};
+
+const CLASSIFICATION_TAG_COLORS: Record<ClassificationLevel, string> = {
+    beginner: "#165dff",
+    intermediate: "#52c41a",
+    advance: "#7a60ff",
+    prelim: "#fa8c16",
+};
 
 const getDisplayName = (record: RankingRecord): string => {
     if ("participantName" in record && record.participantName) {
@@ -39,7 +55,7 @@ const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) =
     const [rankings, setRankings] = useState<RankingRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [round, setRound] = useState<"prelim" | "final">("final");
-    const [classification, setClassification] = useState<"all" | "beginner" | "intermediate" | "advance">("all");
+    const [classification, setClassification] = useState<ClassificationFilter>("all");
 
     useEffect(() => {
         loadRankings();
@@ -116,12 +132,11 @@ const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) =
                             )}
                         </div>
                         {record.classification && (
-                            <Tag size="small" color="blue">
-                                {record.classification === "beginner"
-                                    ? "Beginner"
-                                    : record.classification === "intermediate"
-                                      ? "Intermediate"
-                                      : "Advanced"}
+                            <Tag
+                                size="small"
+                                color={CLASSIFICATION_TAG_COLORS[record.classification] ?? "blue"}
+                            >
+                                {CLASSIFICATION_LABELS[record.classification] ?? record.classification}
                             </Tag>
                         )}
                     </div>
@@ -191,11 +206,13 @@ const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) =
                     <Option value="final">Final</Option>
                 </Select>
 
-                <Select value={classification} onChange={setClassification} style={{width: 120}}>
+                <Select value={classification} onChange={setClassification} style={{width: 140}}>
                     <Option value="all">All Levels</Option>
-                    <Option value="beginner">Beginner</Option>
-                    <Option value="intermediate">Intermediate</Option>
-                    <Option value="advance">Advanced</Option>
+                    {Object.entries(CLASSIFICATION_LABELS).map(([value, label]) => (
+                        <Option key={value} value={value}>
+                            {label}
+                        </Option>
+                    ))}
                 </Select>
             </div>
 

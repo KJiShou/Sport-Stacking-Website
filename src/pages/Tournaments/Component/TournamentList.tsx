@@ -527,7 +527,7 @@ export default function TournamentList() {
             const sanitizedEvents: TournamentEvent[] = [];
 
             for (const rawEvent of rawEvents) {
-                const {__prevType: _ignored, age_brackets, id, type, codes, team_size} = rawEvent;
+                const {__prevType: _ignored, age_brackets, id, type, codes, teamSize} = rawEvent;
                 if (!isTournamentEventType(type)) {
                     continue;
                 }
@@ -541,11 +541,12 @@ export default function TournamentList() {
                     id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
                     type,
                     codes: normalizedCodes,
+                    code: normalizedCodes[0] ?? null,
                     age_brackets: cloneAgeBrackets(age_brackets ?? DEFAULT_AGE_BRACKET),
                 };
 
-                if (typeof team_size === "number") {
-                    sanitizedEvent.team_size = team_size;
+                if (typeof teamSize === "number") {
+                    sanitizedEvent.teamSize = teamSize;
                 }
 
                 sanitizedEvents.push(sanitizedEvent);
@@ -1166,8 +1167,8 @@ export default function TournamentList() {
                                                                         key={criteria.classification}
                                                                         className="flex gap-2 mb-2"
                                                                     >
-                                                                        <Select
-                                                                            value={criteria.classification}
+                                                                    <Select
+                                                                        value={criteria.classification}
                                                                             placeholder="Classification"
                                                                             onChange={(value) => {
                                                                                 const updated = [...ageBrackets];
@@ -1186,16 +1187,17 @@ export default function TournamentList() {
                                                                                 setAgeBrackets(updated);
                                                                             }}
                                                                             style={{width: 150}}
-                                                                        >
-                                                                            <Select.Option value="advance">
-                                                                                Advanced
-                                                                            </Select.Option>
-                                                                            <Select.Option value="intermediate">
-                                                                                Intermediate
-                                                                            </Select.Option>
-                                                                            <Select.Option value="beginner">
-                                                                                Beginner
-                                                                            </Select.Option>
+                                                                    >
+                                                                        <Select.Option value="advance">
+                                                                            Advanced
+                                                                        </Select.Option>
+                                                                        <Select.Option value="intermediate">
+                                                                            Intermediate
+                                                                        </Select.Option>
+                                                                        <Select.Option value="beginner">
+                                                                            Beginner
+                                                                        </Select.Option>
+                                                                        <Select.Option value="prelim">Prelim</Select.Option>
                                                                         </Select>
                                                                         <InputNumber
                                                                             value={criteria.number}
@@ -1256,7 +1258,7 @@ export default function TournamentList() {
                                                                         });
                                                                         setAgeBrackets(updated);
                                                                     }}
-                                                                    disabled={(bracket.final_criteria?.length ?? 0) >= 3}
+                                                                    disabled={(bracket.final_criteria?.length ?? 0) >= 4}
                                                                 >
                                                                     <IconPlus /> Add Final Criteria
                                                                 </Button>

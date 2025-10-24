@@ -1,45 +1,47 @@
 import {z} from "zod";
 
-export const TournamentRecordSchema = z.object({
-    participantId: z.string().optional(),
-    participantAge: z.number().optional(),
-    country: z.string().optional(),
-    classification: z.enum(["advance", "intermediate", "beginner"]).optional(),
+const classificationEnum = z.enum(["advance", "intermediate", "beginner", "prelim"]);
+const recordStatusEnum = z.enum(["submitted", "verified"]);
+
+const TournamentRecordBaseSchema = z.object({
+    id: z.string(),
+    tournament_id: z.string(),
+    event_id: z.string(),
     event: z.string(),
+    code: z.string(),
+    age: z.number().optional().nullable(),
+    country: z.string().optional(),
+    best_time: z.number(),
+    status: recordStatusEnum,
     try1: z.number(),
     try2: z.number(),
     try3: z.number(),
-    bestTime: z.number(),
-    status: z.enum(["submitted", "verified"]),
-    videoUrl: z.string().url().optional().nullable(),
+    video_url: z.string().url().optional().nullable(),
+    classification: classificationEnum.optional().nullable(),
+    round: z.enum(["prelim", "final"]).optional(),
     submitted_at: z.string(),
-    verified_by: z.string().nullable(),
-    verified_at: z.string().nullable(),
-    created_at: z.string(),
-    updated_at: z.string(),
+    created_at: z.string().optional(),
+    updated_at: z.string().optional(),
+    verified_at: z.string().optional().nullable(),
+    verified_by: z.string().optional().nullable(),
 });
 
-export const TournamentTeamRecordSchema = z.object({
-    participantId: z.string().optional(),
-    participantAge: z.number().optional(),
-    country: z.string().optional(),
-    memberIds: z.array(z.string()).optional(),
-    memberNames: z.array(z.string()).optional(),
-    leaderId: z.string().optional(),
-    leaderName: z.string().optional(),
-    classification: z.enum(["advance", "intermediate", "beginner"]).optional(),
-    event: z.string(),
-    try1: z.number(),
-    try2: z.number(),
-    try3: z.number(),
-    bestTime: z.number(),
-    status: z.enum(["submitted", "verified"]),
-    videoUrl: z.string().url().optional().nullable(),
-    submitted_at: z.string(),
-    verified_by: z.string().nullable(),
-    verified_at: z.string().nullable(),
-    created_at: z.string(),
-    updated_at: z.string(),
+export const TournamentRecordSchema = TournamentRecordBaseSchema.extend({
+    participant_id: z.string(),
+    participant_global_id: z.string(),
+    participant_name: z.string(),
+    gender: z.string(),
+});
+
+export const TournamentTeamRecordSchema = TournamentRecordBaseSchema.extend({
+    team_id: z.string(),
+    team_name: z.string(),
+    member_global_ids: z.array(z.string()),
+    leader_id: z.string().optional().nullable(),
+    participant_id: z.string().optional(),
+    participant_name: z.string().optional(),
+    gender: z.string().optional(),
+    participant_global_id: z.string().optional(),
 });
 
 export const GlobalResultSchema = z.object({
@@ -58,7 +60,7 @@ export const GlobalResultSchema = z.object({
     age: z.number(),
     id: z.string().optional(),
     round: z.enum(["prelim", "final"]).optional(),
-    classification: z.enum(["advance", "intermediate", "beginner"]).optional(),
+    classification: z.enum(["advance", "intermediate", "beginner", "prelim"]).optional(),
     bestTime: z.number().optional(),
     try1: z.number().optional(),
     try2: z.number().optional(),
@@ -84,7 +86,7 @@ export const GlobalTeamResultSchema = z.object({
     age: z.number(),
     id: z.string().optional(),
     round: z.enum(["prelim", "final"]).optional(),
-    classification: z.enum(["advance", "intermediate", "beginner"]).optional(),
+    classification: z.enum(["advance", "intermediate", "beginner", "prelim"]).optional(),
     bestTime: z.number().optional(),
     try1: z.number().optional(),
     try2: z.number().optional(),
@@ -114,6 +116,7 @@ export const RecordDisplaySchema = z.object({
 });
 
 export type TournamentRecord = z.infer<typeof TournamentRecordSchema>;
+
 export type TournamentTeamRecord = z.infer<typeof TournamentTeamRecordSchema>;
 export type GlobalResult = z.infer<typeof GlobalResultSchema>;
 export type GlobalTeamResult = z.infer<typeof GlobalTeamResultSchema>;

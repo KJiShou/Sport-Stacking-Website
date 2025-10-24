@@ -137,7 +137,7 @@ export default function CreateTournamentPage() {
             const sanitizedEvents: TournamentEvent[] = [];
 
             for (const rawEvent of rawEvents) {
-                const {age_brackets, id, type, codes, team_size} = rawEvent;
+                const {age_brackets, id, type, codes, teamSize} = rawEvent;
                 if (!isTournamentEventType(type)) {
                     continue;
                 }
@@ -148,10 +148,16 @@ export default function CreateTournamentPage() {
                 }
 
                 const sanitizedEvent: TournamentEvent = {
+                    id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
                     type,
                     codes: normalizedCodes,
+                    code: normalizedCodes[0] ?? null,
                     age_brackets: cloneAgeBrackets(age_brackets ?? []),
                 };
+
+                if (typeof teamSize === "number") {
+                    sanitizedEvent.teamSize = teamSize;
+                }
 
                 sanitizedEvents.push(sanitizedEvent);
             }
@@ -491,6 +497,7 @@ export default function CreateTournamentPage() {
                                                                         Intermediate
                                                                     </Select.Option>
                                                                     <Select.Option value="beginner">Beginner</Select.Option>
+                                                                    <Select.Option value="prelim">Prelim</Select.Option>
                                                                 </Select>
                                                                 <InputNumber
                                                                     value={criteria.number}
@@ -548,7 +555,7 @@ export default function CreateTournamentPage() {
                                                                 });
                                                                 setAgeBrackets(updated);
                                                             }}
-                                                            disabled={(bracket.final_criteria?.length ?? 0) >= 3}
+                                                            disabled={(bracket.final_criteria?.length ?? 0) >= 4}
                                                         >
                                                             <IconPlus /> Add Final Criteria
                                                         </Button>

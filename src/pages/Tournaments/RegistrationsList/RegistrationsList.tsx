@@ -81,7 +81,7 @@ export default function RegistrationsListPage() {
     const columns: (TableColumnProps<(typeof registrations)[number]> | false)[] = [
         {
             title: "ID",
-            dataIndex: "user_id",
+            dataIndex: "user_global_id",
             width: 200,
         },
         {

@@ -1,6 +1,6 @@
 import type {Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/schema";
 import {fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {
     exportAllBracketsListToPDF,
     exportMasterListToPDF,
@@ -37,6 +37,7 @@ export default function ParticipantListPage() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
+    const [events, setEvents] = useState<TournamentEvent[] | null>(null);
     const [registrationList, setRegistrationList] = useState<Registration[]>([]);
     const [teamList, setTeamList] = useState<Team[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
@@ -55,7 +56,7 @@ export default function ParticipantListPage() {
     // Create phone number map for easy lookup
     const phoneMap: Record<string, string> = registrationList.reduce(
         (acc, r) => {
-            acc[r.user_id] = r.phone_number || "N/A";
+            acc[r.user_global_id] = r.phone_number || "N/A";
             return acc;
         },
         {} as Record<string, string>,
@@ -67,10 +68,10 @@ export default function ParticipantListPage() {
         try {
             const t = await fetchTournamentById(tournamentId);
             setTournament(t);
-            const firstEvent = t?.events?.[0];
-            const firstEventKey = firstEvent ? getEventKey(firstEvent) : "";
-            setCurrentEventTab(firstEventKey);
-            const firstBracket = firstEvent?.age_brackets?.[0];
+            const events = await fetchTournamentEvents(tournamentId);
+            setEvents(events);
+            setCurrentEventTab(events[0].id ?? "");
+            const firstBracket = events[0]?.age_brackets?.[0];
             setCurrentBracketTab(firstBracket ? firstBracket.name : "");
             const regs = await fetchRegistrations(tournamentId);
             const teams = await fetchTeamsByTournament(tournamentId);
@@ -242,7 +243,7 @@ export default function ParticipantListPage() {
     const tournamentEvents = tournament.events ?? [];
 
     const individualColumns: TableColumnProps<Registration>[] = [
-        {title: "Global ID", dataIndex: "user_id", width: 150},
+        {title: "Global ID", dataIndex: "user_global_id", width: 150},
         {title: "Name", dataIndex: "user_name", width: 200},
         {title: "Age", dataIndex: "age", width: 100},
         {
@@ -275,6 +276,7 @@ export default function ParticipantListPage() {
                                     bracket.name,
                                     {
                                         logoUrl: tournament.logo ?? "",
+                                        eventCodes: sanitizeEventCodes(event.codes),
                                     },
                                     event.type,
                                 );
@@ -371,10 +373,10 @@ export default function ParticipantListPage() {
                                                 }
                                                 if (currentData.isTeamEvent) {
                                                     const teamsInBracket = teamList.filter((team) => {
-                                                        const maxAge = team.largest_age;
                                                         return (
-                                                            maxAge >= currentData.bracket.min_age &&
-                                                            maxAge <= currentData.bracket.max_age &&
+                                                            team.team_age !== undefined &&
+                                                            team.team_age >= currentData.bracket.min_age &&
+                                                            team.team_age <= currentData.bracket.max_age &&
                                                             teamMatchesEventKey(team, currentEventTab, tournamentEvents)
                                                         );
                                                     });
@@ -385,6 +387,7 @@ export default function ParticipantListPage() {
                                                         currentBracketTab,
                                                         {
                                                             logoUrl: tournament.logo ?? "",
+                                                            eventCodes: sanitizeEventCodes(currentData.event.codes),
                                                         },
                                                         currentData.event.type,
                                                     );
@@ -396,6 +399,7 @@ export default function ParticipantListPage() {
                                                         currentBracketTab,
                                                         {
                                                             logoUrl: tournament.logo ?? "",
+                                                            eventCodes: sanitizeEventCodes(currentData.event.codes),
                                                         },
                                                         currentData.event.type,
                                                     );
@@ -421,7 +425,7 @@ export default function ParticipantListPage() {
                     </div>
                 </div>
                 <Tabs type="line" destroyOnHide className="w-full" activeTab={currentEventTab} onChange={handleEventTabChange}>
-                    {tournament.events?.map((evt) => {
+                    {events?.map((evt) => {
                         const tabKey = getEventKey(evt);
                         const isTeamEventForTab = isTeamEvent(evt);
                         const regs = filterRegistrations(tabKey, isTeamEventForTab, evt);
@@ -440,7 +444,7 @@ export default function ParticipantListPage() {
                                 >
                                     {evt.age_brackets.map((br) => {
                                         if (isTeamEventForTab) {
-                                            const teamRows: TeamRow[] = teamList
+                                            const teamRows: Team[] = teamList
                                                 .filter((team) => teamMatchesEventKey(team, tabKey, tournamentEvents))
                                                 .map((team) => ({
                                                     ...team,
@@ -448,10 +452,13 @@ export default function ParticipantListPage() {
                                                 }));
 
                                             const rowsForBracket = teamRows.filter((record) => {
-                                                const maxAge = record.largest_age;
-                                                return maxAge >= br.min_age && maxAge <= br.max_age;
+                                                return (
+                                                    record.team_age !== undefined &&
+                                                    record.team_age >= br.min_age &&
+                                                    record.team_age <= br.max_age
+                                                );
                                             });
-                                            const teamColumns: TableColumnProps<TeamRow>[] = [
+                                            const teamColumns: TableColumnProps<Team>[] = [
                                                 {
                                                     title: "Team Leader",
                                                     width: 150,
@@ -477,7 +484,9 @@ export default function ParticipantListPage() {
                                                 {
                                                     title: "Largest Age",
                                                     width: 150,
-                                                    render: (_, record) => <Text>{record.largest_age ?? "-"}</Text>,
+                                                    render: (_, record) => {
+                                                        return <Text>{record.team_age ?? "-"}</Text>;
+                                                    },
                                                 },
                                                 {
                                                     title: "Action",
@@ -531,7 +540,10 @@ export default function ParticipantListPage() {
                                                                             rec,
                                                                             ageMap,
                                                                             br.name,
-                                                                            {logoUrl: tournament.logo ?? ""},
+                                                                            {
+                                                                                logoUrl: tournament.logo ?? "",
+                                                                                eventCodes: sanitizeEventCodes(evt.codes),
+                                                                            },
                                                                             evt.type,
                                                                         );
                                                                         setLoading(false);
@@ -552,7 +564,7 @@ export default function ParticipantListPage() {
                                                                     buttonProps={{
                                                                         onClick: () =>
                                                                             window.open(
-                                                                                `/tournaments/${tournamentId}/registrations/${rec.registrationId}/edit`,
+                                                                                `/tournaments/${tournamentId}/registrations/${rec.registration_id}/edit`,
                                                                                 "_blank",
                                                                             ),
                                                                     }}
@@ -572,7 +584,7 @@ export default function ParticipantListPage() {
                                                         data={rowsForBracket}
                                                         pagination={{pageSize: 5, showTotal: true}}
                                                         loading={loading}
-                                                        rowKey={(rec) => `${rec.registrationId}-${rec.id}`}
+                                                        rowKey={(rec) => `${rec.id}`}
                                                         pagePosition="bottomCenter"
                                                     />
                                                 </TabPane>

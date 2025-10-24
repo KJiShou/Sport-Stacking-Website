@@ -65,17 +65,17 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                         const requiresTeamSize = eventType && TEAM_EVENT_TYPES.includes(eventType as keyof typeof EVENT_TYPES);
 
                         if (eventType && !requiresTeamSize) {
-                            const currentTeamSize = form.getFieldValue(`events.${index}.team_size`);
+                            const currentTeamSize = form.getFieldValue(`events.${index}.teamSize`);
                             if (currentTeamSize !== undefined) {
-                                form.setFieldValue(`events.${index}.team_size`, undefined);
+                                form.setFieldValue(`events.${index}.teamSize`, undefined);
                             }
                         }
 
                         if (eventType && requiresTeamSize) {
-                            const currentTeamSize = form.getFieldValue(`events.${index}.team_size`);
+                            const currentTeamSize = form.getFieldValue(`events.${index}.teamSize`);
                             if (currentTeamSize === undefined || currentTeamSize === null) {
                                 const defaultSize = DEFAULT_TEAM_SIZE[eventType as keyof typeof DEFAULT_TEAM_SIZE] ?? 2;
-                                form.setFieldValue(`events.${index}.team_size`, defaultSize);
+                                form.setFieldValue(`events.${index}.teamSize`, defaultSize);
                             }
                         }
 
@@ -125,7 +125,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                                             Team Size
                                         </Title>
                                         <Form.Item
-                                            field={`events.${index}.team_size`}
+                                            field={`events.${index}.teamSize`}
                                             rules={[{required: true, message: "Please enter team size"}]}
                                         >
                                             <InputNumber min={2} max={8} placeholder="Enter team size" className="w-full" />

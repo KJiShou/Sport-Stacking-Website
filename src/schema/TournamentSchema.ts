@@ -3,7 +3,7 @@ import {z} from "zod";
 
 // final_criteria subcollection
 export const FinalCriterionSchema = z.object({
-    classification: z.enum(["advance", "intermediate", "beginner"]),
+    classification: z.enum(["advance", "intermediate", "beginner", "prelim"]),
     number: z.number(),
 });
 
@@ -23,7 +23,7 @@ export const EventSchema = z.object({
     tournament_id: z.string().optional().nullable(),
     codes: z.array(z.enum(["3-3-3", "3-6-3", "Cycle"])),
     type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"]),
-    team_size: z.number().optional(),
+    teamSize: z.number().optional(),
     age_brackets: z.array(AgeBracketSchema),
 });
 
@@ -64,6 +64,7 @@ export const TournamentSchema = z.object({
     member_registration_fee: z.number().optional().nullable(),
     create_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
+    events: z.array(EventSchema).optional(),
 });
 
 export type Tournament = z.infer<typeof TournamentSchema>;

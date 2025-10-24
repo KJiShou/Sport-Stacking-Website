@@ -7,7 +7,7 @@ import {getTournamentFinalRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, updateTournamentStatus} from "@/services/firebase/tournamentsService";
 import {exportAllPrelimResultsToPDF} from "@/utils/PDF/pdfExport";
-import {getEventLabel, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
+import {getEventLabel, sanitizeEventCodes, getTeamMaxAge} from "@/utils/tournament/eventUtils";
 import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconPrinter, IconUndo} from "@arco-design/web-react/icon";
@@ -78,6 +78,49 @@ const recordMatchesEvent = (record: AnyTournamentRecord, event: TournamentEvent)
     return codes.some((code) => matchesRecordCode(record, code, event));
 };
 
+const getRecordGlobalId = (record: AnyTournamentRecord): string | undefined => {
+    const participantGlobalId =
+        (record as TournamentRecord).participant_global_id ??
+        (record as TournamentRecord).participantGlobalId ??
+        (record as TournamentTeamRecord).participant_global_id ??
+        (record as TournamentTeamRecord).participantGlobalId;
+    if (typeof participantGlobalId === "string" && participantGlobalId.trim().length > 0) {
+        return participantGlobalId;
+    }
+    return undefined;
+};
+
+const resolveTeamAge = (team: Team | undefined, ageByGlobalId: Record<string, number>): number | undefined => {
+    if (!team) {
+        return undefined;
+    }
+
+    const explicitAge = getTeamMaxAge(team as unknown as {largest_age?: number; team_age?: number});
+    if (typeof explicitAge === "number") {
+        return explicitAge;
+    }
+
+    const ages: number[] = [];
+    if (typeof team.leader_id === "string") {
+        const leaderAge = ageByGlobalId[team.leader_id];
+        if (typeof leaderAge === "number") {
+            ages.push(leaderAge);
+        }
+    }
+    for (const member of team.members ?? []) {
+        if (!member?.global_id) continue;
+        const memberAge = ageByGlobalId[member.global_id];
+        if (typeof memberAge === "number") {
+            ages.push(memberAge);
+        }
+    }
+
+    if (ages.length === 0) {
+        return undefined;
+    }
+    return Math.max(...ages);
+};
+
 const findEventByTabKey = (events: TournamentEvent[] | undefined, key: string): TournamentEvent | undefined =>
     events?.find((event) => buildEventTabKey(event) === key);
 
@@ -110,7 +153,7 @@ const getRecordEventCode = (record: AnyTournamentRecord, event?: TournamentEvent
 const buildIndividualColumns = (event: TournamentEvent): TableColumnProps<FinalResultRow>[] => {
     const columns: TableColumnProps<FinalResultRow>[] = [
         {title: "Rank", dataIndex: "rank", width: 80},
-        {title: "ID", dataIndex: "id", width: 150},
+        {title: "Global ID", dataIndex: "id", width: 150},
         {title: "Name", dataIndex: "name", width: 200},
     ];
 
@@ -204,11 +247,13 @@ interface BaseAggregateParams {
 interface IndividualAggregateParams extends BaseAggregateParams {
     ageMap: Record<string, number>;
     nameMap: Record<string, string>;
+    globalIdMap: Record<string, string | undefined>;
 }
 
 interface TeamAggregateParams extends BaseAggregateParams {
     teamMap: Record<string, Team>;
     teamNameMap: Record<string, string>;
+    teamAgeMap: Record<string, number | undefined>;
 }
 
 const aggregateIndividualMultiCodeResults = ({
@@ -217,6 +262,7 @@ const aggregateIndividualMultiCodeResults = ({
     records,
     ageMap,
     nameMap,
+    globalIdMap,
     bracket,
     classification,
 }: IndividualAggregateParams): FinalResultRow[] => {
@@ -257,10 +303,11 @@ const aggregateIndividualMultiCodeResults = ({
 
         let aggregate = resultsByParticipant.get(participantId);
         if (!aggregate) {
+            const globalId = globalIdMap[participantId] ?? getRecordGlobalId(record) ?? participantId;
             aggregate = {
                 ...(record as FinalResultRow),
                 participantId,
-                id: participantId,
+                id: globalId,
                 name: nameMap[participantId] || "N/A",
                 rank: 0,
                 bestTime: 0,
@@ -270,6 +317,8 @@ const aggregateIndividualMultiCodeResults = ({
                 expandedRecords: {},
                 event: `${getPrimaryEventCode(event)}-${event.type}`,
             };
+            aggregate.participant_global_id = aggregate.participant_global_id ?? globalId;
+            aggregate.participantGlobalId = aggregate.participantGlobalId ?? globalId;
             resultsByParticipant.set(participantId, aggregate);
         }
 
@@ -308,6 +357,7 @@ const aggregateTeamMultiCodeResults = ({
     records,
     teamMap,
     teamNameMap,
+    teamAgeMap,
     bracket,
     classification,
 }: TeamAggregateParams): FinalResultRow[] => {
@@ -334,8 +384,8 @@ const aggregateTeamMultiCodeResults = ({
         }
 
         if (bracket) {
-            const largestAge = team.largest_age;
-            if (typeof largestAge !== "number" || largestAge < bracket.min_age || largestAge > bracket.max_age) {
+            const teamAge = teamAgeMap[teamId];
+            if (typeof teamAge === "number" && (teamAge < bracket.min_age || teamAge > bracket.max_age)) {
                 continue;
             }
         }
@@ -353,10 +403,12 @@ const aggregateTeamMultiCodeResults = ({
 
         let aggregate = resultsByTeam.get(teamId);
         if (!aggregate) {
+            const globalId =
+                team.leader_id ?? getRecordGlobalId(record) ?? (record as TournamentTeamRecord).participant_id ?? teamId;
             aggregate = {
                 ...(record as FinalResultRow),
                 participantId: teamId,
-                id: team.leader_id ?? teamId,
+                id: globalId,
                 name: teamNameMap[teamId] || team.name || "N/A",
                 rank: 0,
                 bestTime: 0,
@@ -367,6 +419,8 @@ const aggregateTeamMultiCodeResults = ({
                 team,
                 event: `${getPrimaryEventCode(event)}-${event.type}`,
             };
+            aggregate.participant_global_id = aggregate.participant_global_id ?? globalId;
+            aggregate.participantGlobalId = aggregate.participantGlobalId ?? globalId;
             resultsByTeam.set(teamId, aggregate);
         }
 
@@ -478,22 +532,7 @@ export default function FinalResultsPage() {
             setLoading(true);
             try {
                 const t = await fetchTournamentById(tournamentId);
-                if (t?.events) {
-                    const individualEvents = ["3-3-3", "3-6-3", "Cycle"];
-                    const hasAllIndividualEvents = t.events
-                        ? individualEvents.every((eventCode) => t.events?.some((e) => e.code === eventCode))
-                        : false;
-
-                    if (hasAllIndividualEvents) {
-                        const threeEvent = t.events.find((e) => e.code === "3-3-3");
-                        if (threeEvent) {
-                            t.events.unshift({
-                                ...threeEvent,
-                                code: "Overall",
-                                type: "Individual",
-                            });
-                        }
-                    }
+                if (t) {
                     setTournament(t);
 
                     const firstEvent = t.events?.[0];
@@ -507,8 +546,6 @@ export default function FinalResultsPage() {
                         }
                         setCurrentClassificationTab("beginner");
                     }
-                } else {
-                    setTournament(t);
                 }
 
                 const records = await getTournamentFinalRecords(tournamentId);
@@ -553,6 +590,30 @@ export default function FinalResultsPage() {
         [registrations],
     );
 
+    const globalIdMap = useMemo(
+        () =>
+            registrations.reduce(
+                (acc, r) => {
+                    acc[r.user_id] = r.user_global_id;
+                    return acc;
+                },
+                {} as Record<string, string | undefined>,
+            ),
+        [registrations],
+    );
+
+    const ageByGlobalId = useMemo(
+        () =>
+            registrations.reduce(
+                (acc, r) => {
+                    acc[r.user_global_id] = r.age;
+                    return acc;
+                },
+                {} as Record<string, number>,
+            ),
+        [registrations],
+    );
+
     const teamNameMap = useMemo(
         () =>
             teams.reduce(
@@ -575,6 +636,18 @@ export default function FinalResultsPage() {
                 {} as Record<string, Team>,
             ),
         [teams],
+    );
+
+    const teamAgeMap = useMemo(
+        () =>
+            teams.reduce(
+                (acc, team) => {
+                    acc[team.id] = resolveTeamAge(team, ageByGlobalId);
+                    return acc;
+                },
+                {} as Record<string, number | undefined>,
+            ),
+        [teams, ageByGlobalId],
     );
 
     const overallResults = useMemo<FinalResultRow[]>(() => {
@@ -613,7 +686,7 @@ export default function FinalResultsPage() {
 
                 return {
                     ...threeRecord,
-                    id: reg.user_id,
+                    id: reg.user_global_id,
                     name: reg.user_name,
                     three: threeTime,
                     threeSixThree: threeSixThreeTime,
@@ -655,7 +728,7 @@ export default function FinalResultsPage() {
         try {
             const resultsData: EventResults[] = (tournament.events ?? []).map((event) => {
                 const brackets = (event.age_brackets ?? []).flatMap((bracket) => {
-                    const classifications = ["beginner", "intermediate", "advance"];
+                    const classifications = ["beginner", "intermediate", "advance", "prelim"];
                     return classifications
                         .map((classification) => {
                             const isTeamEvent = ["double", "team relay", "parent & child"].includes(event.type.toLowerCase());
@@ -680,6 +753,7 @@ export default function FinalResultsPage() {
                                           records: allRecords,
                                           teamMap,
                                           teamNameMap,
+                                          teamAgeMap,
                                           bracket,
                                           classification,
                                       })
@@ -689,6 +763,7 @@ export default function FinalResultsPage() {
                                           records: allRecords,
                                           ageMap,
                                           nameMap,
+                                          globalIdMap,
                                           bracket,
                                           classification,
                                       });
@@ -701,11 +776,14 @@ export default function FinalResultsPage() {
                                             return false;
                                         }
                                         const team = teamMap[teamId];
-                                        return (
-                                            team?.largest_age !== undefined &&
-                                            team.largest_age >= bracket.min_age &&
-                                            team.largest_age <= bracket.max_age
-                                        );
+                                        if (!team) {
+                                            return false;
+                                        }
+                                        const teamAge = teamAgeMap[teamId];
+                                        if (typeof teamAge !== "number") {
+                                            return true;
+                                        }
+                                        return teamAge >= bracket.min_age && teamAge <= bracket.max_age;
                                     })
                                     .sort((a, b) => a.bestTime - b.bestTime)
                                     .map((record, index) => {
@@ -713,11 +791,16 @@ export default function FinalResultsPage() {
                                             typeof record.participantId === "string" ? record.participantId : "";
                                         const team = teamId ? teamMap[teamId] : undefined;
                                         const eventCode = getRecordEventCode(record, event);
+                                        const globalId =
+                                            team?.leader_id ??
+                                            getRecordGlobalId(record) ??
+                                            teamId ??
+                                            "unknown";
                                         return {
                                             ...record,
                                             rank: index + 1,
                                             name: teamNameMap[teamId] || team?.name || "N/A",
-                                            id: team?.leader_id ?? teamId ?? "unknown",
+                                            id: globalId,
                                             eventCode,
                                             team,
                                             expandedRecords: eventCode ? {[eventCode]: record} : undefined,
@@ -741,11 +824,17 @@ export default function FinalResultsPage() {
                                         const participantId =
                                             typeof record.participantId === "string" ? record.participantId : "";
                                         const eventCode = getRecordEventCode(record, event);
+                                        const globalId =
+                                            globalIdMap[participantId] ??
+                                            getRecordGlobalId(record) ??
+                                            participantId ??
+                                            record.id ??
+                                            "unknown";
                                         return {
                                             ...record,
                                             rank: index + 1,
                                             name: nameMap[participantId] || "N/A",
-                                            id: participantId,
+                                            id: globalId,
                                             eventCode,
                                             expandedRecords: eventCode ? {[eventCode]: record} : undefined,
                                         };
@@ -757,7 +846,7 @@ export default function FinalResultsPage() {
                             return {
                                 bracket,
                                 records,
-                                classification: classification as "beginner" | "intermediate" | "advance",
+                                classification: classification as "beginner" | "intermediate" | "advance" | "prelim",
                             };
                         })
                         .filter((b) => b !== null);
@@ -781,7 +870,7 @@ export default function FinalResultsPage() {
 
     const overallColumns: TableColumnProps<FinalResultRow>[] = [
         {title: "Rank", dataIndex: "rank", width: 80},
-        {title: "ID", dataIndex: "id", width: 150},
+        {title: "Global ID", dataIndex: "id", width: 150},
         {title: "Name", dataIndex: "name", width: 200},
         {title: "3-3-3", dataIndex: "three", width: 120, render: (t) => t?.toFixed(3) || "N/A"},
         {title: "3-6-3", dataIndex: "threeSixThree", width: 120, render: (t) => t?.toFixed(3) || "N/A"},
@@ -838,6 +927,7 @@ export default function FinalResultsPage() {
                       records: allRecords,
                       teamMap,
                       teamNameMap,
+                      teamAgeMap,
                       bracket,
                       classification,
                   })
@@ -847,6 +937,7 @@ export default function FinalResultsPage() {
                       records: allRecords,
                       ageMap,
                       nameMap,
+                      globalIdMap,
                       bracket,
                       classification,
                   });
@@ -867,19 +958,23 @@ export default function FinalResultsPage() {
                     if (!team) {
                         return false;
                     }
-                    const largestAge = team.largest_age;
-                    return typeof largestAge === "number" && largestAge >= bracket.min_age && largestAge <= bracket.max_age;
+                    const teamAge = teamAgeMap[teamId];
+                    if (typeof teamAge !== "number") {
+                        return true;
+                    }
+                    return teamAge >= bracket.min_age && teamAge <= bracket.max_age;
                 })
                 .sort((a, b) => a.bestTime - b.bestTime)
                 .map((record, index) => {
                     const teamId = typeof record.participantId === "string" ? record.participantId : "";
                     const team = teamId ? teamMap[teamId] : undefined;
                     const eventCode = getRecordEventCode(record, currentEvent);
+                    const globalId = team?.leader_id ?? getRecordGlobalId(record) ?? teamId ?? "unknown";
                     return {
                         ...record,
                         rank: index + 1,
                         name: teamNameMap[teamId] || team?.name || "N/A",
-                        id: team?.leader_id ?? teamId ?? "unknown",
+                        id: globalId,
                         eventCode,
                         team,
                         expandedRecords: eventCode ? {[eventCode]: record} : undefined,
@@ -906,11 +1001,13 @@ export default function FinalResultsPage() {
             .map((record, index) => {
                 const participantId = typeof record.participantId === "string" ? record.participantId : "";
                 const eventCode = getRecordEventCode(record, currentEvent);
+                const globalId =
+                    globalIdMap[participantId] ?? getRecordGlobalId(record) ?? participantId ?? record.id ?? "unknown";
                 return {
                     ...record,
                     rank: index + 1,
                     name: nameMap[participantId] || "N/A",
-                    id: participantId,
+                    id: globalId,
                     eventCode,
                     expandedRecords: eventCode ? {[eventCode]: record} : undefined,
                 };
@@ -1016,7 +1113,7 @@ export default function FinalResultsPage() {
         }
 
         const eventCodes = currentEvent ? getEventCodes(currentEvent) : [];
-        const classificationsWithData = ["beginner", "intermediate", "advance"].filter((classification) => {
+        const classificationsWithData = ["beginner", "intermediate", "advance", "prelim"].filter((classification) => {
             if (isOverallEvent) {
                 if (!bracket) {
                     return false;
@@ -1040,6 +1137,7 @@ export default function FinalResultsPage() {
                           records: allRecords,
                           teamMap,
                           teamNameMap,
+                          teamAgeMap,
                           bracket,
                           classification,
                       })
@@ -1049,6 +1147,7 @@ export default function FinalResultsPage() {
                           records: allRecords,
                           ageMap,
                           nameMap,
+                          globalIdMap,
                           bracket,
                           classification,
                       });
@@ -1062,12 +1161,16 @@ export default function FinalResultsPage() {
                         r.participantId &&
                         r.classification === classification &&
                         (!bracket ||
-                            teams.some(
-                                (t) =>
-                                    t.id === r.participantId &&
-                                    t.largest_age >= bracket.min_age &&
-                                    t.largest_age <= bracket.max_age,
-                            )),
+                            teams.some((t) => {
+                                if (t.id !== r.participantId) {
+                                    return false;
+                                }
+                                const teamAge = teamAgeMap[t.id];
+                                if (typeof teamAge !== "number") {
+                                    return true;
+                                }
+                                return teamAge >= bracket.min_age && teamAge <= bracket.max_age;
+                            })),
                 );
             }
 
@@ -1095,6 +1198,8 @@ export default function FinalResultsPage() {
         overallResults,
         teams,
         ageMap,
+        teamAgeMap,
+        globalIdMap,
         isOverallEvent,
         isTeamEvent,
         currentClassificationTab,
@@ -1113,23 +1218,6 @@ export default function FinalResultsPage() {
                     Message.success("Tournament status updated to End.");
                     const t = await fetchTournamentById(tournamentId);
                     if (t) {
-                        if (t.events) {
-                            const individualEvents = ["3-3-3", "3-6-3", "Cycle"];
-                            const hasAllIndividualEvents = individualEvents.every((eventCode) =>
-                                t.events?.some((e) => e.code === eventCode),
-                            );
-
-                            if (hasAllIndividualEvents) {
-                                const threeEvent = t.events.find((e) => e.code === "3-3-3");
-                                if (threeEvent && !t.events.some((e) => e.code === "Overall")) {
-                                    t.events.unshift({
-                                        ...threeEvent,
-                                        code: "Overall",
-                                        type: "Individual",
-                                    });
-                                }
-                            }
-                        }
                         setTournament(t);
                     }
                     navigate(`/tournaments`);

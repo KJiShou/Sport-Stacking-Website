@@ -68,8 +68,8 @@ export const getEventCategoryFromType = (type: string): EventCategory => {
     }
 };
 
-export const saveTournamentFinalists = async (tournamentId: string, groups: FinalistGroupPayload[]): Promise<void> => {
-    if (!tournamentId || groups.length === 0) {
+export const saveTournamentFinalists = async (groups: FinalistGroupPayload[]): Promise<void> => {
+    if (groups.length === 0) {
         return;
     }
 
@@ -83,11 +83,8 @@ export const saveTournamentFinalists = async (tournamentId: string, groups: Fina
     }
 
     for (const groupEntries of Array.from(groupedByEvent.values())) {
-        const {eventCategory, eventName} = groupEntries[0];
-        const finalistsCollection = collection(
-            firestore,
-            `tournaments/${tournamentId}/events/finalist/${eventCategory}/${eventName}/groups`,
-        );
+        const {tournamentId} = groupEntries[0];
+        const finalistsCollection = collection(firestore, `finalists`);
 
         const snapshot = await getDocs(finalistsCollection);
         const existingDocs = new Map(
@@ -102,10 +99,11 @@ export const saveTournamentFinalists = async (tournamentId: string, groups: Fina
             const docId = normalizeBracketKey(entry.bracketName, entry.classification);
             const participantIds = sortUniqueIds(entry.participantIds);
             const previousIds = existingDocs.get(docId);
-            const docRef = doc(finalistsCollection, docId);
+            const docRef = doc(finalistsCollection);
 
             if (!arraysEqual(previousIds, participantIds)) {
                 await setDoc(docRef, {
+                    tournamentId,
                     bracketName: entry.bracketName,
                     classification: entry.classification,
                     participantIds,
