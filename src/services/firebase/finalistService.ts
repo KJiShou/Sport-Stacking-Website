@@ -1,71 +1,119 @@
-import {collection, deleteDoc, doc, getDocs, setDoc} from "firebase/firestore";
-import type {EventCategory, FinalistGroupPayload} from "../../schema";
+import {collection, doc, getDocs, query, setDoc, where} from "firebase/firestore";
+import {FinalistGroupPayloadSchema} from "../../schema";
+import type {FinalistGroupPayload} from "../../schema";
 import {db as firestore} from "./config";
 
-const normalizeBracketKey = (bracket: string, classification: string): string => {
-    // Convert to lowercase first
-    const lower = bracket.toLowerCase();
+const finalistsCollection = collection(firestore, "finalists");
 
-    // Process character by character to build normalized string
-    let result = "";
-    let lastWasDash = false;
+const allowedClassifications = new Set(["beginner", "intermediate", "advance", "prelim"]);
 
-    for (let i = 0; i < lower.length; i++) {
-        const char = lower[i];
-        // Keep alphanumeric characters
-        if ((char >= "a" && char <= "z") || (char >= "0" && char <= "9")) {
-            result += char;
-            lastWasDash = false;
-        }
-        // Replace other characters with dash, but avoid consecutive dashes
-        else if (!lastWasDash) {
-            result += "-";
-            lastWasDash = true;
+const ensureClassification = (value: unknown): "beginner" | "intermediate" | "advance" | "prelim" => {
+    if (typeof value === "string") {
+        const lowered = value.toLowerCase();
+        if (allowedClassifications.has(lowered)) {
+            return lowered as "beginner" | "intermediate" | "advance" | "prelim";
         }
     }
-
-    // Trim leading/trailing dashes without regex
-    let start = 0;
-    let end = result.length;
-
-    while (start < end && result[start] === "-") {
-        start++;
-    }
-    while (end > start && result[end - 1] === "-") {
-        end--;
-    }
-
-    result = result.slice(start, end);
-
-    return `${result}-${classification}`;
+    return "beginner";
 };
 
-const sortUniqueIds = (ids: string[]): string[] => {
-    const unique = Array.from(new Set(ids.filter((id) => id && id.length > 0)));
-    return unique.sort((a, b) => a.localeCompare(b));
-};
+const ensureEventType = (value: unknown): FinalistGroupPayload["event_type"] => {
+    const allowed: FinalistGroupPayload["event_type"][] = [
+        "Individual",
+        "Double",
+        "Team Relay",
+        "Parent & Child",
+        "Special Need",
+    ];
 
-const arraysEqual = (a: string[] | undefined, b: string[] | undefined): boolean => {
-    if (!a && !b) return true;
-    if (!a || !b) return false;
-    if (a.length !== b.length) return false;
-    return a.every((value, index) => value === b[index]);
-};
-
-export const getEventCategoryFromType = (type: string): EventCategory => {
-    const normalized = type.trim().toLowerCase();
-    switch (normalized) {
-        case "double":
-            return "double";
-        case "team relay":
-            return "team_relay";
-        case "parent & child":
-            return "parent_&_child";
-        case "special need":
-            return "special_need";
-        default:
-            return "individual";
+    if (typeof value === "string") {
+        const match = allowed.find((candidate) => candidate.toLowerCase() === value.toLowerCase());
+        if (match) {
+            return match;
+        }
     }
+
+    return "Individual";
+};
+
+const ensureParticipantType = (value: unknown): FinalistGroupPayload["participant_type"] => {
+    if (typeof value === "string" && value.toLowerCase() === "team") {
+        return "Team";
+    }
+    return "Individual";
+};
+
+const ensureStringArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+        return value
+            .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+            .map((item) => item.trim());
+    }
+    return [];
+};
+
+const mapDocumentToPayload = (
+    raw: Record<string, unknown>,
+    docId: string,
+    fallbackTournamentId: string,
+): FinalistGroupPayload | null => {
+    const candidate = {
+        id: (raw.id as string | undefined) ?? docId,
+        tournament_id:
+            (raw.tournament_id as string | undefined) ?? (raw.tournamentId as string | undefined) ?? fallbackTournamentId,
+        event_id: (raw.event_id as string | undefined) ?? (raw.eventId as string | undefined) ?? undefined,
+        event_type: ensureEventType(raw.event_type ?? raw.eventType ?? raw.event_category ?? raw.eventCategory),
+        event_code: ensureStringArray(raw.event_code ?? raw.eventCode ?? raw.event_codes ?? raw.eventCodes),
+        bracket_name: ((raw.bracket_name as string | undefined) ?? (raw.bracketName as string | undefined) ?? "").trim(),
+        classification: ensureClassification(raw.classification),
+        participant_ids: ensureStringArray(raw.participant_ids ?? raw.participantIds),
+        participant_type: ensureParticipantType(raw.participant_type ?? raw.participantType),
+    } satisfies Partial<FinalistGroupPayload>;
+
+    const parsed = FinalistGroupPayloadSchema.safeParse(candidate);
+
+    if (!parsed.success) {
+        console.warn("Skipping finalist document due to validation error", {
+            id: docId,
+            issues: parsed.error.flatten(),
+        });
+        return null;
+    }
+
+    const payload = parsed.data;
+
+    return {
+        ...payload,
+        event_code: Array.from(new Set(payload.event_code)),
+        participant_ids: Array.from(new Set(payload.participant_ids)),
+    };
+};
+
+const formatPayloadForStorage = (entry: FinalistGroupPayload, finalId: string): Record<string, unknown> => {
+    return {
+        ...entry,
+        id: finalId,
+        event_id: entry.event_id ?? undefined,
+        event_type: ensureEventType(entry.event_type),
+        event_code: Array.from(new Set(entry.event_code)),
+        participant_ids: entry.participant_ids.filter((id) => typeof id === "string" && id.trim().length > 0),
+        participant_type: ensureParticipantType(entry.participant_type),
+        updated_at: new Date().toISOString(),
+    };
+};
+
+export const fetchTournamentFinalists = async (tournamentId: string): Promise<FinalistGroupPayload[]> => {
+    const finalistsQuery = query(finalistsCollection, where("tournament_id", "==", tournamentId));
+    const snapshot = await getDocs(finalistsQuery);
+
+    if (snapshot.empty) {
+        return [];
+    }
+
+    return snapshot.docs
+        .map((docSnapshot) => mapDocumentToPayload(docSnapshot.data(), docSnapshot.id, tournamentId))
+        .filter((payload): payload is FinalistGroupPayload => Boolean(payload))
+        .filter((payload) => payload.tournament_id === tournamentId);
 };
 
 export const saveTournamentFinalists = async (groups: FinalistGroupPayload[]): Promise<void> => {
@@ -73,52 +121,15 @@ export const saveTournamentFinalists = async (groups: FinalistGroupPayload[]): P
         return;
     }
 
-    const groupedByEvent = new Map<string, FinalistGroupPayload[]>();
-
     for (const group of groups) {
-        const key = `${group.eventCategory}::${group.eventName}`;
-        const existing = groupedByEvent.get(key) ?? [];
-        existing.push(group);
-        groupedByEvent.set(key, existing);
-    }
+        const docRef = group.id ? doc(finalistsCollection, group.id) : doc(finalistsCollection);
+        const finalId = group.id ?? docRef.id;
+        const storagePayload = formatPayloadForStorage(group, finalId);
 
-    for (const groupEntries of Array.from(groupedByEvent.values())) {
-        const {tournamentId} = groupEntries[0];
-        const finalistsCollection = collection(firestore, `finalists`);
-
-        const snapshot = await getDocs(finalistsCollection);
-        const existingDocs = new Map(
-            snapshot.docs.map((docSnap) => {
-                const data = docSnap.data() as {participantIds?: string[]};
-                const ids = data.participantIds ? sortUniqueIds(data.participantIds) : [];
-                return [docSnap.id, ids] as const;
-            }),
-        );
-
-        for (const entry of groupEntries) {
-            const docId = normalizeBracketKey(entry.bracketName, entry.classification);
-            const participantIds = sortUniqueIds(entry.participantIds);
-            const previousIds = existingDocs.get(docId);
-            const docRef = doc(finalistsCollection);
-
-            if (!arraysEqual(previousIds, participantIds)) {
-                await setDoc(docRef, {
-                    tournamentId,
-                    bracketName: entry.bracketName,
-                    classification: entry.classification,
-                    participantIds,
-                    participantType: entry.participantType,
-                    eventCategory: entry.eventCategory,
-                    eventName: entry.eventName,
-                    updatedAt: new Date().toISOString(),
-                });
-            }
-
-            existingDocs.delete(docId);
+        if (!group.id) {
+            storagePayload.created_at = new Date().toISOString();
         }
 
-        for (const docId of Array.from(existingDocs.keys())) {
-            await deleteDoc(doc(finalistsCollection, docId));
-        }
+        await setDoc(docRef, storagePayload, {merge: true});
     }
 };

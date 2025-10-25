@@ -148,10 +148,9 @@ export default function CreateTournamentPage() {
                 }
 
                 const sanitizedEvent: TournamentEvent = {
-                    id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
+                    id: id && typeof id === "string" && id.length > 0 ? id : undefined, // Let backend/database assign the ID
                     type,
                     codes: normalizedCodes,
-                    code: normalizedCodes[0] ?? null,
                     age_brackets: cloneAgeBrackets(age_brackets ?? []),
                 };
 
@@ -356,7 +355,7 @@ export default function CreateTournamentPage() {
                                         type="text"
                                         onClick={() => {
                                             add({
-                                                id: crypto.randomUUID(),
+                                                id: undefined, // Let backend/database assign the ID
                                                 codes: [],
                                                 type: "" as TournamentEvent["type"],
                                                 age_brackets: cloneAgeBrackets(DEFAULT_AGE_BRACKET),

@@ -10,7 +10,7 @@ const TournamentRecordBaseSchema = z.object({
     event: z.string(),
     code: z.string(),
     age: z.number().optional().nullable(),
-    country: z.string().optional(),
+    country: z.string().optional().nullable(),
     best_time: z.number(),
     status: recordStatusEnum,
     try1: z.number(),
@@ -38,10 +38,6 @@ export const TournamentTeamRecordSchema = TournamentRecordBaseSchema.extend({
     team_name: z.string(),
     member_global_ids: z.array(z.string()),
     leader_id: z.string().optional().nullable(),
-    participant_id: z.string().optional(),
-    participant_name: z.string().optional(),
-    gender: z.string().optional(),
-    participant_global_id: z.string().optional(),
 });
 
 export const GlobalResultSchema = z.object({

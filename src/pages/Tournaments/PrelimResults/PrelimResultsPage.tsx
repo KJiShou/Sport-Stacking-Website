@@ -1,8 +1,16 @@
 // @ts-nocheck
-import type {AgeBracket, AggregationContext, Registration, Team, Tournament, TournamentEvent} from "@/schema";
-import type {FinalistGroupPayload} from "@/schema";
+import type {
+    AgeBracket,
+    AggregationContext,
+    Finalist,
+    FinalistGroupPayload,
+    Registration,
+    Team,
+    Tournament,
+    TournamentEvent,
+} from "@/schema";
 import type {BracketResults, EventResults, PrelimResultData} from "@/schema";
-import {getEventCategoryFromType, saveTournamentFinalists} from "@/services/firebase/finalistService";
+import {fetchTournamentFinalists, saveTournamentFinalists} from "@/services/firebase/finalistService";
 import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
@@ -70,11 +78,7 @@ const computeTeamMultiCodeResults = (
                     record.team_name ||
                     (rawRecord as unknown as {teamName?: string}).teamName ||
                     "N/A",
-                id:
-                    team?.leader_id ||
-                    record.leader_id ||
-                    (rawRecord as unknown as {leaderId?: string}).leaderId ||
-                    teamId,
+                id: team?.leader_id || record.leader_id || (rawRecord as unknown as {leaderId?: string}).leaderId || teamId,
                 bestTime: 0,
                 rank: 0,
                 event: `${event.codes.join(", ")}-${event.type}`,
@@ -83,10 +87,7 @@ const computeTeamMultiCodeResults = (
             aggregates.set(teamId, aggregate);
         }
 
-        const bestTimeValue =
-            record.best_time ??
-            (rawRecord as unknown as {bestTime?: number}).bestTime ??
-            Number.NaN;
+        const bestTimeValue = record.best_time ?? (rawRecord as unknown as {bestTime?: number}).bestTime ?? Number.NaN;
         if (Number.isFinite(bestTimeValue)) {
             const normalizedKey = normalizeCodeKey(recordCode);
             (aggregate as Record<string, unknown>)[`${recordCode} Best`] = bestTimeValue;
@@ -165,11 +166,7 @@ const computeTeamSingleCodeResults = (
                     record.team_name ||
                     (record as unknown as {teamName?: string}).teamName ||
                     "N/A",
-                id:
-                    team?.leader_id ||
-                    record.leader_id ||
-                    (record as unknown as {leaderId?: string}).leaderId ||
-                    teamId,
+                id: team?.leader_id || record.leader_id || (record as unknown as {leaderId?: string}).leaderId || teamId,
                 teamId,
                 team,
                 bestTime: record.best_time ?? (record as unknown as {bestTime?: number}).bestTime ?? Number.POSITIVE_INFINITY,
@@ -665,18 +662,11 @@ export default function PrelimResultsPage() {
 
         setLoading(true);
         try {
-            const finalists: Array<{
-                event: TournamentEvent;
-                eventCode: string;
-                eventCodes: string[];
-                bracket: AgeBracket;
-                records: AggregatedPrelimResult[];
-                classification: "beginner" | "intermediate" | "advance" | "prelim";
-            }> = [];
+            const finalists: Finalist[] = [];
 
             for (const event of events) {
-                const eventCodes = event.codes;
-                const primaryCode = eventCodes[0];
+                const eventCodes = sanitizeEventCodes(event.codes);
+                const eventCode = eventCodes[0] ?? event.type;
 
                 for (const bracket of event.age_brackets ?? []) {
                     const records = computeEventBracketResults(event, bracket, aggregationContext);
@@ -690,7 +680,7 @@ export default function PrelimResultsPage() {
                         if (bracketFinalists.length > 0) {
                             finalists.push({
                                 event,
-                                eventCode: primaryCode,
+                                eventCode,
                                 eventCodes,
                                 bracket,
                                 records: bracketFinalists,
@@ -708,9 +698,15 @@ export default function PrelimResultsPage() {
                 return;
             }
 
+            if (!tournamentId) {
+                Message.error("Tournament ID is missing. Cannot save finalists.");
+                setLoading(false);
+                return;
+            }
+
+            // Build raw payloads for the selected finalists
             const finalistPayloads = finalists
                 .map<FinalistGroupPayload | null>((finalistEntry) => {
-                    const eventCategory = getEventCategoryFromType(finalistEntry.event.type);
                     const participantIds = finalistEntry.records
                         .map((record) => {
                             if (isTournamentTeamEvent(finalistEntry.event)) {
@@ -732,25 +728,50 @@ export default function PrelimResultsPage() {
                     }
 
                     return {
-                        tournamentId,
-                        eventCategory,
-                        eventName: finalistEntry.eventCode,
-                        bracketName: finalistEntry.bracket.name,
+                        tournament_id: tournamentId,
+                        event_id: finalistEntry.event.id,
+                        event_type: finalistEntry.event.type,
+                        event_code: finalistEntry.eventCodes,
+                        bracket_name: finalistEntry.bracket.name,
                         classification: finalistEntry.classification,
-                        participantIds,
-                        participantType: isTournamentTeamEvent(finalistEntry.event) ? "team" : "individual",
+                        participant_ids: participantIds,
+                        participant_type: isTournamentTeamEvent(finalistEntry.event) ? "Team" : "Individual",
                     } satisfies FinalistGroupPayload;
                 })
                 .filter((payload): payload is FinalistGroupPayload => payload !== null);
 
+            // Fetch existing finalists for this tournament and upsert by (event_id, bracket_name, classification)
             if (finalistPayloads.length > 0) {
                 try {
-                    if (!tournamentId) {
-                        Message.error("Tournament ID is missing. Cannot save finalists.");
-                        setLoading(false);
-                        return;
+                    const existing = await fetchTournamentFinalists(tournamentId);
+                    const normalizedKey = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
+
+                    // Build a fast lookup by composite key
+                    const existingByKey = new Map<string, (typeof existing)[number]>();
+                    for (const e of existing) {
+                        const key = [
+                            normalizedKey(e.event_id),
+                            normalizedKey(e.bracket_name),
+                            normalizedKey(e.classification),
+                        ].join("::");
+                        // Keep the first occurrence
+                        if (!existingByKey.has(key)) {
+                            existingByKey.set(key, e);
+                        }
                     }
-                    await saveTournamentFinalists(finalistPayloads);
+
+                    // Attach IDs to payloads that match, so setDoc merges (update) instead of creating new
+                    const upserts = finalistPayloads.map((p) => {
+                        const key = [
+                            normalizedKey(p.event_id),
+                            normalizedKey(p.bracket_name),
+                            normalizedKey(p.classification),
+                        ].join("::");
+                        const match = existingByKey.get(key);
+                        return match ? {...p, id: match.id} : p;
+                    });
+
+                    await saveTournamentFinalists(upserts);
                 } catch (error) {
                     console.error("Failed to save finalists:", error);
                     Message.error("Failed to save finalists. Please try again.");
@@ -759,9 +780,7 @@ export default function PrelimResultsPage() {
                 }
             }
 
-            navigate(`/tournaments/${tournamentId}/scoring/final`, {
-                state: {finalists, tournament, registrations, teams},
-            });
+            navigate(`/tournaments/${tournamentId}/scoring/final`);
         } catch (error) {
             console.error(error);
             Message.error("Failed to start finals.");

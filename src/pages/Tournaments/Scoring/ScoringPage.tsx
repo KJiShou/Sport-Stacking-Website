@@ -107,7 +107,6 @@ export default function ScoringPage() {
             setTeamScoreList(
                 teams.map((team) => {
                     const teamScores: Record<string, Score> = {};
-                    const tournamentEvents = t?.events ?? [];
                     const resolvedEvents = getTeamEvents(team, tournamentEvents);
 
                     if (resolvedEvents.length > 0) {
@@ -125,6 +124,7 @@ export default function ScoringPage() {
                                             rec.event === eventType &&
                                             rec.code === code,
                                     );
+
                                     teamScores[codeEventKey] = {
                                         try1: record?.try1?.toString() || "",
                                         try2: record?.try2?.toString() || "",
@@ -175,8 +175,7 @@ export default function ScoringPage() {
                 approvedRegs.map((r) => {
                     const participantScores: Record<string, Score> = {};
                     const augmentedEvents = new Set<string>(r.events_registered);
-
-                    for (const event of t?.events ?? []) {
+                    for (const event of tournamentEvents ?? []) {
                         if (!registrationMatchesEvent(r.events_registered, event)) {
                             continue;
                         }
@@ -313,7 +312,7 @@ export default function ScoringPage() {
         const errors: string[] = [];
         const missingEvents: string[] = [];
 
-        for (const event of tournament?.events ?? []) {
+        for (const event of events ?? []) {
             if (!registrationMatchesEvent(participant.events_registered, event)) {
                 continue;
             }

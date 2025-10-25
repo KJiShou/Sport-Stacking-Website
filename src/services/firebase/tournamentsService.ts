@@ -98,12 +98,17 @@ export async function createTournament(
         created_at: Timestamp.now(),
     });
 
-    events.map(async (event) => {
-        await addDoc(collection(db, "events"), {
-            ...event,
-            tournament_id: docRef.id,
-        });
-    });
+    await Promise.all(
+        events.map(async (event) => {
+            // Omit 'id' if undefined or null
+            const {id, ...eventData} = event;
+            const eventToSave =
+                typeof id === "string" && id.length > 0
+                    ? {...eventData, id, tournament_id: docRef.id}
+                    : {...eventData, tournament_id: docRef.id};
+            await addDoc(collection(db, "events"), eventToSave);
+        }),
+    );
 
     return docRef.id;
 }
@@ -146,13 +151,23 @@ export async function saveTournamentEvents(tournamentId: string, events: Tournam
 
     await Promise.all(
         events.map(async (event) => {
-            const eventId = event.id && event.id.length > 0 ? event.id : crypto.randomUUID();
-            const {id: _omitId, ...restEvent} = event;
-            await setDoc(doc(db, "events", eventId), {
-                ...restEvent,
-                id: eventId,
-                tournament_id: tournamentId,
-            });
+            const {id, ...restEvent} = event;
+            if (id && id.length > 0) {
+                // Existing event, update by ID
+                await setDoc(doc(db, "events", id), {
+                    ...restEvent,
+                    id,
+                    tournament_id: tournamentId,
+                });
+            } else {
+                // New event, let Firestore assign the ID
+                const docRef = await addDoc(collection(db, "events"), {
+                    ...restEvent,
+                    tournament_id: tournamentId,
+                });
+                // Optionally, update the event with the new ID if needed elsewhere
+                await setDoc(docRef, {...restEvent, id: docRef.id, tournament_id: tournamentId}, {merge: true});
+            }
         }),
     );
 }
@@ -246,7 +261,7 @@ export async function fetchTournamentsByType(type: "current" | "history"): Promi
     }
 }
 
-export async function fetchTournamentById(tournamentId: string): Promise<TournamentWithEvents | null> {
+export async function fetchTournamentById(tournamentId: string): Promise<Tournament | null> {
     try {
         const docRef = doc(db, "tournaments", tournamentId);
         const docSnap = await getDoc(docRef);
@@ -256,18 +271,7 @@ export async function fetchTournamentById(tournamentId: string): Promise<Tournam
             return null;
         }
 
-        const parsed = TournamentSchema.safeParse({
-            id: docSnap.id,
-            ...docSnap.data(),
-        });
-
-        if (!parsed.success) {
-            console.warn(`Tournament document failed validation: ${tournamentId}`, parsed.error.flatten());
-            return null;
-        }
-
-        const events = await fetchTournamentEvents(tournamentId);
-        return {...parsed.data, events};
+        return docSnap.data() as Tournament;
     } catch (error) {
         console.error("Error fetching tournament:", error);
         throw error;

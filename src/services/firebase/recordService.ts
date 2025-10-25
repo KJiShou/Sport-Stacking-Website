@@ -199,17 +199,6 @@ export const saveTeamRecord = async (data: TournamentTeamRecord): Promise<string
     return recordId;
 };
 
-const getEventCodesForRecord = (event: TournamentEvent): string[] => {
-    const codes = sanitizeEventCodes(event.codes);
-    if (codes.length > 0) {
-        return codes;
-    }
-    if (typeof event.code === "string" && event.code.length > 0) {
-        return [event.code];
-    }
-    return [];
-};
-
 export const getTournamentPrelimRecords = async (tournamentId: string): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
     const records: (TournamentRecord | TournamentTeamRecord)[] = [];
     const tournamentRef = doc(firestore, "tournaments", tournamentId);
@@ -269,18 +258,6 @@ const parseEventKey = (eventKey: string): {eventName: string; eventCategory: str
 
 export const getTournamentFinalRecords = async (tournamentId: string): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
     const records: (TournamentRecord | TournamentTeamRecord)[] = [];
-    const seenRecordIds = new Set<string>();
-    const addRecord = (raw: Record<string, unknown>) => {
-        const normalized = normalizeTournamentRecord(raw);
-        const participantKey = "team_id" in normalized ? normalized.team_id : normalized.participant_id;
-        const key = normalized.id || `${normalized.tournament_id}-${normalized.event}-${participantKey ?? ""}`;
-        if (seenRecordIds.has(key)) {
-            return;
-        }
-        seenRecordIds.add(key);
-        records.push(normalized);
-    };
-
     const tournamentRef = doc(firestore, "tournaments", tournamentId);
     const tournamentSnap = await getDoc(tournamentRef);
 
@@ -288,84 +265,17 @@ export const getTournamentFinalRecords = async (tournamentId: string): Promise<(
         return records;
     }
 
-    const consolidatedFinalRecords = new Map<string, Record<string, unknown>[]>();
-    try {
-        const consolidatedQuery = query(collection(firestore, "records"), where("tournament_id", "==", tournamentId));
-        const consolidatedSnapshot = await getDocs(consolidatedQuery);
-        for (const recordDoc of consolidatedSnapshot.docs) {
-            const data = recordDoc.data();
-            const classification = typeof data.classification === "string" ? data.classification.toLowerCase() : "";
-            if (classification === "prelim") {
-                continue;
-            }
-            const eventValue = typeof data.event === "string" ? data.event.trim() : "";
-            if (!eventValue) {
-                continue;
-            }
-            const key = eventValue.toLowerCase();
-            const existing = consolidatedFinalRecords.get(key) ?? [];
-            existing.push({
-                ...data,
-                id: recordDoc.id,
-                round: data.round ?? "final",
-                event: eventValue,
-                tournament_id: data.tournament_id ?? tournamentId,
-            });
-            consolidatedFinalRecords.set(key, existing);
-        }
-    } catch (error) {
-        console.warn(`Unable to load consolidated final records for tournament ${tournamentId}:`, error);
+    const prelimRecordsQuery = query(
+        collection(firestore, `records`),
+        where("tournament_id", "==", tournamentId),
+        where("classification", "!=", "prelim"),
+    );
+
+    const prelimRecordsSnapshot = await getDocs(prelimRecordsQuery);
+    for (const recordDoc of prelimRecordsSnapshot.docs) {
+        const data = {...recordDoc.data(), id: recordDoc.id};
+        records.push(data as TournamentRecord | TournamentTeamRecord);
     }
-
-    let events = await fetchTournamentEvents(tournamentId);
-    if (events.length === 0) {
-        const tournamentData = tournamentSnap.data();
-        if (Array.isArray(tournamentData.events)) {
-            events = tournamentData.events as TournamentEvent[];
-        }
-    }
-
-    for (const event of events) {
-        const eventCodes = getEventCodesForRecord(event);
-        if (eventCodes.length === 0) {
-            continue;
-        }
-
-        for (const code of eventCodes) {
-            const eventKey = `${code}-${event.type}`;
-            const normalizedEventKey = eventKey.trim().toLowerCase();
-            const {eventName, eventCategory} = parseEventKey(eventKey);
-            if (!eventName) {
-                continue;
-            }
-
-            const consolidatedMatches = consolidatedFinalRecords.get(normalizedEventKey) ?? [];
-            for (const raw of consolidatedMatches) {
-                addRecord(raw);
-            }
-
-            try {
-                const finalRecordsQuery = query(
-                    collection(firestore, `tournaments/${tournamentId}/events/final/${eventCategory}/${eventName}/records`),
-                );
-
-                const finalRecordsSnapshot = await getDocs(finalRecordsQuery);
-                for (const recordDoc of finalRecordsSnapshot.docs) {
-                    const data = recordDoc.data();
-                    addRecord({
-                        ...data,
-                        id: recordDoc.id,
-                        round: "final",
-                        event: data.event ?? eventKey,
-                        tournament_id: data.tournament_id ?? tournamentId,
-                    });
-                }
-            } catch (error) {
-                console.warn(`Unable to load final records for ${eventKey}:`, error);
-            }
-        }
-    }
-
     return records;
 };
 

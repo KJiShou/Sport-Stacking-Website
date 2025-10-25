@@ -1,921 +1,460 @@
-import type {
-    AgeBracket,
-    ClassificationGroup,
-    Finalist,
-    ParticipantScore,
-    PrelimResultData,
-    Registration,
-    Score,
-    Team,
-    TeamMember,
-    TeamScore,
-    Tournament,
-    TournamentEvent,
-} from "@/schema";
-import type {TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
+// @ts-nocheck
+import type {FinalistGroupPayload, Registration, Team, TeamMember, Tournament, TournamentEvent} from "@/schema";
 import {
-    getTournamentFinalRecords,
-    getTournamentPrelimRecords,
-    saveRecord,
-    saveTeamRecord,
-} from "@/services/firebase/recordService";
+    type TournamentRecord,
+    TournamentRecordSchema,
+    type TournamentTeamRecord,
+    TournamentTeamRecordSchema,
+} from "@/schema/RecordSchema";
+import {fetchTournamentFinalists} from "@/services/firebase/finalistService";
+import {getTournamentFinalRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
-import {getTeamMaxAge} from "@/utils/tournament/eventUtils";
-import {Button, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
-import {IconUndo} from "@arco-design/web-react/icon";
-import type React from "react";
-import {useEffect, useMemo, useState} from "react";
-import {useLocation, useNavigate, useParams} from "react-router-dom";
+import {IconSearch, IconUndo} from "@arco-design/web-react/icon";
+import {useEffect, useRef, useState} from "react";
+import {useNavigate, useParams} from "react-router-dom";
+import {useMount} from "react-use";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
 
-const sanitizeEventCodes = (codes?: string[]): string[] => (codes ?? []).filter((code) => code !== "Overall");
-
-const normalizeEventKey = (code: string, type: string): string => `${code.toLowerCase()}-${type.toLowerCase()}`;
-
-const isTeamTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentTeamRecord =>
-    "team_id" in record;
-
-const isIndividualTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentRecord =>
-    "participant_id" in record;
-
-const getBestTimeFromRecord = (record: TournamentRecord | TournamentTeamRecord): number => {
-    if (typeof record.best_time === "number") return record.best_time;
-    if (typeof record.bestTime === "number") return record.bestTime;
-    const tries = [record.try1, record.try2, record.try3].filter((time) => typeof time === "number");
-    return tries.length > 0 ? Math.min(...tries) : Number.POSITIVE_INFINITY;
-};
-
-const getFinalistCodes = (finalist: Finalist): string[] => {
-    const codes = finalist.eventCodes?.filter((code) => code && code !== "Overall") ?? [];
-    if (codes.length > 0) return codes;
-    const fallback = sanitizeEventCodes(finalist.event.codes);
-    return fallback.length > 0 ? fallback : [finalist.event.type];
-};
-
-const buildEventCodeMap = (events?: TournamentEvent[]): Map<string, string[]> => {
-    const map = new Map<string, string[]>();
-    for (const event of events ?? []) {
-        const rawCodes = event.codes && event.codes.length > 0 ? event.codes : event.code ? [event.code] : [];
-        const sanitized = sanitizeEventCodes(rawCodes);
-        if (sanitized.length === 0) continue;
-        const key = event.type.toLowerCase();
-        const existing = map.get(key) ?? [];
-        for (const code of sanitized) {
-            if (!existing.includes(code)) {
-                existing.push(code);
-            }
-        }
-        map.set(key, existing);
-    }
-    return map;
-};
-
-const getGroupCodes = (group: ClassificationGroup): string[] => {
-    const firstFinalistCodes = group.finalists[0] ? getFinalistCodes(group.finalists[0]) : [];
-    if (firstFinalistCodes.length > 0) return firstFinalistCodes;
-    const combined = new Set<string>();
-    for (const finalist of group.finalists) {
-        for (const code of getFinalistCodes(finalist)) {
-            combined.add(code);
-        }
-    }
-    if (combined.size > 0) {
-        return Array.from(combined);
-    }
-    const fallback = sanitizeEventCodes(group.event.codes);
-    return fallback.length > 0 ? fallback : [group.event.type];
-};
-
-const getEventGroupKey = (finalist: Finalist): string => {
-    const codes = getFinalistCodes(finalist);
-    const codesKey = codes.length > 0 ? codes.join("|") : finalist.event.type;
-    return `${codesKey}-${finalist.event.type}`.toLowerCase();
-};
-
-const getEventGroupLabel = (finalist: Finalist): string => {
-    const codes = getFinalistCodes(finalist);
-    const codesLabel = codes.length > 0 ? codes.join(", ") : finalist.event.type;
-    return `${codesLabel} (${finalist.event.type})`;
-};
-
-const BracketContent: React.FC<{
-    isTeamEvent: boolean;
-    group: ClassificationGroup;
-    teamScores: TeamScore[];
-    participantScores: ParticipantScore[];
-    loading: boolean;
-    currentClassification: string;
-    handleClearScores: (userId: string, group: ClassificationGroup) => void;
-    handleClearTeamScores: (teamId: string, group: ClassificationGroup) => void;
-    openModal: (options: {participant?: ParticipantScore; team?: TeamScore; group: ClassificationGroup}) => void;
-}> = ({
-    isTeamEvent,
-    group,
-    teamScores,
-    participantScores,
-    loading,
-    currentClassification,
-    handleClearScores,
-    handleClearTeamScores,
-    openModal,
-}) => {
-    const eventCodes = getGroupCodes(group);
-
-    const participantsInGroup = useMemo(() => {
-        const ids = new Set<string>();
-        for (const finalist of group.finalists) {
-            for (const record of finalist.records) {
-                if (record.registration?.user_id) {
-                    ids.add(record.registration.user_id);
-                }
-            }
-        }
-        return ids;
-    }, [group.finalists]);
-
-    const teamsInGroup = useMemo(() => {
-        const ids = new Set<string>();
-        for (const finalist of group.finalists) {
-            for (const record of finalist.records) {
-                if (record.team?.id) {
-                    ids.add(record.team.id);
-                }
-            }
-        }
-        return ids;
-    }, [group.finalists]);
-
-    const filteredTeamScores = useMemo(
-        () => teamScores.filter((t) => group.classification === currentClassification && teamsInGroup.has(t.id)),
-        [teamScores, group.classification, currentClassification, teamsInGroup],
-    );
-
-    const filteredParticipantScores = useMemo(
-        () =>
-            participantScores.filter((p) => group.classification === currentClassification && participantsInGroup.has(p.user_id)),
-        [participantScores, group.classification, currentClassification, participantsInGroup],
-    );
-
-    const participantColumns = useMemo(
-        () =>
-            [
-                {title: "Position", width: 80, render: (_value: unknown, _record: ParticipantScore, index: number) => index + 1},
-                {title: "Global ID", dataIndex: "user_global_id", width: 120},
-                {title: "Name", dataIndex: "user_name", width: 160},
-                {
-                    title: "Event Codes",
-                    width: 180,
-                    render: () => eventCodes.join(", "),
-                },
-                {
-                    title: "Status",
-                    width: 140,
-                    render: (_: unknown, record: ParticipantScore) => {
-                        const isComplete = eventCodes.every((code) => {
-                            const key = normalizeEventKey(code, group.event.type);
-                            const scores = record.scores[key];
-                            return Boolean(scores?.try1 && scores?.try2 && scores?.try3);
-                        });
-                        return (
-                            <span style={{color: isComplete ? "#16a34a" : "#f97316", fontWeight: 600}}>
-                                {isComplete ? "Complete" : "Incomplete"}
-                            </span>
-                        );
-                    },
-                },
-                {
-                    title: "Action",
-                    width: 200,
-                    render: (_: unknown, record: ParticipantScore) => (
-                        <div style={{display: "flex", gap: "8px", flexWrap: "wrap"}}>
-                            <Button size="small" type="primary" onClick={() => openModal({participant: record, group})}>
-                                Edit
-                            </Button>
-                        </div>
-                    ),
-                },
-            ] as TableColumnProps<ParticipantScore>[],
-        [eventCodes, group, handleClearScores, openModal],
-    );
-
-    const teamColumns = useMemo(() => {
-        return [
-            {title: "Position", width: 80, render: (_value: unknown, _record: TeamScore, index: number) => index + 1},
-            {title: "Team Name", dataIndex: "name", width: 200},
-            {title: "Leader ID", dataIndex: "leader_id", width: 150},
-            {
-                title: "Members",
-                dataIndex: "members",
-                width: 220,
-                render: (members: TeamMember[]) => (
-                    <div>
-                        {members.map((member) => (
-                            <div key={member.global_id}>{member.global_id}</div>
-                        ))}
-                    </div>
-                ),
-            },
-            {
-                title: "Event Codes",
-                width: 180,
-                render: () => eventCodes.join(", "),
-            },
-            {
-                title: "Status",
-                width: 140,
-                render: (_: unknown, record: TeamScore) => {
-                    const isComplete = eventCodes.every((code) => {
-                        const key = normalizeEventKey(code, group.event.type);
-                        const scores = record.scores[key];
-                        return Boolean(scores?.try1 && scores?.try2 && scores?.try3);
-                    });
-                    return (
-                        <span style={{color: isComplete ? "#16a34a" : "#f97316", fontWeight: 600}}>
-                            {isComplete ? "Complete" : "Incomplete"}
-                        </span>
-                    );
-                },
-            },
-            {
-                title: "Action",
-                width: 220,
-                render: (_: unknown, record: TeamScore) => (
-                    <div style={{display: "flex", gap: "8px", flexWrap: "wrap"}}>
-                        <Button size="small" type="primary" onClick={() => openModal({team: record, group})}>
-                            Edit
-                        </Button>
-                    </div>
-                ),
-            },
-        ] as TableColumnProps<TeamScore>[];
-    }, [eventCodes, group, handleClearTeamScores, openModal]);
-
-    if (isTeamEvent) {
-        return (
-            <Table
-                style={{width: "100%"}}
-                columns={teamColumns}
-                data={filteredTeamScores}
-                pagination={false}
-                loading={loading}
-                rowKey="id"
-            />
-        );
-    }
-
-    return (
-        <Table
-            style={{width: "100%"}}
-            columns={participantColumns}
-            data={filteredParticipantScores}
-            pagination={false}
-            loading={loading}
-            rowKey="user_id"
-        />
-    );
-};
-
 export default function FinalScoringPage() {
-    const {tournamentId} = useParams<{tournamentId: string}>();
     const navigate = useNavigate();
-    const location = useLocation();
+    const {tournamentId} = useParams<{tournamentId: string}>();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
-    const [finalists, setFinalists] = useState<Finalist[]>([]);
-    const [participantScores, setParticipantScores] = useState<ParticipantScore[]>([]);
-    const [teamScores, setTeamScores] = useState<TeamScore[]>([]);
+    const [records, setRecords] = useState<(TournamentRecord | TournamentTeamRecord)[]>([]);
+    const [registrations, setRegistrations] = useState<Registration[]>([]);
+    const [teams, setTeams] = useState<Team[]>([]);
+    const [finalist, setFinalist] = useState<FinalistGroupPayload[]>([]);
+    const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
+    const [currentEvent, setCurrentEvent] = useState<TournamentEvent | null>(null);
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
     const [currentClassificationTab, setCurrentClassificationTab] = useState<string>("");
-    const [modalVisible, setModalVisible] = useState(false);
-    const [selectedParticipant, setSelectedParticipant] = useState<ParticipantScore | null>(null);
-    const [selectedTeam, setSelectedTeam] = useState<TeamScore | null>(null);
-    const [modalScores, setModalScores] = useState<Record<string, Score>>({});
-    const [selectedGroup, setSelectedGroup] = useState<ClassificationGroup | null>(null);
+    const [selectedParticipant, setSelectedParticipant] = useState<Registration | null>(null);
+    const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
+    const [isIndividual, setIsIndividual] = useState<boolean>(true);
+    const [modalState, setModalState] = useState<boolean>(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const mountedRef = useRef(false);
+    const [modalScores, setModalScores] = useState<Record<string, {try1: string; try2: string; try3: string; id?: string}>>({});
 
-    const buildEmptyScoreForFinalist = (): Score => ({try1: "", try2: "", try3: ""});
-
-    const toNumberOrUndefined = (value?: string): number | undefined => {
-        if (value === undefined || value === "") {
-            return undefined;
-        }
-        const parsed = Number.parseFloat(value);
-        return Number.isNaN(parsed) ? undefined : parsed;
-    };
-
-    const openModal = ({
-        participant,
-        team,
-        group,
-    }: {
-        participant?: ParticipantScore;
-        team?: TeamScore;
-        group: ClassificationGroup;
-    }) => {
-        setSelectedParticipant(participant ?? null);
-        setSelectedTeam(team ?? null);
-        setSelectedGroup(group);
-
-        const codes = getGroupCodes(group);
-        const initialScores: Record<string, Score> = {};
-        for (const code of codes) {
-            const eventKey = normalizeEventKey(code, group.event.type);
-            const existingScore = participant?.scores[eventKey] ?? team?.scores[eventKey];
-            initialScores[eventKey] = {
-                try1: existingScore?.try1 ?? "",
-                try2: existingScore?.try2 ?? "",
-                try3: existingScore?.try3 ?? "",
-                recordId: existingScore?.recordId,
-            };
-        }
-
-        setModalScores(initialScores);
-        setModalVisible(true);
-    };
-
-    const closeModal = () => {
-        setModalVisible(false);
-        setSelectedParticipant(null);
-        setSelectedTeam(null);
-        setSelectedGroup(null);
-        setModalScores({});
-    };
-
-    const handleModalScoreChange = (eventKey: string, field: keyof Score, value: string) => {
-        setModalScores((prev) => ({
-            ...prev,
-            [eventKey]: {
-                ...(prev[eventKey] ?? buildEmptyScoreForFinalist()),
-                [field]: value,
-            },
-        }));
-    };
-
-    const resetModalScore = () => {
-        if (!selectedGroup) return;
-        const codes = getGroupCodes(selectedGroup);
-        const cleared: Record<string, Score> = {};
-        for (const code of codes) {
-            const eventKey = normalizeEventKey(code, selectedGroup.event.type);
-            const existingRecordId = modalScores[eventKey]?.recordId;
-            const emptyScore = buildEmptyScoreForFinalist();
-            cleared[eventKey] = existingRecordId ? {...emptyScore, recordId: existingRecordId} : emptyScore;
-        }
-        setModalScores(cleared);
-    };
-
-    const validateModalScores = (): string[] => {
-        if (!selectedGroup) return ["No event selected."];
-
-        const errors: string[] = [];
-        const codesToCheck = getGroupCodes(selectedGroup);
-
-        for (const code of codesToCheck) {
-            const eventKey = normalizeEventKey(code, selectedGroup.event.type);
-            const scores = modalScores[eventKey];
-
-            if (!scores) {
-                errors.push(`Missing scores for ${code}`);
-                continue;
-            }
-
-            const tries: Array<{label: string; value: string}> = [
-                {label: "Try 1", value: scores.try1},
-                {label: "Try 2", value: scores.try2},
-                {label: "Try 3", value: scores.try3},
-            ];
-
-            const missing = tries.filter((item) => !item.value || item.value.trim() === "");
-            if (missing.length > 0) {
-                errors.push(`Missing values for ${code}: ${missing.map((m) => m.label).join(", ")}`);
-                continue;
-            }
-
-            const invalid = tries
-                .filter((item) => {
-                    const parsed = Number.parseFloat(item.value);
-                    return Number.isNaN(parsed) || parsed <= 0;
-                })
-                .map((item) => item.label);
-
-            if (invalid.length > 0) {
-                errors.push(`Invalid times for ${code}: ${invalid.join(", ")}`);
-            }
-        }
-
-        return errors;
-    };
-
-    const saveModalScores = async () => {
-        if (!tournamentId || !selectedGroup) {
-            closeModal();
-            return;
-        }
-
-        const validationErrors = validateModalScores();
-        if (validationErrors.length > 0) {
-            const message = `Validation Failed:\n${validationErrors.join("\n")}`;
-            Message.error(message);
-            return;
-        }
-
+    const refreshFinalScore = async () => {
+        if (!tournamentId) return;
         setLoading(true);
         try {
-            const codesToProcess = getGroupCodes(selectedGroup);
-            const classification = selectedGroup.classification;
-            const now = new Date().toISOString();
+            const tournament = await fetchTournamentById(tournamentId);
+            setTournament(tournament);
 
-            if (selectedParticipant) {
-                const updatedModalScores: Record<string, Score> = {...modalScores};
+            const events = await fetchTournamentEvents(tournamentId);
+            setEvents(events);
 
-                for (const code of codesToProcess) {
-                    const eventKey = normalizeEventKey(code, selectedGroup.event.type);
-                    const scores = modalScores[eventKey];
-                    if (!scores) continue;
+            const registrations = await fetchRegistrations(tournamentId);
+            setRegistrations(registrations);
 
-                    const try1 = Number.parseFloat(scores.try1);
-                    const try2 = Number.parseFloat(scores.try2);
-                    const try3 = Number.parseFloat(scores.try3);
+            const teams = await fetchTeamsByTournament(tournamentId);
+            setTeams(teams);
 
-                    const eventName = `${code}-${selectedGroup.event.type}`;
+            const finalists = await fetchTournamentFinalists(tournamentId);
+            setFinalist(finalists);
 
-                    const savedRecordId = await saveRecord({
-                        id: scores.recordId,
-                        tournamentId,
-                        event_id: selectedGroup.event.id ?? eventName,
-                        event: eventName,
-                        participantId: selectedParticipant.user_id,
-                        participantGlobalId: selectedParticipant.user_global_id,
-                        participantName: selectedParticipant.user_name,
-                        participantAge: selectedParticipant.age,
-                        country: selectedParticipant.country || "MY",
-                        gender: selectedParticipant.gender || "Male",
-                        classification,
-                        try1,
-                        try2,
-                        try3,
-                        status: "submitted",
-                        submitted_at: now,
-                    });
-                    updatedModalScores[eventKey] = {...scores, recordId: savedRecordId};
+            const recordsData = await getTournamentFinalRecords(tournamentId);
+            const parsedRecords: (TournamentRecord | TournamentTeamRecord)[] = recordsData.map((record) => {
+                if (record.event === "Individual") {
+                    return TournamentRecordSchema.parse(record);
                 }
-
-                setModalScores(updatedModalScores);
-
-                setParticipantScores((prev) =>
-                    prev.map((participant) => {
-                        if (participant.user_id !== selectedParticipant.user_id) return participant;
-                        const updatedScores = {...participant.scores};
-                        for (const [key, value] of Object.entries(updatedModalScores)) {
-                            updatedScores[key] = {...value};
-                        }
-                        return {...participant, scores: updatedScores};
-                    }),
-                );
-
-                Message.success(`Final score saved for ${selectedParticipant.user_name}!`);
-            } else if (selectedTeam) {
-                const updatedModalScores: Record<string, Score> = {...modalScores};
-
-                for (const code of codesToProcess) {
-                    const eventKey = normalizeEventKey(code, selectedGroup.event.type);
-                    const scores = modalScores[eventKey];
-                    if (!scores) continue;
-
-                    const try1 = Number.parseFloat(scores.try1);
-                    const try2 = Number.parseFloat(scores.try2);
-                    const try3 = Number.parseFloat(scores.try3);
-
-                    const eventName = `${code}-${selectedGroup.event.type}`;
-
-                    const savedRecordId = await saveTeamRecord({
-                        id: scores.recordId,
-                        tournamentId,
-                        event_id: selectedGroup.event.id ?? eventName,
-                        event: eventName,
-                        participantId: selectedTeam.id,
-                        teamName: selectedTeam.name,
-                        country: "MY",
-                        leaderId: selectedTeam.leader_id,
-                        members: selectedTeam.members,
-                        round: "final",
-                        classification,
-                        try1,
-                        try2,
-                        try3,
-                        status: "submitted",
-                        submitted_at: now,
-                    });
-                    updatedModalScores[eventKey] = {...scores, recordId: savedRecordId};
-                }
-
-                setModalScores(updatedModalScores);
-
-                setTeamScores((prev) =>
-                    prev.map((team) => {
-                        if (team.id !== selectedTeam.id) return team;
-                        const updatedScores = {...team.scores};
-                        for (const [key, value] of Object.entries(updatedModalScores)) {
-                            updatedScores[key] = {...value};
-                        }
-                        return {...team, scores: updatedScores};
-                    }),
-                );
-
-                Message.success(`Final score saved for team ${selectedTeam.name}!`);
-            }
-
-            closeModal();
+                return TournamentTeamRecordSchema.parse(record);
+            });
+            setRecords(parsedRecords);
+            setCurrentEventTab(events?.[0]?.id || events?.[0]?.type || "");
+            setCurrentBracketTab(events?.[0]?.age_brackets?.[0]?.name || "");
+            setCurrentClassificationTab(events?.[0]?.age_brackets?.[0]?.final_criteria?.[0]?.classification || "");
         } catch (error) {
-            console.error("Failed to save final score:", error);
-            Message.error("Failed to save final score. Please try again.");
+            console.error(error);
+            Message.error("Failed to refresh final scores.");
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        const fetchAndProcessData = async () => {
-            if (!tournamentId) return;
+        if (!tournamentId) return;
+    }, [tournamentId]);
 
-            setLoading(true);
-            try {
-                let finalistData: Finalist[];
-                let tournamentData: Tournament;
-                let registrations: Registration[];
-                let teams: Team[];
-                let eventCodesByType = new Map<string, string[]>();
+    useMount(() => {
+        if (mountedRef.current) return;
+        mountedRef.current = true;
+        refreshFinalScore();
+    });
 
-                if (location.state) {
-                    // Use state if available
-                    ({finalists: finalistData, tournament: tournamentData, registrations, teams} = location.state);
-                    eventCodesByType = buildEventCodeMap(tournamentData.events ?? undefined);
-                } else {
-                    // Fallback: fetch all required data
-                    const [fetchedTournament, fetchedRegistrations, fetchedTeams, prelimRecords] = await Promise.all([
-                        fetchTournamentById(tournamentId),
-                        fetchRegistrations(tournamentId),
-                        fetchTeamsByTournament(tournamentId),
-                        getTournamentPrelimRecords(tournamentId),
-                    ]);
-
-                    if (!fetchedTournament) {
-                        Message.error("Tournament not found");
-                        return;
-                    }
-
-                    tournamentData = fetchedTournament;
-                    registrations = fetchedRegistrations;
-                    teams = fetchedTeams;
-                    eventCodesByType = buildEventCodeMap(tournamentData.events ?? undefined);
-
-                    // Create name and age maps
-                    const nameMap = registrations.reduce(
-                        (acc, r) => {
-                            acc[r.user_id] = r.user_name;
-                            return acc;
-                        },
-                        {} as Record<string, string>,
-                    );
-
-                    const ageMap = registrations.reduce(
-                        (acc, r) => {
-                            acc[r.user_id] = r.age;
-                            return acc;
-                        },
-                        {} as Record<string, number>,
-                    );
-
-                    const teamNameMap = teams.reduce(
-                        (acc, t) => {
-                            acc[t.id] = t.name;
-                            return acc;
-                        },
-                        {} as Record<string, string>,
-                    );
-
-                    // Recreate finalists from prelim data using the same logic as PrelimResultsPage
-                    finalistData = [];
-
-                    for (const event of tournamentData.events ?? []) {
-                        const eventCodes = sanitizeEventCodes(event.codes);
-
-                        for (const code of eventCodes) {
-                            if (code === "Overall") {
-                                continue;
-                            }
-                            const eventKey = `${code}-${event.type}`;
-
-                            for (const bracket of event.age_brackets ?? []) {
-                                const isTeamEvent = ["double", "team relay", "parent & child"].includes(event.type.toLowerCase());
-                                const mappedCodes = eventCodesByType.get(event.type.toLowerCase()) ?? [];
-                                const fallbackCodes = sanitizeEventCodes(event.codes);
-                                const resolvedCodes = mappedCodes.length > 0 ? mappedCodes : fallbackCodes;
-                                const eventCodesForFinal = resolvedCodes.length > 0 ? [...resolvedCodes] : [event.type];
-
-                                let records: (PrelimResultData & {team?: Team; registration?: Registration})[] = [];
-
-                                if (isTeamEvent) {
-                                    records = prelimRecords
-                                        .filter(
-                                            (record): record is TournamentTeamRecord =>
-                                                isTeamTournamentRecord(record) && record.event === eventKey,
-                                        )
-                                        .filter((record) => {
-                                            const team = teams.find((t) => t.id === record.team_id);
-                                            const teamAge = getTeamMaxAge(team);
-                                            return (
-                                                teamAge !== undefined && teamAge >= bracket.min_age && teamAge <= bracket.max_age
-                                            );
-                                        })
-                                        .sort((a, b) => getBestTimeFromRecord(a) - getBestTimeFromRecord(b))
-                                        .map((record, index) => {
-                                            const teamId = record.team_id;
-                                            const team = teams.find((t) => t.id === teamId);
-                                            const bestTime = record.bestTime ?? record.best_time ?? getBestTimeFromRecord(record);
-                                            return {
-                                                ...record,
-                                                participant_id: record.participant_id ?? teamId,
-                                                participant_name: record.participant_name ?? team?.name ?? teamId,
-                                                gender: (record as unknown as {gender?: string}).gender ?? "Team",
-                                                bestTime,
-                                                rank: index + 1,
-                                                name: teamNameMap[teamId] || "N/A",
-                                                id: team?.id || teamId || "unknown",
-                                                teamId,
-                                                team,
-                                            } as PrelimResultData & {team?: Team | undefined};
-                                        });
-                                } else {
-                                    records = prelimRecords
-                                        .filter(
-                                            (record): record is TournamentRecord =>
-                                                isIndividualTournamentRecord(record) && record.event === eventKey,
-                                        )
-                                        .filter((record) => {
-                                            const participantId = record.participant_id;
-                                            const age = ageMap[participantId];
-                                            return age >= bracket.min_age && age <= bracket.max_age;
-                                        })
-                                        .sort((a, b) => getBestTimeFromRecord(a) - getBestTimeFromRecord(b))
-                                        .map((record, index) => {
-                                            const participantId = record.participant_id;
-                                            const bestTime = record.bestTime ?? record.best_time ?? getBestTimeFromRecord(record);
-                                            return {
-                                                ...record,
-                                                participant_id: record.participant_id,
-                                                participant_name: record.participant_name ?? nameMap[participantId] ?? "N/A",
-                                                gender: record.gender,
-                                                bestTime,
-                                                rank: index + 1,
-                                                name: nameMap[participantId] || "N/A",
-                                                id: participantId,
-                                                registration: registrations.find((reg) => reg.user_id === participantId),
-                                            } as PrelimResultData & {registration?: Registration | undefined};
-                                        });
-                                }
-
-                                const finalCriteria = bracket.final_criteria || [];
-                                let processedCount = 0;
-                                for (const criterion of finalCriteria) {
-                                    const {classification, number} = criterion;
-                                    const bracketFinalists = records.slice(processedCount, processedCount + number);
-
-                                    if (bracketFinalists.length > 0) {
-                                        finalistData.push({
-                                            event,
-                                            eventCode: code,
-                                            eventCodes: eventCodesForFinal,
-                                            bracket,
-                                            records: bracketFinalists,
-                                            classification,
-                                        });
-                                    }
-                                    processedCount += number;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                finalistData = finalistData.map((finalist) => {
-                    const mappedCodes =
-                        finalist.eventCodes && finalist.eventCodes.length > 0
-                            ? finalist.eventCodes
-                            : (eventCodesByType.get(finalist.event.type.toLowerCase()) ?? []);
-                    const fallbackCodes = sanitizeEventCodes(finalist.event.codes);
-                    const resolvedCodes = mappedCodes.length > 0 ? mappedCodes : fallbackCodes;
-                    const eventCodes = resolvedCodes.length > 0 ? [...resolvedCodes] : [finalist.event.type];
-
-                    if (finalist.eventCode) {
-                        return {
-                            ...finalist,
-                            eventCodes,
-                        };
-                    }
-
-                    const derivedCode =
-                        finalist.records?.[0]?.event?.split("-").slice(0, -1).join("-") ||
-                        finalist.event.codes?.[0] ||
-                        finalist.event.type;
-                    return {
-                        ...finalist,
-                        eventCode: derivedCode,
-                        eventCodes,
-                    };
-                });
-
-                setTournament(tournamentData);
-                setFinalists(finalistData);
-
-                const finalRecords = await getTournamentFinalRecords(tournamentId);
-
-                const participantScoresMap: Record<string, ParticipantScore> = {};
-                const teamScoresMap: Record<string, TeamScore> = {};
-                for (const finalist of finalistData) {
-                    const isTeamEvent = ["double", "team relay", "parent & child"].includes(finalist.event.type.toLowerCase());
-                    const finalistCodes = getFinalistCodes(finalist);
-                    const codesToUse = finalistCodes.length > 0 ? finalistCodes : [finalist.event.type];
-
-                    for (const record of finalist.records) {
-                        if (isTeamEvent && record.team) {
-                            const teamId = record.team.id;
-                            if (!teamScoresMap[teamId]) {
-                                teamScoresMap[teamId] = {...record.team, scores: {}};
-                            }
-
-                            for (const code of codesToUse) {
-                                const eventKey = normalizeEventKey(code, finalist.event.type);
-                                const finalRecord = finalRecords.find(
-                                    (r): r is TournamentTeamRecord =>
-                                        isTeamTournamentRecord(r) && r.team_id === teamId && r.event.toLowerCase() === eventKey,
-                                );
-                                const existingScore = teamScoresMap[teamId].scores[eventKey] ?? {};
-                                teamScoresMap[teamId].scores[eventKey] = {
-                                    ...existingScore,
-                                    try1: finalRecord?.try1?.toString() || "",
-                                    try2: finalRecord?.try2?.toString() || "",
-                                    try3: finalRecord?.try3?.toString() || "",
-                                    recordId: finalRecord?.id,
-                                };
-                            }
-                        } else if (!isTeamEvent && record.registration) {
-                            const userId = record.registration.user_id;
-                            if (!participantScoresMap[userId]) {
-                                participantScoresMap[userId] = {...record.registration, scores: {}};
-                            }
-
-                            for (const code of codesToUse) {
-                                const eventKey = normalizeEventKey(code, finalist.event.type);
-                                const finalRecord = finalRecords.find(
-                                    (r): r is TournamentRecord =>
-                                        isIndividualTournamentRecord(r) &&
-                                        r.participant_id === userId &&
-                                        r.event.toLowerCase() === eventKey,
-                                );
-                                const existingScore = participantScoresMap[userId].scores[eventKey] ?? {};
-                                participantScoresMap[userId].scores[eventKey] = {
-                                    ...existingScore,
-                                    try1: finalRecord?.try1?.toString() || "",
-                                    try2: finalRecord?.try2?.toString() || "",
-                                    try3: finalRecord?.try3?.toString() || "",
-                                    recordId: finalRecord?.id,
-                                };
-                            }
-                        }
-                    }
-                }
-
-                setParticipantScores(Object.values(participantScoresMap));
-                setTeamScores(Object.values(teamScoresMap));
-
-                if (finalistData[0]) {
-                    const firstFinalist = finalistData[0];
-                    const firstEventKey = getEventGroupKey(firstFinalist);
-                    setCurrentEventTab(firstEventKey);
-                    setCurrentBracketTab(firstFinalist.bracket.name);
-                    if (firstFinalist.classification) {
-                        setCurrentClassificationTab(firstFinalist.classification);
-                    }
-                }
-            } catch (error) {
-                console.error("Error fetching final scoring data:", error);
-                Message.error("Failed to load final scoring data");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchAndProcessData();
-    }, [location.state, tournamentId]);
-
-    const handleClearScores = (userId: string, groupToClear: ClassificationGroup) => {
-        const codes = getGroupCodes(groupToClear);
-
-        setParticipantScores((prev) =>
-            prev.map((participant) => {
-                if (participant.user_id !== userId) return participant;
-                const updatedScores = {...participant.scores};
-                for (const code of codes) {
-                    const eventKey = normalizeEventKey(code, groupToClear.event.type);
-                    updatedScores[eventKey] = buildEmptyScoreForFinalist();
-                }
-                return {
-                    ...participant,
-                    scores: updatedScores,
-                };
-            }),
+    const filterParticipants = (participants: Registration[]) => {
+        if (!searchTerm.trim()) return participants;
+        return participants.filter(
+            (p) =>
+                p.user_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                p.user_name.toLowerCase().includes(searchTerm.toLowerCase()),
         );
     };
 
-    const handleClearTeamScores = (teamId: string, groupToClear: ClassificationGroup) => {
-        const codes = getGroupCodes(groupToClear);
-
-        setTeamScores((prev) =>
-            prev.map((team) => {
-                if (team.id !== teamId) return team;
-                const updatedScores = {...team.scores};
-                for (const code of codes) {
-                    const eventKey = normalizeEventKey(code, groupToClear.event.type);
-                    updatedScores[eventKey] = buildEmptyScoreForFinalist();
-                }
-                return {
-                    ...team,
-                    scores: updatedScores,
-                };
-            }),
+    const filterTeams = (teams: Team[]) => {
+        if (!searchTerm.trim()) return teams;
+        return teams.filter(
+            (t) =>
+                t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                t.leader_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                t.members.some((m) => m.global_id.toLowerCase().includes(searchTerm.toLowerCase())),
         );
     };
 
-    const getBestTime = (scores: Score) => {
-        const times = [scores.try1, scores.try2, scores.try3]
-            .map((s) => Number.parseFloat(s))
-            .filter((t) => !Number.isNaN(t) && t > 0);
-        return times.length > 0 ? Math.min(...times).toFixed(3) : "N/A";
-    };
+    const getExpandableColumns = (codes: string[], eventKey: string): TableColumnProps<Registration>[] => [
+        {title: "Global ID", dataIndex: "user_global_id", width: 150},
+        {title: "Name", dataIndex: "user_name", width: 200},
+        {
+            title: "Event Codes",
+            width: 200,
+            render: () => <span>{codes.join(", ")}</span>,
+        },
+        {
+            title: "Status",
+            width: 100,
+            render: (_, record) => {
+                const isAllCodesRecorded = codes.every((code) =>
+                    records.some((r) => r.participant_id === record.user_id && r.code === code && r.event === eventKey),
+                );
 
-    const modalEventLabel = selectedGroup ? selectedGroup.event.type : "";
-    const modalCodes = selectedGroup ? getGroupCodes(selectedGroup) : [];
+                return (
+                    <span style={{color: isAllCodesRecorded ? "green" : "orange"}}>
+                        {isAllCodesRecorded ? "Complete" : "Incomplete"}
+                    </span>
+                );
+            },
+        },
+        {
+            title: "Action",
+            width: 100,
+            render: (_, record) => (
+                <Button
+                    type="primary"
+                    size="small"
+                    onClick={() => {
+                        setModalState(true);
+                        setSelectedParticipant(record);
+                        setIsIndividual(true);
+                        // Use the actual event context where this button resides
+                        const evt =
+                            events.find((e) => e.id === currentEventTab) ||
+                            events.find((e) => e.type === currentEventTab) ||
+                            null;
+                        setCurrentEvent(evt);
+                        // Prefill modal scores from existing records
+                        if (evt) {
+                            const initial: Record<string, {try1: string; try2: string; try3: string; id?: string}> = {};
+                            for (const code of evt.codes ?? []) {
+                                const key = `${code}-${evt.type}`;
+                                const existing = records.find(
+                                    (r) =>
+                                        r.event === evt.type &&
+                                        r.code === code &&
+                                        (r as TournamentRecord).participant_id === record.user_id,
+                                ) as TournamentRecord | undefined;
+                                initial[key] = {
+                                    try1: existing?.try1 != null ? String(existing.try1) : "",
+                                    try2: existing?.try2 != null ? String(existing.try2) : "",
+                                    try3: existing?.try3 != null ? String(existing.try3) : "",
+                                    id: existing?.id,
+                                };
+                            }
+                            setModalScores(initial);
+                        } else {
+                            setModalScores({});
+                        }
+                    }}
+                >
+                    Edit
+                </Button>
+            ),
+        },
+    ];
 
-    const eventGroups = useMemo(() => {
-        const map = new Map<
-            string,
-            {
-                key: string;
-                label: string;
-                finalists: Finalist[];
-            }
-        >();
-
-        for (const finalist of finalists) {
-            const key = getEventGroupKey(finalist);
-            const label = getEventGroupLabel(finalist);
-            const entry = map.get(key);
-            if (entry) {
-                entry.finalists.push(finalist);
-            } else {
-                map.set(key, {
-                    key,
-                    label,
-                    finalists: [finalist],
-                });
-            }
-        }
-
-        return Array.from(map.values());
-    }, [finalists]);
-
-    useEffect(() => {
-        if (eventGroups.length === 0) return;
-        const exists = eventGroups.some((group) => group.key === currentEventTab);
-        if (!exists) {
-            const firstGroup = eventGroups[0];
-            setCurrentEventTab(firstGroup.key);
-            if (firstGroup.finalists[0]) {
-                const firstFinalist = firstGroup.finalists[0];
-                setCurrentBracketTab(firstFinalist.bracket.name);
-                if (firstFinalist.classification) {
-                    setCurrentClassificationTab(firstFinalist.classification);
-                }
-            }
-        }
-    }, [eventGroups, currentEventTab]);
-
-    if (!tournament || loading) {
-        return (
-            <div className="flex flex-col h-full bg-ghostwhite p-6 gap-6">
-                <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-6 shadow-lg rounded-lg">
-                    <div className="flex justify-center items-center h-64">
-                        <div>Loading final scoring data...</div>
-                    </div>
+    const getTeamExpandableColumns = (codes: string[], eventKey: string): TableColumnProps<Team>[] => [
+        {title: "Team Name", dataIndex: "name", width: 200},
+        {title: "Leader ID", dataIndex: "leader_id", width: 150},
+        {
+            title: "Members",
+            dataIndex: "members",
+            width: 200,
+            render: (members: TeamMember[]) => (
+                <div>
+                    {members.map((m) => (
+                        <div key={m.global_id}>{m.global_id}</div>
+                    ))}
                 </div>
-            </div>
-        );
-    }
+            ),
+        },
+        {
+            title: "Event Codes",
+            width: 150,
+            render: () => <span>{codes.join(", ")}</span>,
+        },
+        {
+            title: "Status",
+            width: 100,
+            render: (_, record) => {
+                const isAllCodesRecorded = codes.every((code) =>
+                    records.some((r) => r.team_id === record.id && r.code === code && r.event === eventKey),
+                );
+
+                return (
+                    <span style={{color: isAllCodesRecorded ? "green" : "orange"}}>
+                        {isAllCodesRecorded ? "Complete" : "Incomplete"}
+                    </span>
+                );
+            },
+        },
+        {
+            title: "Action",
+            width: 100,
+            render: (_, record) => (
+                <Button
+                    type="primary"
+                    size="small"
+                    onClick={() => {
+                        setModalState(true);
+                        setSelectedTeam(record);
+                        setIsIndividual(false);
+                        const evt =
+                            events.find((e) => e.id === currentEventTab) ||
+                            events.find((e) => e.type === currentEventTab) ||
+                            null;
+                        setCurrentEvent(evt);
+                        // Prefill modal scores from existing team records
+                        if (evt) {
+                            const initial: Record<string, {try1: string; try2: string; try3: string; id?: string}> = {};
+                            for (const code of evt.codes ?? []) {
+                                const key = `${code}-${evt.type}`;
+                                const existing = records.find(
+                                    (r) =>
+                                        r.event === evt.type &&
+                                        r.code === code &&
+                                        (r as TournamentTeamRecord).team_id === record.id,
+                                ) as TournamentTeamRecord | undefined;
+                                initial[key] = {
+                                    try1: existing?.try1 != null ? String(existing.try1) : "",
+                                    try2: existing?.try2 != null ? String(existing.try2) : "",
+                                    try3: existing?.try3 != null ? String(existing.try3) : "",
+                                    id: existing?.id,
+                                };
+                            }
+                            setModalScores(initial);
+                        } else {
+                            setModalScores({});
+                        }
+                    }}
+                >
+                    Edit
+                </Button>
+            ),
+        },
+    ];
+
+    const handleModalScoreChange = (key: string, field: "try1" | "try2" | "try3", value: string) => {
+        setModalScores((prev) => ({
+            ...prev,
+            [key]: {
+                try1: prev[key]?.try1 ?? "",
+                try2: prev[key]?.try2 ?? "",
+                try3: prev[key]?.try3 ?? "",
+                id: prev[key]?.id,
+                [field]: value,
+            },
+        }));
+    };
+
+    const getBestTime = (scores?: {try1: string; try2: string; try3: string}): string => {
+        if (!scores) return "N/A";
+        const t1 = Number.parseFloat(scores.try1);
+        const t2 = Number.parseFloat(scores.try2);
+        const t3 = Number.parseFloat(scores.try3);
+        const vals = [t1, t2, t3].filter((v) => Number.isFinite(v) && v >= 0);
+        if (vals.length === 0) return "N/A";
+        return Math.min(...vals).toFixed(3);
+    };
+
+    const checkAllFinalistsAndNavigate = async () => {
+        if (!tournamentId) return;
+        setLoading(true);
+        try {
+            type Missing = {id: string; code: string; eventType: string; eventId?: string};
+            const missing: Missing[] = [];
+
+            const getCodesForGroup = (g: FinalistGroupPayload): string[] => {
+                if (g.event_code && g.event_code.length > 0) return g.event_code;
+                const evtDef = events.find((e) => e.id === g.event_id) || events.find((e) => e.type === g.event_type);
+                return evtDef?.codes ?? [];
+            };
+
+            for (const g of finalist) {
+                const isTeam = g.participant_type === "Team";
+                const codes = getCodesForGroup(g);
+                const eventType = g.event_type;
+                for (const pid of g.participant_ids ?? []) {
+                    for (const code of codes) {
+                        const hasRecord = records.some((r) => {
+                            if (r.event !== eventType || r.code !== code) return false;
+                            return isTeam
+                                ? (r as TournamentTeamRecord).team_id === pid
+                                : (r as TournamentRecord).participant_id === pid;
+                        });
+                        if (!hasRecord) missing.push({id: pid, code, eventType, eventId: g.event_id ?? undefined});
+                    }
+                }
+            }
+
+            if (missing.length === 0) {
+                Message.success("All finalists have completed final records. Redirecting to results…");
+                navigate(`/tournaments/${tournamentId}/record/final`);
+            } else {
+                const resolveName = (id: string, eventType: string) => {
+                    const isTeamEvt = ["double", "team relay", "parent & child"].includes(eventType.toLowerCase());
+                    if (isTeamEvt) {
+                        const team = teams.find((t) => t.id === id);
+                        return team?.name ?? id;
+                    }
+                    const reg = registrations.find((r) => r.user_id === id);
+                    return reg ? `${reg.user_name} (${reg.user_global_id})` : id;
+                };
+                const preview = missing
+                    .slice(0, 12)
+                    .map((m) => `${resolveName(m.id, m.eventType)} [${m.code} - ${m.eventType}]`)
+                    .join(", ");
+                const more = missing.length > 12 ? ` and ${missing.length - 12} more` : "";
+                Message.warning(`Some finalists are missing scores: ${preview}${more}`);
+            }
+        } catch (error) {
+            console.error("Failed to check records:", error);
+            Message.error("Failed to check records.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const saveModalRecord = async (): Promise<void> => {
+        if (!tournamentId || !currentEvent) return;
+        setLoading(true);
+        try {
+            const now = new Date().toISOString();
+            const codes = currentEvent.codes ?? [];
+            for (const code of codes) {
+                const key = `${code}-${currentEvent.type}`;
+                const scores = modalScores[key];
+                if (!scores) continue;
+                const t1 = scores.try1 === "" ? undefined : Number.parseFloat(scores.try1);
+                const t2 = scores.try2 === "" ? undefined : Number.parseFloat(scores.try2);
+                const t3 = scores.try3 === "" ? undefined : Number.parseFloat(scores.try3);
+                const numbers = [t1, t2, t3].filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+                if (numbers.length === 0) continue; // skip empty
+                const best = Math.min(...numbers);
+
+                if (isIndividual && selectedParticipant) {
+                    // find existing record for update fields like submitted_at
+                    const existing = records.find(
+                        (r) =>
+                            r.event === currentEvent.type &&
+                            r.code === code &&
+                            (r as TournamentRecord).participant_id === selectedParticipant.user_id,
+                    ) as TournamentRecord | undefined;
+
+                    const data: TournamentRecord = {
+                        id: existing?.id ?? "",
+                        tournament_id: tournamentId,
+                        event_id: currentEvent.id,
+                        event: currentEvent.type,
+                        code,
+                        age: selectedParticipant.age,
+                        country: selectedParticipant.country,
+                        best_time: best,
+                        status: (existing?.status ?? "submitted") as "submitted" | "verified",
+                        try1: (t1 ?? existing?.try1 ?? 0) as number,
+                        try2: (t2 ?? existing?.try2 ?? 0) as number,
+                        try3: (t3 ?? existing?.try3 ?? 0) as number,
+                        video_url: existing?.video_url ?? null,
+                        classification:
+                            (currentClassificationTab as "beginner" | "intermediate" | "advance" | "prelim" | undefined) ??
+                            existing?.classification ??
+                            undefined,
+                        round: "final",
+                        submitted_at: existing?.submitted_at ?? now,
+                        created_at: existing?.created_at ?? new Date().toISOString(),
+                        updated_at: existing?.updated_at ?? new Date().toISOString(),
+                        verified_at: existing?.verified_at ?? null,
+                        verified_by: existing?.verified_by ?? null,
+                        participant_id: selectedParticipant.user_id,
+                        participant_global_id: selectedParticipant.user_global_id,
+                        participant_name: selectedParticipant.user_name,
+                        gender: selectedParticipant.gender,
+                    };
+
+                    await saveRecord(TournamentRecordSchema.parse(data));
+                }
+
+                if (!isIndividual && selectedTeam) {
+                    const existing = records.find(
+                        (r) =>
+                            r.event === currentEvent.type &&
+                            r.code === code &&
+                            (r as TournamentTeamRecord).team_id === selectedTeam.id,
+                    ) as TournamentTeamRecord | undefined;
+
+                    const data: TournamentTeamRecord = {
+                        id: existing?.id ?? "",
+                        tournament_id: tournamentId,
+                        event_id: currentEvent.id,
+                        event: currentEvent.type,
+                        code,
+                        age: selectedTeam.team_age ?? null,
+                        country: (existing?.country as string | undefined) ?? null,
+                        best_time: best,
+                        status: (existing?.status ?? "submitted") as "submitted" | "verified",
+                        try1: (t1 ?? existing?.try1 ?? 0) as number,
+                        try2: (t2 ?? existing?.try2 ?? 0) as number,
+                        try3: (t3 ?? existing?.try3 ?? 0) as number,
+                        video_url: existing?.video_url ?? null,
+                        classification:
+                            (currentClassificationTab as "beginner" | "intermediate" | "advance" | "prelim" | undefined) ??
+                            existing?.classification ??
+                            undefined,
+                        round: "final",
+                        submitted_at: existing?.submitted_at ?? now,
+                        created_at: existing?.created_at ?? new Date().toISOString(),
+                        updated_at: existing?.updated_at ?? new Date().toISOString(),
+                        verified_at: existing?.verified_at ?? null,
+                        verified_by: existing?.verified_by ?? null,
+                        team_id: selectedTeam.id,
+                        team_name: selectedTeam.name,
+                        member_global_ids: selectedTeam.members?.map((m) => m.global_id) ?? [],
+                        leader_id: selectedTeam.leader_id ?? null,
+                    };
+
+                    await saveTeamRecord(TournamentTeamRecordSchema.parse(data));
+                }
+            }
+
+            await refreshFinalScore();
+            setModalState(false);
+            setSelectedParticipant(null);
+            setSelectedTeam(null);
+            setModalScores({});
+            Message.success("Record(s) saved.");
+        } catch (error) {
+            console.error(error);
+            Message.error("Failed to save record(s).");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
         <div className="flex flex-col h-full bg-ghostwhite p-6 gap-6">
@@ -924,45 +463,15 @@ export default function FinalScoringPage() {
             </Button>
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-6 shadow-lg rounded-lg">
                 <div className="w-full flex justify-between items-center">
-                    <Title heading={3}>{tournament.name} Final Score</Title>
-                    <div className="flex gap-2">
-                        <Button
-                            type="primary"
-                            status="success"
-                            onClick={async () => {
-                                if (!tournamentId) return;
-                                setLoading(true);
-                                try {
-                                    const finalRecords = await getTournamentFinalRecords(tournamentId);
-                                    const allFinalistsScored = finalists.every((finalist) =>
-                                        finalist.records.every((record) => {
-                                            const isTeam = !!record.team;
-                                            const id = isTeam ? record.team?.id : record.registration?.user_id;
-                                            return finalRecords.some((fr) => {
-                                                if (!id) return false;
-                                                if (isTeam) {
-                                                    return isTeamTournamentRecord(fr) && fr.team_id === id;
-                                                }
-                                                return isIndividualTournamentRecord(fr) && fr.participant_id === id;
-                                            });
-                                        }),
-                                    );
-
-                                    if (allFinalistsScored) {
-                                        navigate(`/tournaments/${tournamentId}/record/final`);
-                                    } else {
-                                        Message.warning("Not all finalists have recorded scores yet.");
-                                    }
-                                } catch (error) {
-                                    console.error("Failed to check final records:", error);
-                                    Message.error("Failed to verify final records.");
-                                } finally {
-                                    setLoading(false);
-                                }
-                            }}
-                        >
-                            Final Done
-                        </Button>
+                    <Title heading={3}>{tournament?.name} Final Score</Title>
+                    <div className="flex gap-4 items-center">
+                        <Input
+                            placeholder="Search by Global ID or Name"
+                            value={searchTerm}
+                            onChange={setSearchTerm}
+                            prefix={<IconSearch />}
+                            style={{width: 250}}
+                        />
                     </div>
                 </div>
                 <Tabs
@@ -972,30 +481,19 @@ export default function FinalScoringPage() {
                     activeTab={currentEventTab}
                     onChange={(key) => {
                         setCurrentEventTab(key);
-                        const group = eventGroups.find((g) => g.key === key);
-                        if (group?.finalists[0]) {
-                            const first = group.finalists[0];
-                            setCurrentBracketTab(first.bracket.name);
-                            if (first.classification) {
-                                setCurrentClassificationTab(first.classification);
-                            }
+                        const event = events?.find((e) => e.id === key || e.type === key);
+                        if (event?.age_brackets?.[0]) {
+                            setCurrentBracketTab(event.age_brackets[0].name);
                         }
                     }}
                 >
-                    {eventGroups.map(({key: eventGroupKey, label, finalists: eventFinalists}) => {
-                        const bracketMap = new Map<string, Finalist>();
-                        for (const finalist of eventFinalists) {
-                            if (!bracketMap.has(finalist.bracket.name)) {
-                                bracketMap.set(finalist.bracket.name, finalist);
-                            }
-                        }
-                        const bracketEntries = Array.from(bracketMap.values());
-                        const classifications = [
-                            ...new Set(eventFinalists.map((finalist) => finalist.classification)),
-                        ] as ClassificationGroup["classification"][];
-
+                    {events?.map((evt) => {
+                        const tabKey = evt.id ?? evt.type;
+                        const eventTypeKey = evt.type;
+                        const isTeamEvent = ["double", "team relay", "parent & child"].includes(evt.type.toLowerCase());
+                        const titleCodes = evt.codes?.join(", ") || "N/A";
                         return (
-                            <TabPane key={eventGroupKey} title={label}>
+                            <TabPane key={tabKey} title={`${evt.type} (${titleCodes})`}>
                                 <Tabs
                                     type="capsule"
                                     tabPosition="top"
@@ -1003,52 +501,66 @@ export default function FinalScoringPage() {
                                     activeTab={currentBracketTab}
                                     onChange={(key) => setCurrentBracketTab(key)}
                                 >
-                                    {bracketEntries.map((bracketFinalist) => (
-                                        <TabPane
-                                            key={bracketFinalist.bracket.name}
-                                            title={`${bracketFinalist.bracket.name} (${bracketFinalist.bracket.min_age}-${bracketFinalist.bracket.max_age})`}
-                                        >
+                                    {evt.age_brackets.map((br) => (
+                                        <TabPane key={br.name} title={`${br.name} (${br.min_age}-${br.max_age})`}>
                                             <Tabs
                                                 type="rounded"
+                                                tabPosition="top"
+                                                destroyOnHide
                                                 activeTab={currentClassificationTab}
-                                                onChange={setCurrentClassificationTab}
+                                                onChange={(key) => setCurrentClassificationTab(key)}
                                             >
-                                                {classifications.map((classification) => {
-                                                    const classificationFinalists = eventFinalists.filter(
-                                                        (f) =>
-                                                            f.bracket.name === bracketFinalist.bracket.name &&
-                                                            f.classification === classification,
-                                                    );
-                                                    if (classificationFinalists.length === 0) return null;
-
-                                                    const classificationGroup: ClassificationGroup = {
-                                                        event: classificationFinalists[0].event,
-                                                        bracket: classificationFinalists[0].bracket,
-                                                        classification,
-                                                        finalists: classificationFinalists,
-                                                    };
-
-                                                    const groupIsTeamEvent = ["double", "team relay", "parent & child"].includes(
-                                                        classificationGroup.event.type.toLowerCase(),
-                                                    );
-
-                                                    return (
-                                                        <TabPane key={classification} title={classification}>
-                                                            <BracketContent
-                                                                isTeamEvent={groupIsTeamEvent}
-                                                                group={classificationGroup}
-                                                                teamScores={teamScores}
-                                                                participantScores={participantScores}
+                                                {br.final_criteria?.map((fc) => (
+                                                    <TabPane key={fc.classification} title={`${fc.classification}`}>
+                                                        {isTeamEvent ? (
+                                                            <Table
+                                                                style={{width: "100%"}}
+                                                                columns={getTeamExpandableColumns(evt.codes, eventTypeKey)}
+                                                                data={filterTeams(
+                                                                    teams.filter(
+                                                                        (t) =>
+                                                                            finalist.filter((f) => t.event_id === f.event_id) &&
+                                                                            t.team_age >= br.min_age &&
+                                                                            t.team_age <= br.max_age,
+                                                                    ),
+                                                                )}
+                                                                pagination={false}
                                                                 loading={loading}
-                                                                currentClassification={currentClassificationTab}
-                                                                handleClearScores={handleClearScores}
-                                                                handleClearTeamScores={handleClearTeamScores}
-                                                                openModal={openModal}
+                                                                rowKey="id"
                                                             />
-                                                        </TabPane>
-                                                    );
-                                                })}
+                                                        ) : (
+                                                            <Table
+                                                                style={{width: "100%"}}
+                                                                columns={getExpandableColumns(evt.codes, eventTypeKey)}
+                                                                data={filterParticipants(
+                                                                    registrations.filter(
+                                                                        (r) =>
+                                                                            finalist.filter((f) =>
+                                                                                r.events_registered.includes(f.event_id),
+                                                                            ) &&
+                                                                            r.age >= br.min_age &&
+                                                                            r.age <= br.max_age,
+                                                                    ),
+                                                                )}
+                                                                pagination={false}
+                                                                loading={loading}
+                                                                rowKey="user_id"
+                                                            />
+                                                        )}
+                                                    </TabPane>
+                                                ))}
                                             </Tabs>
+                                            <div className="flex justify-end mt-4">
+                                                <Button
+                                                    type="primary"
+                                                    status="success"
+                                                    loading={loading}
+                                                    onClick={checkAllFinalistsAndNavigate}
+                                                    style={{marginLeft: 8}}
+                                                >
+                                                    Final Done
+                                                </Button>
+                                            </div>
                                         </TabPane>
                                     ))}
                                 </Tabs>
@@ -1058,95 +570,126 @@ export default function FinalScoringPage() {
                 </Tabs>
             </div>
 
+            {/* Modal for editing records */}
             <Modal
-                title={`Edit Final Score - ${selectedParticipant?.user_name || selectedTeam?.name || ""}`}
-                visible={modalVisible}
-                onCancel={closeModal}
+                title={`Edit Record - ${isIndividual && selectedParticipant ? selectedParticipant.user_name : ""}${!isIndividual && selectedTeam ? selectedTeam.name : ""}`}
+                visible={modalState}
+                onCancel={() => setModalState(false)}
                 footer={[
-                    <Button key="clear" onClick={resetModalScore} disabled={!selectedGroup}>
-                        Clear
-                    </Button>,
-                    <Button key="cancel" onClick={closeModal}>
+                    <Button key="cancel" onClick={() => setModalState(false)}>
                         Cancel
                     </Button>,
-                    <Button key="save" type="primary" onClick={saveModalScores}>
-                        Save
+                    <Button key="save" type="primary" loading={loading} onClick={saveModalRecord}>
+                        Save Record
                     </Button>,
                 ]}
-                style={{width: 560}}
+                style={{width: "800px"}}
             >
-                {modalVisible && selectedGroup && modalCodes.length > 0 && (
-                    <div style={{display: "flex", flexDirection: "column", gap: "16px"}}>
-                        <div style={{display: "flex", flexDirection: "column", gap: "4px"}}>
-                            {selectedParticipant && (
-                                <span style={{fontWeight: 600}}>
-                                    Participant: {selectedParticipant.user_name} ({selectedParticipant.user_id})
-                                </span>
-                            )}
-                            {selectedTeam && (
-                                <span style={{fontWeight: 600}}>
-                                    Team: {selectedTeam.name} (Leader: {selectedTeam.leader_id})
-                                </span>
-                            )}
-                            {selectedTeam?.members?.length ? (
-                                <span>Members: {selectedTeam.members.map((member) => member.global_id).join(", ")}</span>
-                            ) : null}
-                            {modalEventLabel && <span>Event Type: {modalEventLabel}</span>}
-                            <span>Event Codes: {modalCodes.join(", ")}</span>
-                            <span>
-                                Bracket: {selectedGroup.bracket.name} ({selectedGroup.bracket.min_age}-
-                                {selectedGroup.bracket.max_age})
-                            </span>
-                            <span>Classification: {selectedGroup.classification}</span>
-                        </div>
+                {modalState && (
+                    <div className="space-y-4">
+                        {isIndividual && (
+                            <div>
+                                <h4 className="font-semibold mb-2">
+                                    Participant: {selectedParticipant.user_name} ({selectedParticipant.user_global_id})
+                                </h4>
+                                <p className="text-sm text-gray-600 mb-4">Event: {currentEventTab}</p>
+                            </div>
+                        )}
 
-                        <div style={{display: "flex", flexDirection: "column", gap: "16px"}}>
-                            {modalCodes.map((code) => {
-                                const eventKey = normalizeEventKey(code, selectedGroup.event.type);
-                                const score = modalScores[eventKey] ?? buildEmptyScoreForFinalist();
-                                const bestTime = getBestTime(score);
-                                return (
-                                    <div
-                                        key={eventKey}
-                                        style={{border: "1px solid #e5e7eb", borderRadius: "6px", padding: "12px"}}
-                                    >
-                                        <div style={{display: "flex", justifyContent: "space-between", marginBottom: "12px"}}>
-                                            <span style={{fontWeight: 600}}>{code}</span>
-                                            <span style={{fontWeight: 600}}>Best Time: {bestTime}</span>
-                                        </div>
-                                        <div
-                                            style={{
-                                                display: "grid",
-                                                gap: "12px",
-                                                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-                                            }}
-                                        >
-                                            {(["try1", "try2", "try3"] as const).map((attemptKey) => (
-                                                <div
-                                                    key={attemptKey}
-                                                    style={{display: "flex", flexDirection: "column", gap: "6px"}}
-                                                >
-                                                    <span style={{fontWeight: 500}}>{`Try ${attemptKey.slice(3)}`}</span>
+                        {!isIndividual && (
+                            <div>
+                                <h4 className="font-semibold mb-2">Team: {selectedTeam.name}</h4>
+                                <p className="text-sm text-gray-600 mb-2">Leader: {selectedTeam.leader_id}</p>
+                                <p className="text-sm text-gray-600 mb-4">Event: {currentEventTab}</p>
+                            </div>
+                        )}
+
+                        {currentEvent?.codes?.length ? (
+                            // For events with multiple codes
+                            <div className="space-y-6">
+                                {currentEvent.codes.map((code) => {
+                                    const codeEventKey = `${code}-${currentEvent.type}`;
+                                    const scores = modalScores[codeEventKey] || {try1: "", try2: "", try3: ""};
+                                    const try1Id = `${codeEventKey}-try1`;
+                                    const try2Id = `${codeEventKey}-try2`;
+                                    const try3Id = `${codeEventKey}-try3`;
+
+                                    return (
+                                        <div key={code} className="border rounded-lg p-4">
+                                            <h5 className="font-semibold mb-3">{code}</h5>
+                                            <div className="grid grid-cols-4 gap-4 items-center">
+                                                <div>
+                                                    <label className="block text-sm font-medium mb-1" htmlFor={try1Id}>
+                                                        Try 1
+                                                    </label>
                                                     <InputNumber
-                                                        placeholder={`Try ${attemptKey.slice(3)}`}
-                                                        value={toNumberOrUndefined(score[attemptKey])}
+                                                        id={try1Id}
+                                                        placeholder="First try"
+                                                        value={scores.try1 === "" ? undefined : Number.parseFloat(scores.try1)}
                                                         onChange={(val) =>
                                                             handleModalScoreChange(
-                                                                eventKey,
-                                                                attemptKey,
+                                                                codeEventKey,
+                                                                "try1",
                                                                 val === undefined || val === null ? "" : String(val),
                                                             )
                                                         }
                                                         precision={3}
                                                         min={0}
+                                                        style={{width: "100%"}}
                                                     />
                                                 </div>
-                                            ))}
+                                                <div>
+                                                    <label className="block text-sm font-medium mb-1" htmlFor={try2Id}>
+                                                        Try 2
+                                                    </label>
+                                                    <InputNumber
+                                                        id={try2Id}
+                                                        placeholder="Second try"
+                                                        value={scores.try2 === "" ? undefined : Number.parseFloat(scores.try2)}
+                                                        onChange={(val) =>
+                                                            handleModalScoreChange(
+                                                                codeEventKey,
+                                                                "try2",
+                                                                val === undefined || val === null ? "" : String(val),
+                                                            )
+                                                        }
+                                                        precision={3}
+                                                        min={0}
+                                                        style={{width: "100%"}}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium mb-1" htmlFor={try3Id}>
+                                                        Try 3
+                                                    </label>
+                                                    <InputNumber
+                                                        id={try3Id}
+                                                        placeholder="Third try"
+                                                        value={scores.try3 === "" ? undefined : Number.parseFloat(scores.try3)}
+                                                        onChange={(val) =>
+                                                            handleModalScoreChange(
+                                                                codeEventKey,
+                                                                "try3",
+                                                                val === undefined || val === null ? "" : String(val),
+                                                            )
+                                                        }
+                                                        precision={3}
+                                                        min={0}
+                                                        style={{width: "100%"}}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <span className="block text-sm font-medium mb-1">Best Time</span>
+                                                    <div className="p-2 bg-gray-100 rounded text-center">
+                                                        {scores ? getBestTime(scores) : "N/A"}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : null}
                     </div>
                 )}
             </Modal>
