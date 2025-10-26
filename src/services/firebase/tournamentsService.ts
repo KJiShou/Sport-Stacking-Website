@@ -23,6 +23,13 @@ import {deleteIndividualRecruitment, getIndividualRecruitmentsByTournament} from
 import {deleteTournamentStorage} from "./storageService";
 import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
 
+// Utility function to check if a string is a UUID v4
+function isUUID(value: string): boolean {
+    // RFC4122 v4 UUID pattern
+    const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidV4Regex.test(value);
+}
+
 export async function createTournament(
     user: FirestoreUser,
     data: Omit<Tournament, "id">,
@@ -98,11 +105,7 @@ export async function createTournament(
         created_at: Timestamp.now(),
     });
 
-    const isUUID = (value: string): boolean => {
-        // RFC4122 v4 UUID pattern
-        const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        return uuidV4Regex.test(value);
-    };
+    // use shared isUUID function
 
     await Promise.all(
         events.map(async (event) => {
@@ -306,7 +309,12 @@ export async function fetchTournamentById(tournamentId: string): Promise<Tournam
 
         if (!docSnap.exists()) {
             console.info("Tournament document not found:", tournamentId);
-            return null;
+            const parsed = TournamentSchema.safeParse({id: docSnap.id, ...docSnap.data()});
+            if (!parsed.success) {
+                console.warn(`Failed to parse tournament ${tournamentId}`, parsed.error.flatten());
+                return null;
+            }
+            return parsed.data;
         }
 
         return docSnap.data() as Tournament;

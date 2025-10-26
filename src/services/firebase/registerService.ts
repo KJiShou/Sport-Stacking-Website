@@ -43,6 +43,8 @@ export async function createRegistration(user: FirestoreUser, data: Registration
         created_at: data.created_at ?? Timestamp.now(),
         updated_at: Timestamp.now(),
     });
+    // Ensure the document has its generated ID in the Firestore document
+    await updateDoc(ref, {id: ref.id});
     return ref.id;
 }
 

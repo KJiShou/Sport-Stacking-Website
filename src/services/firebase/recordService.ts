@@ -72,9 +72,10 @@ interface FetchRecordsOptions {
 
 export const saveRecord = async (data: TournamentRecord): Promise<string> => {
     const now = new Date().toISOString();
-    const recordRef = data.id ? doc(firestore, "records", data.id) : doc(collection(firestore, "records"));
+    const hasValidId = typeof data.id === "string" && data.id.trim().length > 0;
+    const recordRef = hasValidId ? doc(firestore, "records", data.id) : doc(collection(firestore, "records"));
     const recordId = recordRef.id;
-    const isExistingRecord = Boolean(data.id);
+    const isExistingRecord = hasValidId;
 
     // Determine if this is a team event
     const isTeamEvent =

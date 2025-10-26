@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type {FinalistGroupPayload, Registration, Team, TeamMember, Tournament, TournamentEvent} from "@/schema";
 import {
     TournamentOverallRecordSchema,
@@ -122,7 +121,13 @@ export default function FinalScoringPage() {
             width: 100,
             render: (_, record) => {
                 const isAllCodesRecorded = codes.every((code) =>
-                    records.some((r) => r.participant_id === record.user_id && r.code === code && r.event === eventKey),
+                    records.some(
+                        (r) =>
+                            r.event === eventKey &&
+                            "participant_id" in r &&
+                            r.participant_id === record.user_id &&
+                            r.code === code,
+                    ),
                 );
 
                 return (
@@ -204,7 +209,7 @@ export default function FinalScoringPage() {
             width: 100,
             render: (_, record) => {
                 const isAllCodesRecorded = codes.every((code) =>
-                    records.some((r) => r.team_id === record.id && r.code === code && r.event === eventKey),
+                    records.some((r) => r.event === eventKey && "team_id" in r && r.team_id === record.id && r.code === code),
                 );
 
                 return (
@@ -373,7 +378,7 @@ export default function FinalScoringPage() {
                     const data: TournamentRecord = {
                         id: existing?.id ?? "",
                         tournament_id: tournamentId,
-                        event_id: currentEvent.id,
+                        event_id: currentEvent.id ?? "",
                         event: currentEvent.type,
                         code,
                         age: selectedParticipant.age,
@@ -388,7 +393,6 @@ export default function FinalScoringPage() {
                             (currentClassificationTab as "beginner" | "intermediate" | "advance" | "prelim" | undefined) ??
                             existing?.classification ??
                             undefined,
-                        round: "final",
                         submitted_at: existing?.submitted_at ?? now,
                         created_at: existing?.created_at ?? new Date().toISOString(),
                         updated_at: existing?.updated_at ?? new Date().toISOString(),
@@ -397,7 +401,7 @@ export default function FinalScoringPage() {
                         participant_id: selectedParticipant.user_id,
                         participant_global_id: selectedParticipant.user_global_id,
                         participant_name: selectedParticipant.user_name,
-                        gender: selectedParticipant.gender,
+                        gender: selectedParticipant.gender ?? "Male",
                     };
 
                     await saveRecord(TournamentRecordSchema.parse(data));
@@ -414,7 +418,7 @@ export default function FinalScoringPage() {
                     const data: TournamentTeamRecord = {
                         id: existing?.id ?? "",
                         tournament_id: tournamentId,
-                        event_id: currentEvent.id,
+                        event_id: currentEvent.id ?? "",
                         event: currentEvent.type,
                         code,
                         age: selectedTeam.team_age ?? null,
@@ -429,7 +433,6 @@ export default function FinalScoringPage() {
                             (currentClassificationTab as "beginner" | "intermediate" | "advance" | "prelim" | undefined) ??
                             existing?.classification ??
                             undefined,
-                        round: "final",
                         submitted_at: existing?.submitted_at ?? now,
                         created_at: existing?.created_at ?? new Date().toISOString(),
                         updated_at: existing?.updated_at ?? new Date().toISOString(),
@@ -450,7 +453,7 @@ export default function FinalScoringPage() {
                 isIndividual &&
                 selectedParticipant &&
                 currentEvent.type === "Individual" &&
-                ["3-3-3", "3-6-3", "Cycle"].every((c) => (currentEvent.codes ?? []).includes(c))
+                (["3-3-3", "3-6-3", "Cycle"] as const).every((c) => new Set(currentEvent.codes ?? []).has(c))
             ) {
                 // Ensure we have best times for all three codes from modal, otherwise try to derive from existing records
                 const needCodes: Array<"3-3-3" | "3-6-3" | "Cycle"> = ["3-3-3", "3-6-3", "Cycle"];
@@ -675,7 +678,7 @@ export default function FinalScoringPage() {
                         {isIndividual && (
                             <div>
                                 <h4 className="font-semibold mb-2">
-                                    Participant: {selectedParticipant.user_name} ({selectedParticipant.user_global_id})
+                                    Participant: {selectedParticipant?.user_name} ({selectedParticipant?.user_global_id})
                                 </h4>
                                 <p className="text-sm text-gray-600 mb-4">Event: {currentEventTab}</p>
                             </div>
@@ -683,8 +686,8 @@ export default function FinalScoringPage() {
 
                         {!isIndividual && (
                             <div>
-                                <h4 className="font-semibold mb-2">Team: {selectedTeam.name}</h4>
-                                <p className="text-sm text-gray-600 mb-2">Leader: {selectedTeam.leader_id}</p>
+                                <h4 className="font-semibold mb-2">Team: {selectedTeam?.name}</h4>
+                                <p className="text-sm text-gray-600 mb-2">Leader: {selectedTeam?.leader_id}</p>
                                 <p className="text-sm text-gray-600 mb-4">Event: {currentEventTab}</p>
                             </div>
                         )}

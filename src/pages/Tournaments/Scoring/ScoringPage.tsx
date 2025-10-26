@@ -1,4 +1,4 @@
-import type {ParticipantScore, Registration, Score, Team, TeamMember, TeamScore, Tournament, TournamentEvent} from "@/schema";
+import type {ParticipantScore, Score, Team, TeamMember, TeamScore, Tournament, TournamentEvent} from "@/schema";
 import type {TournamentOverallRecord, TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
 import {TournamentOverallRecordSchema, TournamentRecordSchema, TournamentTeamRecordSchema} from "@/schema/RecordSchema";
 import {getUserByGlobalId} from "@/services/firebase/authService";

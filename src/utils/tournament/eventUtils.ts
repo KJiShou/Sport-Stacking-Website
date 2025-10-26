@@ -49,7 +49,11 @@ const getTeamEventNameReferences = (team: TeamEventRefs | null | undefined): str
     }
 
     const names = new Set<string>();
-    addArrayToSet(names, team.event);
+    if (Array.isArray(team.event)) {
+        addArrayToSet(names, team.event);
+    } else {
+        addStringToSet(names, team.event);
+    }
     addArrayToSet(names, team.events);
 
     return Array.from(names);
@@ -232,7 +236,9 @@ export const getTeamEventLabels = (
     return getTeamEventNameReferences(team);
 };
 
-export const getTeamMaxAge = (team: (Partial<Pick<Team, "team_age">> & LegacyTeamFields) | null | undefined): number | undefined => {
+export const getTeamMaxAge = (
+    team: (Partial<Pick<Team, "team_age">> & LegacyTeamFields) | null | undefined,
+): number | undefined => {
     if (!team) {
         return undefined;
     }

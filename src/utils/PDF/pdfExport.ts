@@ -20,6 +20,7 @@ import {
     matchesEventKey,
     sanitizeEventCodes,
     teamMatchesEventKey,
+    getTeamMaxAge,
 } from "@/utils/tournament/eventUtils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -112,34 +113,7 @@ async function fetchImageFixedOrientation(url: string): Promise<string> {
 }
 
 // Core PDF Generation Functions
-const resolveTeamMaxAge = (team: Team, ageMap: Record<string, number>): number | null => {
-    const largestAge =
-        typeof (team as unknown as {largest_age?: number}).largest_age === "number"
-            ? (team as unknown as {largest_age?: number}).largest_age
-            : null;
-    if (largestAge !== null && !Number.isNaN(largestAge) && largestAge >= 0) {
-        return largestAge;
-    }
-
-    const teamAge = typeof (team as {team_age?: number}).team_age === "number" ? (team as {team_age?: number}).team_age : null;
-    if (teamAge !== null && !Number.isNaN(teamAge) && teamAge >= 0) {
-        return teamAge;
-    }
-
-    const memberIds = [team.leader_id, ...(team.members ?? []).map((member) => member.global_id)].filter(
-        (id): id is string => typeof id === "string" && id.trim().length > 0,
-    );
-
-    const memberAges = memberIds
-        .map((id) => ageMap[id])
-        .filter((age): age is number => typeof age === "number" && !Number.isNaN(age));
-
-    if (memberAges.length > 0) {
-        return Math.max(...memberAges);
-    }
-
-    return null;
-};
+// Use getTeamMaxAge from eventUtils to avoid duplication
 
 const generateTeamTableData = (
     teams: Team[],
@@ -154,7 +128,7 @@ const generateTeamTableData = (
             return false;
         }
 
-        const maxAge = resolveTeamMaxAge(team, ageMap);
+        const maxAge = getTeamMaxAge(team, ageMap);
         if (maxAge === null) {
             return true;
         }
@@ -164,7 +138,7 @@ const generateTeamTableData = (
 
     return filteredTeams.map((team, index) => {
         const leaderPhone = team.leader_id ? phoneMap[team.leader_id] || "N/A" : "N/A";
-        const maxAge = resolveTeamMaxAge(team, ageMap);
+        const maxAge = getTeamMaxAge(team, ageMap);
 
         return [
             (index + 1).toString(),
