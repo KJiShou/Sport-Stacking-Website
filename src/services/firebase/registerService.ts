@@ -1,5 +1,6 @@
 import {
     Timestamp,
+    addDoc,
     collection,
     deleteDoc,
     doc,
@@ -9,7 +10,6 @@ import {
     setDoc,
     updateDoc,
     where,
-    addDoc,
 } from "firebase/firestore";
 import type {FirestoreUser, Registration, Team} from "../../schema";
 import {db} from "./config";

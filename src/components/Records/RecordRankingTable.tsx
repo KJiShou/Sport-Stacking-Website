@@ -132,10 +132,7 @@ const RecordRankingTable: React.FC<RecordRankingTableProps> = ({event, title}) =
                             )}
                         </div>
                         {record.classification && (
-                            <Tag
-                                size="small"
-                                color={CLASSIFICATION_TAG_COLORS[record.classification] ?? "blue"}
-                            >
+                            <Tag size="small" color={CLASSIFICATION_TAG_COLORS[record.classification] ?? "blue"}>
                                 {CLASSIFICATION_LABELS[record.classification] ?? record.classification}
                             </Tag>
                         )}

@@ -10,9 +10,9 @@ import {
     Space,
     Spin,
     Table,
+    type TableColumnProps,
     Tag,
     Typography,
-    type TableColumnProps,
 } from "@arco-design/web-react";
 import {IconArrowLeft} from "@arco-design/web-react/icon";
 

@@ -140,7 +140,6 @@ export default function CreateTournamentPage() {
                 setLoading(false);
                 return;
             }
-            console.log(form.getFieldValue("events"));
             const rawEvents = (form.getFieldValue("events") ?? []) as TournamentEvent[];
             const sanitizedEvents: TournamentEvent[] = [];
 

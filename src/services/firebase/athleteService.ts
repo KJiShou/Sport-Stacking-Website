@@ -1,6 +1,6 @@
-import {collection, getCountFromServer, getDocs, query, where, type QueryConstraint} from "firebase/firestore";
+import {type QueryConstraint, collection, getCountFromServer, getDocs, query, where} from "firebase/firestore";
 
-import type {FirestoreUser, Tournament, CachedTournamentResult, CachedTournamentSummary, UserTournamentHistory} from "@/schema";
+import type {CachedTournamentResult, CachedTournamentSummary, FirestoreUser, Tournament, UserTournamentHistory} from "@/schema";
 
 import {getUserByGlobalId} from "./authService";
 import {db as firestore} from "./config";

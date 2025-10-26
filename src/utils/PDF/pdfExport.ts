@@ -16,11 +16,11 @@ import type {
 import {
     getEventKey,
     getEventLabel,
+    getTeamMaxAge,
     matchesAnyEventKey,
     matchesEventKey,
     sanitizeEventCodes,
     teamMatchesEventKey,
-    getTeamMaxAge,
 } from "@/utils/tournament/eventUtils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -278,14 +278,14 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         const startY = currentY;
 
         const ageLookup: Record<string, number> = {...ageMap};
-        registrations.forEach((registration) => {
+        for (const registration of registrations) {
             if (registration.user_id) {
                 ageLookup[registration.user_id] = registration.age;
             }
             if (registration.user_global_id) {
                 ageLookup[registration.user_global_id] = registration.age;
             }
-        });
+        }
 
         // Generate table data
         const tableData = team
