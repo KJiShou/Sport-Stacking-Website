@@ -12,6 +12,7 @@ import {
     fetchTeamsByRegistrationId,
     fetchTeamsByTournament,
     fetchTournamentById,
+    fetchTournamentEvents,
     updateTeam,
 } from "@/services/firebase/tournamentsService";
 import {getEventKey, getEventLabel, isTeamEvent, matchesEventKey} from "@/utils/tournament/eventUtils";
@@ -106,6 +107,7 @@ export default function EditTournamentRegistrationPage() {
 
     const [form] = Form.useForm();
     const [tournament, setTournament] = useState<Tournament | null>(null);
+    const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [registration, setRegistration] = useState<Registration | null>(null);
     const [teams, setTeams] = useState<LegacyTeam[]>([]);
     const [initialTeams, setInitialTeams] = useState<LegacyTeam[]>([]);
@@ -188,7 +190,7 @@ export default function EditTournamentRegistrationPage() {
                 // Calculate team age based on event type
                 let team_age = 0;
 
-                const tournamentEvents = tournament?.events ?? [];
+                const tournamentEvents = events ?? [];
                 const {
                     eventDefinition,
                     eventId: resolvedEventId,
@@ -272,6 +274,8 @@ export default function EditTournamentRegistrationPage() {
         try {
             const tournamentData = await fetchTournamentById(tournamentId);
             setTournament(tournamentData);
+            const tournamentEvents = await fetchTournamentEvents(tournamentId);
+            setEvents(tournamentEvents);
             if (tournamentData?.editor !== user.global_id && user.roles?.edit_tournament !== true) {
                 Message.error("You are not authorized to edit this registration.");
                 navigate("/tournaments");
@@ -336,12 +340,12 @@ export default function EditTournamentRegistrationPage() {
     });
 
     const getEventDisplayLabel = (eventId: string): string => {
-        const event = tournament?.events?.find((evt) => getEventKey(evt) === eventId);
+        const event = events?.find((evt) => getEventKey(evt) === eventId);
         return event ? getEventLabel(event) : eventId;
     };
 
     const extraEventIds = (registration?.events_registered ?? []).filter(
-        (eventId) => !tournament?.events?.some((event) => getEventKey(event) === eventId),
+        (eventId) => !events?.some((event) => getEventKey(event) === eventId),
     );
 
     if (!isMounted && !loading && !registration) {
@@ -430,7 +434,7 @@ export default function EditTournamentRegistrationPage() {
                                     form.setFieldValue("events_registered", selectedEvents);
                                     setRegistration((prev) => (prev ? {...prev, events_registered: selectedEvents} : null));
 
-                                    const tournamentEvents = tournament?.events ?? [];
+                                    const tournamentEvents = events ?? [];
                                     const selectedTeamEvents = tournamentEvents.filter(
                                         (event) =>
                                             selectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
@@ -469,7 +473,7 @@ export default function EditTournamentRegistrationPage() {
                                     }
                                 }}
                             >
-                                {tournament?.events?.map((event) => {
+                                {events?.map((event) => {
                                     const key = getEventKey(event);
                                     const displayText = getEventLabel(event);
                                     return (
@@ -489,7 +493,7 @@ export default function EditTournamentRegistrationPage() {
                         <Form.Item shouldUpdate noStyle>
                             <div className="flex flex-row w-full gap-10">
                                 {teams.map((team) => {
-                                    const {eventName} = resolveTeamEvent(team, tournament?.events ?? []);
+                                    const {eventName} = resolveTeamEvent(team, events ?? []);
                                     const teamEventLabel = eventName || "Team Event";
 
                                     return (

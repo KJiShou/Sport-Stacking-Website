@@ -1,14 +1,15 @@
 // @ts-nocheck
 import type {FinalistGroupPayload, Registration, Team, TeamMember, Tournament, TournamentEvent} from "@/schema";
 import {
+    TournamentOverallRecordSchema,
     type TournamentRecord,
     TournamentRecordSchema,
     type TournamentTeamRecord,
     TournamentTeamRecordSchema,
 } from "@/schema/RecordSchema";
 import {fetchTournamentFinalists} from "@/services/firebase/finalistService";
-import {getTournamentFinalRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
-import {fetchRegistrations} from "@/services/firebase/registerService";
+import {getTournamentFinalRecords, saveOverallRecord, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
+import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
@@ -52,15 +53,14 @@ export default function FinalScoringPage() {
             const events = await fetchTournamentEvents(tournamentId);
             setEvents(events);
 
-            const registrations = await fetchRegistrations(tournamentId);
+            const registrations = await fetchApprovedRegistrations(tournamentId);
             setRegistrations(registrations);
 
             const teams = await fetchTeamsByTournament(tournamentId);
-            setTeams(teams);
+            setTeams(teams.filter((t) => registrations.some((r) => r.user_global_id === t.leader_id)));
 
             const finalists = await fetchTournamentFinalists(tournamentId);
             setFinalist(finalists);
-
             const recordsData = await getTournamentFinalRecords(tournamentId);
             const parsedRecords: (TournamentRecord | TournamentTeamRecord)[] = recordsData.map((record) => {
                 if (record.event === "Individual") {
@@ -347,6 +347,8 @@ export default function FinalScoringPage() {
         try {
             const now = new Date().toISOString();
             const codes = currentEvent.codes ?? [];
+            // Track best times per code while saving
+            const bestTimes: Partial<Record<"3-3-3" | "3-6-3" | "Cycle", number>> = {};
             for (const code of codes) {
                 const key = `${code}-${currentEvent.type}`;
                 const scores = modalScores[key];
@@ -357,6 +359,7 @@ export default function FinalScoringPage() {
                 const numbers = [t1, t2, t3].filter((v): v is number => typeof v === "number" && Number.isFinite(v));
                 if (numbers.length === 0) continue; // skip empty
                 const best = Math.min(...numbers);
+                bestTimes[code] = best;
 
                 if (isIndividual && selectedParticipant) {
                     // find existing record for update fields like submitted_at
@@ -442,6 +445,69 @@ export default function FinalScoringPage() {
                 }
             }
 
+            // After saving individual code records, create/update overall record for Individual finals
+            if (
+                isIndividual &&
+                selectedParticipant &&
+                currentEvent.type === "Individual" &&
+                ["3-3-3", "3-6-3", "Cycle"].every((c) => (currentEvent.codes ?? []).includes(c))
+            ) {
+                // Ensure we have best times for all three codes from modal, otherwise try to derive from existing records
+                const needCodes: Array<"3-3-3" | "3-6-3" | "Cycle"> = ["3-3-3", "3-6-3", "Cycle"];
+                for (const c of needCodes) {
+                    if (bestTimes[c] == null) {
+                        const existing = records.find(
+                            (r) =>
+                                r.event === "Individual" &&
+                                r.code === c &&
+                                (r as TournamentRecord).participant_id === selectedParticipant.user_id,
+                        ) as TournamentRecord | undefined;
+                        if (existing) {
+                            const vals = [existing.try1, existing.try2, existing.try3].filter(
+                                (v): v is number => typeof v === "number" && Number.isFinite(v),
+                            );
+                            if (vals.length > 0) bestTimes[c] = Math.min(...vals);
+                        }
+                    }
+                }
+
+                if (needCodes.every((c) => typeof bestTimes[c] === "number")) {
+                    const threeBest = bestTimes["3-3-3"] as number;
+                    const threeSixThreeBest = bestTimes["3-6-3"] as number;
+                    const cycleBest = bestTimes.Cycle as number;
+                    const overallTime = threeBest + threeSixThreeBest + cycleBest;
+
+                    await saveOverallRecord(
+                        TournamentOverallRecordSchema.parse({
+                            id: "",
+                            tournament_id: tournamentId,
+                            event_id: currentEvent.id ?? "",
+                            event: "Individual",
+                            code: "Overall",
+                            participant_id: selectedParticipant.user_id,
+                            participant_global_id: selectedParticipant.user_global_id,
+                            participant_name: selectedParticipant.user_name,
+                            age: selectedParticipant.age,
+                            country: selectedParticipant.country,
+                            gender: selectedParticipant.gender || "Male",
+                            three_three_three: threeBest,
+                            three_six_three: threeSixThreeBest,
+                            cycle: cycleBest,
+                            overall_time: overallTime,
+                            classification:
+                                (currentClassificationTab as "beginner" | "intermediate" | "advance" | "prelim" | undefined) ??
+                                undefined,
+                            round: "final",
+                            try1: overallTime,
+                            try2: overallTime,
+                            try3: overallTime,
+                            status: "submitted",
+                            submitted_at: now,
+                        }),
+                    );
+                }
+            }
+
             await refreshFinalScore();
             setModalState(false);
             setSelectedParticipant(null);
@@ -519,9 +585,20 @@ export default function FinalScoringPage() {
                                                                 data={filterTeams(
                                                                     teams.filter(
                                                                         (t) =>
-                                                                            finalist.filter((f) => t.event_id === f.event_id) &&
+                                                                            // Team must belong to current event and be within bracket
+                                                                            t.event_id === evt.id &&
                                                                             t.team_age >= br.min_age &&
-                                                                            t.team_age <= br.max_age,
+                                                                            t.team_age <= br.max_age &&
+                                                                            // And must be in the finalist list for this event
+                                                                            finalist.some(
+                                                                                (f) =>
+                                                                                    f.participant_type === "Team" &&
+                                                                                    ((f.event_id && f.event_id === evt.id) ||
+                                                                                        (f.event_type &&
+                                                                                            f.event_type === evt.type)) &&
+                                                                                    Array.isArray(f.participant_ids) &&
+                                                                                    f.participant_ids.includes(t.id),
+                                                                            ),
                                                                     ),
                                                                 )}
                                                                 pagination={false}
@@ -535,11 +612,19 @@ export default function FinalScoringPage() {
                                                                 data={filterParticipants(
                                                                     registrations.filter(
                                                                         (r) =>
-                                                                            finalist.filter((f) =>
-                                                                                r.events_registered.includes(f.event_id),
-                                                                            ) &&
+                                                                            // Participant within age bracket
                                                                             r.age >= br.min_age &&
-                                                                            r.age <= br.max_age,
+                                                                            r.age <= br.max_age &&
+                                                                            // Must be in finalists for this event
+                                                                            finalist.some(
+                                                                                (f) =>
+                                                                                    f.participant_type === "Individual" &&
+                                                                                    ((f.event_id && f.event_id === evt.id) ||
+                                                                                        (f.event_type &&
+                                                                                            f.event_type === evt.type)) &&
+                                                                                    Array.isArray(f.participant_ids) &&
+                                                                                    f.participant_ids.includes(r.user_id),
+                                                                            ),
                                                                     ),
                                                                 )}
                                                                 pagination={false}

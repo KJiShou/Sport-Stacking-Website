@@ -18,12 +18,41 @@ const TournamentRecordBaseSchema = z.object({
     try3: z.number(),
     video_url: z.string().url().optional().nullable(),
     classification: classificationEnum.optional().nullable(),
-    round: z.enum(["prelim", "final"]).optional(),
     submitted_at: z.string(),
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
     verified_at: z.string().optional().nullable(),
     verified_by: z.string().optional().nullable(),
+});
+
+export const TournamentOverallRecordSchema = z.object({
+    id: z.string(),
+    tournament_id: z.string(),
+    event_id: z.string(),
+    event: z.string(),
+    code: z.string(),
+    age: z.number().optional().nullable(),
+    country: z.string().optional().nullable(),
+    three_three_three: z.number(),
+    three_six_three: z.number(),
+    cycle: z.number(),
+    overall_time: z.number(),
+    status: recordStatusEnum,
+    try1: z.number(),
+    try2: z.number(),
+    try3: z.number(),
+    video_url: z.string().url().optional().nullable(),
+    classification: classificationEnum.optional().nullable(),
+    submitted_at: z.string(),
+    created_at: z.string().optional(),
+    updated_at: z.string().optional(),
+    verified_at: z.string().optional().nullable(),
+    verified_by: z.string().optional().nullable(),
+    participant_id: z.string(),
+    participant_global_id: z.string(),
+    participant_name: z.string(),
+    gender: z.string(),
+    round: z.enum(["prelim", "final"]).optional(),
 });
 
 export const TournamentRecordSchema = TournamentRecordBaseSchema.extend({
@@ -109,11 +138,15 @@ export const RecordDisplaySchema = z.object({
     recordId: z.string().optional(),
     participantId: z.string().optional(),
     teamName: z.string().optional(),
+    // Team-specific display fields
+    members: z.array(z.string()).optional(),
+    leaderId: z.string().optional(),
 });
 
 export type TournamentRecord = z.infer<typeof TournamentRecordSchema>;
 
 export type TournamentTeamRecord = z.infer<typeof TournamentTeamRecordSchema>;
+export type TournamentOverallRecord = z.infer<typeof TournamentOverallRecordSchema>;
 export type GlobalResult = z.infer<typeof GlobalResultSchema>;
 export type GlobalTeamResult = z.infer<typeof GlobalTeamResultSchema>;
 export type RecordDisplay = z.infer<typeof RecordDisplaySchema>;

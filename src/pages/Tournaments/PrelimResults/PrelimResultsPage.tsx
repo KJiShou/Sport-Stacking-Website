@@ -560,8 +560,8 @@ export default function PrelimResultsPage() {
     );
 
     const currentEvent = useMemo(
-        () => findEventByTabKey(tournament?.events ?? [], currentEventTab),
-        [findEventByTabKey, tournament?.events, currentEventTab],
+        () => findEventByTabKey(events ?? [], currentEventTab),
+        [findEventByTabKey, events, currentEventTab],
     );
 
     const currentBracket = useMemo(
@@ -574,7 +574,7 @@ export default function PrelimResultsPage() {
 
         setLoading(true);
         try {
-            const resultsData: EventResults[] = (tournament.events ?? [])
+            const resultsData: EventResults[] = (events ?? [])
                 .map((event) => {
                     const brackets = (event.age_brackets ?? [])
                         .map((bracket) => {

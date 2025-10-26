@@ -66,6 +66,25 @@ export async function fetchRegistrationById(tournamentId: string, registrationId
     }
 }
 
+export async function fetchApprovedRegistrations(tournamentId: string): Promise<Registration[]> {
+    try {
+        const registrationsRef = query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", tournamentId),
+            where("registration_status", "==", "approved"),
+        );
+        const querySnapshot = await getDocs(registrationsRef);
+
+        return querySnapshot.docs.map((docSnap) => ({
+            ...(docSnap.data() as Registration),
+            id: docSnap.id,
+        }));
+    } catch (err) {
+        console.error("Error fetching registrations:", err);
+        throw err;
+    }
+}
+
 export async function fetchRegistrations(tournamentId: string): Promise<Registration[]> {
     try {
         const registrationsRef = query(collection(db, "registrations"), where("tournament_id", "==", tournamentId));
@@ -172,8 +191,14 @@ export async function deleteRegistrationById(tournamentId: string, registrationI
         for (const teamDoc of teamsSnapshot.docs) {
             const team = teamDoc.data() as Team;
             const memberIds = (team.members ?? []).map((member) => member.global_id);
-            if (team.leader_id === registrationData.user_id || memberIds.includes(registrationData.user_id)) {
+            if (team.leader_id === registrationData.user_global_id) {
                 await deleteDoc(teamDoc.ref);
+            } else if (memberIds.includes(registrationData.user_global_id)) {
+                // 如果用户是队员，则将其从队伍中移除
+                const updatedMembers = (team.members ?? []).filter(
+                    (member) => member.global_id !== registrationData.user_global_id,
+                );
+                await updateDoc(teamDoc.ref, {members: updatedMembers});
             }
         }
 

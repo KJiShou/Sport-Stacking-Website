@@ -24,6 +24,7 @@ import {IconDelete, IconExclamationCircle, IconPlus, IconUndo} from "@arco-desig
 import MDEditor from "@uiw/react-md-editor";
 import dayjs from "dayjs";
 import type {Timestamp} from "firebase/firestore";
+import {random} from "nanoid";
 import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import AgeBracketModal from "../Component/AgeBracketModal";
@@ -35,10 +36,8 @@ import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
 type TournamentFormData = Tournament & {
     date_range: [Timestamp, Timestamp];
     registration_date_range: [Timestamp, Timestamp];
-    events: DraftTournamentEvent[];
+    events: TournamentEvent[];
 };
-
-type DraftTournamentEvent = Partial<TournamentEvent> & {__prevType?: string};
 
 const cloneAgeBrackets = (brackets: AgeBracket[] = []): AgeBracket[] =>
     brackets.map((bracket) => ({
@@ -80,6 +79,15 @@ export default function CreateTournamentPage() {
         makeHandleDeleteBracket,
         setAgeBracketModalVisible,
     } = useAgeBracketEditor(form);
+
+    // Seed the form store with full event objects (including age_brackets)
+    // so nested fields are preserved on submit even if not rendered as Form.Item
+    useEffect(() => {
+        const current = form.getFieldValue("events");
+        if (!Array.isArray(current) || current.length === 0) {
+            form.setFieldValue("events", DEFAULT_EVENTS.map(cloneEvent));
+        }
+    }, [form]);
 
     // Helper function to get predefined final criteria based on event type
     const getPredefinedFinalCriteria = (eventType: string) => {
@@ -132,8 +140,8 @@ export default function CreateTournamentPage() {
                 setLoading(false);
                 return;
             }
-
-            const rawEvents = values.events ?? [];
+            console.log(form.getFieldValue("events"));
+            const rawEvents = (form.getFieldValue("events") ?? []) as TournamentEvent[];
             const sanitizedEvents: TournamentEvent[] = [];
 
             for (const rawEvent of rawEvents) {
@@ -148,10 +156,13 @@ export default function CreateTournamentPage() {
                 }
 
                 const sanitizedEvent: TournamentEvent = {
-                    id: id && typeof id === "string" && id.length > 0 ? id : undefined, // Let backend/database assign the ID
+                    id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
                     type,
                     codes: normalizedCodes,
-                    age_brackets: cloneAgeBrackets(age_brackets ?? []),
+                    age_brackets:
+                        Array.isArray(age_brackets) && age_brackets.length > 0
+                            ? cloneAgeBrackets(age_brackets)
+                            : cloneAgeBrackets(DEFAULT_AGE_BRACKET),
                 };
 
                 if (typeof teamSize === "number") {
@@ -203,9 +214,7 @@ export default function CreateTournamentPage() {
             });
             Message.success("Tournament created successfully!");
 
-            setTimeout(() => {
-                window.close();
-            }, 1000);
+            navigate("/tournaments");
         } catch (error) {
             console.error(error);
             Message.error("Failed to create tournament.");
@@ -355,7 +364,7 @@ export default function CreateTournamentPage() {
                                         type="text"
                                         onClick={() => {
                                             add({
-                                                id: undefined, // Let backend/database assign the ID
+                                                id: crypto.randomUUID(),
                                                 codes: [],
                                                 type: "" as TournamentEvent["type"],
                                                 age_brackets: cloneAgeBrackets(DEFAULT_AGE_BRACKET),

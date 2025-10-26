@@ -224,6 +224,7 @@ const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string
 export const exportParticipantListToPDF = async (options: ExportPDFOptions): Promise<void> => {
     const {
         tournament,
+        events,
         eventKey,
         bracketName,
         registrations,
@@ -237,7 +238,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
     const marginY = 10;
 
     try {
-        const event = tournament.events?.find((evt) => matchesEventKey(eventKey, evt) || getEventKey(evt) === eventKey);
+        const event = events?.find((evt) => matchesEventKey(eventKey, evt) || getEventKey(evt) === eventKey);
         const bracket = event?.age_brackets.find((br) => br.name === bracketName);
 
         if (!event || !bracket) throw new Error("Event or bracket not found");
@@ -316,7 +317,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         const tableData = team
             ? generateSingleTeamTableData(team, phoneMap)
             : isTeamEvent
-              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, tournament.events ?? [])
+              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, events ?? [])
               : generateIndividualTableData(registrations, bracket, phoneMap);
 
         const headers = team
@@ -373,7 +374,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
 };
 
 export const exportMasterListToPDF = async (options: ExportMasterListOptions): Promise<void> => {
-    const {tournament, registrations, ageMap, phoneMap} = options;
+    const {tournament, registrations, ageMap, phoneMap, events} = options;
     const marginY = 10;
 
     try {
@@ -384,8 +385,8 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
         const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
 
         const eventMetadataMap = new Map<string, {label: string; type: string; code?: string}>();
-        if (tournament.events) {
-            for (const event of tournament.events) {
+        if (events) {
+            for (const event of events) {
                 const label = getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`;
                 if (event.id) {
                     eventMetadataMap.set(event.id, {label, type: event.type});
@@ -909,6 +910,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
 
 export const exportAllBracketsListToPDF = async (
     tournament: Tournament,
+    events: TournamentEvent[],
     registrations: Registration[],
     teams: Team[],
     ageMap: Record<string, number>,
@@ -957,13 +959,13 @@ export const exportAllBracketsListToPDF = async (
         doc.line(14, currentY, doc.internal.pageSize.width - 14, currentY);
         currentY += 10;
         doc.setFontSize(12);
-        doc.text(`Total Events: ${tournament.events.length}`, 14, currentY);
+        doc.text(`Total Events: ${events.length}`, 14, currentY);
         currentY += 7;
 
         let startY = currentY;
         let isFirstEvent = true;
 
-        for (const event of tournament.events) {
+        for (const event of events) {
             const eventKey = getEventKey(event);
             const isTeamEvent = isTeamEventType(event.type);
 
@@ -984,7 +986,7 @@ export const exportAllBracketsListToPDF = async (
                 startY += 8;
 
                 const tableData = isTeamEvent
-                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, tournament.events ?? [])
+                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, events ?? [])
                     : registrations
                           .filter((r) => {
                               const matchesEvent =
@@ -1487,6 +1489,7 @@ const generateSingleStackingSheet = (
 // Helper functions for filtering and data processing
 export const getCurrentEventData = (
     tournament: Tournament | null,
+    events: TournamentEvent[] | null,
     currentEventTab: string,
     currentBracketTab: string,
     registrationList: Registration[],
@@ -1495,21 +1498,13 @@ export const getCurrentEventData = (
 ): EventData | null => {
     if (!tournament || !currentEventTab || !currentBracketTab) return null;
 
-    const event = tournament.events?.find((evt) => matchesEventKey(currentEventTab, evt) || getEventKey(evt) === currentEventTab);
+    const event = events?.find((evt) => matchesEventKey(currentEventTab, evt) || getEventKey(evt) === currentEventTab);
     const bracket = event?.age_brackets.find((br) => br.name === currentBracketTab);
 
     if (!event || !bracket) return null;
 
     const isTeamEvent = isTeamEventType(event.type);
-    const regs = filterRegistrations(
-        registrationList,
-        currentEventTab,
-        isTeamEvent,
-        searchTerm,
-        event,
-        tournament.events ?? [],
-        teamList,
-    );
+    const regs = filterRegistrations(registrationList, currentEventTab, isTeamEvent, searchTerm, event, events ?? [], teamList);
 
     return {event, bracket, isTeamEvent, registrations: regs};
 };

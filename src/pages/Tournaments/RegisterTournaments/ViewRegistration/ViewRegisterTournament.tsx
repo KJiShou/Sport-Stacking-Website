@@ -6,7 +6,20 @@ import type {Team} from "@/schema/TeamSchema";
 import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {getEventKey, getEventLabel, matchesEventKey} from "@/utils/tournament/eventUtils";
-import {Button, Divider, Form, Image, Input, InputNumber, Message, Popconfirm, Result, Select, Spin, Typography} from "@arco-design/web-react";
+import {
+    Button,
+    Divider,
+    Form,
+    Image,
+    Input,
+    InputNumber,
+    Message,
+    Popconfirm,
+    Result,
+    Select,
+    Spin,
+    Typography,
+} from "@arco-design/web-react";
 import {IconDelete, IconExclamationCircle, IconUndo} from "@arco-design/web-react/icon";
 import {useEffect, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
@@ -27,14 +40,13 @@ const resolveTeamEvent = (
     const legacyNames = Array.isArray(team.events) ? team.events.filter(Boolean) : [];
 
     let eventId = team.event_id ?? legacyIds[0] ?? "";
-    let eventName = Array.isArray(team.event) && team.event[0] ? team.event[0] ?? "" : legacyNames[0] ?? "";
+    let eventName = Array.isArray(team.event) && team.event[0] ? (team.event[0] ?? "") : (legacyNames[0] ?? "");
 
     const eventsList = tournamentEvents ?? [];
 
     if (eventsList.length > 0) {
         if (eventId) {
-            const matchById =
-                eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
+            const matchById = eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
             if (matchById) {
                 eventId = getEventKey(matchById);
                 if (!eventName) {
@@ -126,7 +138,7 @@ export default function ViewTournamentRegistrationPage() {
 
                 form.setFieldsValue({
                     user_name: userReg.user_name,
-                    id: userReg.user_id,
+                    id: userReg.user_global_id,
                     age: userReg.age,
                     phone_number: userReg.phone_number,
                     events_registered: userReg.events_registered ?? [],

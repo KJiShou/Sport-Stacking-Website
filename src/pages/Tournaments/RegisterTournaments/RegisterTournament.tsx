@@ -210,7 +210,7 @@ export default function RegisterTournamentPage() {
                     continue; // Skip if team name or leader is missing
                 }
                 const members = (teamData.member ?? [])
-                    .map((id) => (id ? {global_id: id, verified: false} : null))
+                    .map((id) => (id ? {global_id: id, verified: findEventByKey(eventId)?.type.includes("Parent")} : null))
                     .filter((m): m is {global_id: string; verified: boolean} => m !== null);
 
                 const memberIds = members.map((m) => m.global_id);

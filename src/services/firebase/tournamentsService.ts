@@ -98,15 +98,39 @@ export async function createTournament(
         created_at: Timestamp.now(),
     });
 
+    const isUUID = (value: string): boolean => {
+        // RFC4122 v4 UUID pattern
+        const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidV4Regex.test(value);
+    };
+
     await Promise.all(
         events.map(async (event) => {
-            // Omit 'id' if undefined or null
-            const {id, ...eventData} = event;
-            const eventToSave =
-                typeof id === "string" && id.length > 0
-                    ? {...eventData, id, tournament_id: docRef.id}
-                    : {...eventData, tournament_id: docRef.id};
-            await addDoc(collection(db, "events"), eventToSave);
+            const {id, ...restEvent} = event;
+            if (typeof id === "string" && id.length > 0) {
+                if (isUUID(id)) {
+                    // Treat UUID as a client placeholder: create new doc, then update id field to the docRef.id
+                    const docEventRef = await addDoc(collection(db, "events"), {
+                        ...restEvent,
+                        tournament_id: docRef.id,
+                    });
+                    await updateDoc(docEventRef, {id: docEventRef.id});
+                } else {
+                    // Non-UUID id assumed to be an existing Firestore doc id: update in place
+                    await updateDoc(doc(db, "events", id), {
+                        ...restEvent,
+                        id,
+                        tournament_id: docRef.id,
+                    });
+                }
+            } else {
+                // No id provided: create new doc and set its id field
+                const docEventRef = await addDoc(collection(db, "events"), {
+                    ...restEvent,
+                    tournament_id: docRef.id,
+                });
+                await updateDoc(docEventRef, {id: docEventRef.id});
+            }
         }),
     );
 
@@ -149,24 +173,38 @@ export async function saveTournamentEvents(tournamentId: string, events: Tournam
     const deletions = snapshot.docs.filter((docSnapshot) => !incomingIds.has(docSnapshot.id));
     await Promise.all(deletions.map((docSnapshot) => deleteDoc(docSnapshot.ref)));
 
+    const isUUID = (value: string): boolean => {
+        // RFC4122 v4 UUID pattern
+        const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidV4Regex.test(value);
+    };
+
     await Promise.all(
         events.map(async (event) => {
             const {id, ...restEvent} = event;
-            if (id && id.length > 0) {
-                // Existing event, update by ID
-                await setDoc(doc(db, "events", id), {
-                    ...restEvent,
-                    id,
-                    tournament_id: tournamentId,
-                });
+            if (typeof id === "string" && id.length > 0) {
+                if (isUUID(id)) {
+                    // Treat UUID as a client placeholder: create new doc, then update id field to the docRef.id
+                    const docRef = await addDoc(collection(db, "events"), {
+                        ...restEvent,
+                        tournament_id: tournamentId,
+                    });
+                    await updateDoc(docRef, {id: docRef.id});
+                } else {
+                    // Non-UUID id assumed to be an existing Firestore doc id: update in place
+                    await updateDoc(doc(db, "events", id), {
+                        ...restEvent,
+                        id,
+                        tournament_id: tournamentId,
+                    });
+                }
             } else {
-                // New event, let Firestore assign the ID
+                // No id provided: create new doc and set its id field
                 const docRef = await addDoc(collection(db, "events"), {
                     ...restEvent,
                     tournament_id: tournamentId,
                 });
-                // Optionally, update the event with the new ID if needed elsewhere
-                await setDoc(docRef, {...restEvent, id: docRef.id, tournament_id: tournamentId}, {merge: true});
+                await updateDoc(docRef, {id: docRef.id});
             }
         }),
     );

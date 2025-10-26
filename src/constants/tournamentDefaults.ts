@@ -24,7 +24,7 @@ export const DEFAULT_EVENTS: TournamentEvent[] = [
     },
     {
         id: crypto.randomUUID(),
-        codes: ["3-6-3", "Cycle"],
+        codes: ["Cycle"],
         type: "Team Relay",
         teamSize: 4,
         age_brackets: [
@@ -48,15 +48,15 @@ export const DEFAULT_EVENTS: TournamentEvent[] = [
 
 export const DEFAULT_AGE_BRACKET: AgeBracket[] = [
     {
-        name: "Under 10",
+        name: "Under 20",
         min_age: 0,
-        max_age: 9,
+        max_age: 19,
         number_of_participants: 0,
         final_criteria: [{classification: "intermediate" as const, number: 10}],
     },
     {
-        name: "10 and Above",
-        min_age: 10,
+        name: "20 and Above",
+        min_age: 20,
         max_age: 99,
         number_of_participants: 0,
         final_criteria: [{classification: "intermediate" as const, number: 10}],

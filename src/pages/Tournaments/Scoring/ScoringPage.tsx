@@ -1,8 +1,15 @@
 import type {ParticipantScore, Registration, Score, Team, TeamMember, TeamScore, Tournament, TournamentEvent} from "@/schema";
-import {TournamentRecord, TournamentRecordSchema, TournamentTeamRecord, TournamentTeamRecordSchema} from "@/schema/RecordSchema";
+import type {TournamentOverallRecord, TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
+import {TournamentOverallRecordSchema, TournamentRecordSchema, TournamentTeamRecordSchema} from "@/schema/RecordSchema";
 import {getUserByGlobalId} from "@/services/firebase/authService";
-import {getPrelimRecords, getTournamentPrelimRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
-import {fetchRegistrations} from "@/services/firebase/registerService";
+import {
+    getPrelimRecords,
+    getTournamentPrelimRecords,
+    saveOverallRecord,
+    saveRecord,
+    saveTeamRecord,
+} from "@/services/firebase/recordService";
+import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {
     getEventKey,
@@ -79,7 +86,7 @@ export default function ScoringPage() {
     };
 
     const teamMatchesEvent = (team: Team, event: TournamentEvent): boolean => {
-        const tournamentEvents = tournament?.events ?? [];
+        const tournamentEvents = events ?? [];
         return teamMatchesEventKey(team, getEventKey(event), tournamentEvents);
     };
 
@@ -100,45 +107,67 @@ export default function ScoringPage() {
                 }
             }
             const [regs, teams, records] = await Promise.all([
-                fetchRegistrations(tournamentId),
+                fetchApprovedRegistrations(tournamentId),
                 fetchTeamsByTournament(tournamentId),
                 getTournamentPrelimRecords(tournamentId),
             ]);
             setTeamScoreList(
-                teams.map((team) => {
-                    const teamScores: Record<string, Score> = {};
-                    const resolvedEvents = getTeamEvents(team, tournamentEvents);
+                teams
+                    .filter((team) => regs.some((r) => r.user_global_id === team.leader_id))
+                    .map((team) => {
+                        const teamScores: Record<string, Score> = {};
+                        const resolvedEvents = getTeamEvents(team, tournamentEvents);
 
-                    if (resolvedEvents.length > 0) {
-                        for (const event of resolvedEvents) {
-                            const eventType = event.type;
-                            const eventCodes = sanitizeEventCodes(event.codes);
+                        if (resolvedEvents.length > 0) {
+                            for (const event of resolvedEvents) {
+                                const eventType = event.type;
+                                const eventCodes = sanitizeEventCodes(event.codes);
 
-                            if (eventCodes.length > 0) {
-                                for (const code of eventCodes) {
-                                    const codeEventKey = `${code}-${eventType}`;
+                                if (eventCodes.length > 0) {
+                                    for (const code of eventCodes) {
+                                        const codeEventKey = `${code}-${eventType}`;
+                                        const record = records.find(
+                                            (rec) =>
+                                                isTeamTournamentRecord(rec) &&
+                                                rec.leader_id === team.leader_id &&
+                                                rec.event === eventType &&
+                                                rec.code === code,
+                                        );
+
+                                        teamScores[codeEventKey] = {
+                                            try1: record?.try1?.toString() || "",
+                                            try2: record?.try2?.toString() || "",
+                                            try3: record?.try3?.toString() || "",
+                                            recordId: record?.id,
+                                        };
+                                    }
+                                } else {
+                                    const eventKey = getEventKey(event);
                                     const record = records.find(
                                         (rec) =>
                                             isTeamTournamentRecord(rec) &&
                                             rec.leader_id === team.leader_id &&
-                                            rec.event === eventType &&
-                                            rec.code === code,
+                                            rec.event === eventKey,
                                     );
-
-                                    teamScores[codeEventKey] = {
+                                    teamScores[eventKey] = {
                                         try1: record?.try1?.toString() || "",
                                         try2: record?.try2?.toString() || "",
                                         try3: record?.try3?.toString() || "",
                                         recordId: record?.id,
                                     };
                                 }
-                            } else {
-                                const eventKey = getEventKey(event);
+                            }
+                        } else {
+                            const fallbackKeys = team.event_id ?? "";
+
+                            for (const fallbackKey of fallbackKeys) {
                                 const record = records.find(
                                     (rec) =>
-                                        isTeamTournamentRecord(rec) && rec.leader_id === team.leader_id && rec.event === eventKey,
+                                        isTeamTournamentRecord(rec) &&
+                                        rec.leader_id === team.leader_id &&
+                                        rec.event === fallbackKey,
                                 );
-                                teamScores[eventKey] = {
+                                teamScores[fallbackKey] = {
                                     try1: record?.try1?.toString() || "",
                                     try2: record?.try2?.toString() || "",
                                     try3: record?.try3?.toString() || "",
@@ -146,27 +175,11 @@ export default function ScoringPage() {
                                 };
                             }
                         }
-                    } else {
-                        const fallbackKeys = team.event_id ?? "";
-
-                        for (const fallbackKey of fallbackKeys) {
-                            const record = records.find(
-                                (rec) =>
-                                    isTeamTournamentRecord(rec) && rec.leader_id === team.leader_id && rec.event === fallbackKey,
-                            );
-                            teamScores[fallbackKey] = {
-                                try1: record?.try1?.toString() || "",
-                                try2: record?.try2?.toString() || "",
-                                try3: record?.try3?.toString() || "",
-                                recordId: record?.id,
-                            };
-                        }
-                    }
-                    return {
-                        ...team,
-                        scores: teamScores,
-                    };
-                }),
+                        return {
+                            ...team,
+                            scores: teamScores,
+                        };
+                    }),
             );
 
             const approvedRegs = regs.filter((r) => r.registration_status === "approved");
@@ -354,7 +367,7 @@ export default function ScoringPage() {
         const errors: string[] = [];
         const missingEvents: string[] = [];
 
-        for (const event of tournament?.events ?? []) {
+        for (const event of events ?? []) {
             if (!teamMatchesEvent(team, event)) {
                 continue;
             }
@@ -768,24 +781,29 @@ export default function ScoringPage() {
                 // Calculate overall time (sum of best times)
                 const overallTime = threeBest + threeSixThreeBest + cycleBest;
 
-                // Save overall record
-                const overallScore = p.scores["Overall-Individual"];
-                const recordId = await saveRecord(
-                    TournamentRecordSchema.parse({
-                        tournamentId,
+                // Save overall record using TournamentOverallRecordSchema
+                const recordId = await saveOverallRecord(
+                    TournamentOverallRecordSchema.parse({
+                        id: "",
+                        tournament_id: tournamentId,
                         event_id: individualEvent.id ?? "",
-                        event: "Overall-Individual",
-                        participantId: p.user_id,
-                        participantGlobalId: p.user_global_id,
-                        participantName: p.user_name,
-                        participantAge: p.age,
+                        event: "Individual",
+                        code: "Overall",
+                        participant_id: p.user_id,
+                        participant_global_id: p.user_global_id,
+                        participant_name: p.user_name,
+                        age: p.age,
                         country: p.country,
                         gender: p.gender || "Male",
+                        three_three_three: threeBest,
+                        three_six_three: threeSixThreeBest,
+                        cycle: cycleBest,
+                        overall_time: overallTime,
                         classification: "prelim",
-                        try1: overallTime, // Store overall time in try1
-                        try2: overallTime, // Store overall time in try2
-                        try3: overallTime, // Store overall time in try3
-                        best_time: overallTime,
+                        round: "prelim",
+                        try1: overallTime,
+                        try2: overallTime,
+                        try3: overallTime,
                         status: "submitted",
                         submitted_at: new Date().toISOString(),
                     }),

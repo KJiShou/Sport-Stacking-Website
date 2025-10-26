@@ -55,6 +55,7 @@ export interface ExportPrelimResultsOptions {
 
 export interface ExportPDFOptions {
     tournament: Tournament;
+    events: TournamentEvent[];
     eventKey: string;
     bracketName: string;
     registrations: Registration[];
@@ -69,6 +70,7 @@ export interface ExportPDFOptions {
 
 export interface ExportMasterListOptions {
     tournament: Tournament;
+    events: TournamentEvent[];
     registrations: Registration[];
     ageMap: Record<string, number>;
     phoneMap: Record<string, string>;

@@ -20,7 +20,6 @@ import {
 import {IconRefresh} from "@arco-design/web-react/icon";
 
 import type {GlobalResult, GlobalTeamResult} from "@/schema/RecordSchema";
-import {getEventRankings} from "@/services/firebase/recordService";
 import {formatStackingTime} from "@/utils/time";
 
 const {Title, Text} = Typography;
@@ -399,68 +398,68 @@ function ensureEntry(
 async function loadRankingData(): Promise<AthleteRankingEntry[]> {
     const map = new Map<string, AthleteRankingEntry>();
 
-    await Promise.all(
-        EVENT_OPTIONS.map(async (option) => {
-            try {
-                const rows = await getEventRankings(option.category, option.event as "3-3-3" | "3-6-3" | "Cycle" | "Overall");
-                if (option.category === "individual") {
-                    for (const record of rows as (GlobalResult & {id: string})[]) {
-                        const stats = buildEventStats(record);
-                        if (!stats) {
-                            continue;
-                        }
-                        const participantKey = record.participantId || record.participantName || record.id;
-                        const key = `${option.category}:${participantKey}`;
-                        const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
-                        const entry = ensureEntry(map, key, {
-                            category: option.category,
-                            isTeam: false,
-                            participantId: record.participantId ?? undefined,
-                            name: record.participantName ?? "Unknown",
-                            gender: (record.gender as GenderOption | undefined) ?? "Mixed",
-                            age,
-                            ageGroup: getAgeGroup(age),
-                            country: record.country ?? "Unknown",
-                        });
-                        const existingStats = entry.events[option.key];
-                        if (!existingStats || stats.time < existingStats.time) {
-                            entry.events[option.key] = stats;
-                        }
-                    }
-                } else {
-                    for (const record of rows as (GlobalTeamResult & {id: string})[]) {
-                        const stats = buildEventStats(record);
-                        if (!stats) {
-                            continue;
-                        }
-                        const teamIdentifier = record.leaderId || record.teamName || record.id;
-                        const key = `${option.category}:${teamIdentifier}`;
-                        const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
-                        const entry = ensureEntry(map, key, {
-                            category: option.category,
-                            isTeam: true,
-                            teamId: record.leaderId ?? undefined,
-                            name: record.teamName ?? "Team",
-                            gender: "Mixed",
-                            age,
-                            ageGroup: getAgeGroup(age),
-                            country: record.country ?? "Unknown",
-                            members: record.members ?? [],
-                            memberNames: Array.isArray((record as {memberNames?: string[]}).memberNames)
-                                ? ((record as {memberNames?: string[]}).memberNames ?? [])
-                                : [],
-                        });
-                        const existingStats = entry.events[option.key];
-                        if (!existingStats || stats.time < existingStats.time) {
-                            entry.events[option.key] = stats;
-                        }
-                    }
-                }
-            } catch (error) {
-                console.warn(`Failed to fetch rankings for ${option.label}`, error);
-            }
-        }),
-    );
+    // await Promise.all(
+    //     EVENT_OPTIONS.map(async (option) => {
+    //         try {
+    //             const rows = await getEventRankings(option.category, option.event as "3-3-3" | "3-6-3" | "Cycle" | "Overall");
+    //             if (option.category === "individual") {
+    //                 for (const record of rows as (GlobalResult & {id: string})[]) {
+    //                     const stats = buildEventStats(record);
+    //                     if (!stats) {
+    //                         continue;
+    //                     }
+    //                     const participantKey = record.participantId || record.participantName || record.id;
+    //                     const key = `${option.category}:${participantKey}`;
+    //                     const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
+    //                     const entry = ensureEntry(map, key, {
+    //                         category: option.category,
+    //                         isTeam: false,
+    //                         participantId: record.participantId ?? undefined,
+    //                         name: record.participantName ?? "Unknown",
+    //                         gender: (record.gender as GenderOption | undefined) ?? "Mixed",
+    //                         age,
+    //                         ageGroup: getAgeGroup(age),
+    //                         country: record.country ?? "Unknown",
+    //                     });
+    //                     const existingStats = entry.events[option.key];
+    //                     if (!existingStats || stats.time < existingStats.time) {
+    //                         entry.events[option.key] = stats;
+    //                     }
+    //                 }
+    //             } else {
+    //                 for (const record of rows as (GlobalTeamResult & {id: string})[]) {
+    //                     const stats = buildEventStats(record);
+    //                     if (!stats) {
+    //                         continue;
+    //                     }
+    //                     const teamIdentifier = record.leaderId || record.teamName || record.id;
+    //                     const key = `${option.category}:${teamIdentifier}`;
+    //                     const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
+    //                     const entry = ensureEntry(map, key, {
+    //                         category: option.category,
+    //                         isTeam: true,
+    //                         teamId: record.leaderId ?? undefined,
+    //                         name: record.teamName ?? "Team",
+    //                         gender: "Mixed",
+    //                         age,
+    //                         ageGroup: getAgeGroup(age),
+    //                         country: record.country ?? "Unknown",
+    //                         members: record.members ?? [],
+    //                         memberNames: Array.isArray((record as {memberNames?: string[]}).memberNames)
+    //                             ? ((record as {memberNames?: string[]}).memberNames ?? [])
+    //                             : [],
+    //                     });
+    //                     const existingStats = entry.events[option.key];
+    //                     if (!existingStats || stats.time < existingStats.time) {
+    //                         entry.events[option.key] = stats;
+    //                     }
+    //                 }
+    //             }
+    //         } catch (error) {
+    //             console.warn(`Failed to fetch rankings for ${option.label}`, error);
+    //         }
+    //     }),
+    // );
 
     for (const entry of map.values()) {
         if (!entry.events["individual:Overall"]) {
