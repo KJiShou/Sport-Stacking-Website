@@ -7,6 +7,7 @@ export interface Score {
     try1: string;
     try2: string;
     try3: string;
+    recordId?: string;
     [key: string]: string | undefined;
 }
 
@@ -24,12 +25,12 @@ export interface Finalist {
     eventCodes: string[];
     bracket: AgeBracket;
     records: (PrelimResultData & {team?: Team; registration?: Registration})[];
-    classification: "beginner" | "intermediate" | "advance";
+    classification: "beginner" | "intermediate" | "advance" | "prelim";
 }
 
 export interface ClassificationGroup {
     event: TournamentEvent;
     bracket: AgeBracket;
-    classification: "beginner" | "intermediate" | "advance";
+    classification: "beginner" | "intermediate" | "advance" | "prelim";
     finalists: Finalist[];
 }

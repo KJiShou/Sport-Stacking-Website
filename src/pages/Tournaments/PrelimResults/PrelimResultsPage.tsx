@@ -1,11 +1,19 @@
 // @ts-nocheck
-import type {AgeBracket, AggregationContext, Registration, Team, Tournament, TournamentEvent} from "@/schema";
-import type {FinalistGroupPayload} from "@/schema";
+import type {
+    AgeBracket,
+    AggregationContext,
+    Finalist,
+    FinalistGroupPayload,
+    Registration,
+    Team,
+    Tournament,
+    TournamentEvent,
+} from "@/schema";
 import type {BracketResults, EventResults, PrelimResultData} from "@/schema";
-import {getEventCategoryFromType, saveTournamentFinalists} from "@/services/firebase/finalistService";
+import {fetchTournamentFinalists, saveTournamentFinalists} from "@/services/firebase/finalistService";
 import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {exportAllPrelimResultsToPDF, exportFinalistsNameListToPDF} from "@/utils/PDF/pdfExport";
 import {getEventLabel, isTeamEvent as isTournamentTeamEvent, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
 import {Button, Message, Table, Tabs, Typography} from "@arco-design/web-react";
@@ -22,46 +30,11 @@ type AggregatedPrelimResult = PrelimResultData & {
     registration?: Registration;
     team?: Team;
     teamId?: string;
+    globalId?: string;
     [key: string]: unknown;
 };
 
 const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-const getRawEventCodes = (event: TournamentEvent): string[] => {
-    if (event.codes && event.codes.length > 0) return [...event.codes];
-    const legacyEvent = event as {code?: unknown};
-    if (typeof legacyEvent.code === "string") return [legacyEvent.code];
-    return [];
-};
-
-const getEventCodes = (event: TournamentEvent): string[] => sanitizeEventCodes(getRawEventCodes(event));
-
-const getPrimaryEventCode = (event: TournamentEvent): string => {
-    const sanitized = getEventCodes(event);
-    if (sanitized.length > 0) return sanitized[0];
-    const raw = getRawEventCodes(event);
-    if (raw.length > 0) return raw[0];
-    return event.type;
-};
-
-const buildEventTabKey = (event: TournamentEvent): string => `${getPrimaryEventCode(event)}-${event.type}`;
-
-const matchesRecordCode = (record: TournamentRecord, code: string, event: TournamentEvent): boolean => {
-    const recordEvent = record.event?.trim().toLowerCase();
-    if (!recordEvent) return false;
-
-    const normalizedRecord = recordEvent.replace(/\s+/g, "");
-    const normalizedCode = code.toLowerCase().replace(/\s+/g, "");
-    const normalizedType = event.type.toLowerCase().replace(/\s+/g, "");
-
-    if (normalizedRecord === `${normalizedCode}-${normalizedType}`) return true;
-    if (normalizedRecord === `${normalizedCode}${normalizedType}`) return true;
-    if (normalizedRecord === `${normalizedCode}-individual` && normalizedType === "individual") return true;
-    if (normalizedRecord === `${normalizedCode}-teamrelay` && normalizedType === "teamrelay") return true;
-    if (normalizedRecord === `${normalizedCode}`) return true;
-
-    return normalizedRecord.includes(normalizedCode) && normalizedRecord.includes(normalizedType);
-};
 
 const computeTeamMultiCodeResults = (
     event: TournamentEvent,
@@ -71,36 +44,58 @@ const computeTeamMultiCodeResults = (
 ): AggregatedPrelimResult[] => {
     const aggregates = new Map<string, AggregatedPrelimResult>();
 
-    for (const code of codes) {
-        for (const record of context.allRecords) {
-            if (!(record as TournamentTeamRecord).leaderId) continue;
-            if (!matchesRecordCode(record, code, event)) continue;
+    for (const rawRecord of context.allRecords) {
+        const record = rawRecord as TournamentTeamRecord;
+        const recordCode = record.code;
+        if (!codes.includes(recordCode)) continue;
+        if (record.event !== event.type) continue;
 
-            const teamId = record.participantId as string | undefined;
-            if (!teamId) continue;
-            const team = context.teamMap[teamId];
-            if (!team) continue;
-            const largestAge = team.largest_age;
-            if (largestAge === undefined || largestAge < bracket.min_age || largestAge > bracket.max_age) continue;
+        const teamId =
+            record.team_id ??
+            record.participant_id ??
+            (rawRecord as unknown as {participantId?: string}).participantId ??
+            (rawRecord as unknown as {teamId?: string}).teamId;
+        if (!teamId) continue;
 
-            let aggregate = aggregates.get(teamId);
-            if (!aggregate) {
-                aggregate = {
-                    ...record,
-                    participantId: teamId,
-                    name: context.teamNameMap[teamId] || team.name || "N/A",
-                    id: team.leader_id || teamId || "unknown",
-                    bestTime: 0,
-                    rank: 0,
-                    team,
-                    teamId,
-                    event: `${getPrimaryEventCode(event)}-${event.type}`,
-                };
-                aggregates.set(teamId, aggregate);
-            }
+        const team = context.teamMap[teamId];
+        const teamAge =
+            team?.team_age ??
+            (team as unknown as {largest_age?: number})?.largest_age ??
+            (rawRecord as unknown as {team_age?: number}).team_age ??
+            (rawRecord as unknown as {largest_age?: number}).largest_age;
+        if (teamAge === undefined || teamAge < bracket.min_age || teamAge > bracket.max_age) continue;
 
-            (aggregate as Record<string, unknown>)[`${normalizeCodeKey(code)}Best`] = record.bestTime;
+        let aggregate = aggregates.get(teamId);
+        if (!aggregate) {
+            aggregate = {
+                ...record,
+                participantId: teamId,
+                teamId,
+                team,
+                name:
+                    context.teamNameMap[teamId] ||
+                    team?.name ||
+                    record.team_name ||
+                    (rawRecord as unknown as {teamName?: string}).teamName ||
+                    "N/A",
+                id: team?.leader_id || record.leader_id || (rawRecord as unknown as {leaderId?: string}).leaderId || teamId,
+                bestTime: 0,
+                rank: 0,
+                event: `${event.codes.join(", ")}-${event.type}`,
+                event_id: record.event_id ?? event.id,
+            };
+            aggregates.set(teamId, aggregate);
         }
+
+        const bestTimeValue = record.best_time ?? (rawRecord as unknown as {bestTime?: number}).bestTime ?? Number.NaN;
+        if (Number.isFinite(bestTimeValue)) {
+            const normalizedKey = normalizeCodeKey(recordCode);
+            (aggregate as Record<string, unknown>)[`${recordCode} Best`] = bestTimeValue;
+            (aggregate as Record<string, unknown>)[`${normalizedKey}Best`] = bestTimeValue;
+        }
+        (aggregate as Record<string, unknown>)[`${recordCode} Try 1`] = record.try1;
+        (aggregate as Record<string, unknown>)[`${recordCode} Try 2`] = record.try2;
+        (aggregate as Record<string, unknown>)[`${recordCode} Try 3`] = record.try3;
     }
 
     const results: AggregatedPrelimResult[] = [];
@@ -108,7 +103,7 @@ const computeTeamMultiCodeResults = (
         let total = 0;
         let complete = true;
         for (const code of codes) {
-            const value = aggregate[`${normalizeCodeKey(code)}Best`];
+            const value = aggregate[`${code} Best`];
             if (typeof value !== "number" || !Number.isFinite(value)) {
                 complete = false;
                 break;
@@ -116,7 +111,9 @@ const computeTeamMultiCodeResults = (
             total += value;
         }
         if (!complete) continue;
-        results.push({...aggregate, bestTime: total});
+
+        aggregate.bestTime = total;
+        results.push({...aggregate});
     }
 
     results.sort((a, b) => a.bestTime - b.bestTime);
@@ -130,26 +127,49 @@ const computeTeamSingleCodeResults = (
     context: AggregationContext,
 ): AggregatedPrelimResult[] => {
     return context.allRecords
-        .filter((record) => (record as TournamentTeamRecord).leaderId && matchesRecordCode(record, code, event))
+        .map((rawRecord) => rawRecord as TournamentTeamRecord)
+        .filter((record) => record.code === code && record.event === event.type)
         .filter((record) => {
-            const teamId = record.participantId as string | undefined;
+            const teamId =
+                record.team_id ??
+                record.participant_id ??
+                (record as unknown as {participantId?: string}).participantId ??
+                (record as unknown as {teamId?: string}).teamId;
             if (!teamId) return false;
             const team = context.teamMap[teamId];
-            if (!team) return false;
-            const largestAge = team.largest_age;
-            return largestAge >= bracket.min_age && largestAge <= bracket.max_age;
+            const teamAge =
+                team?.team_age ??
+                (team as unknown as {largest_age?: number})?.largest_age ??
+                record.team_age ??
+                (record as unknown as {largest_age?: number}).largest_age;
+            return teamAge !== undefined && teamAge >= bracket.min_age && teamAge <= bracket.max_age;
         })
-        .sort((a, b) => a.bestTime - b.bestTime)
+        .sort(
+            (a, b) =>
+                (a.best_time ?? (a as unknown as {bestTime?: number}).bestTime ?? Number.POSITIVE_INFINITY) -
+                (b.best_time ?? (b as unknown as {bestTime?: number}).bestTime ?? Number.POSITIVE_INFINITY),
+        )
         .map((record, index) => {
-            const teamId = record.participantId as string;
+            const teamId =
+                record.team_id ??
+                record.participant_id ??
+                (record as unknown as {participantId?: string}).participantId ??
+                (record as unknown as {teamId?: string}).teamId ??
+                "";
             const team = context.teamMap[teamId];
             return {
                 ...record,
                 rank: index + 1,
-                name: context.teamNameMap[teamId] || team?.name || "N/A",
-                id: team?.leader_id || teamId || "unknown",
+                name:
+                    context.teamNameMap[teamId] ||
+                    team?.name ||
+                    record.team_name ||
+                    (record as unknown as {teamName?: string}).teamName ||
+                    "N/A",
+                id: team?.leader_id || record.leader_id || (record as unknown as {leaderId?: string}).leaderId || teamId,
                 teamId,
                 team,
+                bestTime: record.best_time ?? (record as unknown as {bestTime?: number}).bestTime ?? Number.POSITIVE_INFINITY,
             } as AggregatedPrelimResult;
         });
 };
@@ -161,17 +181,18 @@ const computeIndividualMultiCodeResults = (
     context: AggregationContext,
 ): AggregatedPrelimResult[] => {
     const aggregates = new Map<string, AggregatedPrelimResult>();
-
     for (const code of codes) {
         for (const record of context.allRecords) {
-            if (!matchesRecordCode(record, code, event)) continue;
-            const participantId = record.participantId as string | undefined;
+            if (!(code === record.code && record.event === event.type)) continue;
+            const participantId = record.participant_id as string | undefined;
             if (!participantId) continue;
             const age = context.ageMap[participantId];
             if (age < bracket.min_age || age > bracket.max_age) continue;
 
             let aggregate = aggregates.get(participantId);
             if (!aggregate) {
+                const registration = context.registrationMap[participantId];
+                const globalId = registration?.user_global_id ?? participantId;
                 aggregate = {
                     ...record,
                     participantId,
@@ -179,23 +200,25 @@ const computeIndividualMultiCodeResults = (
                     id: participantId,
                     bestTime: 0,
                     rank: 0,
-                    registration: context.registrationMap[participantId],
-                    event: `${getPrimaryEventCode(event)}-${event.type}`,
+                    registration,
+                    globalId,
+                    event: `${event.codes.join(", ")}-${event.type}`,
                 };
                 aggregates.set(participantId, aggregate);
             }
 
-            (aggregate as Record<string, unknown>)[`${normalizeCodeKey(code)}Best`] = record.bestTime;
+            (aggregate as Record<string, unknown>)[`${code} Best`] = record.best_time;
+            (aggregate as Record<string, unknown>)[`${normalizeCodeKey(code)}Best`] = record.best_time;
         }
     }
 
     const results: AggregatedPrelimResult[] = [];
     for (const aggregate of aggregates.values()) {
-        const participantId = aggregate.participantId as string;
+        const participantId = aggregate.participant_id as string;
         let total = 0;
         let complete = true;
         for (const code of codes) {
-            const value = aggregate[`${normalizeCodeKey(code)}Best`];
+            const value = aggregate[`${code} Best`];
             if (typeof value !== "number" || !Number.isFinite(value)) {
                 complete = false;
                 break;
@@ -219,22 +242,25 @@ const computeIndividualSingleCodeResults = (
     context: AggregationContext,
 ): AggregatedPrelimResult[] => {
     return context.allRecords
-        .filter((record) => matchesRecordCode(record, code, event))
+        .filter((record) => code === record.code && record.event === event.type)
         .filter((record) => {
-            const participantId = record.participantId as string | undefined;
+            const participantId = record.participant_id as string | undefined;
             if (!participantId) return false;
             const age = context.ageMap[participantId];
             return age >= bracket.min_age && age <= bracket.max_age;
         })
         .sort((a, b) => a.bestTime - b.bestTime)
         .map((record, index) => {
-            const participantId = record.participantId as string;
+            const participantId = record.participant_id as string;
+            const registration = context.registrationMap[participantId];
+            const globalId = registration?.user_global_id ?? participantId;
             return {
                 ...record,
                 rank: index + 1,
                 name: context.nameMap[participantId] || "N/A",
                 id: participantId,
-                registration: context.registrationMap[participantId],
+                registration,
+                globalId,
             } as AggregatedPrelimResult;
         });
 };
@@ -244,21 +270,21 @@ const computeEventBracketResults = (
     bracket: AgeBracket,
     context: AggregationContext,
 ): AggregatedPrelimResult[] => {
-    const codes = getEventCodes(event);
+    const codes = event.codes;
     const isTeamEvent = isTournamentTeamEvent(event);
 
     if (isTeamEvent) {
         if (codes.length > 1) {
             return computeTeamMultiCodeResults(event, bracket, codes, context);
         }
-        const primary = codes[0] ?? getPrimaryEventCode(event);
+        const primary = codes[0];
         return computeTeamSingleCodeResults(event, bracket, primary, context);
     }
 
     if (codes.length > 1) {
         return computeIndividualMultiCodeResults(event, bracket, codes, context);
     }
-    const primary = codes[0] ?? getPrimaryEventCode(event);
+    const primary = codes[0];
     return computeIndividualSingleCodeResults(event, bracket, primary, context);
 };
 
@@ -273,10 +299,10 @@ const buildTeamColumns = (event: TournamentEvent): TableColumnProps<AggregatedPr
         },
     ];
 
-    const codes = getEventCodes(event);
+    const codes = event.codes;
     if (codes.length > 1) {
         for (const code of codes) {
-            const key = `${normalizeCodeKey(code)}Best`;
+            const key = `${code} Best`;
             baseColumns.push({
                 title: code,
                 dataIndex: key,
@@ -300,14 +326,19 @@ const buildTeamColumns = (event: TournamentEvent): TableColumnProps<AggregatedPr
 const buildIndividualColumns = (event: TournamentEvent): TableColumnProps<AggregatedPrelimResult>[] => {
     const columns: TableColumnProps<AggregatedPrelimResult>[] = [
         {title: "Rank", dataIndex: "rank", width: 80},
-        {title: "ID", dataIndex: "id", width: 150},
+        {
+            title: "Global ID",
+            dataIndex: "globalId",
+            width: 180,
+            render: (_value, record) => record.globalId ?? record.registration?.user_global_id ?? "N/A",
+        },
         {title: "Name", dataIndex: "name", width: 200},
     ];
 
-    const codes = getEventCodes(event);
+    const codes = event.codes;
     if (codes.length > 1) {
         for (const code of codes) {
-            const key = `${normalizeCodeKey(code)}Best`;
+            const key = `${code} Best`;
             columns.push({
                 title: code,
                 dataIndex: key,
@@ -343,13 +374,31 @@ const buildExpandedRows = (
     }
 
     const rows = codes.map((code) => {
-        const normalizedKey = `${normalizeCodeKey(code)}Best`;
+        const normalizedKey = `${code} Best`;
+        const targetParticipantId = isTeamEvent
+            ? (record.teamId ?? record.team_id ?? record.participantId ?? record.participant_id ?? record.team?.id)
+            : (record.participantId ?? record.participant_id);
+        const targetEventId = record.event_id ?? event.id;
+
         const baseMatch = allRecords.find((candidate) => {
-            if (isTeamEvent) {
-                const teamId = record.team?.id ?? record.participantId;
-                return candidate.participantId === teamId && matchesRecordCode(candidate, code, event);
+            const candidateParticipantId = isTeamEvent
+                ? ((candidate as TournamentTeamRecord).team_id ?? candidate.participant_id ?? candidate.participantId)
+                : (candidate.participant_id ?? candidate.participantId);
+
+            if (!candidateParticipantId || candidateParticipantId !== targetParticipantId) {
+                return false;
             }
-            return candidate.participantId === record.participantId && matchesRecordCode(candidate, code, event);
+
+            if (candidate.code !== code) {
+                return false;
+            }
+
+            const candidateEventId = (candidate as TournamentTeamRecord).event_id ?? candidate.event_id;
+            if (targetEventId && candidateEventId && candidateEventId !== targetEventId) {
+                return false;
+            }
+
+            return candidate.event === event.type || candidate.event === record.event;
         });
 
         return {
@@ -360,7 +409,6 @@ const buildExpandedRows = (
             best: typeof record[normalizedKey] === "number" ? (record[normalizedKey] as number).toFixed(3) : "N/A",
         };
     });
-
     const columns: TableColumnProps<{code: string; try1: string; try2: string; try3: string; best: string}>[] = [
         {title: "Event Code", dataIndex: "code", width: 120},
         {title: "Try 1", dataIndex: "try1", width: 100},
@@ -381,11 +429,13 @@ export default function PrelimResultsPage() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
+    const [events, setEvents] = useState<TournamentEvent[] | null>([]);
     const [allRecords, setAllRecords] = useState<TournamentRecord[]>([]);
     const [registrations, setRegistrations] = useState<Registration[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
+    const [currentClassificationTab, setCurrentClassificationTab] = useState<string>("");
 
     useEffect(() => {
         if (!tournamentId) return;
@@ -394,12 +444,13 @@ export default function PrelimResultsPage() {
             setLoading(true);
             try {
                 const fetchedTournament = await fetchTournamentById(tournamentId);
-                if (fetchedTournament?.events) {
+                const events = await fetchTournamentEvents(tournamentId);
+                if (events) {
                     setTournament(fetchedTournament);
-
-                    const firstEvent = fetchedTournament.events[0];
+                    setEvents(events);
+                    const firstEvent = events[0];
                     if (firstEvent) {
-                        setCurrentEventTab(buildEventTabKey(firstEvent));
+                        setCurrentEventTab(firstEvent.id);
                         const firstBracket = firstEvent.age_brackets?.[0];
                         if (firstBracket) {
                             setCurrentBracketTab(firstBracket.name);
@@ -414,7 +465,6 @@ export default function PrelimResultsPage() {
                     fetchRegistrations(tournamentId),
                     fetchTeamsByTournament(tournamentId),
                 ]);
-
                 setAllRecords(fetchedRecords);
                 setRegistrations(fetchedRegistrations);
                 setTeams(fetchedTeams);
@@ -505,13 +555,13 @@ export default function PrelimResultsPage() {
 
     const findEventByTabKey = useCallback(
         (events: TournamentEvent[] | undefined, key: string): TournamentEvent | undefined =>
-            events?.find((event) => buildEventTabKey(event) === key),
+            events?.find((event) => event.id === key),
         [],
     );
 
     const currentEvent = useMemo(
-        () => findEventByTabKey(tournament?.events ?? [], currentEventTab),
-        [findEventByTabKey, tournament?.events, currentEventTab],
+        () => findEventByTabKey(events ?? [], currentEventTab),
+        [findEventByTabKey, events, currentEventTab],
     );
 
     const currentBracket = useMemo(
@@ -524,7 +574,7 @@ export default function PrelimResultsPage() {
 
         setLoading(true);
         try {
-            const resultsData: EventResults[] = (tournament.events ?? [])
+            const resultsData: EventResults[] = (events ?? [])
                 .map((event) => {
                     const brackets = (event.age_brackets ?? [])
                         .map((bracket) => {
@@ -561,7 +611,7 @@ export default function PrelimResultsPage() {
         try {
             const finalistsData: EventResults[] = [];
 
-            for (const event of tournament.events ?? []) {
+            for (const event of events) {
                 const brackets: BracketResults[] = [];
                 for (const bracket of event.age_brackets ?? []) {
                     const records = computeEventBracketResults(event, bracket, aggregationContext);
@@ -612,19 +662,11 @@ export default function PrelimResultsPage() {
 
         setLoading(true);
         try {
-            const finalists: Array<{
-                event: TournamentEvent;
-                eventCode: string;
-                eventCodes: string[];
-                bracket: AgeBracket;
-                records: AggregatedPrelimResult[];
-                classification: "beginner" | "intermediate" | "advance";
-            }> = [];
+            const finalists: Finalist[] = [];
 
-            for (const event of tournament.events ?? []) {
-                const codes = getEventCodes(event);
-                const eventCodes = codes.length > 0 ? codes : [getPrimaryEventCode(event)];
-                const primaryCode = eventCodes[0];
+            for (const event of events) {
+                const eventCodes = sanitizeEventCodes(event.codes);
+                const eventCode = eventCodes[0] ?? event.type;
 
                 for (const bracket of event.age_brackets ?? []) {
                     const records = computeEventBracketResults(event, bracket, aggregationContext);
@@ -638,7 +680,7 @@ export default function PrelimResultsPage() {
                         if (bracketFinalists.length > 0) {
                             finalists.push({
                                 event,
-                                eventCode: primaryCode,
+                                eventCode,
                                 eventCodes,
                                 bracket,
                                 records: bracketFinalists,
@@ -656,9 +698,15 @@ export default function PrelimResultsPage() {
                 return;
             }
 
+            if (!tournamentId) {
+                Message.error("Tournament ID is missing. Cannot save finalists.");
+                setLoading(false);
+                return;
+            }
+
+            // Build raw payloads for the selected finalists
             const finalistPayloads = finalists
                 .map<FinalistGroupPayload | null>((finalistEntry) => {
-                    const eventCategory = getEventCategoryFromType(finalistEntry.event.type);
                     const participantIds = finalistEntry.records
                         .map((record) => {
                             if (isTournamentTeamEvent(finalistEntry.event)) {
@@ -680,24 +728,50 @@ export default function PrelimResultsPage() {
                     }
 
                     return {
-                        eventCategory,
-                        eventName: finalistEntry.eventCode,
-                        bracketName: finalistEntry.bracket.name,
+                        tournament_id: tournamentId,
+                        event_id: finalistEntry.event.id,
+                        event_type: finalistEntry.event.type,
+                        event_code: finalistEntry.eventCodes,
+                        bracket_name: finalistEntry.bracket.name,
                         classification: finalistEntry.classification,
-                        participantIds,
-                        participantType: isTournamentTeamEvent(finalistEntry.event) ? "team" : "individual",
+                        participant_ids: participantIds,
+                        participant_type: isTournamentTeamEvent(finalistEntry.event) ? "Team" : "Individual",
                     } satisfies FinalistGroupPayload;
                 })
                 .filter((payload): payload is FinalistGroupPayload => payload !== null);
 
+            // Fetch existing finalists for this tournament and upsert by (event_id, bracket_name, classification)
             if (finalistPayloads.length > 0) {
                 try {
-                    if (!tournamentId) {
-                        Message.error("Tournament ID is missing. Cannot save finalists.");
-                        setLoading(false);
-                        return;
+                    const existing = await fetchTournamentFinalists(tournamentId);
+                    const normalizedKey = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
+
+                    // Build a fast lookup by composite key
+                    const existingByKey = new Map<string, (typeof existing)[number]>();
+                    for (const e of existing) {
+                        const key = [
+                            normalizedKey(e.event_id),
+                            normalizedKey(e.bracket_name),
+                            normalizedKey(e.classification),
+                        ].join("::");
+                        // Keep the first occurrence
+                        if (!existingByKey.has(key)) {
+                            existingByKey.set(key, e);
+                        }
                     }
-                    await saveTournamentFinalists(tournamentId, finalistPayloads);
+
+                    // Attach IDs to payloads that match, so setDoc merges (update) instead of creating new
+                    const upserts = finalistPayloads.map((p) => {
+                        const key = [
+                            normalizedKey(p.event_id),
+                            normalizedKey(p.bracket_name),
+                            normalizedKey(p.classification),
+                        ].join("::");
+                        const match = existingByKey.get(key);
+                        return match ? {...p, id: match.id} : p;
+                    });
+
+                    await saveTournamentFinalists(upserts);
                 } catch (error) {
                     console.error("Failed to save finalists:", error);
                     Message.error("Failed to save finalists. Please try again.");
@@ -706,9 +780,7 @@ export default function PrelimResultsPage() {
                 }
             }
 
-            navigate(`/tournaments/${tournamentId}/scoring/final`, {
-                state: {finalists, tournament, registrations, teams},
-            });
+            navigate(`/tournaments/${tournamentId}/scoring/final`);
         } catch (error) {
             console.error(error);
             Message.error("Failed to start finals.");
@@ -716,7 +788,6 @@ export default function PrelimResultsPage() {
             setLoading(false);
         }
     }, [aggregationContext, navigate, registrations, teams, tournament, tournamentId]);
-
     return (
         <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <Button
@@ -759,18 +830,18 @@ export default function PrelimResultsPage() {
                     activeTab={currentEventTab}
                     onChange={(key) => {
                         setCurrentEventTab(key);
-                        const event = findEventByTabKey(tournament?.events ?? [], key);
+                        const event = findEventByTabKey(events, key);
                         const firstBracket = event?.age_brackets?.[0];
                         if (firstBracket) {
                             setCurrentBracketTab(firstBracket.name);
                         }
                     }}
                 >
-                    {(tournament?.events ?? []).map((event) => {
-                        const tabKey = buildEventTabKey(event);
-                        const eventLabel = getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`;
+                    {events?.map((event) => {
+                        const tabKey = event.id;
+                        const eventLabel = `${event.type} (${event.codes.join(", ")})`;
                         const isTeamEvent = isTournamentTeamEvent(event);
-                        const eventCodes = getEventCodes(event);
+                        const eventCodes = event.codes;
                         const columns = buildColumnsForEvent(event);
 
                         return (
@@ -786,14 +857,14 @@ export default function PrelimResultsPage() {
                                             const bracketResults = computeEventBracketResults(event, bracket, aggregationContext);
                                             const expandedRowRender =
                                                 eventCodes.length > 1
-                                                    ? (record: AggregatedPrelimResult) =>
+                                                    ? (record: TournamentRecord) =>
                                                           buildExpandedRows(record, event, eventCodes, isTeamEvent, allRecords)
                                                     : undefined;
-
                                             return (
                                                 <TabPane key={bracket.name} title={bracket.name}>
                                                     <Table
                                                         style={{width: "100%"}}
+                                                        rowKey={(record) => record.id}
                                                         columns={columns}
                                                         data={bracketResults}
                                                         pagination={false}
@@ -807,6 +878,7 @@ export default function PrelimResultsPage() {
                                 ) : (
                                     <Table
                                         style={{width: "100%"}}
+                                        rowKey={(record) => record.id}
                                         columns={columns}
                                         data={[]}
                                         pagination={false}

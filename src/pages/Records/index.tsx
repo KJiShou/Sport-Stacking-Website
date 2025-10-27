@@ -25,6 +25,7 @@ import type {GlobalResult, GlobalTeamResult, RecordDisplay} from "../../schema/R
 
 import {
     deleteRecord,
+    getBestRecords,
     getBestRecordsByAgeGroup,
     toggleRecordVerification,
     updateRecordVideoUrl,
@@ -44,7 +45,7 @@ type AgeGroup = "6U" | "8U" | "10U" | "12U" | "14U" | "17U" | "Open" | "Overall"
 
 // Match the service types
 type Category = "Individual" | "Double" | "Parent & Child" | "Team Relay" | "Special Need";
-type EventTypeKey = "3-3-3" | "3-6-3" | "Cycle";
+type EventTypeKey = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
 // Map UI tab keys -> display category labels
 const CATEGORY_MAP: Record<RecordCategory, Category> = {
@@ -55,21 +56,12 @@ const CATEGORY_MAP: Record<RecordCategory, Category> = {
     special_need: "Special Need",
 };
 
-// Map display categories to backend system categories
-const BACKEND_CATEGORY_MAP: Record<Category, string> = {
-    Individual: "individual",
-    Double: "double",
-    "Team Relay": "team_relay",
-    "Parent & Child": "parent_&_child",
-    "Special Need": "special_need",
-};
-
 // Shape returned by getBestRecordsByAgeGroup()
 type BestRecordsShape = Record<Category, Partial<Record<EventTypeKey, (GlobalResult | GlobalTeamResult)[]>>>;
 
 // Events per category for the UI
 const EVENTS_FOR_CATEGORY: Record<Category, EventTypeKey[]> = {
-    Individual: ["3-3-3", "3-6-3", "Cycle"],
+    Individual: ["3-3-3", "3-6-3", "Cycle", "Overall"],
     Double: ["Cycle"],
     "Parent & Child": ["Cycle"],
     "Team Relay": ["Cycle", "3-6-3"],
@@ -155,8 +147,8 @@ const RecordsIndex: React.FC = () => {
     const loadRecords = async () => {
         setLoading(true);
         try {
-            const records = await getBestRecordsByAgeGroup();
-            setAllRecords(records);
+            const records = await getBestRecords();
+            setAllRecords(records as BestRecordsShape);
         } catch (error) {
             console.error("Failed to load records:", error);
         } finally {
@@ -186,21 +178,10 @@ const RecordsIndex: React.FC = () => {
         }
 
         try {
-            // Determine category and eventType based on current tab and event
-            const displayCategory = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
-            const backendCategory = BACKEND_CATEGORY_MAP[displayCategory];
-            const eventType = (activeCategory === "individual" ? selectedIndividualEvent : record.event) as EventTypeKey;
-
-            await toggleRecordVerification(
-                backendCategory as "individual" | "double" | "parent_&_child" | "team_relay" | "special_need",
-                eventType,
-                record.recordId,
-                user.global_id,
-                record.status,
-            );
+            await toggleRecordVerification(record.recordId, user.global_id, record.status);
             const action = record.status === "submitted" ? "verified" : "unverified";
             Message.success(`Record ${action} successfully for ${record.athlete}`);
-            window.location.reload(); // Refresh the entire page
+            await loadRecords();
         } catch (error) {
             console.error("Failed to toggle verification:", error);
             Message.error("Failed to update record verification");
@@ -220,16 +201,7 @@ const RecordsIndex: React.FC = () => {
             okButtonProps: {status: "danger"},
             onOk: async () => {
                 try {
-                    // Determine category and eventType based on current tab and event
-                    const displayCategory = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
-                    const backendCategory = BACKEND_CATEGORY_MAP[displayCategory];
-                    const eventType = (activeCategory === "individual" ? selectedIndividualEvent : record.event) as EventTypeKey;
-
-                    await deleteRecord(
-                        backendCategory as "individual" | "double" | "parent_&_child" | "team_relay" | "special_need",
-                        eventType,
-                        record.recordId ?? "",
-                    );
+                    await deleteRecord(record.recordId ?? "");
                     Message.success("Record deleted successfully");
                     loadRecords(); // Refresh records
                 } catch (error) {
@@ -249,17 +221,7 @@ const RecordsIndex: React.FC = () => {
         try {
             const values = await videoForm.validate();
 
-            // Determine category and eventType based on current tab and event
-            const displayCategory = activeCategory === "individual" ? "Individual" : CATEGORY_MAP[activeCategory];
-            const backendCategory = BACKEND_CATEGORY_MAP[displayCategory];
-            const eventType = (activeCategory === "individual" ? selectedIndividualEvent : selectedRecord.event) as EventTypeKey;
-
-            await updateRecordVideoUrl(
-                backendCategory as "individual" | "double" | "parent_&_child" | "team_relay" | "special_need",
-                eventType,
-                selectedRecord.recordId,
-                values.videoUrl,
-            );
+            await updateRecordVideoUrl(selectedRecord.recordId, values.videoUrl);
             Message.success("Video URL updated successfully");
             setEditVideoModalVisible(false);
             videoForm.resetFields();
@@ -270,25 +232,34 @@ const RecordsIndex: React.FC = () => {
         }
     };
 
-    const getTableColumns = () => {
-        return [
+    const getTableColumns = (isTeamCategory: boolean) => {
+        const cols: Array<{
+            title: string;
+            dataIndex?: string;
+            key: string;
+            width?: number;
+            render?: (val: unknown, record: RecordDisplay & {members?: string[]}) => React.ReactNode;
+            sorter?: (a: RecordDisplay, b: RecordDisplay) => number;
+        }> = [
             {
                 title: "Rank",
                 dataIndex: "rank",
                 key: "rank",
                 width: 70,
-                render: (rank: number) => (
+                render: (_: unknown, record: RecordDisplay) => (
                     <div
                         style={{
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                             fontWeight: "bold",
-                            color: rank <= 3 ? "#faad14" : "#666",
+                            color: record.rank <= 3 ? "#faad14" : "#666",
                         }}
                     >
-                        {rank <= 3 && <span style={{marginRight: "4px"}}>{rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉"}</span>}
-                        {rank}
+                        {record.rank <= 3 && (
+                            <span style={{marginRight: "4px"}}>{record.rank === 1 ? "🥇" : record.rank === 2 ? "🥈" : "🥉"}</span>
+                        )}
+                        {record.rank}
                     </div>
                 ),
                 sorter: (a: RecordDisplay, b: RecordDisplay) => a.rank - b.rank,
@@ -298,9 +269,9 @@ const RecordsIndex: React.FC = () => {
                 dataIndex: "event",
                 key: "event",
                 width: 120,
-                render: (event: string) => (
+                render: (_: unknown, record: RecordDisplay) => (
                     <Tag color="blue" style={{fontSize: "12px"}}>
-                        {event}
+                        {record.event}
                     </Tag>
                 ),
                 sorter: (a: RecordDisplay, b: RecordDisplay) => a.event.localeCompare(b.event),
@@ -310,7 +281,7 @@ const RecordsIndex: React.FC = () => {
                 dataIndex: "time",
                 key: "time",
                 width: 100,
-                render: (time: string, record: RecordDisplay) => (
+                render: (_: unknown, record: RecordDisplay) => (
                     <Text
                         style={{
                             fontWeight: "bold",
@@ -321,7 +292,7 @@ const RecordsIndex: React.FC = () => {
                         }}
                         onClick={() => handleTimeClick(record)}
                     >
-                        {time}
+                        {record.time}
                         {record.videoUrl && <IconVideoCamera style={{marginLeft: "4px", fontSize: "12px"}} />}
                     </Text>
                 ),
@@ -330,11 +301,11 @@ const RecordsIndex: React.FC = () => {
                 },
             },
             {
-                title: "Athlete",
+                title: isTeamCategory ? "Team" : "Athlete",
                 dataIndex: "athlete",
                 key: "athlete",
                 width: 200,
-                render: (athlete: string, record: RecordDisplay) => (
+                render: (_: unknown, record: RecordDisplay) => (
                     <Text
                         style={{
                             fontWeight: record.rank <= 3 ? "bold" : "500",
@@ -342,20 +313,49 @@ const RecordsIndex: React.FC = () => {
                             color: "#1890ff",
                         }}
                     >
-                        {athlete}
+                        {record.athlete}
                     </Text>
                 ),
                 sorter: (a: RecordDisplay, b: RecordDisplay) => a.athlete.localeCompare(b.athlete),
             },
+        ];
+
+        if (isTeamCategory) {
+            cols.push({
+                title: "Members",
+                dataIndex: "members",
+                key: "members",
+                width: 240,
+                render: (_: unknown, record: RecordDisplay & {members?: string[]; leaderId?: string}) => {
+                    const combined: string[] = [
+                        ...(record.leaderId ? [`${record.leaderId}`] : []),
+                        ...((record.members ?? []) as string[]),
+                    ];
+                    return (
+                        <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
+                            {combined.map((m) => (
+                                <Tag key={m} color={"arcoblue"} size="small">
+                                    {m}
+                                </Tag>
+                            ))}
+                            {combined.length === 0 ? <Text style={{color: "#999"}}>—</Text> : null}
+                        </div>
+                    );
+                },
+            });
+        }
+
+        return [
+            ...cols,
             {
                 title: "Country",
                 dataIndex: "country",
                 key: "country",
                 width: 150,
-                render: (country: string, record: RecordDisplay) => (
+                render: (_: unknown, record: RecordDisplay) => (
                     <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
                         <span style={{fontSize: "16px"}}>{record.flag}</span>
-                        <Text style={{fontSize: "12px"}}>{country}</Text>
+                        <Text style={{fontSize: "12px"}}>{record.country}</Text>
                     </div>
                 ),
                 sorter: (a: RecordDisplay, b: RecordDisplay) => a.country.localeCompare(b.country),
@@ -365,7 +365,9 @@ const RecordsIndex: React.FC = () => {
                 dataIndex: "date",
                 key: "date",
                 width: 120,
-                render: (date: string) => <Text style={{fontSize: "12px", color: "#666"}}>{date}</Text>,
+                render: (_: unknown, record: RecordDisplay) => (
+                    <Text style={{fontSize: "12px", color: "#666"}}>{record.date}</Text>
+                ),
                 sorter: (a: RecordDisplay, b: RecordDisplay) => new Date(a.date).getTime() - new Date(b.date).getTime(),
             },
             {
@@ -373,9 +375,9 @@ const RecordsIndex: React.FC = () => {
                 dataIndex: "ageGroup",
                 key: "ageGroup",
                 width: 100,
-                render: (ageGroup: string) => (
+                render: (_: unknown, record: RecordDisplay) => (
                     <Tag color="green" style={{fontSize: "11px"}}>
-                        {ageGroup}
+                        {record.ageGroup}
                     </Tag>
                 ),
                 sorter: (a: RecordDisplay, b: RecordDisplay) => a.ageGroup.localeCompare(b.ageGroup),
@@ -385,9 +387,9 @@ const RecordsIndex: React.FC = () => {
                 dataIndex: "status",
                 key: "status",
                 width: 100,
-                render: (status: "submitted" | "verified") => (
+                render: (_: unknown, record: RecordDisplay) => (
                     <Tag color={status === "verified" ? "green" : "orange"} style={{fontSize: "11px"}}>
-                        {status === "verified" ? "Verified" : "Submitted"}
+                        {record.status === "verified" ? "Verified" : "Submitted"}
                     </Tag>
                 ),
                 sorter: (a: RecordDisplay, b: RecordDisplay) => a.status.localeCompare(b.status),
@@ -433,7 +435,7 @@ const RecordsIndex: React.FC = () => {
         ];
     };
 
-    const [selectedIndividualEvent, setSelectedIndividualEvent] = useState<EventType>("3-3-3");
+    const [selectedIndividualEvent, setSelectedIndividualEvent] = useState<EventTypeKey>("3-3-3");
     const [selectedDoubleEvent, setSelectedDoubleEvent] = useState<EventTypeKey>("Cycle");
     const [selectedTeamRelayEvent, setSelectedTeamRelayEvent] = useState<EventTypeKey>("Cycle");
     const [selectedParentChildEvent, setSelectedParentChildEvent] = useState<EventTypeKey>("Cycle");
@@ -457,7 +459,7 @@ const RecordsIndex: React.FC = () => {
     const setSelectedEventForCategory = (category: RecordCategory, event: EventTypeKey) => {
         switch (category) {
             case "individual":
-                setSelectedIndividualEvent(event as EventType);
+                setSelectedIndividualEvent(event);
                 break;
             case "double":
                 setSelectedDoubleEvent(event);
@@ -481,7 +483,7 @@ const RecordsIndex: React.FC = () => {
 
         // Get records for the selected event only
         const eventRecords = allRecords[backendCategory]?.[selectedEvent] || [];
-        const recordsData: RecordDisplay[] = [];
+        const recordsData: Array<RecordDisplay & {members?: string[]}> = [];
         let eventRank = 1;
 
         eventRecords.forEach((record, index) => {
@@ -513,8 +515,13 @@ const RecordsIndex: React.FC = () => {
                 recordId: (record as GlobalResultWithId | GlobalTeamResultWithId).id,
                 participantId: isTeamResult ? undefined : (record as GlobalResult).participantId,
                 teamName: isTeamResult ? (record as GlobalTeamResult).teamName : undefined,
+                members: isTeamResult ? (record as GlobalTeamResult).members : undefined,
+                leaderId: isTeamResult ? (record as GlobalTeamResult).leaderId : undefined,
             });
         });
+
+        const isTeamCategory =
+            backendCategory === "Team Relay" || backendCategory === "Double" || backendCategory === "Parent & Child";
 
         return (
             <div>
@@ -565,7 +572,7 @@ const RecordsIndex: React.FC = () => {
                     </div>
                 ) : (
                     <Table
-                        columns={getTableColumns()}
+                        columns={getTableColumns(isTeamCategory)}
                         data={recordsData}
                         pagination={{
                             pageSize: 20,

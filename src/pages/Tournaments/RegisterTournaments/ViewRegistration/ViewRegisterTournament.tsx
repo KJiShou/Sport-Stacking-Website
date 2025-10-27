@@ -1,16 +1,13 @@
 // src/pages/ViewTournamentRegistrationPage.tsx
 
 import {useAuthContext} from "@/context/AuthContext";
-import type {Registration, Tournament} from "@/schema";
-import type {RegistrationForm} from "@/schema/RegistrationSchema";
+import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
-import {deleteRegistrationById, fetchUserRegistration, updateRegistration} from "@/services/firebase/registerService";
-import {uploadFile} from "@/services/firebase/storageService";
-import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
-import {getEventKey, getEventLabel, getTeamEventLabels, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
+import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {getEventKey, getEventLabel, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
-    Checkbox,
     Divider,
     Form,
     Image,
@@ -21,17 +18,55 @@ import {
     Result,
     Select,
     Spin,
-    Tooltip,
     Typography,
-    Upload,
 } from "@arco-design/web-react";
 import {IconDelete, IconExclamationCircle, IconUndo} from "@arco-design/web-react/icon";
-import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 
 const {Title} = Typography;
 const Option = Select.Option;
+
+type LegacyTeam = Team & {
+    event_ids?: string[];
+    events?: string[];
+};
+
+const resolveTeamEvent = (
+    team: LegacyTeam,
+    tournamentEvents: TournamentEvent[] | null | undefined,
+): {eventId: string; eventName: string} => {
+    const legacyIds = Array.isArray(team.event_ids) ? team.event_ids.filter(Boolean) : [];
+    const legacyNames = Array.isArray(team.events) ? team.events.filter(Boolean) : [];
+
+    let eventId = team.event_id ?? legacyIds[0] ?? "";
+    let eventName = Array.isArray(team.event) && team.event[0] ? (team.event[0] ?? "") : (legacyNames[0] ?? "");
+
+    const eventsList = tournamentEvents ?? [];
+
+    if (eventsList.length > 0) {
+        if (eventId) {
+            const matchById = eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
+            if (matchById) {
+                eventId = getEventKey(matchById);
+                if (!eventName) {
+                    eventName = getEventLabel(matchById);
+                }
+                return {eventId, eventName};
+            }
+        }
+
+        if (eventName) {
+            const matchByName = eventsList.find((evt) => matchesEventKey(eventName, evt)) ?? null;
+            if (matchByName) {
+                eventId = getEventKey(matchByName);
+                eventName = getEventLabel(matchByName);
+            }
+        }
+    }
+
+    return {eventId, eventName};
+};
 
 export default function ViewTournamentRegistrationPage() {
     const {tournamentId} = useParams();
@@ -41,9 +76,10 @@ export default function ViewTournamentRegistrationPage() {
     const [form] = Form.useForm();
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [registration, setRegistration] = useState<Registration | null>(null);
-    const [teams, setTeams] = useState<Team[]>([]);
+    const [teams, setTeams] = useState<LegacyTeam[]>([]);
     const [loading, setLoading] = useState(true);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
+    const [availableEventsState, setAvailableEventsState] = useState<TournamentEvent[]>([]);
 
     const handleDeleteRegistration = async (registrationId: string) => {
         if (!tournamentId) return;
@@ -68,9 +104,13 @@ export default function ViewTournamentRegistrationPage() {
             setLoading(true);
             try {
                 const tournamentData = await fetchTournamentById(tournamentId);
+                const tournamentEvents = tournamentData?.events?.length
+                    ? tournamentData.events
+                    : await fetchTournamentEvents(tournamentId);
                 setTournament(tournamentData);
+                setAvailableEventsState(tournamentEvents);
 
-                const userReg = await fetchUserRegistration(tournamentId, user.id);
+                const userReg = await fetchUserRegistration(tournamentId, user.global_id ?? "");
                 if (!userReg) {
                     Message.error("No registration found for this tournament.");
                     navigate("/tournaments");
@@ -79,24 +119,29 @@ export default function ViewTournamentRegistrationPage() {
                 setRegistration(userReg);
 
                 const teamsData = await fetchTeamsByTournament(tournamentId);
-                setTeams(
-                    teamsData.filter(
-                        (team) => team.leader_id === user.global_id || team.members.some((m) => m.global_id === user.global_id),
-                    ),
+                const membershipTeams = teamsData.filter(
+                    (team) =>
+                        team.leader_id === user.global_id || (team.members ?? []).some((m) => m.global_id === user.global_id),
                 );
-                setPaymentProofUrl(userReg.payment_proof_url ?? null);
+                const normalizedTeams = membershipTeams.map((team) => {
+                    const legacyTeam = team as LegacyTeam;
+                    const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentEvents);
 
-                const eventIds =
-                    tournamentData?.events
-                        ?.filter((event) => matchesAnyEventKey(userReg.events_registered, event))
-                        .map((event) => getEventKey(event)) ?? userReg.events_registered;
+                    return {
+                        ...legacyTeam,
+                        event_id: eventId ? eventId : null,
+                        event: eventName ? [eventName] : Array.isArray(legacyTeam.event) ? legacyTeam.event : [],
+                    };
+                });
+                setTeams(normalizedTeams);
+                setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
                 form.setFieldsValue({
                     user_name: userReg.user_name,
-                    id: userReg.user_id,
+                    id: userReg.user_global_id,
                     age: userReg.age,
                     phone_number: userReg.phone_number,
-                    events_registered: eventIds,
+                    events_registered: userReg.events_registered ?? [],
                 });
             } catch (err) {
                 Message.error("Failed to load data.");
@@ -110,6 +155,15 @@ export default function ViewTournamentRegistrationPage() {
     if (!loading && !registration) {
         return <Result status="404" title="Not Registered" subTitle="You haven't registered for this tournament." />;
     }
+
+    const getEventDisplayLabel = (eventId: string): string => {
+        const event = availableEventsState.find((evt) => getEventKey(evt) === eventId);
+        return event ? getEventLabel(event) : eventId;
+    };
+
+    const extraEventIds = (registration?.events_registered ?? []).filter(
+        (eventId) => !availableEventsState.some((event) => getEventKey(event) === eventId),
+    );
 
     return (
         <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
@@ -139,7 +193,7 @@ export default function ViewTournamentRegistrationPage() {
 
                         <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>
                             <Select mode="multiple" disabled>
-                                {tournament?.events?.map((event) => {
+                                {availableEventsState.map((event) => {
                                     const key = getEventKey(event);
                                     const displayText = getEventLabel(event);
                                     return (
@@ -148,13 +202,19 @@ export default function ViewTournamentRegistrationPage() {
                                         </Option>
                                     );
                                 })}
+                                {extraEventIds.map((eventId) => (
+                                    <Option key={`extra-${eventId}`} value={eventId}>
+                                        {getEventDisplayLabel(eventId)}
+                                    </Option>
+                                ))}
                             </Select>
                         </Form.Item>
 
                         <Form.Item shouldUpdate noStyle>
                             <div className={`flex flex-row w-full gap-10`}>
                                 {teams.map((team) => {
-                                    const teamEventLabel = getTeamEventLabels(team, tournament?.events ?? []).join(", ");
+                                    const {eventName} = resolveTeamEvent(team, availableEventsState);
+                                    const teamEventLabel = eventName || "Team Event";
                                     return (
                                         <div key={team.id}>
                                             <div className={`text-center font-semibold mb-2`}>{teamEventLabel}</div>
@@ -207,7 +267,11 @@ export default function ViewTournamentRegistrationPage() {
                             </div>
                         }
                         onOk={(e) => {
-                            handleDeleteRegistration(user?.id ?? "");
+                            if (registration?.id) {
+                                handleDeleteRegistration(registration.id);
+                            } else {
+                                Message.error("Unable to determine registration id");
+                            }
                             e.stopPropagation();
                         }}
                         okText="Yes"

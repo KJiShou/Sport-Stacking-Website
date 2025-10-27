@@ -24,6 +24,7 @@ import {IconDelete, IconExclamationCircle, IconPlus, IconUndo} from "@arco-desig
 import MDEditor from "@uiw/react-md-editor";
 import dayjs from "dayjs";
 import type {Timestamp} from "firebase/firestore";
+import {random} from "nanoid";
 import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import AgeBracketModal from "../Component/AgeBracketModal";
@@ -35,9 +36,8 @@ import {useAgeBracketEditor} from "../Component/useAgeBracketEditor";
 type TournamentFormData = Tournament & {
     date_range: [Timestamp, Timestamp];
     registration_date_range: [Timestamp, Timestamp];
+    events: TournamentEvent[];
 };
-
-type DraftTournamentEvent = Partial<TournamentEvent> & {__prevType?: string};
 
 const cloneAgeBrackets = (brackets: AgeBracket[] = []): AgeBracket[] =>
     brackets.map((bracket) => ({
@@ -51,18 +51,12 @@ const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
 
-const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = [
-    "Individual",
-    "Double",
-    "Team Relay",
-    "Parent & Child",
-    "Special Need",
-];
+const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = ["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"];
 
 const isTournamentEventType = (value: unknown): value is TournamentEvent["type"] =>
     typeof value === "string" && EVENT_TYPE_OPTIONS.includes(value as TournamentEvent["type"]);
 
-const EVENT_CODE_OPTIONS = ["3-3-3", "3-6-3", "Cycle", "Overall"] as const;
+const EVENT_CODE_OPTIONS = ["3-3-3", "3-6-3", "Cycle"] as const;
 type EventCode = (typeof EVENT_CODE_OPTIONS)[number];
 
 const isEventCode = (value: unknown): value is EventCode =>
@@ -85,6 +79,15 @@ export default function CreateTournamentPage() {
         makeHandleDeleteBracket,
         setAgeBracketModalVisible,
     } = useAgeBracketEditor(form);
+
+    // Seed the form store with full event objects (including age_brackets)
+    // so nested fields are preserved on submit even if not rendered as Form.Item
+    useEffect(() => {
+        const current = form.getFieldValue("events");
+        if (!Array.isArray(current) || current.length === 0) {
+            form.setFieldValue("events", DEFAULT_EVENTS.map(cloneEvent));
+        }
+    }, [form]);
 
     // Helper function to get predefined final criteria based on event type
     const getPredefinedFinalCriteria = (eventType: string) => {
@@ -137,12 +140,11 @@ export default function CreateTournamentPage() {
                 setLoading(false);
                 return;
             }
-
-            const rawEvents = (form.getFieldValue("events") ?? []) as DraftTournamentEvent[];
+            const rawEvents = (form.getFieldValue("events") ?? []) as TournamentEvent[];
             const sanitizedEvents: TournamentEvent[] = [];
 
             for (const rawEvent of rawEvents) {
-                const {__prevType: _ignored, age_brackets, id, type, codes, ...rest} = rawEvent;
+                const {age_brackets, id, type, codes, teamSize} = rawEvent;
                 if (!isTournamentEventType(type)) {
                     continue;
                 }
@@ -156,15 +158,14 @@ export default function CreateTournamentPage() {
                     id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
                     type,
                     codes: normalizedCodes,
-                    age_brackets: cloneAgeBrackets(age_brackets ?? []),
+                    age_brackets:
+                        Array.isArray(age_brackets) && age_brackets.length > 0
+                            ? cloneAgeBrackets(age_brackets)
+                            : cloneAgeBrackets(DEFAULT_AGE_BRACKET),
                 };
 
-                if (typeof rest.teamSize === "number") {
-                    sanitizedEvent.teamSize = rest.teamSize;
-                }
-
-                if (typeof rest.code === "string" && rest.code.length > 0) {
-                    sanitizedEvent.code = rest.code;
+                if (typeof teamSize === "number") {
+                    sanitizedEvent.teamSize = teamSize;
                 }
 
                 sanitizedEvents.push(sanitizedEvent);
@@ -176,24 +177,27 @@ export default function CreateTournamentPage() {
             let agendaUrl = "";
             let logoUrl = "";
 
-            const tournamentId = await createTournament(user, {
-                name: values.name,
-                start_date: values.date_range[0],
-                end_date: values.date_range[1],
-                country: values.country,
-                venue: values.venue,
-                address: values.address,
-                registration_start_date: values.registration_date_range[0],
-                registration_end_date: values.registration_date_range[1],
-                max_participants: values.max_participants,
-                events: sanitizedEvents,
-                description: values.description,
-                editor: values.editor ?? null,
-                recorder: values.recorder ?? null,
-                status: "Up Coming",
-                registration_fee: values.registration_fee,
-                member_registration_fee: values.member_registration_fee,
-            });
+            const tournamentId = await createTournament(
+                user,
+                {
+                    name: values.name,
+                    start_date: values.date_range[0],
+                    end_date: values.date_range[1],
+                    country: values.country,
+                    venue: values.venue,
+                    address: values.address,
+                    registration_start_date: values.registration_date_range[0],
+                    registration_end_date: values.registration_date_range[1],
+                    max_participants: values.max_participants,
+                    description: values.description,
+                    editor: values.editor ?? null,
+                    recorder: values.recorder ?? null,
+                    status: "Up Coming",
+                    registration_fee: values.registration_fee,
+                    member_registration_fee: values.member_registration_fee,
+                },
+                sanitizedEvents,
+            );
 
             if (agendaFile instanceof File) {
                 agendaUrl = await uploadFile(agendaFile, `agendas/${tournamentId}`);
@@ -209,9 +213,7 @@ export default function CreateTournamentPage() {
             });
             Message.success("Tournament created successfully!");
 
-            setTimeout(() => {
-                window.close();
-            }, 1000);
+            navigate("/tournaments");
         } catch (error) {
             console.error(error);
             Message.error("Failed to create tournament.");
@@ -502,6 +504,7 @@ export default function CreateTournamentPage() {
                                                                         Intermediate
                                                                     </Select.Option>
                                                                     <Select.Option value="beginner">Beginner</Select.Option>
+                                                                    <Select.Option value="prelim">Prelim</Select.Option>
                                                                 </Select>
                                                                 <InputNumber
                                                                     value={criteria.number}
@@ -559,7 +562,7 @@ export default function CreateTournamentPage() {
                                                                 });
                                                                 setAgeBrackets(updated);
                                                             }}
-                                                            disabled={(bracket.final_criteria?.length ?? 0) >= 3}
+                                                            disabled={(bracket.final_criteria?.length ?? 0) >= 4}
                                                         >
                                                             <IconPlus /> Add Final Criteria
                                                         </Button>

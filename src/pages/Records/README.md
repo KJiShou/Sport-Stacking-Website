@@ -72,7 +72,7 @@ interface GlobalResult {
   teamId?: string;
   teamName?: string;
   round: "prelim" | "final";
-  classification?: "beginner" | "intermediate" | "advance";
+  classification?: "beginner" | "intermediate" | "advance" | "prelim";
   bestTime: number;
   try1?: number;
   try2?: number;

@@ -1,5 +1,5 @@
 import type {EventFieldProps} from "@/schema";
-import {Button, Card, Form, Select, Typography} from "@arco-design/web-react";
+import {Button, Card, Form, InputNumber, Select, Typography} from "@arco-design/web-react";
 import {IconDelete, IconEdit} from "@arco-design/web-react/icon";
 
 const {Title} = Typography;
@@ -10,6 +10,13 @@ const EVENT_TYPES = {
     "Team Relay": ["3-6-3", "Cycle"],
     "Parent & Child": ["Cycle"],
     "Special Need": ["3-3-3", "3-6-3", "Cycle"],
+};
+
+const TEAM_EVENT_TYPES: Array<keyof typeof EVENT_TYPES> = ["Double", "Team Relay", "Parent & Child"];
+const DEFAULT_TEAM_SIZE: Partial<Record<keyof typeof EVENT_TYPES, number>> = {
+    Double: 2,
+    "Team Relay": 4,
+    "Parent & Child": 2,
 };
 
 export default function EventFields({index, onEditAgeBrackets, onRemove}: EventFieldProps) {
@@ -55,6 +62,22 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                         const eventType = form.getFieldValue(`events.${index}.type`);
                         const prevEventType = form.getFieldValue(`events.${index}.__prevType`);
                         const availableCodes = eventType ? EVENT_TYPES[eventType as keyof typeof EVENT_TYPES] || [] : [];
+                        const requiresTeamSize = eventType && TEAM_EVENT_TYPES.includes(eventType as keyof typeof EVENT_TYPES);
+
+                        if (eventType && !requiresTeamSize) {
+                            const currentTeamSize = form.getFieldValue(`events.${index}.teamSize`);
+                            if (currentTeamSize !== undefined) {
+                                form.setFieldValue(`events.${index}.teamSize`, undefined);
+                            }
+                        }
+
+                        if (eventType && requiresTeamSize) {
+                            const currentTeamSize = form.getFieldValue(`events.${index}.teamSize`);
+                            if (currentTeamSize === undefined || currentTeamSize === null) {
+                                const defaultSize = DEFAULT_TEAM_SIZE[eventType as keyof typeof DEFAULT_TEAM_SIZE] ?? 2;
+                                form.setFieldValue(`events.${index}.teamSize`, defaultSize);
+                            }
+                        }
 
                         // Clear codes if event type changed
                         if (eventType && eventType !== prevEventType) {
@@ -95,6 +118,20 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                                         ))}
                                     </div>
                                 </div>
+
+                                {requiresTeamSize && (
+                                    <div>
+                                        <Title heading={6} className="mb-2">
+                                            Team Size
+                                        </Title>
+                                        <Form.Item
+                                            field={`events.${index}.teamSize`}
+                                            rules={[{required: true, message: "Please enter team size"}]}
+                                        >
+                                            <InputNumber min={2} max={8} placeholder="Enter team size" className="w-full" />
+                                        </Form.Item>
+                                    </div>
+                                )}
                             </>
                         ) : null;
                     }}

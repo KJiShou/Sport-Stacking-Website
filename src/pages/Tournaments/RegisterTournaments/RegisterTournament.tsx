@@ -9,7 +9,7 @@ import {createIndividualRecruitment} from "@/services/firebase/individualRecruit
 import {createRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService";
-import {createTeam, fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {createTeam, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {getEventKey, getEventLabel, isTeamEvent, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
@@ -71,9 +71,11 @@ export default function RegisterTournamentPage() {
     const findEventByKey = (eventKey: string): ExpandedEvent | undefined =>
         availableEvents.find((event) => getEventKey(event) === eventKey || event.type === eventKey);
 
-    const buildTeamEntries = (eventIds: string[]): TeamEntry[] =>
+    const buildTeamEntries = (eventIds: string[], sourceEvents: ExpandedEvent[] = availableEvents): TeamEntry[] =>
         eventIds.map((eventId) => {
-            const event = findEventByKey(eventId);
+            const event =
+                sourceEvents.find((evt) => getEventKey(evt) === eventId || evt.type === eventId) ??
+                availableEvents.find((evt) => getEventKey(evt) === eventId || evt.type === eventId);
             return {
                 eventId,
                 event,
@@ -148,32 +150,51 @@ export default function RegisterTournamentPage() {
                     setLoading(false);
                     throw new Error(`User ${user.global_id} is not in team ${teamId}`);
                 }
-            }
 
-            const expandedEventSelections = new Set<string>();
-            for (const eventId of values.events_registered ?? []) {
-                expandedEventSelections.add(eventId);
-                const eventDetails = findEventByKey(eventId);
-                if (eventDetails) {
-                    expandedEventSelections.add(eventDetails.type);
-                    for (const code of sanitizeEventCodes(eventDetails.codes)) {
-                        expandedEventSelections.add(code);
-                        expandedEventSelections.add(`${code}-${eventDetails.type}`);
+                if (!team.looking_for_team_members) {
+                    const relatedEvent = findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
+                    const lowerEventType = (relatedEvent?.type ?? "").toLowerCase();
+                    const fallbackTeamSize =
+                        relatedEvent?.teamSize ??
+                        (relatedEvent?.type === "Parent & Child"
+                            ? 2
+                            : lowerEventType === "double"
+                              ? 2
+                              : lowerEventType === "team relay"
+                                ? 4
+                                : undefined);
+
+                    if (fallbackTeamSize !== undefined) {
+                        const expectedMembers = Math.max(fallbackTeamSize - 1, 0);
+                        const actualMembers = (team.member?.filter(Boolean)?.length ?? 0) + (team.leader ? 1 : 0);
+                        if (actualMembers !== fallbackTeamSize) {
+                            const eventLabel = team.name || getEventLabel(relatedEvent) || "This event";
+                            const participantLabel = fallbackTeamSize === 1 ? "participant" : "participants";
+                            const memberLabel = expectedMembers === 1 ? "member" : "members";
+                            const additionalMessage =
+                                expectedMembers > 0
+                                    ? `Please list ${expectedMembers} additional ${memberLabel}.`
+                                    : "No additional members should be listed.";
+
+                            Message.error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
+                            setLoading(false);
+                            throw new Error(`Team ${teamId} has ${actualMembers} participant(s); expected ${fallbackTeamSize}.`);
+                        }
                     }
                 }
             }
 
             const registrationData: Registration = {
                 tournament_id: tournamentId,
-                user_id: user?.global_id ?? "",
+                user_id: user?.id ?? "",
+                user_global_id: user?.global_id ?? "",
                 user_name: values.user_name,
                 age: form.getFieldValue("age"),
                 country: user?.country?.[0] ?? "",
                 phone_number: values.phone_number,
+                gender: values.gender,
                 organizer: values.organizer ?? "",
-                events_registered: Array.from(expandedEventSelections),
-                registrationFee: tournament.registration_fee,
-                memberRegistrationFee: tournament.member_registration_fee,
+                events_registered: values.events_registered ?? [],
                 payment_proof_url: paymentProofUrl,
                 registration_status: "pending",
                 rejection_reason: null,
@@ -189,7 +210,7 @@ export default function RegisterTournamentPage() {
                     continue; // Skip if team name or leader is missing
                 }
                 const members = (teamData.member ?? [])
-                    .map((id) => (id ? {global_id: id, verified: false} : null))
+                    .map((id) => (id ? {global_id: id, verified: findEventByKey(eventId)?.type.includes("Parent")} : null))
                     .filter((m): m is {global_id: string; verified: boolean} => m !== null);
 
                 const memberIds = members.map((m) => m.global_id);
@@ -219,12 +240,12 @@ export default function RegisterTournamentPage() {
                         teamEventKeys.add(`${code}-${eventDetails.type}`);
                     }
                 }
-                let largest_age = 0;
+                let team_age = 0;
 
                 if (ages.length > 0) {
                     if (eventType.includes("team relay")) {
                         // Team relay: use average age
-                        largest_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
                     } else if (eventType.includes("double")) {
                         // Double: use average age but check 10-year range constraint
                         const minAge = Math.min(...ages);
@@ -232,17 +253,17 @@ export default function RegisterTournamentPage() {
                         if (maxAge - minAge > 10) {
                             throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
                         }
-                        largest_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
                     } else if (eventType.includes("parent") && eventType.includes("child")) {
                         // Parent & Child: use child's age (registrant's age)
                         const registrantAge =
                             user?.birthdate && tournament?.start_date
                                 ? getAgeAtTournament(user.birthdate, tournament.start_date)
                                 : 0;
-                        largest_age = registrantAge;
+                        team_age = registrantAge;
                     } else {
                         // Default: use largest age (for backward compatibility)
-                        largest_age = Math.max(...ages);
+                        team_age = Math.max(...ages);
                     }
                 }
 
@@ -251,11 +272,10 @@ export default function RegisterTournamentPage() {
                     name: teamData.name,
                     leader_id: teamData.leader,
                     members,
-                    event_ids: [eventId],
-                    events: Array.from(teamEventKeys),
+                    event_id: eventId,
                     registration_id: registrationId,
-                    largest_age,
-                    looking_for_member: false, // We handle recruitment separately now
+                    team_age,
+                    looking_for_member: false,
                 });
 
                 // If looking for members, create a recruitment record
@@ -344,18 +364,19 @@ export default function RegisterTournamentPage() {
             setLoading(true);
             try {
                 const comp = await fetchTournamentById(tournamentId);
+                const fetchedEvents = comp?.events?.length ? comp.events : await fetchTournamentEvents(tournamentId);
                 const age = user?.birthdate && comp?.start_date ? getAgeAtTournament(user.birthdate, comp.start_date) : 0;
 
                 // Filter events by age brackets and keep them as grouped events
                 const availableGroupedEvents: ExpandedEvent[] = [];
-                for (const event of comp?.events ?? []) {
+                for (const event of fetchedEvents) {
                     // Filter events by age brackets first
                     const isAgeEligible = event.age_brackets?.some((bracket) => age >= bracket.min_age && age <= bracket.max_age);
                     if (isAgeEligible && event.codes) {
                         // Keep event as grouped with all codes
                         availableGroupedEvents.push({
                             ...event,
-                            code: event.codes.join(", "), // Display all codes joined for compatibility
+                            code: sanitizeEventCodes(event.codes).join(", "),
                         });
                     }
                 }
@@ -451,7 +472,7 @@ export default function RegisterTournamentPage() {
                 });
 
                 // 初始化团队状态
-                setHaveTeam(buildTeamEntries(requiredEventIds));
+                setHaveTeam(buildTeamEntries(requiredEventIds, availableGroupedEvents));
 
                 setRequiredKeys(requiredEventIds); // 存起来供后续使用
             } catch (e) {
@@ -641,6 +662,17 @@ export default function RegisterTournamentPage() {
                                         const eventType = entry.event?.type ?? "";
                                         const lowerEventType = eventType.toLowerCase();
                                         const isParentChild = eventType === "Parent & Child";
+                                        const requiredTeamSize =
+                                            entry.event?.teamSize ??
+                                            (isParentChild
+                                                ? 2
+                                                : lowerEventType === "double"
+                                                  ? 2
+                                                  : lowerEventType === "team relay"
+                                                    ? 4
+                                                    : undefined);
+                                        const requiredMemberCount =
+                                            requiredTeamSize !== undefined ? Math.max(requiredTeamSize - 1, 0) : undefined;
 
                                         return (
                                             <div key={eventId}>
@@ -713,9 +745,13 @@ export default function RegisterTournamentPage() {
                                                                         {isParentChild ? "Parent Global ID" : "Team Member"}
                                                                         <Tooltip
                                                                             content={
-                                                                                isParentChild
-                                                                                    ? "Enter Parent's Global ID. You (the child) are automatically the leader."
-                                                                                    : "Must Enter Team Member Global ID. Not include Team Leader Global ID"
+                                                                                requiredMemberCount !== undefined
+                                                                                    ? `Enter ${requiredMemberCount} team member${
+                                                                                          requiredMemberCount === 1 ? "" : "s"
+                                                                                      } (excluding the leader)`
+                                                                                    : isParentChild
+                                                                                      ? "Enter Parent's Global ID. You (the child) are automatically the leader."
+                                                                                      : "Must Enter Team Member Global ID. Not include Team Leader Global ID"
                                                                             }
                                                                         >
                                                                             <IconExclamationCircle
@@ -741,29 +777,53 @@ export default function RegisterTournamentPage() {
                                                                                           callback(`Please enter ${memberType}`);
                                                                                           return;
                                                                                       }
-                                                                                      if (
-                                                                                          lowerEventType === "team relay" &&
-                                                                                          (value.length < 3 || value.length > 4)
-                                                                                      ) {
-                                                                                          callback(
-                                                                                              "Team relay must have 3 to 4 members",
-                                                                                          );
-                                                                                          return;
-                                                                                      }
-                                                                                      if (
-                                                                                          lowerEventType === "double" &&
-                                                                                          value.length !== 1
-                                                                                      ) {
-                                                                                          callback(
-                                                                                              "Double must have exactly 1 member",
-                                                                                          );
-                                                                                          return;
-                                                                                      }
-                                                                                      if (isParentChild && value.length !== 1) {
-                                                                                          callback(
-                                                                                              "Parent & Child must have exactly 1 parent",
-                                                                                          );
-                                                                                          return;
+                                                                                      if (requiredMemberCount !== undefined) {
+                                                                                          if (
+                                                                                              value.length !== requiredMemberCount
+                                                                                          ) {
+                                                                                              const totalParticipants =
+                                                                                                  requiredMemberCount + 1;
+                                                                                              const message =
+                                                                                                  totalParticipants === 1
+                                                                                                      ? "This event does not require additional members."
+                                                                                                      : `This event requires ${totalParticipants} participants in total. Please enter ${requiredMemberCount} additional member${
+                                                                                                            requiredMemberCount ===
+                                                                                                            1
+                                                                                                                ? ""
+                                                                                                                : "s"
+                                                                                                        }.`;
+                                                                                              callback(message);
+                                                                                              return;
+                                                                                          }
+                                                                                      } else {
+                                                                                          if (
+                                                                                              lowerEventType === "team relay" &&
+                                                                                              (value.length < 3 ||
+                                                                                                  value.length > 4)
+                                                                                          ) {
+                                                                                              callback(
+                                                                                                  "Team relay must have 3 to 4 members",
+                                                                                              );
+                                                                                              return;
+                                                                                          }
+                                                                                          if (
+                                                                                              lowerEventType === "double" &&
+                                                                                              value.length !== 1
+                                                                                          ) {
+                                                                                              callback(
+                                                                                                  "Double must have exactly 1 member",
+                                                                                              );
+                                                                                              return;
+                                                                                          }
+                                                                                          if (
+                                                                                              isParentChild &&
+                                                                                              value.length !== 1
+                                                                                          ) {
+                                                                                              callback(
+                                                                                                  "Parent & Child must have exactly 1 parent",
+                                                                                              );
+                                                                                              return;
+                                                                                          }
                                                                                       }
                                                                                       callback();
                                                                                   },

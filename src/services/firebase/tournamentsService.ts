@@ -6,24 +6,35 @@ import {
     addDoc,
     collection,
     deleteDoc,
-    deleteField,
     doc,
     getDoc,
     getDocs,
     orderBy,
     query,
+    setDoc,
     updateDoc,
     where,
 } from "firebase/firestore";
-import type {FirestoreUser, Team, Tournament} from "../../schema";
-import {TournamentSchema} from "../../schema";
+import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
+import {EventSchema, TournamentSchema} from "../../schema";
 import {removeUserRegistrationRecordsByTournament} from "./authService";
 import {db} from "./config";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByTournament} from "./individualRecruitmentService";
 import {deleteTournamentStorage} from "./storageService";
 import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
 
-export async function createTournament(user: FirestoreUser, data: Omit<Tournament, "id">): Promise<string> {
+// Utility function to check if a string is a UUID v4
+function isUUID(value: string): boolean {
+    // RFC4122 v4 UUID pattern
+    const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidV4Regex.test(value);
+}
+
+export async function createTournament(
+    user: FirestoreUser,
+    data: Omit<Tournament, "id">,
+    events: TournamentEvent[],
+): Promise<string> {
     if (!user?.roles?.edit_tournament) {
         throw new Error("Unauthorized: You do not have permission to create a tournament.");
     }
@@ -56,10 +67,6 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("Max participants must be greater than or equal 0.");
     }
 
-    if (!data.events || data.events.length === 0) {
-        throw new Error("At least one event is required.");
-    }
-
     if (!data.country) {
         throw new Error("Country is required.");
     }
@@ -72,14 +79,9 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         throw new Error("Address is required.");
     }
 
-    function generateEventId(existingId?: string): string {
-        return existingId && existingId.length > 0 ? existingId : crypto.randomUUID();
+    if (!events || events.length === 0) {
+        throw new Error("At least one event is required.");
     }
-
-    const eventsWithIds = (data.events ?? []).map((event) => ({
-        ...event,
-        id: generateEventId(event.id),
-    }));
 
     const docRef = await addDoc(collection(db, "tournaments"), {
         registration_fee: data.registration_fee,
@@ -93,18 +95,122 @@ export async function createTournament(user: FirestoreUser, data: Omit<Tournamen
         registration_start_date: data.registration_start_date,
         registration_end_date: data.registration_end_date,
         max_participants: data.max_participants,
-        events: eventsWithIds,
         description: data.description ?? null,
         agenda: data.agenda ?? null,
         logo: data.logo ?? null,
         editor: data.editor ?? "",
         recorder: data.recorder ?? "",
-        participants: 0, // 初始参与者数为0
+        participants: 0,
         status: "Up Coming",
         created_at: Timestamp.now(),
     });
 
+    // use shared isUUID function
+
+    await Promise.all(
+        events.map(async (event) => {
+            const {id, ...restEvent} = event;
+            if (typeof id === "string" && id.length > 0) {
+                if (isUUID(id)) {
+                    // Treat UUID as a client placeholder: create new doc, then update id field to the docRef.id
+                    const docEventRef = await addDoc(collection(db, "events"), {
+                        ...restEvent,
+                        tournament_id: docRef.id,
+                    });
+                    await updateDoc(docEventRef, {id: docEventRef.id});
+                } else {
+                    // Non-UUID id assumed to be an existing Firestore doc id: update in place
+                    await updateDoc(doc(db, "events", id), {
+                        ...restEvent,
+                        id,
+                        tournament_id: docRef.id,
+                    });
+                }
+            } else {
+                // No id provided: create new doc and set its id field
+                const docEventRef = await addDoc(collection(db, "events"), {
+                    ...restEvent,
+                    tournament_id: docRef.id,
+                });
+                await updateDoc(docEventRef, {id: docEventRef.id});
+            }
+        }),
+    );
+
     return docRef.id;
+}
+
+export type TournamentWithEvents = Tournament & {events: TournamentEvent[]};
+
+export async function fetchTournamentEvents(tournamentId: string): Promise<TournamentEvent[]> {
+    const eventsQuery = query(collection(db, "events"), where("tournament_id", "==", tournamentId));
+    const snapshot = await getDocs(eventsQuery);
+
+    return snapshot.docs
+        .map((docSnapshot) => {
+            const raw = {id: docSnapshot.id, ...docSnapshot.data()} as Record<string, unknown>;
+            if (raw.team_size != null && raw.teamSize == null) {
+                raw.teamSize = raw.team_size;
+            }
+            if (raw.code == null && Array.isArray(raw.codes) && raw.codes.length === 1) {
+                raw.code = raw.codes[0];
+            }
+            const parsed = EventSchema.safeParse(raw);
+            if (!parsed.success) {
+                console.warn(`Failed to parse event ${docSnapshot.id}`, parsed.error.flatten());
+                return null;
+            }
+
+            return parsed.data;
+        })
+        .filter((event): event is TournamentEvent => event !== null)
+        .map((event) => ({...event, tournament_id: event.tournament_id ?? tournamentId}));
+}
+
+export async function saveTournamentEvents(tournamentId: string, events: TournamentEvent[]): Promise<void> {
+    const eventsCollection = collection(db, "events");
+    const snapshot = await getDocs(query(eventsCollection, where("tournament_id", "==", tournamentId)));
+
+    const incomingIds = new Set(events.map((event) => event.id).filter((id): id is string => typeof id === "string"));
+
+    const deletions = snapshot.docs.filter((docSnapshot) => !incomingIds.has(docSnapshot.id));
+    await Promise.all(deletions.map((docSnapshot) => deleteDoc(docSnapshot.ref)));
+
+    const isUUID = (value: string): boolean => {
+        // RFC4122 v4 UUID pattern
+        const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidV4Regex.test(value);
+    };
+
+    await Promise.all(
+        events.map(async (event) => {
+            const {id, ...restEvent} = event;
+            if (typeof id === "string" && id.length > 0) {
+                if (isUUID(id)) {
+                    // Treat UUID as a client placeholder: create new doc, then update id field to the docRef.id
+                    const docRef = await addDoc(collection(db, "events"), {
+                        ...restEvent,
+                        tournament_id: tournamentId,
+                    });
+                    await updateDoc(docRef, {id: docRef.id});
+                } else {
+                    // Non-UUID id assumed to be an existing Firestore doc id: update in place
+                    await updateDoc(doc(db, "events", id), {
+                        ...restEvent,
+                        id,
+                        tournament_id: tournamentId,
+                    });
+                }
+            } else {
+                // No id provided: create new doc and set its id field
+                const docRef = await addDoc(collection(db, "events"), {
+                    ...restEvent,
+                    tournament_id: tournamentId,
+                });
+                await updateDoc(docRef, {id: docRef.id});
+            }
+        }),
+    );
 }
 
 export async function updateTournament(user: FirestoreUser, tournamentId: string, data: Omit<Tournament, "id">): Promise<void> {
@@ -140,7 +246,7 @@ export async function updateTournament(user: FirestoreUser, tournamentId: string
     await updateDoc(tournamentRef, toUpdate);
 }
 
-export async function fetchTournamentsByType(type: "current" | "history"): Promise<Tournament[]> {
+export async function fetchTournamentsByType(type: "current" | "history"): Promise<TournamentWithEvents[]> {
     try {
         const today = new Date();
         const todayTimestamp = Timestamp.fromDate(today);
@@ -165,7 +271,7 @@ export async function fetchTournamentsByType(type: "current" | "history"): Promi
 
         const snapshot = await getDocs(tournamentsQuery);
 
-        return snapshot.docs
+        const tournaments = snapshot.docs
             .map((doc) => {
                 const parsed = TournamentSchema.safeParse({
                     id: doc.id,
@@ -180,6 +286,16 @@ export async function fetchTournamentsByType(type: "current" | "history"): Promi
                 return parsed.data;
             })
             .filter((tournament): tournament is Tournament => tournament !== null);
+
+        return await Promise.all(
+            tournaments.map(async (tournament) => {
+                if (!tournament.id) {
+                    return {...tournament, events: []};
+                }
+                const events = await fetchTournamentEvents(tournament.id);
+                return {...tournament, events};
+            }),
+        );
     } catch (error) {
         console.error("Failed to fetch tournaments:", error);
         throw error;
@@ -193,20 +309,15 @@ export async function fetchTournamentById(tournamentId: string): Promise<Tournam
 
         if (!docSnap.exists()) {
             console.info("Tournament document not found:", tournamentId);
-            return null;
+            const parsed = TournamentSchema.safeParse({id: docSnap.id, ...docSnap.data()});
+            if (!parsed.success) {
+                console.warn(`Failed to parse tournament ${tournamentId}`, parsed.error.flatten());
+                return null;
+            }
+            return parsed.data;
         }
 
-        const parsed = TournamentSchema.safeParse({
-            id: docSnap.id,
-            ...docSnap.data(),
-        });
-
-        if (!parsed.success) {
-            console.warn(`Tournament document failed validation: ${tournamentId}`, parsed.error.flatten());
-            return null;
-        }
-
-        return parsed.data;
+        return docSnap.data() as Tournament;
     } catch (error) {
         console.error("Error fetching tournament:", error);
         throw error;
@@ -230,10 +341,10 @@ export async function deleteTournamentById(user: FirestoreUser, tournamentId: st
 async function deleteTournamentCascade(tournamentId: string): Promise<void> {
     // 1. Delete all registrations
     try {
-        const registrationsRef = collection(db, "tournaments", tournamentId, "registrations");
-        const registrationsSnapshot = await getDocs(registrationsRef);
+        const registrationsQuery = query(collection(db, "registrations"), where("tournament_id", "==", tournamentId));
+        const registrationsSnapshot = await getDocs(registrationsQuery);
 
-        const registrationDeletePromises = registrationsSnapshot.docs.map((doc) => deleteDoc(doc.ref));
+        const registrationDeletePromises = registrationsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref));
 
         await Promise.all(registrationDeletePromises);
     } catch (error) {
@@ -243,10 +354,10 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
 
     // 2. Delete all teams
     try {
-        const teamsRef = collection(db, "tournaments", tournamentId, "teams");
-        const teamsSnapshot = await getDocs(teamsRef);
+        const teamsQuery = query(collection(db, "teams"), where("tournament_id", "==", tournamentId));
+        const teamsSnapshot = await getDocs(teamsQuery);
 
-        const teamDeletePromises = teamsSnapshot.docs.map((doc) => deleteDoc(doc.ref));
+        const teamDeletePromises = teamsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref));
 
         await Promise.all(teamDeletePromises);
     } catch (error) {
@@ -302,7 +413,17 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
-    // 7. Delete all tournament storage files (agenda, logo, payment proofs, etc.)
+    // 7. Delete tournament events stored in the shared events collection
+    try {
+        const eventSnapshots = await getDocs(query(collection(db, "events"), where("tournament_id", "==", tournamentId)));
+        const eventDeletePromises = eventSnapshots.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref));
+        await Promise.all(eventDeletePromises);
+    } catch (error) {
+        console.error("Error deleting tournament events:", error);
+        throw new Error("Failed to delete tournament events");
+    }
+
+    // 8. Delete all tournament storage files (agenda, logo, payment proofs, etc.)
     try {
         await deleteTournamentStorage(tournamentId);
     } catch (error) {
@@ -310,7 +431,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as storage deletion shouldn't block tournament deletion
     }
 
-    // 8. Finally, delete the tournament document itself
+    // 9. Finally, delete the tournament document itself
     try {
         const tournamentRef = doc(db, "tournaments", tournamentId);
         await deleteDoc(tournamentRef);
@@ -321,60 +442,82 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
 }
 
 export async function createTeam(tournamentId: string, teamData: Omit<Team, "id" | "tournament_id">): Promise<string> {
-    const teamsCollectionRef = collection(db, "tournaments", tournamentId, "teams");
+    const teamsCollectionRef = collection(db, "teams");
 
-    const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)];
+    const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
     const ages: number[] = [];
     for (const id of memberIds) {
-        const regDoc = await getDoc(doc(db, `tournaments/${tournamentId}/registrations`, id));
-        if (regDoc.exists()) {
-            const reg = regDoc.data();
-            if (reg?.age) {
-                ages.push(reg.age);
-            }
+        const registrationQuery = query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", tournamentId),
+            where("user_id", "==", id),
+        );
+        const registrationSnapshot = await getDocs(registrationQuery);
+        const registration = registrationSnapshot.docs[0]?.data() as Registration | undefined;
+        if (registration?.age != null) {
+            ages.push(registration.age);
         }
     }
 
-    const {events, event_ids, ...restTeamData} = teamData;
-    const normalizedEventIds = Array.from(new Set(event_ids?.length ? event_ids : (events ?? [])));
-
     const docRef = await addDoc(teamsCollectionRef, {
-        ...restTeamData,
-        event_ids: normalizedEventIds,
+        ...teamData,
         tournament_id: tournamentId,
+        event_id: teamData.event_id ?? null,
     });
     await updateDoc(docRef, {id: docRef.id});
     return docRef.id;
 }
 
 export async function fetchTeamsByTournament(tournamentId: string): Promise<Team[]> {
-    const teamsCollectionRef = collection(db, "tournaments", tournamentId, "teams");
-    const snapshot = await getDocs(teamsCollectionRef);
-    return snapshot.docs.map((doc) => doc.data() as Team);
+    const teamsCollectionRef = collection(db, "teams");
+    const q = query(teamsCollectionRef, where("tournament_id", "==", tournamentId));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((docSnap) => {
+        const data = docSnap.data() as Team;
+        return {...data, id: docSnap.id};
+    });
+}
+
+export async function fetchTeamsByRegistrationId(registrationId: string): Promise<Team[]> {
+    const teamsCollectionRef = collection(db, "teams");
+    const q = query(teamsCollectionRef, where("registration_id", "==", registrationId));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((docSnap) => {
+        const data = docSnap.data() as Team;
+        return {...data, id: docSnap.id};
+    });
 }
 
 export async function fetchTeamsLookingForMembers(tournamentId: string, eventFilter?: string): Promise<Team[]> {
-    const teamsCollectionRef = collection(db, "tournaments", tournamentId, "teams");
-    const q = query(teamsCollectionRef, where("looking_for_member", "==", true));
+    const teamsCollectionRef = collection(db, "teams");
+    const q = query(teamsCollectionRef, where("looking_for_member", "==", true), where("tournament_id", "==", tournamentId));
     const snapshot = await getDocs(q);
     const teams = snapshot.docs.map((doc) => doc.data() as Team);
     if (!eventFilter) {
         return teams;
     }
 
+    const trimmedFilter = eventFilter.trim();
+    if (trimmedFilter.length === 0) {
+        return teams;
+    }
+
+    const normalizedFilter = trimmedFilter.toLowerCase();
+
     return teams.filter((team) => {
-        const eventIds = team.event_ids ?? [];
-        if (eventIds.includes(eventFilter)) {
+        const eventId = typeof team.event_id === "string" ? team.event_id.trim().toLowerCase() : "";
+        if (eventId && eventId === normalizedFilter) {
             return true;
         }
 
-        return (team.events ?? []).includes(eventFilter);
+        const eventNames = Array.isArray(team.event) ? team.event : [];
+        return eventNames.some((value) => value?.trim().toLowerCase() === normalizedFilter);
     });
 }
 
 export async function addMemberToTeam(tournamentId: string, teamId: string, memberId: string): Promise<void> {
     try {
-        const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+        const teamRef = doc(db, "teams", teamId);
         const teamDoc = await getDoc(teamRef);
 
         if (!teamDoc.exists()) {
@@ -412,27 +555,36 @@ export async function addMemberToTeam(tournamentId: string, teamId: string, memb
 }
 
 export async function updateTeam(tournamentId: string, teamId: string, teamData: Team): Promise<void> {
-    const teamRef = doc(db, "tournaments", tournamentId, "teams", teamId);
+    const teamRef = doc(db, "teams", teamId);
 
-    const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)];
+    const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
     const ages: number[] = [];
     for (const id of memberIds) {
-        const regDoc = await getDoc(doc(db, `tournaments/${tournamentId}/registrations`, id));
-        if (regDoc.exists()) {
-            const reg = regDoc.data();
-            if (reg?.age) {
-                ages.push(reg.age);
-            }
+        const registrationQuery = query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", tournamentId),
+            where("user_id", "==", id),
+        );
+        const registrationSnapshot = await getDocs(registrationQuery);
+        const registration = registrationSnapshot.docs[0]?.data() as Registration | undefined;
+        if (registration?.age != null) {
+            ages.push(registration.age);
         }
     }
 
-    const {events, event_ids, ...restTeamData} = teamData;
-    const normalizedEventIds = Array.from(new Set(event_ids?.length ? event_ids : (events ?? [])));
+    const {id, tournament_id: _ignoredTournamentId, ...restTeamData} = teamData;
+    const normalizedEventNames = Array.isArray(teamData.event)
+        ? teamData.event
+              .map((value) => (typeof value === "string" ? value.trim() : ""))
+              .filter((value): value is string => value.length > 0)
+        : [];
+    const teamAge = restTeamData.team_age ?? (ages.length > 0 ? Math.max(...ages) : 0);
 
     await updateDoc(teamRef, {
         ...restTeamData,
-        event_ids: normalizedEventIds,
-        events: deleteField(),
+        event: normalizedEventNames,
+        team_age: teamAge,
+        tournament_id: tournamentId,
     });
 }
 

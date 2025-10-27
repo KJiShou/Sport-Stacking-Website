@@ -1,43 +1,65 @@
-import {Timestamp, collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where} from "firebase/firestore";
-import type {FirestoreUser, Registration} from "../../schema";
+import {
+    Timestamp,
+    addDoc,
+    collection,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocs,
+    query,
+    setDoc,
+    updateDoc,
+    where,
+} from "firebase/firestore";
+import type {FirestoreUser, Registration, Team} from "../../schema";
 import {db} from "./config";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
 import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
 
-export async function createRegistration(
-    user: FirestoreUser,
-    data: Omit<Registration, "id" | "registrationFee" | "memberRegistrationFee">,
-): Promise<string> {
+export async function createRegistration(user: FirestoreUser, data: Registration): Promise<string> {
     if (!user?.id) {
         throw new Error("User global_id is missing.");
     }
 
-    const tournamentDoc = await getDoc(doc(db, `tournaments/${data.tournament_id}`));
+    if (!data.user_id) {
+        throw new Error("User id is required in registration payload.");
+    }
+
+    const tournamentDoc = await getDoc(doc(db, "tournaments", data.tournament_id));
     const tournament = tournamentDoc.data();
     if (!tournament) {
         throw new Error("Tournament not found");
     }
 
-    const docRef = doc(db, `tournaments/${data.tournament_id}/registrations/${user.id}`);
-
     // 确保 created_at / updated_at 都有填入
     const payload: Omit<Registration, "id"> = {
         ...data,
-        registrationFee: tournament.registration_fee,
-        memberRegistrationFee: tournament.member_registration_fee,
         created_at: data.created_at ?? Timestamp.now(),
         updated_at: Timestamp.now(),
     };
 
-    await setDoc(docRef, payload);
-    return user.id; // 直接返回 global_id 作为 document id
+    const ref = await addDoc(collection(db, "registrations"), {
+        ...data,
+        created_at: data.created_at ?? Timestamp.now(),
+        updated_at: Timestamp.now(),
+    });
+    // Ensure the document has its generated ID in the Firestore document
+    await updateDoc(ref, {id: ref.id});
+    return ref.id;
 }
 
 export async function fetchRegistrationById(tournamentId: string, registrationId: string): Promise<Registration | null> {
     try {
-        const regDoc = await getDoc(doc(db, `tournaments/${tournamentId}/registrations`, registrationId));
+        const regDoc = await getDoc(doc(db, "registrations", registrationId));
         if (regDoc.exists()) {
-            return regDoc.data() as Registration;
+            const data = regDoc.data() as Registration;
+            if (data.tournament_id !== tournamentId) {
+                return null;
+            }
+            return {
+                ...data,
+                id: regDoc.id,
+            };
         }
         return null;
     } catch (err) {
@@ -46,22 +68,34 @@ export async function fetchRegistrationById(tournamentId: string, registrationId
     }
 }
 
-export async function fetchRegistrations(tournamentId: string): Promise<Registration[]> {
+export async function fetchApprovedRegistrations(tournamentId: string): Promise<Registration[]> {
     try {
-        const registrations: Registration[] = [];
-
-        const registrationsRef = collection(db, `tournaments/${tournamentId}/registrations`);
+        const registrationsRef = query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", tournamentId),
+            where("registration_status", "==", "approved"),
+        );
         const querySnapshot = await getDocs(registrationsRef);
 
-        for (const doc of querySnapshot.docs) {
-            const data = doc.data() as Registration;
-            registrations.push({
-                ...data,
-                id: doc.id, // 添加 Firestore 自动生成的 ID
-            });
-        }
+        return querySnapshot.docs.map((docSnap) => ({
+            ...(docSnap.data() as Registration),
+            id: docSnap.id,
+        }));
+    } catch (err) {
+        console.error("Error fetching registrations:", err);
+        throw err;
+    }
+}
 
-        return registrations;
+export async function fetchRegistrations(tournamentId: string): Promise<Registration[]> {
+    try {
+        const registrationsRef = query(collection(db, "registrations"), where("tournament_id", "==", tournamentId));
+        const querySnapshot = await getDocs(registrationsRef);
+
+        return querySnapshot.docs.map((docSnap) => ({
+            ...(docSnap.data() as Registration),
+            id: docSnap.id,
+        }));
     } catch (err) {
         console.error("Error fetching registrations:", err);
         throw err;
@@ -73,11 +107,20 @@ export async function fetchRegistrations(tournamentId: string): Promise<Registra
  */
 export async function fetchUserRegistration(tournamentId: string, userId: string): Promise<Registration | null> {
     try {
-        const regDoc = await getDoc(doc(db, `tournaments/${tournamentId}/registrations`, userId));
-        if (regDoc.exists()) {
-            return regDoc.data() as Registration;
+        const regQuery = query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", tournamentId),
+            where("user_global_id", "==", userId),
+        );
+        const querySnapshot = await getDocs(regQuery);
+        if (querySnapshot.empty) {
+            return null;
         }
-        return null;
+        const docSnap = querySnapshot.docs[0];
+        return {
+            ...(docSnap.data() as Registration),
+            id: docSnap.id,
+        };
     } catch (err) {
         console.error("Error fetching user registration:", err);
         throw err;
@@ -93,7 +136,7 @@ export async function updateRegistration(data: Registration): Promise<void> {
     if (!data.tournament_id) throw new Error("No tournament_id in registration data.");
     if (!data.id) throw new Error("No registration id provided.");
 
-    const registrationRef = doc(db, `tournaments/${data.tournament_id}/registrations`, data.id);
+    const registrationRef = doc(db, "registrations", data.id);
     const snap = await getDoc(registrationRef);
     if (!snap.exists()) throw new Error("Registration not found");
 
@@ -122,20 +165,43 @@ export async function updateRegistration(data: Registration): Promise<void> {
 
 export async function deleteRegistrationById(tournamentId: string, registrationId: string): Promise<void> {
     try {
-        const registrationRef = doc(db, `tournaments/${tournamentId}/registrations`, registrationId);
-        const regSnap = await getDoc(registrationRef);
+        let registrationRef = doc(db, "registrations", registrationId);
+        let regSnap = await getDoc(registrationRef);
+
         if (!regSnap.exists()) {
-            throw new Error("Registration not found");
+            const fallbackQuery = query(
+                collection(db, "registrations"),
+                where("tournament_id", "==", tournamentId),
+                where("user_id", "==", registrationId),
+            );
+            const fallbackSnapshot = await getDocs(fallbackQuery);
+
+            if (fallbackSnapshot.empty) {
+                throw new Error("Registration not found");
+            }
+
+            registrationRef = fallbackSnapshot.docs[0].ref;
+            regSnap = fallbackSnapshot.docs[0];
         }
+
         const registrationData = regSnap.data() as Registration;
-        const userId = registrationId;
+        const userId = registrationData.user_id;
 
         // Delete associated teams
-        const teamsRef = collection(db, `tournaments/${tournamentId}/teams`);
-        const q = query(teamsRef, where("leader_id", "==", registrationData.user_id));
-        const querySnapshot = await getDocs(q);
-        for (const doc of querySnapshot.docs) {
-            await deleteDoc(doc.ref);
+        const teamsRef = collection(db, "teams");
+        const teamsSnapshot = await getDocs(query(teamsRef, where("tournament_id", "==", tournamentId)));
+        for (const teamDoc of teamsSnapshot.docs) {
+            const team = teamDoc.data() as Team;
+            const memberIds = (team.members ?? []).map((member) => member.global_id);
+            if (team.leader_id === registrationData.user_global_id) {
+                await deleteDoc(teamDoc.ref);
+            } else if (memberIds.includes(registrationData.user_global_id)) {
+                // 如果用户是队员，则将其从队伍中移除
+                const updatedMembers = (team.members ?? []).filter(
+                    (member) => member.global_id !== registrationData.user_global_id,
+                );
+                await updateDoc(teamDoc.ref, {members: updatedMembers});
+            }
         }
 
         // Delete associated individual recruitment records

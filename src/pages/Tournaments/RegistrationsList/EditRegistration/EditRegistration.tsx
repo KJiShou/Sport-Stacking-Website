@@ -1,55 +1,104 @@
 // src/pages/ViewTournamentRegistrationPage.tsx
 
 import {useAuthContext} from "@/context/AuthContext";
-import type {Registration, Tournament} from "@/schema";
-import type {RegistrationForm} from "@/schema/RegistrationSchema";
+import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
-import {fetchRegistrationById, fetchUserRegistration, updateRegistration} from "@/services/firebase/registerService";
+import {fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
-import {createTeam, fetchTeamsByTournament, fetchTournamentById, updateTeam} from "@/services/firebase/tournamentsService";
 import {
-    getEventKey,
-    getEventLabel,
-    getTeamEventLabels,
-    getTeamEvents,
-    isTeamEvent,
-    matchesAnyEventKey,
-    matchesEventKey,
-    sanitizeEventCodes,
-    teamMatchesEventKey,
-} from "@/utils/tournament/eventUtils";
+    createTeam,
+    fetchTeamsByRegistrationId,
+    fetchTeamsByTournament,
+    fetchTournamentById,
+    fetchTournamentEvents,
+    updateTeam,
+} from "@/services/firebase/tournamentsService";
+import {getEventKey, getEventLabel, isTeamEvent, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
-    Checkbox,
     Divider,
-    Dropdown,
     Form,
     Input,
     InputNumber,
-    Menu,
     Message,
     Modal,
     Result,
     Select,
     Spin,
     Tag,
-    Tooltip,
     Typography,
     Upload,
 } from "@arco-design/web-react";
 import type {UploadItem} from "@arco-design/web-react/es/Upload";
-import {IconCheck, IconClose, IconDelete, IconExclamationCircle, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import {IconClose, IconPlus, IconUndo} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {nanoid} from "nanoid";
-import {useEffect, useRef, useState} from "react";
+import {useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 
 const {Title} = Typography;
 const Option = Select.Option;
+
+type LegacyTeam = Team & {
+    event_ids?: string[];
+    events?: string[];
+    largest_age?: number;
+};
+
+const resolveTeamEvent = (
+    team: LegacyTeam,
+    tournamentEvents: TournamentEvent[] | null | undefined,
+): {eventId: string; eventName: string; eventDefinition: TournamentEvent | null} => {
+    const legacyIds = Array.isArray(team.event_ids) ? team.event_ids.filter(Boolean) : [];
+    const legacyNames = Array.isArray(team.events) ? team.events.filter(Boolean) : [];
+
+    let eventId = team.event_id ?? legacyIds[0] ?? "";
+    let eventName = Array.isArray(team.event) && team.event[0] ? (team.event[0] ?? "") : (legacyNames[0] ?? "");
+    let eventDefinition: TournamentEvent | null = null;
+
+    const eventsList = tournamentEvents ?? [];
+
+    if (eventsList.length > 0) {
+        if (eventId) {
+            eventDefinition = eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
+        }
+
+        if (!eventDefinition && eventName) {
+            eventDefinition = eventsList.find((evt) => matchesEventKey(eventName, evt)) ?? null;
+        }
+
+        if (eventDefinition) {
+            const resolvedId = getEventKey(eventDefinition);
+            if (!eventId || !matchesEventKey(eventId, eventDefinition)) {
+                eventId = resolvedId;
+            }
+            if (!eventName) {
+                eventName = getEventLabel(eventDefinition);
+            }
+        }
+    }
+
+    return {
+        eventId,
+        eventName,
+        eventDefinition,
+    };
+};
+
+const teamMatchesEvent = (
+    team: LegacyTeam,
+    event: TournamentEvent,
+    tournamentEvents: TournamentEvent[] | null | undefined,
+): boolean => {
+    const {eventId, eventName} = resolveTeamEvent(team, tournamentEvents);
+    const hasEventIdMatch = Boolean(eventId) && matchesEventKey(eventId, event);
+    const hasEventNameMatch = Boolean(eventName) && matchesEventKey(eventName, event);
+    return hasEventIdMatch || hasEventNameMatch;
+};
 
 export default function EditTournamentRegistrationPage() {
     const {tournamentId, registrationId} = useParams();
@@ -58,9 +107,10 @@ export default function EditTournamentRegistrationPage() {
 
     const [form] = Form.useForm();
     const [tournament, setTournament] = useState<Tournament | null>(null);
+    const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [registration, setRegistration] = useState<Registration | null>(null);
-    const [teams, setTeams] = useState<Team[]>([]);
-    const [initialTeams, setInitialTeams] = useState<Team[]>([]);
+    const [teams, setTeams] = useState<LegacyTeam[]>([]);
+    const [initialTeams, setInitialTeams] = useState<LegacyTeam[]>([]);
     const [loading, setLoading] = useState(true);
     const [edit, setEdit] = useState<boolean>(false);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | File | null>(null);
@@ -100,30 +150,18 @@ export default function EditTournamentRegistrationPage() {
                 );
             }
             setPaymentProofUrl(tempPaymentProofUrl);
-            const expandedEventSelections = new Set<string>();
-            for (const eventId of values.events_registered ?? []) {
-                expandedEventSelections.add(eventId);
-                const eventDetails = tournament?.events?.find((event) => matchesEventKey(eventId, event));
-                if (eventDetails) {
-                    expandedEventSelections.add(eventDetails.type);
-                    for (const code of sanitizeEventCodes(eventDetails.codes)) {
-                        expandedEventSelections.add(code);
-                        expandedEventSelections.add(`${code}-${eventDetails.type}`);
-                    }
-                }
-            }
-
             const registrationData: Registration = {
                 id: registrationId,
                 tournament_id: tournamentId ?? "",
                 user_id: registration?.user_id ?? "",
+                user_global_id: registration?.user_global_id ?? "",
                 user_name: values.user_name,
                 age: values.age,
                 gender: values.gender,
                 country: registration?.country ?? "MY",
                 phone_number: values.phone_number ?? "",
                 organizer: values?.organizer ?? "",
-                events_registered: Array.from(expandedEventSelections),
+                events_registered: values.events_registered ?? [],
                 payment_proof_url: tempPaymentProofUrl,
                 registration_status: values?.registration_status ?? "pending",
                 rejection_reason: values?.registration_status === "rejected" ? rejection_reason : null,
@@ -150,21 +188,24 @@ export default function EditTournamentRegistrationPage() {
                     .filter((age) => age > 0);
 
                 // Calculate team age based on event type
-                let largest_age = 0;
+                let team_age = 0;
+
+                const tournamentEvents = events ?? [];
+                const {
+                    eventDefinition,
+                    eventId: resolvedEventId,
+                    eventName: resolvedEventName,
+                } = resolveTeamEvent(team, tournamentEvents);
 
                 if (ages.length > 0) {
                     // Get the first event to determine the type
-                    const tournamentEvents = tournament?.events ?? [];
-                    const resolvedTeamEvents = getTeamEvents(team, tournamentEvents);
-                    const primaryEvent = resolvedTeamEvents[0];
-                    const firstEventKey = primaryEvent
-                        ? getEventKey(primaryEvent)
-                        : (team.event_ids?.[0] ?? team.events?.[0] ?? "");
-                    const firstEventType = (primaryEvent?.type ?? firstEventKey).toLowerCase();
+                    const primaryEvent = eventDefinition;
+                    const fallbackKey = resolvedEventId || resolvedEventName;
+                    const firstEventType = (primaryEvent?.type ?? fallbackKey ?? "").toLowerCase();
 
                     if (firstEventType.includes("team relay")) {
                         // Team relay: use average age
-                        largest_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
                     } else if (firstEventType.includes("double")) {
                         // Double: use average age but check 10-year range constraint
                         const minAge = Math.min(...ages);
@@ -172,48 +213,28 @@ export default function EditTournamentRegistrationPage() {
                         if (maxAge - minAge > 10) {
                             throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
                         }
-                        largest_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
                     } else if (firstEventType.includes("parent") && firstEventType.includes("child")) {
                         // Parent & Child: use child's age (registration user's age)
                         const childAge = registration?.age || 0;
-                        largest_age = childAge;
+                        team_age = childAge;
                     } else {
                         // Default: use largest age (for backward compatibility)
-                        largest_age = Math.max(...ages);
+                        team_age = Math.max(...ages);
                     }
                 }
 
-                const tournamentEvents = tournament?.events ?? [];
-                const eventDetails = tournamentEvents.find((event) =>
-                    teamMatchesEventKey(team, getEventKey(event), tournamentEvents),
-                );
-                const normalizedEvents = new Set(team.events ?? []);
-                if (eventDetails) {
-                    normalizedEvents.add(getEventKey(eventDetails));
-                    normalizedEvents.add(eventDetails.type);
-                    for (const code of sanitizeEventCodes(eventDetails.codes)) {
-                        normalizedEvents.add(code);
-                        normalizedEvents.add(`${code}-${eventDetails.type}`);
-                    }
-                }
+                const eventDetails = eventDefinition;
+                const nextEventId = eventDetails ? getEventKey(eventDetails) : resolvedEventId;
+                const nextEventName = eventDetails ? getEventLabel(eventDetails) : resolvedEventName;
 
-                const resolvedEventIds = new Set<string>(team.event_ids ?? []);
-                if (eventDetails) {
-                    resolvedEventIds.add(getEventKey(eventDetails));
-                } else {
-                    for (const legacyValue of team.events ?? []) {
-                        const legacyMatch = (tournament?.events ?? []).find((evt) => matchesEventKey(legacyValue, evt));
-                        if (legacyMatch) {
-                            resolvedEventIds.add(getEventKey(legacyMatch));
-                        }
-                    }
-                }
+                const {event_ids: _legacyEventIds, events: _legacyEvents, largest_age: _legacyLargestAge, ...teamRest} = team;
 
-                const teamData = {
-                    ...team,
-                    event_ids: Array.from(resolvedEventIds),
-                    events: Array.from(normalizedEvents),
-                    largest_age,
+                const teamData: Team = {
+                    ...teamRest,
+                    event_id: nextEventId || null,
+                    event: nextEventName ? [nextEventName] : Array.isArray(team.event) ? team.event : [],
+                    team_age,
                     looking_for_member: team.looking_for_member ?? false,
                 };
 
@@ -236,7 +257,7 @@ export default function EditTournamentRegistrationPage() {
             if (!registrationId || !tournamentId) {
                 throw new Error("Missing registrationId or tournamentId for updating user registration record.");
             }
-            await updateUserRegistrationRecord(registrationId, tournamentId, userRegistrationData);
+            await updateUserRegistrationRecord(registration?.user_id ?? "", tournamentId, userRegistrationData);
 
             Message.success("Completely save the changes!");
         } catch (err) {
@@ -253,6 +274,8 @@ export default function EditTournamentRegistrationPage() {
         try {
             const tournamentData = await fetchTournamentById(tournamentId);
             setTournament(tournamentData);
+            const tournamentEvents = await fetchTournamentEvents(tournamentId);
+            setEvents(tournamentEvents);
             if (tournamentData?.editor !== user.global_id && user.roles?.edit_tournament !== true) {
                 Message.error("You are not authorized to edit this registration.");
                 navigate("/tournaments");
@@ -266,30 +289,30 @@ export default function EditTournamentRegistrationPage() {
             }
             setRegistration({...userReg, id: registrationId});
 
-            const allTeamsData = await fetchTeamsByTournament(tournamentId);
-            const registrantsUserId = userReg.user_id;
-            const registrationTeams = allTeamsData.filter(
-                (team) =>
-                    team.leader_id === registrantsUserId || team.members.some((member) => member.global_id === registrantsUserId),
-            );
-            setTeams(registrationTeams);
-            setInitialTeams(registrationTeams);
+            const allTeamsData = await fetchTeamsByRegistrationId(registrationId);
+            const normalizedTeams: LegacyTeam[] = allTeamsData.map((team) => {
+                const legacyTeam = team as LegacyTeam;
+                const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentData?.events ?? []);
+
+                return {
+                    ...legacyTeam,
+                    event_id: eventId ? eventId : null,
+                    event: eventName ? [eventName] : Array.isArray(legacyTeam.event) ? legacyTeam.event : [],
+                };
+            });
+            setTeams(normalizedTeams);
+            setInitialTeams(normalizedTeams);
 
             setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
-            const eventIds =
-                tournamentData?.events
-                    ?.filter((event) => matchesAnyEventKey(userReg.events_registered, event))
-                    .map((event) => getEventKey(event)) ?? userReg.events_registered;
-
             form.setFieldsValue({
                 user_name: userReg.user_name,
-                id: userReg.user_id,
+                user_global_id: userReg.user_global_id,
                 age: userReg.age,
                 gender: userReg.gender,
                 phone_number: userReg.phone_number,
                 organizer: userReg.organizer,
-                events_registered: eventIds,
+                events_registered: userReg.events_registered ?? [],
                 registration_status: userReg.registration_status,
                 rejection_reason: userReg.rejection_reason,
             });
@@ -315,6 +338,15 @@ export default function EditTournamentRegistrationPage() {
 
         handleMount().finally(() => setIsMounted(true));
     });
+
+    const getEventDisplayLabel = (eventId: string): string => {
+        const event = events?.find((evt) => getEventKey(evt) === eventId);
+        return event ? getEventLabel(event) : eventId;
+    };
+
+    const extraEventIds = (registration?.events_registered ?? []).filter(
+        (eventId) => !events?.some((event) => getEventKey(event) === eventId),
+    );
 
     if (!isMounted && !loading && !registration) {
         return <Result status="404" title="Not Registered" subTitle="You haven't registered for this tournament." />;
@@ -352,7 +384,7 @@ export default function EditTournamentRegistrationPage() {
                                 </div>
                             )}
                         </Form.Item>
-                        <Form.Item label="ID" field="id">
+                        <Form.Item label="ID" field="user_global_id">
                             <Input disabled />
                         </Form.Item>
 
@@ -402,49 +434,38 @@ export default function EditTournamentRegistrationPage() {
                                     form.setFieldValue("events_registered", selectedEvents);
                                     setRegistration((prev) => (prev ? {...prev, events_registered: selectedEvents} : null));
 
-                                    const selectedTeamEvents = (tournament?.events ?? []).filter(
+                                    const tournamentEvents = events ?? [];
+                                    const selectedTeamEvents = tournamentEvents.filter(
                                         (event) =>
                                             selectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
                                     );
-                                    const existingTeamEventKeys = teams.flatMap((team) =>
-                                        team.event_ids && team.event_ids.length > 0 ? team.event_ids : (team.events ?? []),
-                                    );
 
                                     const newTeamEvents = selectedTeamEvents.filter(
-                                        (event) => !existingTeamEventKeys.some((existing) => matchesEventKey(existing, event)),
+                                        (event) => !teams.some((team) => teamMatchesEvent(team, event, tournamentEvents)),
                                     );
 
                                     if (newTeamEvents.length > 0) {
-                                        const newTeamsToAdd: Team[] = newTeamEvents.map((event) => {
+                                        const newTeamsToAdd: LegacyTeam[] = newTeamEvents.map((event) => {
                                             const eventKey = getEventKey(event);
-                                            const eventType = event.type;
-                                            const teamEventKeys = new Set<string>([eventKey, eventType]);
-                                            for (const code of sanitizeEventCodes(event.codes)) {
-                                                teamEventKeys.add(code);
-                                                teamEventKeys.add(`${code}-${event.type}`);
-                                            }
                                             return {
                                                 id: nanoid(),
                                                 tournament_id: tournamentId ?? "",
                                                 name: "",
                                                 leader_id: registration?.user_id ?? "",
                                                 members: [],
-                                                event_ids: [eventKey],
-                                                events: Array.from(teamEventKeys),
+                                                event_id: eventKey,
+                                                event: [getEventLabel(event)],
                                                 registration_id: registrationId ?? "",
-                                                largest_age: 0,
+                                                team_age: 0,
                                                 looking_for_member: false,
                                             };
                                         });
                                         setTeams((prev) => [...prev, ...newTeamsToAdd]);
                                     }
 
-                                    const tournamentEvents = tournament?.events ?? [];
                                     const removedTeamEvents = teams.filter(
                                         (team) =>
-                                            !selectedTeamEvents.some((event) =>
-                                                teamMatchesEventKey(team, getEventKey(event), tournamentEvents),
-                                            ),
+                                            !selectedTeamEvents.some((event) => teamMatchesEvent(team, event, tournamentEvents)),
                                     );
                                     if (removedTeamEvents.length > 0) {
                                         const removedTeamIds = removedTeamEvents.map((t) => t.id);
@@ -452,7 +473,7 @@ export default function EditTournamentRegistrationPage() {
                                     }
                                 }}
                             >
-                                {tournament?.events?.map((event) => {
+                                {events?.map((event) => {
                                     const key = getEventKey(event);
                                     const displayText = getEventLabel(event);
                                     return (
@@ -461,13 +482,19 @@ export default function EditTournamentRegistrationPage() {
                                         </Option>
                                     );
                                 })}
+                                {extraEventIds.map((eventId) => (
+                                    <Option key={`extra-${eventId}`} value={eventId}>
+                                        {getEventDisplayLabel(eventId)}
+                                    </Option>
+                                ))}
                             </Select>
                         </Form.Item>
 
                         <Form.Item shouldUpdate noStyle>
                             <div className="flex flex-row w-full gap-10">
                                 {teams.map((team) => {
-                                    const teamEventLabel = getTeamEventLabels(team, tournament?.events ?? []).join(", ");
+                                    const {eventName} = resolveTeamEvent(team, events ?? []);
+                                    const teamEventLabel = eventName || "Team Event";
 
                                     return (
                                         <div key={team.id} className="border p-4 rounded-md shadow-sm">

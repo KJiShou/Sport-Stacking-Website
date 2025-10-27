@@ -1,10 +1,24 @@
-import type {ParticipantScore, Registration, Score, Team, TeamMember, TeamScore, Tournament, TournamentEvent} from "@/schema";
-import type {TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
+import type {ParticipantScore, Score, Team, TeamMember, TeamScore, Tournament, TournamentEvent} from "@/schema";
+import type {TournamentOverallRecord, TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
+import {TournamentOverallRecordSchema, TournamentRecordSchema, TournamentTeamRecordSchema} from "@/schema/RecordSchema";
 import {getUserByGlobalId} from "@/services/firebase/authService";
-import {getPrelimRecords, getTournamentPrelimRecords, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
-import {fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
-import {getEventKey, getTeamEvents, sanitizeEventCodes, teamMatchesEventKey} from "@/utils/tournament/eventUtils";
+import {
+    getPrelimRecords,
+    getTournamentPrelimRecords,
+    saveOverallRecord,
+    saveRecord,
+    saveTeamRecord,
+} from "@/services/firebase/recordService";
+import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {
+    getEventKey,
+    getTeamEvents,
+    getTeamMaxAge,
+    matchesAnyEventKey,
+    sanitizeEventCodes,
+    teamMatchesEventKey,
+} from "@/utils/tournament/eventUtils";
 import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch, IconUndo} from "@arco-design/web-react/icon";
@@ -15,11 +29,18 @@ import {useMount} from "react-use";
 const {Title} = Typography;
 const {TabPane} = Tabs;
 
+const isTeamTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentTeamRecord =>
+    "team_id" in record;
+
+const isIndividualTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentRecord =>
+    "participant_id" in record;
+
 export default function ScoringPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
+    const [events, setEvents] = useState<TournamentEvent[] | null>(null);
     const [registrationList, setRegistrationList] = useState<ParticipantScore[]>([]);
     const [teamScoreList, setTeamScoreList] = useState<TeamScore[]>([]);
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
@@ -34,10 +55,23 @@ export default function ScoringPage() {
     const [selectedEvent, setSelectedEvent] = useState<string>("");
     const [modalScores, setModalScores] = useState<Record<string, Score>>({});
 
-    const registrationMatchesEvent = (eventsRegistered: string[], event: TournamentEvent): boolean => {
-        const normalizedRegistered = eventsRegistered.map((value) => value.toLowerCase());
-        const normalizedType = event.type.toLowerCase();
-        if (normalizedRegistered.includes(normalizedType)) {
+    const registrationMatchesEvent = (eventsRegistered: string[] | undefined, event: TournamentEvent): boolean => {
+        const normalizedEvents = eventsRegistered ?? [];
+
+        if (!event || normalizedEvents.length === 0) {
+            return false;
+        }
+
+        if (matchesAnyEventKey(normalizedEvents, event)) {
+            return true;
+        }
+
+        const normalizedRegistered = normalizedEvents
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim().toLowerCase())
+            .filter((value) => value.length > 0);
+
+        if (normalizedRegistered.includes(event.type.toLowerCase())) {
             return true;
         }
 
@@ -52,7 +86,7 @@ export default function ScoringPage() {
     };
 
     const teamMatchesEvent = (team: Team, event: TournamentEvent): boolean => {
-        const tournamentEvents = tournament?.events ?? [];
+        const tournamentEvents = events ?? [];
         return teamMatchesEventKey(team, getEventKey(event), tournamentEvents);
     };
 
@@ -62,8 +96,10 @@ export default function ScoringPage() {
         try {
             const t = await fetchTournamentById(tournamentId);
             setTournament(t);
-            if (t?.events?.[0]) {
-                const firstEvent = t.events[0];
+            const tournamentEvents = await fetchTournamentEvents(tournamentId);
+            setEvents(tournamentEvents);
+            if (tournamentEvents?.[0]) {
+                const firstEvent = tournamentEvents[0];
                 const firstEventTabKey = firstEvent.id ?? firstEvent.type;
                 setCurrentEventTab(firstEventTabKey);
                 if (firstEvent.age_brackets?.[0]) {
@@ -71,65 +107,79 @@ export default function ScoringPage() {
                 }
             }
             const [regs, teams, records] = await Promise.all([
-                fetchRegistrations(tournamentId),
+                fetchApprovedRegistrations(tournamentId),
                 fetchTeamsByTournament(tournamentId),
                 getTournamentPrelimRecords(tournamentId),
             ]);
             setTeamScoreList(
-                teams.map((team) => {
-                    const teamScores: Record<string, Score> = {};
-                    const tournamentEvents = t?.events ?? [];
-                    const resolvedEvents = getTeamEvents(team, tournamentEvents);
+                teams
+                    .filter((team) => regs.some((r) => r.user_global_id === team.leader_id))
+                    .map((team) => {
+                        const teamScores: Record<string, Score> = {};
+                        const resolvedEvents = getTeamEvents(team, tournamentEvents);
 
-                    if (resolvedEvents.length > 0) {
-                        for (const event of resolvedEvents) {
-                            const eventType = event.type;
-                            const eventCodes = sanitizeEventCodes(event.codes);
+                        if (resolvedEvents.length > 0) {
+                            for (const event of resolvedEvents) {
+                                const eventType = event.type;
+                                const eventCodes = sanitizeEventCodes(event.codes);
 
-                            if (eventCodes.length > 0) {
-                                for (const code of eventCodes) {
-                                    const codeEventKey = `${code}-${eventType}`;
+                                if (eventCodes.length > 0) {
+                                    for (const code of eventCodes) {
+                                        const codeEventKey = `${code}-${eventType}`;
+                                        const record = records.find(
+                                            (rec) =>
+                                                isTeamTournamentRecord(rec) &&
+                                                rec.leader_id === team.leader_id &&
+                                                rec.event === eventType &&
+                                                rec.code === code,
+                                        );
+
+                                        teamScores[codeEventKey] = {
+                                            try1: record?.try1?.toString() || "",
+                                            try2: record?.try2?.toString() || "",
+                                            try3: record?.try3?.toString() || "",
+                                            recordId: record?.id,
+                                        };
+                                    }
+                                } else {
+                                    const eventKey = getEventKey(event);
                                     const record = records.find(
                                         (rec) =>
-                                            "leaderId" in rec && rec.leaderId === team.leader_id && rec.event === codeEventKey,
+                                            isTeamTournamentRecord(rec) &&
+                                            rec.leader_id === team.leader_id &&
+                                            rec.event === eventKey,
                                     );
-                                    teamScores[codeEventKey] = {
+                                    teamScores[eventKey] = {
                                         try1: record?.try1?.toString() || "",
                                         try2: record?.try2?.toString() || "",
                                         try3: record?.try3?.toString() || "",
+                                        recordId: record?.id,
                                     };
                                 }
-                            } else {
-                                const eventKey = getEventKey(event);
+                            }
+                        } else {
+                            const fallbackKeys = team.event_id ?? "";
+
+                            for (const fallbackKey of fallbackKeys) {
                                 const record = records.find(
-                                    (rec) => "leaderId" in rec && rec.leaderId === team.leader_id && rec.event === eventKey,
+                                    (rec) =>
+                                        isTeamTournamentRecord(rec) &&
+                                        rec.leader_id === team.leader_id &&
+                                        rec.event === fallbackKey,
                                 );
-                                teamScores[eventKey] = {
+                                teamScores[fallbackKey] = {
                                     try1: record?.try1?.toString() || "",
                                     try2: record?.try2?.toString() || "",
                                     try3: record?.try3?.toString() || "",
+                                    recordId: record?.id,
                                 };
                             }
                         }
-                    } else {
-                        const fallbackKeys = team.event_ids && team.event_ids.length > 0 ? team.event_ids : (team.events ?? []);
-
-                        for (const fallbackKey of fallbackKeys) {
-                            const record = records.find(
-                                (rec) => "leaderId" in rec && rec.leaderId === team.leader_id && rec.event === fallbackKey,
-                            );
-                            teamScores[fallbackKey] = {
-                                try1: record?.try1?.toString() || "",
-                                try2: record?.try2?.toString() || "",
-                                try3: record?.try3?.toString() || "",
-                            };
-                        }
-                    }
-                    return {
-                        ...team,
-                        scores: teamScores,
-                    };
-                }),
+                        return {
+                            ...team,
+                            scores: teamScores,
+                        };
+                    }),
             );
 
             const approvedRegs = regs.filter((r) => r.registration_status === "approved");
@@ -138,8 +188,7 @@ export default function ScoringPage() {
                 approvedRegs.map((r) => {
                     const participantScores: Record<string, Score> = {};
                     const augmentedEvents = new Set<string>(r.events_registered);
-
-                    for (const event of t?.events ?? []) {
+                    for (const event of tournamentEvents ?? []) {
                         if (!registrationMatchesEvent(r.events_registered, event)) {
                             continue;
                         }
@@ -152,20 +201,31 @@ export default function ScoringPage() {
                             for (const code of eventCodes) {
                                 const codeEventKey = `${code}-${eventType}`;
                                 const record = records.find(
-                                    (rec) => rec.participantId === r.user_id && rec.event === codeEventKey,
+                                    (rec) =>
+                                        isIndividualTournamentRecord(rec) &&
+                                        rec.participant_id === r.user_id &&
+                                        rec.event === eventType &&
+                                        rec.code === code,
                                 );
                                 participantScores[codeEventKey] = {
                                     try1: record?.try1?.toString() || "",
                                     try2: record?.try2?.toString() || "",
                                     try3: record?.try3?.toString() || "",
+                                    recordId: record?.id,
                                 };
                             }
                         } else {
-                            const record = records.find((rec) => rec.participantId === r.user_id && rec.event === eventType);
+                            const record = records.find(
+                                (rec) =>
+                                    isIndividualTournamentRecord(rec) &&
+                                    rec.participant_id === r.user_id &&
+                                    rec.event === eventType,
+                            );
                             participantScores[eventType] = {
                                 try1: record?.try1?.toString() || "",
                                 try2: record?.try2?.toString() || "",
                                 try3: record?.try3?.toString() || "",
+                                recordId: record?.id,
                             };
                         }
                     }
@@ -265,7 +325,7 @@ export default function ScoringPage() {
         const errors: string[] = [];
         const missingEvents: string[] = [];
 
-        for (const event of tournament?.events ?? []) {
+        for (const event of events ?? []) {
             if (!registrationMatchesEvent(participant.events_registered, event)) {
                 continue;
             }
@@ -307,7 +367,7 @@ export default function ScoringPage() {
         const errors: string[] = [];
         const missingEvents: string[] = [];
 
-        for (const event of tournament?.events ?? []) {
+        for (const event of events ?? []) {
             if (!teamMatchesEvent(team, event)) {
                 continue;
             }
@@ -409,7 +469,7 @@ export default function ScoringPage() {
 
     const validateModalRecord = () => {
         const errors: string[] = [];
-        const event = tournament?.events?.find((e) => e.id === selectedEvent || e.type === selectedEvent);
+        const event = events?.find((e) => e.id === selectedEvent || e.type === selectedEvent);
 
         if (!event) return errors;
 
@@ -474,12 +534,11 @@ export default function ScoringPage() {
 
         setLoading(true);
         try {
-            const event = tournament.events?.find((e) => e.id === selectedEvent || e.type === selectedEvent);
+            const event = events?.find((e) => e.id === selectedEvent || e.type === selectedEvent);
 
             if (selectedParticipant && event) {
-                // Save participant records
-                const promises: Promise<void>[] = [];
-
+                const updatedModalScores: Record<string, Score> = {...modalScores};
+                const submittedAt = new Date().toISOString();
                 const eventCodes = sanitizeEventCodes(event.codes);
 
                 if (eventCodes.length > 0) {
@@ -492,27 +551,31 @@ export default function ScoringPage() {
                             const try1 = Number.parseFloat(scores.try1);
                             const try2 = Number.parseFloat(scores.try2);
                             const try3 = Number.parseFloat(scores.try3);
-
-                            promises.push(
-                                saveRecord({
-                                    tournamentId,
-                                    event: codeEventKey,
-                                    participantId: selectedParticipant.user_id,
-                                    participantName: selectedParticipant.user_name,
-                                    participantAge: selectedParticipant.age,
+                            const savedRecordId = await saveRecord(
+                                TournamentRecordSchema.parse({
+                                    id: scores.recordId ?? "",
+                                    tournament_id: tournamentId,
+                                    event_id: event.id ?? "",
+                                    event: event.type,
+                                    code,
+                                    participant_id: selectedParticipant.user_id,
+                                    participant_global_id: selectedParticipant.user_global_id,
+                                    participant_name: selectedParticipant.user_name,
+                                    age: selectedParticipant.age,
                                     country: selectedParticipant.country,
                                     gender: selectedParticipant.gender || "Male",
-                                    round: "prelim",
-                                    classification: undefined,
-                                    verified_by: undefined,
-                                    verified_at: undefined,
+                                    classification: "prelim",
+                                    verified_by: null,
+                                    verified_at: null,
                                     try1,
                                     try2,
                                     try3,
+                                    best_time: Math.min(try1, try2, try3),
                                     status: "submitted",
-                                    submitted_at: new Date().toISOString(),
+                                    submitted_at: submittedAt,
                                 }),
                             );
+                            updatedModalScores[codeEventKey] = {...scores, recordId: savedRecordId};
                         }
                     }
                 } else {
@@ -523,34 +586,38 @@ export default function ScoringPage() {
                         const try2 = Number.parseFloat(scores.try2);
                         const try3 = Number.parseFloat(scores.try3);
 
-                        promises.push(
-                            saveRecord({
-                                tournamentId,
+                        const savedRecordId = await saveRecord(
+                            TournamentRecordSchema.parse({
+                                id: scores.recordId ?? "",
+                                tournament_id: tournamentId,
+                                event_id: event.id ?? "",
                                 event: event.type,
-                                participantId: selectedParticipant.user_id,
-                                participantName: selectedParticipant.user_name,
-                                participantAge: selectedParticipant.age,
+                                participant_id: selectedParticipant.user_id,
+                                participant_global_id: selectedParticipant.user_global_id,
+                                participant_name: selectedParticipant.user_name,
+                                age: selectedParticipant.age,
                                 country: selectedParticipant.country,
                                 gender: selectedParticipant.gender || "Male",
-                                round: "prelim",
-                                classification: undefined,
-                                verified_by: undefined,
-                                verified_at: undefined,
+                                classification: "prelim",
+                                verified_by: null,
+                                verified_at: null,
                                 try1,
                                 try2,
                                 try3,
+                                best_time: Math.min(try1, try2, try3),
                                 status: "submitted",
-                                submitted_at: new Date().toISOString(),
+                                submitted_at: submittedAt,
                             }),
                         );
+                        updatedModalScores[event.type] = {...scores, recordId: savedRecordId};
                     }
                 }
 
-                await Promise.all(promises);
+                setModalScores(updatedModalScores);
 
                 // Update the participant in the list with new scores
                 setRegistrationList((prev) =>
-                    prev.map((p) => (p.user_id === selectedParticipant.user_id ? {...p, scores: modalScores} : p)),
+                    prev.map((p) => (p.user_id === selectedParticipant.user_id ? {...p, scores: updatedModalScores} : p)),
                 );
 
                 // If individual event, try to calculate overall
@@ -561,12 +628,12 @@ export default function ScoringPage() {
                 Message.success(`Record saved for ${selectedParticipant.user_name}!`);
                 closeModal();
             } else if (selectedTeam && event) {
-                // Save team records
-                const promises: Promise<void>[] = [];
+                const updatedModalScores: Record<string, Score> = {...modalScores};
 
                 // Get team leader info
                 const leaderInfo = await getUserByGlobalId(selectedTeam.leader_id);
                 const country = leaderInfo?.country?.[0] || "MY";
+                const submittedAt = new Date().toISOString();
 
                 const eventCodes = sanitizeEventCodes(event.codes);
 
@@ -581,26 +648,30 @@ export default function ScoringPage() {
                             const try2 = Number.parseFloat(scores.try2);
                             const try3 = Number.parseFloat(scores.try3);
 
-                            promises.push(
-                                saveTeamRecord({
-                                    tournamentId,
-                                    event: codeEventKey,
-                                    participantId: selectedTeam.id,
-                                    teamName: selectedTeam.name,
+                            const savedRecordId = await saveTeamRecord(
+                                TournamentTeamRecordSchema.parse({
+                                    id: scores.recordId ?? "",
+                                    tournament_id: tournamentId,
+                                    event_id: event.id ?? "",
+                                    event: event.type,
+                                    code,
+                                    team_id: selectedTeam.id,
+                                    team_name: selectedTeam.name,
                                     country,
-                                    leaderId: selectedTeam.leader_id,
-                                    members: selectedTeam.members,
-                                    round: "prelim",
-                                    classification: undefined,
-                                    verified_by: undefined,
-                                    verified_at: undefined,
+                                    leader_id: selectedTeam.leader_id,
+                                    member_global_ids: selectedTeam.members.map((m: TeamMember) => m.global_id),
+                                    classification: "prelim",
                                     try1,
                                     try2,
                                     try3,
+                                    best_time: Math.min(try1, try2, try3),
                                     status: "submitted",
-                                    submitted_at: new Date().toISOString(),
+                                    submitted_at: submittedAt,
+                                    verified_by: null,
+                                    verified_at: null,
                                 }),
                             );
+                            updatedModalScores[codeEventKey] = {...scores, recordId: savedRecordId};
                         }
                     }
                 } else {
@@ -611,9 +682,11 @@ export default function ScoringPage() {
                         const try2 = Number.parseFloat(scores.try2);
                         const try3 = Number.parseFloat(scores.try3);
 
-                        promises.push(
-                            saveTeamRecord({
+                        const savedRecordId = await saveTeamRecord(
+                            TournamentTeamRecordSchema.parse({
+                                id: scores.recordId,
                                 tournamentId,
+                                event_id: event.id ?? "",
                                 event: event.type,
                                 participantId: selectedTeam.id,
                                 teamName: selectedTeam.name,
@@ -627,17 +700,19 @@ export default function ScoringPage() {
                                 try1,
                                 try2,
                                 try3,
+                                best_time: Math.min(try1, try2, try3),
                                 status: "submitted",
-                                submitted_at: new Date().toISOString(),
+                                submitted_at: submittedAt,
                             }),
                         );
+                        updatedModalScores[event.type] = {...scores, recordId: savedRecordId};
                     }
                 }
 
-                await Promise.all(promises);
+                setModalScores(updatedModalScores);
 
                 // Update the team in the list with new scores
-                setTeamScoreList((prev) => prev.map((t) => (t.id === selectedTeam.id ? {...t, scores: modalScores} : t)));
+                setTeamScoreList((prev) => prev.map((t) => (t.id === selectedTeam.id ? {...t, scores: updatedModalScores} : t)));
 
                 Message.success(`Record saved for team ${selectedTeam.name}!`);
                 closeModal();
@@ -654,7 +729,7 @@ export default function ScoringPage() {
         if (!tournamentId || !tournament) return;
 
         // Find Individual event with all three codes
-        const individualEvent = tournament.events?.find(
+        const individualEvent = events?.find(
             (e) =>
                 e.type === "Individual" && e.codes?.includes("3-3-3") && e.codes?.includes("3-6-3") && e.codes?.includes("Cycle"),
         );
@@ -681,7 +756,7 @@ export default function ScoringPage() {
             );
 
             // Calculate overall results and save them
-            const overallPromises = individualParticipants.map((p) => {
+            const overallPromises = individualParticipants.map(async (p) => {
                 const threeScores = p.scores["3-3-3-Individual"];
                 const threeSixThreeScores = p.scores["3-6-3-Individual"];
                 const cycleScores = p.scores["Cycle-Individual"];
@@ -706,28 +781,37 @@ export default function ScoringPage() {
                 // Calculate overall time (sum of best times)
                 const overallTime = threeBest + threeSixThreeBest + cycleBest;
 
-                // Save overall record
-                return saveRecord({
-                    tournamentId,
-                    event: "Overall-Individual",
-                    participantId: p.user_id,
-                    participantName: p.user_name,
-                    participantAge: p.age,
-                    country: p.country,
-                    gender: p.gender || "Male",
-                    round: "prelim",
-                    classification: undefined,
-                    verified_by: undefined,
-                    verified_at: undefined,
-                    try1: overallTime, // Store overall time in try1
-                    try2: overallTime, // Store overall time in try2
-                    try3: overallTime, // Store overall time in try3
-                    status: "submitted",
-                    submitted_at: new Date().toISOString(),
-                });
+                // Save overall record using TournamentOverallRecordSchema
+                const recordId = await saveOverallRecord(
+                    TournamentOverallRecordSchema.parse({
+                        id: "",
+                        tournament_id: tournamentId,
+                        event_id: individualEvent.id ?? "",
+                        event: "Individual",
+                        code: "Overall",
+                        participant_id: p.user_id,
+                        participant_global_id: p.user_global_id,
+                        participant_name: p.user_name,
+                        age: p.age,
+                        country: p.country,
+                        gender: p.gender || "Male",
+                        three_three_three: threeBest,
+                        three_six_three: threeSixThreeBest,
+                        cycle: cycleBest,
+                        overall_time: overallTime,
+                        classification: "prelim",
+                        round: "prelim",
+                        try1: overallTime,
+                        try2: overallTime,
+                        try3: overallTime,
+                        status: "submitted",
+                        submitted_at: new Date().toISOString(),
+                    }),
+                );
+                return {participantId: p.user_id, recordId, overallTime};
             });
 
-            await Promise.all(overallPromises);
+            const overallResults = await Promise.all(overallPromises);
 
             if (overallPromises.length > 0) {
                 Message.success(`Calculated and saved ${overallPromises.length} overall results!`);
@@ -738,271 +822,11 @@ export default function ScoringPage() {
         }
     };
 
-    const handleSaveScores = async (eventKey: string, bracketName: string, isTeamEvent: boolean) => {
-        if (!tournamentId || !tournament) return;
-
-        const event = tournament.events?.find((e) => e.id === eventKey || e.type === eventKey);
-        const eventType = event?.type ?? eventKey;
-        const bracket = event?.age_brackets.find((b) => b.name === bracketName);
-
-        if (!bracket) {
-            Message.error("Invalid event or bracket.");
-            return;
-        }
-
-        // Get participants/teams for this specific bracket to validate
-        const validationErrors: string[] = [];
-
-        if (isTeamEvent) {
-            const tournamentEvents = tournament.events ?? [];
-            const teamsForBracket = teamScoreList.filter(
-                (t) =>
-                    (event ? teamMatchesEvent(t, event) : teamMatchesEventKey(t, eventType, tournamentEvents)) &&
-                    t.largest_age >= bracket.min_age &&
-                    t.largest_age <= bracket.max_age,
-            );
-
-            for (const team of teamsForBracket) {
-                validationErrors.push(...validateTeamRecord(team));
-            }
-        } else {
-            const participantsForBracket = registrationList.filter(
-                (r) =>
-                    (event ? registrationMatchesEvent(r.events_registered, event) : r.events_registered.includes(eventType)) &&
-                    r.age >= bracket.min_age &&
-                    r.age <= bracket.max_age,
-            );
-
-            for (const participant of participantsForBracket) {
-                validationErrors.push(...validateParticipantRecord(participant));
-            }
-        }
-
-        if (validationErrors.length > 0) {
-            const errorMessage = `Validation Failed:\n${validationErrors.slice(0, 5).join("\n")}${validationErrors.length > 5 ? `\n... and ${validationErrors.length - 5} more errors` : ""}`;
-            Message.error(errorMessage);
-            return;
-        }
-
-        setLoading(true);
-        try {
-            if (isTeamEvent) {
-                const tournamentEvents = tournament.events ?? [];
-                const teamsToSave = teamScoreList.filter((t) =>
-                    event ? teamMatchesEvent(t, event) : teamMatchesEventKey(t, eventType, tournamentEvents),
-                );
-
-                // First get all leader info
-                const teamLeaderInfo = await Promise.all(
-                    teamsToSave.map(async (t) => ({
-                        teamId: t.id,
-                        leaderInfo: await getUserByGlobalId(t.leader_id),
-                    })),
-                );
-
-                // Create a map for quick lookup
-                const leaderInfoMap = Object.fromEntries(
-                    teamLeaderInfo.map(({teamId, leaderInfo}) => [teamId, leaderInfo?.country?.[0] || "MY"]),
-                );
-
-                // Now save all team records
-                const event = tournament.events?.find((e) => e.id === eventKey || e.type === eventKey);
-                const eventCodes = sanitizeEventCodes(event?.codes);
-                let promises: (Promise<void> | null)[] = [];
-
-                if (eventCodes.length > 0) {
-                    // For events with codes, save scores for each code separately
-                    promises = teamsToSave
-                        .flatMap((t) =>
-                            eventCodes.map((code) => {
-                                const codeEventKey = `${code}-${event?.type ?? eventType}`;
-                                const teamScores = t.scores[codeEventKey];
-                                if (teamScores?.try1 && teamScores.try2 && teamScores.try3) {
-                                    return saveTeamRecord({
-                                        tournamentId,
-                                        event: codeEventKey,
-                                        participantId: t.id,
-                                        teamName: t.name,
-                                        country: leaderInfoMap[t.id],
-                                        leaderId: t.leader_id,
-                                        members: t.members,
-                                        round: "prelim",
-                                        classification: undefined,
-                                        verified_by: undefined,
-                                        verified_at: undefined,
-                                        try1: Number.parseFloat(teamScores.try1),
-                                        try2: Number.parseFloat(teamScores.try2),
-                                        try3: Number.parseFloat(teamScores.try3),
-                                        status: "submitted",
-                                        submitted_at: new Date().toISOString(),
-                                        videoUrl: "",
-                                    });
-                                }
-                                return null;
-                            }),
-                        )
-                        .filter(Boolean);
-                } else {
-                    // For events without codes, use regular scoring
-                    promises = teamsToSave
-                        .map((t) => {
-                            const key = event?.type ?? eventType;
-                            const teamScores = t.scores[key];
-                            if (teamScores?.try1 && teamScores.try2 && teamScores.try3) {
-                                return saveTeamRecord({
-                                    tournamentId,
-                                    event: event?.type ?? eventType,
-                                    participantId: t.id,
-                                    teamName: t.name,
-                                    country: leaderInfoMap[t.id],
-                                    leaderId: t.leader_id,
-                                    members: t.members,
-                                    round: "prelim",
-                                    classification: undefined,
-                                    verified_by: undefined,
-                                    verified_at: undefined,
-                                    try1: Number.parseFloat(teamScores.try1),
-                                    try2: Number.parseFloat(teamScores.try2),
-                                    try3: Number.parseFloat(teamScores.try3),
-                                    status: "submitted",
-                                    submitted_at: new Date().toISOString(),
-                                    videoUrl: "",
-                                });
-                            }
-                            return null;
-                        })
-                        .filter(Boolean);
-                }
-
-                if (promises.length > 0) {
-                    await Promise.all(promises);
-
-                    // If we just saved individual team events, try to calculate overall results
-                    if (eventType === "Individual") {
-                        await calculateAndSaveOverallResults();
-                    }
-
-                    Message.success(`Scores for ${eventType} - ${bracketName} saved successfully!`);
-                } else {
-                    Message.info("No scores to save.");
-                }
-            } else {
-                const participantsToSave = registrationList.filter((r) =>
-                    event ? registrationMatchesEvent(r.events_registered, event) : r.events_registered.includes(eventType),
-                );
-                const event = tournament.events?.find((e) => e.id === eventKey || e.type === eventKey);
-
-                const eventCodes = sanitizeEventCodes(event?.codes);
-                let promises: (Promise<void> | null)[] = [];
-
-                if (eventCodes.length > 0) {
-                    // For events with codes, save scores for each code separately
-                    promises = participantsToSave
-                        .flatMap((p) =>
-                            eventCodes.map((code) => {
-                                const codeEventKey = `${code}-${event?.type ?? eventType}`;
-                                const eventScores = p.scores[codeEventKey];
-                                if (eventScores?.try1 && eventScores.try2 && eventScores.try3) {
-                                    return saveRecord({
-                                        tournamentId,
-                                        event: codeEventKey,
-                                        participantId: p.user_id,
-                                        participantName: p.user_name,
-                                        participantAge: p.age,
-                                        country: p.country,
-                                        gender: p.gender || "Male",
-                                        round: "prelim",
-                                        classification: undefined,
-                                        verified_by: undefined,
-                                        verified_at: undefined,
-                                        try1: Number.parseFloat(eventScores.try1),
-                                        try2: Number.parseFloat(eventScores.try2),
-                                        try3: Number.parseFloat(eventScores.try3),
-                                        status: "submitted",
-                                        submitted_at: new Date().toISOString(),
-                                        videoUrl: "",
-                                    });
-                                }
-                                return null;
-                            }),
-                        )
-                        .filter(Boolean);
-                } else {
-                    // For non-coded events, use regular scoring
-                    promises = participantsToSave
-                        .map((p) => {
-                            const key = event?.type ?? eventType;
-                            const eventScores = p.scores[key];
-                            if (eventScores?.try1 && eventScores.try2 && eventScores.try3) {
-                                return saveRecord({
-                                    tournamentId,
-                                    event: key,
-                                    participantId: p.user_id,
-                                    participantName: p.user_name,
-                                    participantAge: p.age,
-                                    country: p.country,
-                                    gender: p.gender || "Male",
-                                    round: "prelim",
-                                    classification: undefined,
-                                    verified_by: undefined,
-                                    verified_at: undefined,
-                                    try1: Number.parseFloat(eventScores.try1),
-                                    try2: Number.parseFloat(eventScores.try2),
-                                    try3: Number.parseFloat(eventScores.try3),
-                                    status: "submitted",
-                                    submitted_at: new Date().toISOString(),
-                                    videoUrl: "",
-                                });
-                            }
-                            return null;
-                        })
-                        .filter(Boolean);
-                }
-
-                if (promises.length > 0) {
-                    await Promise.all(promises);
-
-                    // If we just saved individual participant events, try to calculate overall results
-                    if (eventType === "Individual") {
-                        await calculateAndSaveOverallResults();
-                    }
-
-                    Message.success(`Scores for ${eventType} - ${bracketName} saved successfully!`);
-                } else {
-                    Message.info("No scores to save.");
-                }
-            }
-        } catch (error) {
-            console.error("Failed to save scores:", error);
-            Message.error("Failed to save scores. Please try again.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
     if (!tournament) return null;
 
-    const modalEvent = tournament.events?.find((e) => e.id === selectedEvent || e.type === selectedEvent);
+    const modalEvent = events?.find((e) => e.id === selectedEvent || e.type === selectedEvent);
     const modalEventCodes = sanitizeEventCodes(modalEvent?.codes);
     const modalBaseEventKey = modalEvent?.type ?? selectedEvent;
-
-    // Helper function to convert system labels to display names
-    const getDisplayName = (eventType: string): string => {
-        switch (eventType) {
-            case "Individual":
-                return "Individual";
-            case "Double":
-                return "Double";
-            case "Team Relay":
-                return "Team Relay";
-            case "Parent & Child":
-                return "Parent & Child";
-            case "Special Need":
-                return "Special Need";
-            default:
-                return eventType;
-        }
-    };
 
     // Filter function for search
     const filterParticipants = (participants: ParticipantScore[]) => {
@@ -1025,7 +849,7 @@ export default function ScoringPage() {
     };
 
     const getExpandableColumns = (codes: string[], eventKey: string): TableColumnProps<ParticipantScore>[] => [
-        {title: "Global ID", dataIndex: "user_id", width: 150},
+        {title: "Global ID", dataIndex: "user_global_id", width: 150},
         {title: "Name", dataIndex: "user_name", width: 200},
         {
             title: "Event Codes",
@@ -1197,13 +1021,13 @@ export default function ScoringPage() {
                     activeTab={currentEventTab}
                     onChange={(key) => {
                         setCurrentEventTab(key);
-                        const event = tournament.events?.find((e) => e.id === key || e.type === key);
+                        const event = events?.find((e) => e.id === key || e.type === key);
                         if (event?.age_brackets?.[0]) {
                             setCurrentBracketTab(event.age_brackets[0].name);
                         }
                     }}
                 >
-                    {tournament.events?.map((evt) => {
+                    {events?.map((evt) => {
                         const tabKey = evt.id ?? evt.type;
                         const eventTypeKey = evt.type;
                         const isTeamEvent = ["double", "team relay", "parent & child"].includes(evt.type.toLowerCase());
@@ -1211,7 +1035,7 @@ export default function ScoringPage() {
                         const hasCodes = scoringCodes.length > 0;
                         const titleCodes = hasCodes ? scoringCodes.join(", ") : evt.codes?.join(", ") || "N/A";
                         return (
-                            <TabPane key={tabKey} title={`${getDisplayName(evt.type)} (${titleCodes})`}>
+                            <TabPane key={tabKey} title={`${evt.type} (${titleCodes})`}>
                                 <Tabs
                                     type="capsule"
                                     tabPosition="top"
@@ -1227,12 +1051,15 @@ export default function ScoringPage() {
                                                         style={{width: "100%"}}
                                                         columns={getTeamExpandableColumns(scoringCodes, eventTypeKey)}
                                                         data={filterTeams(
-                                                            teamScoreList.filter(
-                                                                (t) =>
+                                                            teamScoreList.filter((t) => {
+                                                                const teamAge = getTeamMaxAge(t);
+                                                                return (
                                                                     teamMatchesEvent(t, evt) &&
-                                                                    t.largest_age >= br.min_age &&
-                                                                    t.largest_age <= br.max_age,
-                                                            ),
+                                                                    teamAge !== undefined &&
+                                                                    teamAge >= br.min_age &&
+                                                                    teamAge <= br.max_age
+                                                                );
+                                                            }),
                                                         )}
                                                         pagination={false}
                                                         loading={loading}
@@ -1243,12 +1070,15 @@ export default function ScoringPage() {
                                                         style={{width: "100%"}}
                                                         columns={getTeamColumns(eventTypeKey)}
                                                         data={filterTeams(
-                                                            teamScoreList.filter(
-                                                                (t) =>
+                                                            teamScoreList.filter((t) => {
+                                                                const teamAge = getTeamMaxAge(t);
+                                                                return (
                                                                     teamMatchesEvent(t, evt) &&
-                                                                    t.largest_age >= br.min_age &&
-                                                                    t.largest_age <= br.max_age,
-                                                            ),
+                                                                    teamAge !== undefined &&
+                                                                    teamAge >= br.min_age &&
+                                                                    teamAge <= br.max_age
+                                                                );
+                                                            }),
                                                         )}
                                                         pagination={false}
                                                         loading={loading}
@@ -1303,31 +1133,26 @@ export default function ScoringPage() {
                                                             if (eventCodes.length > 0) {
                                                                 // For events with codes, get records for each code-event combination
                                                                 const recordPromises = eventCodes.map((code) => {
-                                                                    const codeEventKey = `${code}-${eventTypeKey}`;
-                                                                    return getPrelimRecords(tournamentId, codeEventKey);
+                                                                    return getPrelimRecords(tournamentId, code, eventTypeKey);
                                                                 });
                                                                 const allCodeRecords = await Promise.all(recordPromises);
                                                                 prelimRecords = allCodeRecords.flat();
-                                                            } else {
-                                                                // Fallback for events without codes
-                                                                prelimRecords = await getPrelimRecords(
-                                                                    tournamentId,
-                                                                    eventTypeKey,
-                                                                );
                                                             }
-
                                                             const participantsForBracket = registrationList.filter(
                                                                 (r) =>
                                                                     registrationMatchesEvent(r.events_registered, evt) &&
                                                                     r.age >= br.min_age &&
                                                                     r.age <= br.max_age,
                                                             );
-                                                            const teamsForBracket = teamScoreList.filter(
-                                                                (t) =>
+                                                            const teamsForBracket = teamScoreList.filter((t) => {
+                                                                const teamAge = getTeamMaxAge(t);
+                                                                return (
                                                                     teamMatchesEvent(t, evt) &&
-                                                                    t.largest_age >= br.min_age &&
-                                                                    t.largest_age <= br.max_age,
-                                                            );
+                                                                    teamAge !== undefined &&
+                                                                    teamAge >= br.min_age &&
+                                                                    teamAge <= br.max_age
+                                                                );
+                                                            });
                                                             let allRecorded = false;
 
                                                             if (isTeamEvent) {
@@ -1336,14 +1161,17 @@ export default function ScoringPage() {
                                                                         return eventCodes.every((code) =>
                                                                             prelimRecords.some(
                                                                                 (record) =>
-                                                                                    record.participantId === team.id &&
-                                                                                    record.event === `${code}-${evt.type}`,
+                                                                                    isTeamTournamentRecord(record) &&
+                                                                                    record.team_id === team.id &&
+                                                                                    record.event === evt.type &&
+                                                                                    record.code === code,
                                                                             ),
                                                                         );
                                                                     }
                                                                     return prelimRecords.some(
                                                                         (record) =>
-                                                                            record.participantId === team.id &&
+                                                                            isTeamTournamentRecord(record) &&
+                                                                            record.team_id === team.id &&
                                                                             record.event === evt.type,
                                                                     );
                                                                 });
@@ -1352,8 +1180,10 @@ export default function ScoringPage() {
                                                                     eventCodes.every((code) =>
                                                                         prelimRecords.some(
                                                                             (record) =>
-                                                                                record.participantId === participant.user_id &&
-                                                                                record.event === `${code}-${evt.type}`,
+                                                                                isIndividualTournamentRecord(record) &&
+                                                                                record.participant_id === participant.user_id &&
+                                                                                record.event === evt.type &&
+                                                                                record.code === code,
                                                                         ),
                                                                     ),
                                                                 );
@@ -1361,7 +1191,8 @@ export default function ScoringPage() {
                                                                 allRecorded = participantsForBracket.every((participant) =>
                                                                     prelimRecords.some(
                                                                         (record) =>
-                                                                            record.participantId === participant.user_id &&
+                                                                            isIndividualTournamentRecord(record) &&
+                                                                            record.participant_id === participant.user_id &&
                                                                             record.event === evt.type,
                                                                     ),
                                                                 );
@@ -1414,7 +1245,7 @@ export default function ScoringPage() {
                         {selectedParticipant && (
                             <div>
                                 <h4 className="font-semibold mb-2">
-                                    Participant: {selectedParticipant.user_name} ({selectedParticipant.user_id})
+                                    Participant: {selectedParticipant.user_name} ({selectedParticipant.user_global_id})
                                 </h4>
                                 <p className="text-sm text-gray-600 mb-4">Event: {selectedEvent}</p>
                             </div>

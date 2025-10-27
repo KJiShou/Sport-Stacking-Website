@@ -3,8 +3,7 @@ import type {Registration} from "./RegistrationSchema";
 import type {Team} from "./TeamSchema";
 import type {AgeBracket, Tournament, TournamentEvent} from "./TournamentSchema";
 
-export interface PrelimResultData
-    extends Omit<TournamentRecord, "try1" | "try2" | "try3" | "bestTime" | "classification"> {
+export interface PrelimResultData extends Omit<TournamentRecord, "try1" | "try2" | "try3" | "bestTime" | "classification"> {
     rank: number;
     name: string;
     id: string;
@@ -15,14 +14,14 @@ export interface PrelimResultData
     try2?: number;
     try3?: number;
     bestTime?: number;
-    classification?: "beginner" | "intermediate" | "advance";
+    classification?: "beginner" | "intermediate" | "advance" | "prelim";
     round?: "prelim" | "final";
 }
 
 export interface BracketResults {
     bracket: AgeBracket;
     records: PrelimResultData[];
-    classification?: "beginner" | "intermediate" | "advance";
+    classification?: "beginner" | "intermediate" | "advance" | "prelim";
     highlightFinalists?: boolean;
 }
 
@@ -56,6 +55,7 @@ export interface ExportPrelimResultsOptions {
 
 export interface ExportPDFOptions {
     tournament: Tournament;
+    events: TournamentEvent[];
     eventKey: string;
     bracketName: string;
     registrations: Registration[];
@@ -70,6 +70,7 @@ export interface ExportPDFOptions {
 
 export interface ExportMasterListOptions {
     tournament: Tournament;
+    events: TournamentEvent[];
     registrations: Registration[];
     ageMap: Record<string, number>;
     phoneMap: Record<string, string>;
