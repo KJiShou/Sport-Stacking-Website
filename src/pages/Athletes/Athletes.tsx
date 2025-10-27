@@ -395,82 +395,82 @@ function ensureEntry(
     return entry;
 }
 
-async function loadRankingData(): Promise<AthleteRankingEntry[]> {
-    const map = new Map<string, AthleteRankingEntry>();
+// async function loadRankingData(): Promise<AthleteRankingEntry[]> {
+//     const map = new Map<string, AthleteRankingEntry>();
 
-    // await Promise.all(
-    //     EVENT_OPTIONS.map(async (option) => {
-    //         try {
-    //             const rows = await getEventRankings(option.category, option.event as "3-3-3" | "3-6-3" | "Cycle" | "Overall");
-    //             if (option.category === "individual") {
-    //                 for (const record of rows as (GlobalResult & {id: string})[]) {
-    //                     const stats = buildEventStats(record);
-    //                     if (!stats) {
-    //                         continue;
-    //                     }
-    //                     const participantKey = record.participantId || record.participantName || record.id;
-    //                     const key = `${option.category}:${participantKey}`;
-    //                     const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
-    //                     const entry = ensureEntry(map, key, {
-    //                         category: option.category,
-    //                         isTeam: false,
-    //                         participantId: record.participantId ?? undefined,
-    //                         name: record.participantName ?? "Unknown",
-    //                         gender: (record.gender as GenderOption | undefined) ?? "Mixed",
-    //                         age,
-    //                         ageGroup: getAgeGroup(age),
-    //                         country: record.country ?? "Unknown",
-    //                     });
-    //                     const existingStats = entry.events[option.key];
-    //                     if (!existingStats || stats.time < existingStats.time) {
-    //                         entry.events[option.key] = stats;
-    //                     }
-    //                 }
-    //             } else {
-    //                 for (const record of rows as (GlobalTeamResult & {id: string})[]) {
-    //                     const stats = buildEventStats(record);
-    //                     if (!stats) {
-    //                         continue;
-    //                     }
-    //                     const teamIdentifier = record.leaderId || record.teamName || record.id;
-    //                     const key = `${option.category}:${teamIdentifier}`;
-    //                     const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
-    //                     const entry = ensureEntry(map, key, {
-    //                         category: option.category,
-    //                         isTeam: true,
-    //                         teamId: record.leaderId ?? undefined,
-    //                         name: record.teamName ?? "Team",
-    //                         gender: "Mixed",
-    //                         age,
-    //                         ageGroup: getAgeGroup(age),
-    //                         country: record.country ?? "Unknown",
-    //                         members: record.members ?? [],
-    //                         memberNames: Array.isArray((record as {memberNames?: string[]}).memberNames)
-    //                             ? ((record as {memberNames?: string[]}).memberNames ?? [])
-    //                             : [],
-    //                     });
-    //                     const existingStats = entry.events[option.key];
-    //                     if (!existingStats || stats.time < existingStats.time) {
-    //                         entry.events[option.key] = stats;
-    //                     }
-    //                 }
-    //             }
-    //         } catch (error) {
-    //             console.warn(`Failed to fetch rankings for ${option.label}`, error);
-    //         }
-    //     }),
-    // );
+//     // await Promise.all(
+//     //     EVENT_OPTIONS.map(async (option) => {
+//     //         try {
+//     //             const rows = await getEventRankings(option.category, option.event as "3-3-3" | "3-6-3" | "Cycle" | "Overall");
+//     //             if (option.category === "individual") {
+//     //                 for (const record of rows as (GlobalResult & {id: string})[]) {
+//     //                     const stats = buildEventStats(record);
+//     //                     if (!stats) {
+//     //                         continue;
+//     //                     }
+//     //                     const participantKey = record.participantId || record.participantName || record.id;
+//     //                     const key = `${option.category}:${participantKey}`;
+//     //                     const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
+//     //                     const entry = ensureEntry(map, key, {
+//     //                         category: option.category,
+//     //                         isTeam: false,
+//     //                         participantId: record.participantId ?? undefined,
+//     //                         name: record.participantName ?? "Unknown",
+//     //                         gender: (record.gender as GenderOption | undefined) ?? "Mixed",
+//     //                         age,
+//     //                         ageGroup: getAgeGroup(age),
+//     //                         country: record.country ?? "Unknown",
+//     //                     });
+//     //                     const existingStats = entry.events[option.key];
+//     //                     if (!existingStats || stats.time < existingStats.time) {
+//     //                         entry.events[option.key] = stats;
+//     //                     }
+//     //                 }
+//     //             } else {
+//     //                 for (const record of rows as (GlobalTeamResult & {id: string})[]) {
+//     //                     const stats = buildEventStats(record);
+//     //                     if (!stats) {
+//     //                         continue;
+//     //                     }
+//     //                     const teamIdentifier = record.leaderId || record.teamName || record.id;
+//     //                     const key = `${option.category}:${teamIdentifier}`;
+//     //                     const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
+//     //                     const entry = ensureEntry(map, key, {
+//     //                         category: option.category,
+//     //                         isTeam: true,
+//     //                         teamId: record.leaderId ?? undefined,
+//     //                         name: record.teamName ?? "Team",
+//     //                         gender: "Mixed",
+//     //                         age,
+//     //                         ageGroup: getAgeGroup(age),
+//     //                         country: record.country ?? "Unknown",
+//     //                         members: record.members ?? [],
+//     //                         memberNames: Array.isArray((record as {memberNames?: string[]}).memberNames)
+//     //                             ? ((record as {memberNames?: string[]}).memberNames ?? [])
+//     //                             : [],
+//     //                     });
+//     //                     const existingStats = entry.events[option.key];
+//     //                     if (!existingStats || stats.time < existingStats.time) {
+//     //                         entry.events[option.key] = stats;
+//     //                     }
+//     //                 }
+//     //             }
+//     //         } catch (error) {
+//     //             console.warn(`Failed to fetch rankings for ${option.label}`, error);
+//     //         }
+//     //     }),
+//     // );
 
-    for (const entry of map.values()) {
-        if (!entry.events["individual:Overall"]) {
-            const derived = deriveOverallFromEvents(entry.events);
-            if (derived) {
-                entry.events["individual:Overall"] = derived;
-            }
-        }
-    }
-    return Array.from(map.values());
-}
+//     // for (const entry of map.values()) {
+//     //     if (!entry.events["individual:Overall"]) {
+//     //         const derived = deriveOverallFromEvents(entry.events);
+//     //         if (derived) {
+//     //             entry.events["individual:Overall"] = derived;
+//     //         }
+//     //     }
+//     // }
+//     // return Array.from(map.values());
+// }
 
 const Athletes: React.FC = () => {
     const [rankings, setRankings] = useState<AthleteRankingEntry[]>([]);
@@ -492,52 +492,52 @@ const Athletes: React.FC = () => {
         let mounted = true;
         setLoading(true);
 
-        loadRankingData()
-            .then((data) => {
-                if (!mounted) {
-                    return;
-                }
-                setRankings(data);
-                const countries = Array.from(
-                    new Set(
-                        data
-                            .map((entry) => entry.country)
-                            .filter((country): country is string => !!country && country !== "Unknown"),
-                    ),
-                ).sort((a, b) => a.localeCompare(b));
-                setLocationOptions(countries);
+        // loadRankingData()
+        //     .then((data) => {
+        //         if (!mounted) {
+        //             return;
+        //         }
+        //         setRankings(data);
+        //         const countries = Array.from(
+        //             new Set(
+        //                 data
+        //                     .map((entry) => entry.country)
+        //                     .filter((country): country is string => !!country && country !== "Unknown"),
+        //             ),
+        //         ).sort((a, b) => a.localeCompare(b));
+        //         setLocationOptions(countries);
 
-                const seasonStartYears = new Set<number>();
-                for (const entry of data) {
-                    for (const stats of Object.values(entry.events)) {
-                        if (stats?.season) {
-                            seasonStartYears.add(seasonLabelToStartYear(stats.season));
-                        }
-                    }
-                }
-                if (seasonStartYears.size > 0) {
-                    const minYear = Math.min(...seasonStartYears);
-                    const maxYear = Math.max(...seasonStartYears);
-                    const generatedSeasons: SeasonValue[] = [];
-                    for (let year = maxYear; year >= minYear; year -= 1) {
-                        generatedSeasons.push(`${year}-${year + 1}` as SeasonValue);
-                    }
-                    setSeasonOptions(generatedSeasons);
-                } else {
-                    setSeasonOptions([]);
-                }
-            })
-            .catch((error) => {
-                console.error(error);
-                if (mounted) {
-                    Message.error("Failed to load athlete rankings.");
-                }
-            })
-            .finally(() => {
-                if (mounted) {
-                    setLoading(false);
-                }
-            });
+        //         const seasonStartYears = new Set<number>();
+        //         for (const entry of data) {
+        //             for (const stats of Object.values(entry.events)) {
+        //                 if (stats?.season) {
+        //                     seasonStartYears.add(seasonLabelToStartYear(stats.season));
+        //                 }
+        //             }
+        //         }
+        //         if (seasonStartYears.size > 0) {
+        //             const minYear = Math.min(...seasonStartYears);
+        //             const maxYear = Math.max(...seasonStartYears);
+        //             const generatedSeasons: SeasonValue[] = [];
+        //             for (let year = maxYear; year >= minYear; year -= 1) {
+        //                 generatedSeasons.push(`${year}-${year + 1}` as SeasonValue);
+        //             }
+        //             setSeasonOptions(generatedSeasons);
+        //         } else {
+        //             setSeasonOptions([]);
+        //         }
+        //     })
+        //     .catch((error) => {
+        //         console.error(error);
+        //         if (mounted) {
+        //             Message.error("Failed to load athlete rankings.");
+        //         }
+        //     })
+        //     .finally(() => {
+        //         if (mounted) {
+        //             setLoading(false);
+        //         }
+        //     });
 
         return () => {
             mounted = false;

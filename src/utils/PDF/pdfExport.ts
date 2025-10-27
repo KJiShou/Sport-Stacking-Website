@@ -405,7 +405,7 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
             }
 
             const parts: string[] = [];
-            const sortedTypes = Array.from(grouped.keys()).sort();
+            const sortedTypes = Array.from(grouped.keys()).sort((a, b) => a.localeCompare(b));
             for (const type of sortedTypes) {
                 const codes = Array.from(grouped.get(type) ?? []).sort((a, b) => a.localeCompare(b));
                 parts.push(codes.length > 0 ? `${type} (${codes.join(", ")})` : type);
