@@ -60,16 +60,16 @@ const App: FC = () => {
                 <Layout className="max-w-full w-full h-screen">
                     <Navbar /> {/* 固定顶部 */}
                     <ProtectedRoute>
-                        {/* 只有 Content 可滚动 */}
-                        <Content className="mt-24 overflow-y-auto h-[calc(100vh-6rem)]">
+                        {/* 使用窗口滚动，移除内部滚动容器 */}
+                        <Content className="mt-24">
                             <Routes>
                                 {routes.map((route) => (
                                     <Route key={route.path} path={route.path} element={<route.component />} />
                                 ))}
                             </Routes>
+                            <Footer />
                         </Content>
                     </ProtectedRoute>
-                    <Footer />
                 </Layout>
             </Router>
         </ConfigProvider>
