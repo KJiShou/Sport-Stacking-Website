@@ -6,6 +6,7 @@ import {
     Empty,
     Form,
     Input,
+    Link,
     Menu,
     Message,
     Modal,
@@ -70,14 +71,28 @@ const EVENTS_FOR_CATEGORY: Record<Category, EventTypeKey[]> = {
 
 const formatTime = (time: number): string => {
     if (time === 0) return "DNF";
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    const milliseconds = Math.floor((time % 1) * 100);
+    const total = time;
+    let minutes = Math.floor(total / 60);
+    let seconds = Math.floor(total % 60);
+    let thousandths = Math.round((total - Math.floor(total)) * 1000);
+
+    // Handle rounding overflow (e.g., 59.9995 -> 60.000)
+    if (thousandths === 1000) {
+        thousandths = 0;
+        seconds += 1;
+        if (seconds === 60) {
+            seconds = 0;
+            minutes += 1;
+        }
+    }
+
+    const secStr = seconds.toString().padStart(2, "0");
+    const msStr = thousandths.toString().padStart(3, "0");
 
     if (minutes > 0) {
-        return `${minutes}:${seconds.toString().padStart(2, "0")}.${milliseconds.toString().padStart(2, "0")}`;
+        return `${minutes}:${secStr}.${msStr}`;
     }
-    return `${seconds}.${milliseconds.toString().padStart(2, "0")}`;
+    return `${seconds}.${msStr}`;
 };
 
 const formatDate = (dateString: string): string => {
@@ -305,17 +320,30 @@ const RecordsIndex: React.FC = () => {
                 dataIndex: "athlete",
                 key: "athlete",
                 width: 200,
-                render: (_: unknown, record: RecordDisplay) => (
-                    <Text
-                        style={{
-                            fontWeight: record.rank <= 3 ? "bold" : "500",
-                            cursor: "pointer",
-                            color: "#1890ff",
-                        }}
-                    >
-                        {record.athlete}
-                    </Text>
-                ),
+                render: (_: unknown, record: RecordDisplay) => {
+                    const hasParticipantId = record.participantId && record.participantId.length > 0;
+                    if (hasParticipantId) {
+                        return (
+                            <Link
+                                href={`/athletes/${record.participantId}`}
+                                style={{
+                                    fontWeight: record.rank <= 3 ? "bold" : "500",
+                                }}
+                            >
+                                {record.athlete}
+                            </Link>
+                        );
+                    }
+                    return (
+                        <Text
+                            style={{
+                                fontWeight: record.rank <= 3 ? "bold" : "500",
+                            }}
+                        >
+                            {record.athlete}
+                        </Text>
+                    );
+                },
                 sorter: (a: RecordDisplay, b: RecordDisplay) => a.athlete.localeCompare(b.athlete),
             },
         ];
@@ -333,10 +361,18 @@ const RecordsIndex: React.FC = () => {
                     ];
                     return (
                         <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
-                            {combined.map((m) => (
-                                <Tag key={m} color={"arcoblue"} size="small">
-                                    {m}
-                                </Tag>
+                            {combined.map((memberId) => (
+                                <Link
+                                    key={memberId}
+                                    href={`/athletes/${memberId}`}
+                                    style={{
+                                        display: "inline-block",
+                                    }}
+                                >
+                                    <Tag color={"arcoblue"} style={{margin: 0}}>
+                                        {memberId}
+                                    </Tag>
+                                </Link>
                             ))}
                             {combined.length === 0 ? <Text style={{color: "#999"}}>—</Text> : null}
                         </div>
@@ -513,7 +549,7 @@ const RecordsIndex: React.FC = () => {
                 videoUrl: record.videoUrl || undefined,
                 rawTime: record.time,
                 recordId: (record as GlobalResultWithId | GlobalTeamResultWithId).id,
-                participantId: isTeamResult ? undefined : (record as GlobalResult).participantId,
+                participantId: isTeamResult ? undefined : (record as GlobalResult).participantGlobalId,
                 teamName: isTeamResult ? (record as GlobalTeamResult).teamName : undefined,
                 members: isTeamResult ? (record as GlobalTeamResult).members : undefined,
                 leaderId: isTeamResult ? (record as GlobalTeamResult).leaderId : undefined,
@@ -580,7 +616,7 @@ const RecordsIndex: React.FC = () => {
                             showJumper: true,
                             sizeCanChange: true,
                         }}
-                        size="small"
+                        size="default"
                         stripe
                         hover
                         style={{backgroundColor: "white"}}

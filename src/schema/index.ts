@@ -107,3 +107,6 @@ export type {
     MenuItemDefinition,
     NavItemDefinition,
 } from "./AppSchema";
+
+export {HomeCarouselImageSchema} from "./HomeCarouselSchema";
+export type {HomeCarouselImage} from "./HomeCarouselSchema";

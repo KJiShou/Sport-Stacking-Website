@@ -155,7 +155,11 @@ export default function RegisterPage() {
     }, [id]);
 
     // 构建统计数据示例
-    const allTimeStats: AllTimeStat[] = [{event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"}];
+    const allTimeStats: AllTimeStat[] = [
+        {event: "3-3-3", time: (user?.best_times?.["3-3-3"] as {time?: number} | undefined)?.time ?? 0, rank: "-"},
+        {event: "3-6-3", time: (user?.best_times?.["3-6-3"] as {time?: number} | undefined)?.time ?? 0, rank: "-"},
+        {event: "Cycle", time: (user?.best_times?.Cycle as {time?: number} | undefined)?.time ?? 0, rank: "-"},
+    ];
     const onlineBest: OnlineBest[] = [];
     const records: RecordItem[] = [];
 
@@ -432,7 +436,22 @@ export default function RegisterPage() {
                                     <div className="bg-white flex flex-col w-full h-1/2 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                                         <Statistic
                                             title="All-around Best Time"
-                                            value={user?.best_times?.["all-around"]?.toFixed(3) ?? "-"}
+                                            value={(() => {
+                                                const three = (user?.best_times?.["3-3-3"] as {time?: number} | undefined)?.time;
+                                                const six = (user?.best_times?.["3-6-3"] as {time?: number} | undefined)?.time;
+                                                const cycle = (user?.best_times?.Cycle as {time?: number} | undefined)?.time;
+                                                if (
+                                                    typeof three === "number" &&
+                                                    three > 0 &&
+                                                    typeof six === "number" &&
+                                                    six > 0 &&
+                                                    typeof cycle === "number" &&
+                                                    cycle > 0
+                                                ) {
+                                                    return (three + six + cycle).toFixed(3);
+                                                }
+                                                return "-";
+                                            })()}
                                             suffix="sec"
                                         />
                                     </div>

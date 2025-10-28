@@ -3,15 +3,29 @@ export function formatStackingTime(time?: number | null): string {
         return "—";
     }
 
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    const hundredths = Math.floor((time % 1) * 100);
+    const total = time;
+    let minutes = Math.floor(total / 60);
+    let seconds = Math.floor(total % 60);
+    let thousandths = Math.round((total - Math.floor(total)) * 1000);
 
-    if (minutes > 0) {
-        return `${minutes}:${seconds.toString().padStart(2, "0")}.${hundredths.toString().padStart(2, "0")}`;
+    // Handle rounding overflow (e.g., 59.9995 -> 60.000)
+    if (thousandths === 1000) {
+        thousandths = 0;
+        seconds += 1;
+        if (seconds === 60) {
+            seconds = 0;
+            minutes += 1;
+        }
     }
 
-    return `${seconds}.${hundredths.toString().padStart(2, "0")}`;
+    const secStr = seconds.toString().padStart(2, "0");
+    const msStr = thousandths.toString().padStart(3, "0");
+
+    if (minutes > 0) {
+        return `${minutes}:${secStr}.${msStr}`;
+    }
+
+    return `${seconds}.${msStr}`;
 }
 
 export function formatDateSafe(value?: Date | string | number | null): string {

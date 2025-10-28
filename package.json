@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
-  "workspaces": ["functions"],
+  "workspaces": [
+    "functions"
+  ],
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
@@ -36,6 +38,7 @@
     "papaparse": "^5.5.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-easy-crop": "^5.5.3",
     "react-helmet": "^6.1.0",
     "react-hook-form": "^7.54.2",
     "react-responsive": "^10.0.0",

@@ -19,14 +19,16 @@ import {
 } from "@arco-design/web-react";
 import {IconRefresh} from "@arco-design/web-react/icon";
 
-import type {GlobalResult, GlobalTeamResult} from "@/schema/RecordSchema";
+import type {FirestoreUser} from "@/schema/UserSchema";
+// import type {GlobalResult, GlobalTeamResult} from "@/schema/RecordSchema";
+import {type EventType as RankingEventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
 import {formatStackingTime} from "@/utils/time";
 
 const {Title, Text} = Typography;
 const Option = Select.Option;
 
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
-type EventTypeUnion = "Overall" | "3-3-3" | "3-6-3" | "Cycle";
+type EventTypeUnion = "3-3-3" | "3-6-3" | "Cycle";
 
 type AgeGroup = "Overall" | "6U" | "8U" | "10U" | "12U" | "14U" | "17U" | "Open";
 type AgeFilter = "All" | AgeGroup;
@@ -105,12 +107,6 @@ const AGE_FILTER_OPTIONS: {value: AgeFilter; label: string}[] = [
 
 const EVENT_OPTIONS: EventOption[] = [
     {
-        key: "individual:Overall",
-        label: "Individual Overall",
-        category: "individual",
-        event: "Overall",
-    },
-    {
         key: "individual:3-3-3",
         label: "Individual 3-3-3",
         category: "individual",
@@ -127,18 +123,6 @@ const EVENT_OPTIONS: EventOption[] = [
         label: "Individual Cycle",
         category: "individual",
         event: "Cycle",
-    },
-    {
-        key: "team_relay:Cycle",
-        label: "Team Relay Cycle",
-        category: "team_relay",
-        event: "Cycle",
-    },
-    {
-        key: "team_relay:3-6-3",
-        label: "Team Relay 3-6-3",
-        category: "team_relay",
-        event: "3-6-3",
     },
 ];
 
@@ -299,32 +283,7 @@ function buildEventStats(record: {
     };
 }
 
-function deriveOverallFromEvents(events: Record<string, EventStats>): EventStats | null {
-    const three = events["individual:3-3-3"];
-    const six = events["individual:3-6-3"];
-    const cycle = events["individual:Cycle"];
-    if (!three || !six || !cycle) {
-        return null;
-    }
-    const time = three.time + six.time + cycle.time;
-    if (!Number.isFinite(time) || time <= 0) {
-        return null;
-    }
-    const seasons = [three.season, six.season, cycle.season].filter((season): season is SeasonValue => !!season);
-    const season = seasons.length === 0 ? null : seasons.sort((a, b) => seasonLabelToStartYear(b) - seasonLabelToStartYear(a))[0];
-    const timestamps = [three.updatedAt, six.updatedAt, cycle.updatedAt, three.createdAt, six.createdAt, cycle.createdAt]
-        .map((value) => parseDate(value))
-        .filter((value): value is Date => !!value)
-        .sort((a, b) => b.getTime() - a.getTime());
-    const updatedAt = timestamps[0] ?? null;
-    return {
-        time,
-        season,
-        createdAt: null,
-        updatedAt,
-        source: "derived",
-    };
-}
+// Overall is no longer tracked in best_times; we no longer derive it for rankings
 
 function getAgeGroup(age: number | null): AgeGroup {
     if (age === null || Number.isNaN(age)) {
@@ -395,82 +354,111 @@ function ensureEntry(
     return entry;
 }
 
-// async function loadRankingData(): Promise<AthleteRankingEntry[]> {
-//     const map = new Map<string, AthleteRankingEntry>();
+function isTimestampLike(value: unknown): value is {toDate: () => Date} {
+    return !!value && typeof (value as {toDate?: unknown}).toDate === "function";
+}
 
-//     // await Promise.all(
-//     //     EVENT_OPTIONS.map(async (option) => {
-//     //         try {
-//     //             const rows = await getEventRankings(option.category, option.event as "3-3-3" | "3-6-3" | "Cycle" | "Overall");
-//     //             if (option.category === "individual") {
-//     //                 for (const record of rows as (GlobalResult & {id: string})[]) {
-//     //                     const stats = buildEventStats(record);
-//     //                     if (!stats) {
-//     //                         continue;
-//     //                     }
-//     //                     const participantKey = record.participantId || record.participantName || record.id;
-//     //                     const key = `${option.category}:${participantKey}`;
-//     //                     const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
-//     //                     const entry = ensureEntry(map, key, {
-//     //                         category: option.category,
-//     //                         isTeam: false,
-//     //                         participantId: record.participantId ?? undefined,
-//     //                         name: record.participantName ?? "Unknown",
-//     //                         gender: (record.gender as GenderOption | undefined) ?? "Mixed",
-//     //                         age,
-//     //                         ageGroup: getAgeGroup(age),
-//     //                         country: record.country ?? "Unknown",
-//     //                     });
-//     //                     const existingStats = entry.events[option.key];
-//     //                     if (!existingStats || stats.time < existingStats.time) {
-//     //                         entry.events[option.key] = stats;
-//     //                     }
-//     //                 }
-//     //             } else {
-//     //                 for (const record of rows as (GlobalTeamResult & {id: string})[]) {
-//     //                     const stats = buildEventStats(record);
-//     //                     if (!stats) {
-//     //                         continue;
-//     //                     }
-//     //                     const teamIdentifier = record.leaderId || record.teamName || record.id;
-//     //                     const key = `${option.category}:${teamIdentifier}`;
-//     //                     const age = typeof record.age === "number" && Number.isFinite(record.age) ? record.age : null;
-//     //                     const entry = ensureEntry(map, key, {
-//     //                         category: option.category,
-//     //                         isTeam: true,
-//     //                         teamId: record.leaderId ?? undefined,
-//     //                         name: record.teamName ?? "Team",
-//     //                         gender: "Mixed",
-//     //                         age,
-//     //                         ageGroup: getAgeGroup(age),
-//     //                         country: record.country ?? "Unknown",
-//     //                         members: record.members ?? [],
-//     //                         memberNames: Array.isArray((record as {memberNames?: string[]}).memberNames)
-//     //                             ? ((record as {memberNames?: string[]}).memberNames ?? [])
-//     //                             : [],
-//     //                     });
-//     //                     const existingStats = entry.events[option.key];
-//     //                     if (!existingStats || stats.time < existingStats.time) {
-//     //                         entry.events[option.key] = stats;
-//     //                     }
-//     //                 }
-//     //             }
-//     //         } catch (error) {
-//     //             console.warn(`Failed to fetch rankings for ${option.label}`, error);
-//     //         }
-//     //     }),
-//     // );
+function toSafeDate(value: unknown): Date | null {
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+    if (isTimestampLike(value)) {
+        const d = value.toDate();
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+}
 
-//     // for (const entry of map.values()) {
-//     //     if (!entry.events["individual:Overall"]) {
-//     //         const derived = deriveOverallFromEvents(entry.events);
-//     //         if (derived) {
-//     //             entry.events["individual:Overall"] = derived;
-//     //         }
-//     //     }
-//     // }
-//     // return Array.from(map.values());
-// }
+function extractCountry(value: unknown): string {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value) && value.length > 0 && typeof value[0] === "string") return value[0] as string;
+    return "Unknown";
+}
+
+async function loadRankingData(): Promise<AthleteRankingEntry[]> {
+    // Build rankings from users' best_times via athleteRankingsService for individual events only
+    const map = new Map<string, AthleteRankingEntry>();
+
+    // Events we care about for individual rankings
+    const individualEvents: RankingEventType[] = ["3-3-3", "3-6-3", "Cycle"];
+
+    // Fetch top athletes for each event and upsert into the map
+    await Promise.all(
+        individualEvents.map(async (evt) => {
+            try {
+                const users = await getTopAthletesByEvent(evt, 500);
+                const eventKey = `individual:${evt}`;
+
+                for (const user of users as FirestoreUser[]) {
+                    const participantId = (user.global_id as string | undefined) ?? (user.id as string);
+                    const key = `individual:${participantId}`;
+                    const name = (user.name as string) ?? "Unknown";
+                    const gender = (user.gender as GenderOption | undefined) ?? "Mixed";
+
+                    // Derive country (handle array or string)
+                    const country = extractCountry((user as unknown as {country?: unknown})?.country);
+
+                    const bestObj = user.best_times?.[evt as keyof NonNullable<FirestoreUser["best_times"]>] as
+                        | {time?: number; updated_at?: Date | {toDate?: () => Date} | null; season?: string | null}
+                        | undefined;
+                    const time = bestObj?.time;
+                    const updatedAt = parseDate(bestObj?.updated_at ?? null);
+                    const season = ((): SeasonValue | null => {
+                        const s = bestObj?.season;
+                        if (typeof s === "string" && /^(\d{4})-(\d{4})$/.test(s)) {
+                            return s as SeasonValue;
+                        }
+                        return updatedAt ? determineSeason(updatedAt) : null;
+                    })();
+
+                    // Derive age from birthdate at the time of record (updated_at)
+                    const birth = user.birthdate as unknown;
+                    const age = (() => {
+                        if (!birth) return null;
+                        const birthdate = toSafeDate(birth);
+                        if (!birthdate || Number.isNaN(birthdate.getTime())) return null;
+                        // Use updated_at if available, otherwise current date
+                        const referenceDate = updatedAt ?? new Date();
+                        let years = referenceDate.getFullYear() - birthdate.getFullYear();
+                        const hadBirthday =
+                            referenceDate.getMonth() > birthdate.getMonth() ||
+                            (referenceDate.getMonth() === birthdate.getMonth() && referenceDate.getDate() >= birthdate.getDate());
+                        if (!hadBirthday) years -= 1;
+                        return Number.isFinite(years) ? years : null;
+                    })();
+                    const ageGroup = getAgeGroup(age);
+
+                    const entry = ensureEntry(map, key, {
+                        category: "individual",
+                        isTeam: false,
+                        participantId,
+                        name,
+                        gender,
+                        age,
+                        ageGroup,
+                        country,
+                    });
+
+                    if (typeof time === "number" && Number.isFinite(time) && time > 0) {
+                        const stats: EventStats = {
+                            time,
+                            season,
+                            createdAt: null,
+                            updatedAt,
+                            source: "record",
+                        };
+                        const existingStats = entry.events[eventKey];
+                        if (!existingStats || stats.time < existingStats.time) {
+                            entry.events[eventKey] = stats;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn(`Failed to fetch top athletes for ${evt}`, error);
+            }
+        }),
+    );
+
+    return Array.from(map.values());
+}
 
 const Athletes: React.FC = () => {
     const [rankings, setRankings] = useState<AthleteRankingEntry[]>([]);
@@ -492,52 +480,52 @@ const Athletes: React.FC = () => {
         let mounted = true;
         setLoading(true);
 
-        // loadRankingData()
-        //     .then((data) => {
-        //         if (!mounted) {
-        //             return;
-        //         }
-        //         setRankings(data);
-        //         const countries = Array.from(
-        //             new Set(
-        //                 data
-        //                     .map((entry) => entry.country)
-        //                     .filter((country): country is string => !!country && country !== "Unknown"),
-        //             ),
-        //         ).sort((a, b) => a.localeCompare(b));
-        //         setLocationOptions(countries);
+        loadRankingData()
+            .then((data) => {
+                if (!mounted) {
+                    return;
+                }
+                setRankings(data);
+                const countries = Array.from(
+                    new Set(
+                        data
+                            .map((entry) => entry.country)
+                            .filter((country): country is string => !!country && country !== "Unknown"),
+                    ),
+                ).sort((a, b) => a.localeCompare(b));
+                setLocationOptions(countries);
 
-        //         const seasonStartYears = new Set<number>();
-        //         for (const entry of data) {
-        //             for (const stats of Object.values(entry.events)) {
-        //                 if (stats?.season) {
-        //                     seasonStartYears.add(seasonLabelToStartYear(stats.season));
-        //                 }
-        //             }
-        //         }
-        //         if (seasonStartYears.size > 0) {
-        //             const minYear = Math.min(...seasonStartYears);
-        //             const maxYear = Math.max(...seasonStartYears);
-        //             const generatedSeasons: SeasonValue[] = [];
-        //             for (let year = maxYear; year >= minYear; year -= 1) {
-        //                 generatedSeasons.push(`${year}-${year + 1}` as SeasonValue);
-        //             }
-        //             setSeasonOptions(generatedSeasons);
-        //         } else {
-        //             setSeasonOptions([]);
-        //         }
-        //     })
-        //     .catch((error) => {
-        //         console.error(error);
-        //         if (mounted) {
-        //             Message.error("Failed to load athlete rankings.");
-        //         }
-        //     })
-        //     .finally(() => {
-        //         if (mounted) {
-        //             setLoading(false);
-        //         }
-        //     });
+                const seasonStartYears = new Set<number>();
+                for (const entry of data) {
+                    for (const stats of Object.values(entry.events)) {
+                        if (stats?.season) {
+                            seasonStartYears.add(seasonLabelToStartYear(stats.season));
+                        }
+                    }
+                }
+                if (seasonStartYears.size > 0) {
+                    const minYear = Math.min(...seasonStartYears);
+                    const maxYear = Math.max(...seasonStartYears);
+                    const generatedSeasons: SeasonValue[] = [];
+                    for (let year = maxYear; year >= minYear; year -= 1) {
+                        generatedSeasons.push(`${year}-${year + 1}` as SeasonValue);
+                    }
+                    setSeasonOptions(generatedSeasons);
+                } else {
+                    setSeasonOptions([]);
+                }
+            })
+            .catch((error) => {
+                console.error(error);
+                if (mounted) {
+                    Message.error("Failed to load athlete rankings.");
+                }
+            })
+            .finally(() => {
+                if (mounted) {
+                    setLoading(false);
+                }
+            });
 
         return () => {
             mounted = false;
@@ -704,14 +692,6 @@ const Athletes: React.FC = () => {
                 render: (season: SeasonValue | null) =>
                     season ? <Tag color="green">{season}</Tag> : <Tag color="gray">N/A</Tag>,
             },
-            {
-                title: "Source",
-                dataIndex: "source",
-                width: 140,
-                render: (source: "record" | "derived") => (
-                    <Tag color={source === "record" ? "blue" : "orange"}>{source === "record" ? "Recorded" : "Derived"}</Tag>
-                ),
-            },
         );
 
         return base;
@@ -743,7 +723,7 @@ const Athletes: React.FC = () => {
                     <Space wrap size="large">
                         <Input.Search
                             allowClear
-                            placeholder="Search athlete or team"
+                            placeholder="Search athlete"
                             style={{width: 260}}
                             value={searchTerm}
                             onChange={(value) => setSearchTerm(value)}

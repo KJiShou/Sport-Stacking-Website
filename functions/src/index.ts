@@ -532,7 +532,7 @@ export const updateVerification = onRequest(async (req, res) => {
 
                 const record = registrationRecords[recordIndex];
                 const existingEvents = record.events;
-                const teamEvents = Array.isArray(teamData.events) ? teamData.events : [];
+                const teamEvents = Array.isArray(teamData.event) ? teamData.event : [];
                 const hasConflict = teamEvents.some((event: string) => existingEvents.includes(event));
 
                 if (hasConflict) {
@@ -627,5 +627,180 @@ export const syncUserTournamentHistory = onDocumentWritten(
                 }
             }),
         );
+    },
+);
+
+/**
+ * Cloud Function to update user best times when records are created/updated
+ * Triggers on: records/{recordId} and overall_records/{recordId}
+ */
+export const updateUserBestTimes = onDocumentWritten(
+    {
+        document: "records/{recordId}",
+        region: process.env.FUNCTIONS_REGION ?? "asia-southeast1",
+        retry: false,
+    },
+    async (event) => {
+        const afterData = event.data?.after?.data();
+        if (!afterData) {
+            return;
+        }
+
+        const participantGlobalId = typeof afterData.participant_global_id === "string" ? afterData.participant_global_id : null;
+        if (!participantGlobalId) {
+            return;
+        }
+
+        const bestTime = typeof afterData.best_time === "number" ? afterData.best_time : null;
+        if (!bestTime || bestTime <= 0) {
+            return;
+        }
+
+        const eventName = typeof afterData.event === "string" ? afterData.event.toLowerCase() : "";
+        let eventType: "3-3-3" | "3-6-3" | "Cycle" | null = null;
+
+        if (eventName.includes("3-3-3")) {
+            eventType = "3-3-3";
+        } else if (eventName.includes("3-6-3")) {
+            eventType = "3-6-3";
+        } else if (eventName.includes("cycle")) {
+            eventType = "Cycle";
+        }
+
+        if (!eventType) {
+            return;
+        }
+
+        try {
+            const usersSnap = await db.collection("users").where("global_id", "==", participantGlobalId).limit(1).get();
+            if (usersSnap.empty) {
+                console.warn(`User not found with global_id: ${participantGlobalId}`);
+                return;
+            }
+
+            const userDoc = usersSnap.docs[0];
+            const userData = userDoc.data();
+            const currentBestTimes = userData?.best_times || {};
+
+            const extractTime = (entry: unknown): number | null => {
+                if (entry === null || entry === undefined) return null;
+                if (typeof entry === "number") return entry;
+                if (typeof entry === "object" && typeof (entry as {time?: unknown}).time === "number") {
+                    return (entry as {time: number}).time;
+                }
+                return null;
+            };
+
+            const currentBestTime = extractTime(currentBestTimes[eventType]);
+
+            // Update if no current best or new time is better
+            if (currentBestTime === null || currentBestTime === undefined || bestTime < currentBestTime) {
+                const now = FirestoreTimestamp.now();
+                const jsDate = new Date(now.toMillis());
+                const year = jsDate.getUTCFullYear();
+                const month = jsDate.getUTCMonth();
+                const seasonStartYear = month >= 6 ? year : year - 1;
+                const season = `${seasonStartYear}-${seasonStartYear + 1}`;
+
+                const updatedBestTimes = {
+                    ...currentBestTimes,
+                    [eventType]: {time: bestTime, updated_at: now, season},
+                };
+
+                await userDoc.ref.update({
+                    best_times: updatedBestTimes,
+                    updated_at: now,
+                });
+            }
+        } catch (error) {
+            console.error(`Failed to update best time for user ${participantGlobalId}:`, error);
+        }
+    },
+);
+
+export const updateUserBestTimesFromOverall = onDocumentWritten(
+    {
+        document: "overall_records/{recordId}",
+        region: process.env.FUNCTIONS_REGION ?? "asia-southeast1",
+        retry: false,
+    },
+    async (event) => {
+        const afterData = event.data?.after?.data();
+        if (!afterData) {
+            return;
+        }
+
+        const participantGlobalId = typeof afterData.participant_global_id === "string" ? afterData.participant_global_id : null;
+        if (!participantGlobalId) {
+            return;
+        }
+
+        const threeTime = typeof afterData.three_three_three === "number" ? afterData.three_three_three : null;
+        const sixTime = typeof afterData.three_six_three === "number" ? afterData.three_six_three : null;
+        const cycleTime = typeof afterData.cycle === "number" ? afterData.cycle : null;
+        const overallTime = typeof afterData.overall_time === "number" ? afterData.overall_time : null;
+
+        if (!threeTime && !sixTime && !cycleTime && !overallTime) {
+            return;
+        }
+
+        try {
+            const usersSnap = await db.collection("users").where("global_id", "==", participantGlobalId).limit(1).get();
+            if (usersSnap.empty) {
+                console.warn(`User not found with global_id: ${participantGlobalId}`);
+                return;
+            }
+
+            const userDoc = usersSnap.docs[0];
+            const userData = userDoc.data();
+            const currentBestTimes = userData?.best_times || {};
+
+            const extractTime = (entry: unknown): number | null => {
+                if (entry === null || entry === undefined) return null;
+                if (typeof entry === "number") return entry;
+                if (typeof entry === "object" && typeof (entry as {time?: unknown}).time === "number") {
+                    return (entry as {time: number}).time;
+                }
+                return null;
+            };
+
+            const now = FirestoreTimestamp.now();
+            const jsDate = new Date(now.toMillis());
+            const year = jsDate.getUTCFullYear();
+            const month = jsDate.getUTCMonth();
+            const seasonStartYear = month >= 6 ? year : year - 1;
+            const season = `${seasonStartYear}-${seasonStartYear + 1}`;
+
+            const updatePayload: Record<string, unknown> = {};
+
+            if (threeTime && threeTime > 0) {
+                const current = extractTime(currentBestTimes["3-3-3"]);
+                if (current === null || current === undefined || threeTime < current) {
+                    updatePayload["best_times.3-3-3"] = {time: threeTime, updated_at: now, season};
+                }
+            }
+            if (sixTime && sixTime > 0) {
+                const current = extractTime(currentBestTimes["3-6-3"]);
+                if (current === null || current === undefined || sixTime < current) {
+                    updatePayload["best_times.3-6-3"] = {time: sixTime, updated_at: now, season};
+                }
+            }
+            if (cycleTime && cycleTime > 0) {
+                const current = extractTime(currentBestTimes.Cycle);
+                if (current === null || current === undefined || cycleTime < current) {
+                    updatePayload["best_times.Cycle"] = {time: cycleTime, updated_at: now, season};
+                }
+            }
+            // Overall best time is no longer tracked in best_times
+
+            if (Object.keys(updatePayload).length > 0) {
+                await userDoc.ref.update({
+                    ...updatePayload,
+                    updated_at: now,
+                });
+            }
+        } catch (error) {
+            console.error(`Failed to update best times for user ${participantGlobalId}:`, error);
+        }
     },
 );

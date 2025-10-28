@@ -12,6 +12,20 @@ export const UserRegistrationRecordSchema = z.object({
 });
 export type UserRegistrationRecord = z.infer<typeof UserRegistrationRecordSchema>;
 
+const BestTimeRecordSchema = z.object({
+    time: z.number(),
+    updated_at: z
+        .union([z.instanceof(Timestamp), z.instanceof(Date)])
+        .optional()
+        .nullable(),
+    // Season label like "2024-2025"
+    season: z
+        .string()
+        .regex(/^\d{4}-\d{4}$/)
+        .optional()
+        .nullable(),
+});
+
 export const FirestoreUserSchema = z.object({
     id: z.string(),
     memberId: z.string().optional().nullable(),
@@ -36,7 +50,14 @@ export const FirestoreUserSchema = z.object({
         .optional()
         .nullable(),
     school: z.string().optional().nullable(),
-    best_times: z.record(z.string(), z.number()).optional(),
+    best_times: z
+        .object({
+            "3-3-3": BestTimeRecordSchema.optional().nullable(),
+            "3-6-3": BestTimeRecordSchema.optional().nullable(),
+            Cycle: BestTimeRecordSchema.optional().nullable(),
+        })
+        .optional()
+        .nullable(),
     registration_records: z.array(UserRegistrationRecordSchema).optional().nullable(),
     created_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
