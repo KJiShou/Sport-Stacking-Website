@@ -50,6 +50,9 @@ const computeTeamMultiCodeResults = (
         if (!codes.includes(recordCode)) continue;
         if (record.event !== event.type) continue;
 
+        // Check event_id to distinguish between events with same type
+        if (event.id && record.event_id !== event.id) continue;
+
         const teamId =
             record.team_id ??
             record.participant_id ??
@@ -128,7 +131,13 @@ const computeTeamSingleCodeResults = (
 ): AggregatedPrelimResult[] => {
     return context.allRecords
         .map((rawRecord) => rawRecord as TournamentTeamRecord)
-        .filter((record) => record.code === code && record.event === event.type)
+        .filter((record) => {
+            if (record.code !== code) return false;
+            if (record.event !== event.type) return false;
+            // Check event_id to distinguish between events with same type
+            if (event.id && record.event_id !== event.id) return false;
+            return true;
+        })
         .filter((record) => {
             const teamId =
                 record.team_id ??
@@ -184,6 +193,10 @@ const computeIndividualMultiCodeResults = (
     for (const code of codes) {
         for (const record of context.allRecords) {
             if (!(code === record.code && record.event === event.type)) continue;
+
+            // Check event_id to distinguish between events with same type
+            if (event.id && record.event_id !== event.id) continue;
+
             const participantId = record.participant_id as string | undefined;
             if (!participantId) continue;
             const age = context.ageMap[participantId];
@@ -242,7 +255,13 @@ const computeIndividualSingleCodeResults = (
     context: AggregationContext,
 ): AggregatedPrelimResult[] => {
     return context.allRecords
-        .filter((record) => code === record.code && record.event === event.type)
+        .filter((record) => {
+            if (record.code !== code) return false;
+            if (record.event !== event.type) return false;
+            // Check event_id to distinguish between events with same type
+            if (event.id && record.event_id !== event.id) return false;
+            return true;
+        })
         .filter((record) => {
             const participantId = record.participant_id as string | undefined;
             if (!participantId) return false;
@@ -789,7 +808,7 @@ export default function PrelimResultsPage() {
         }
     }, [aggregationContext, navigate, registrations, teams, tournament, tournamentId]);
     return (
-        <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+        <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <Button
                 type="outline"
                 onClick={() => navigate(`/tournaments/${tournamentId}/start/record`)}

@@ -1,6 +1,5 @@
 import {
     Button,
-    Card,
     Form,
     Grid,
     Input,
@@ -12,6 +11,7 @@ import {
     Space,
     Switch,
     Table,
+    Typography,
     Upload,
 } from "@arco-design/web-react";
 import type {ColumnProps} from "@arco-design/web-react/es/Table";
@@ -30,6 +30,7 @@ import {
 } from "../../services/firebase/homeCarouselService";
 
 const FormItem = Form.Item;
+const {Title} = Typography;
 
 interface FormData {
     title: string;
@@ -402,17 +403,18 @@ export const CarouselManagement: React.FC = () => {
     ];
 
     return (
-        <div style={{padding: "1rem"}}>
-            <Card
-                title="Carousel Management"
-                extra={
+        <div className="flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
+            <div className="bg-white flex flex-col w-full h-fit gap-4 p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                <div className="w-full flex justify-between items-center mb-4">
+                    <Title heading={3}>Carousel Management</Title>
                     <Button type="primary" icon={<IconPlus />} onClick={handleAdd}>
                         Add Image
                     </Button>
-                }
-            >
-                <Table loading={loading} columns={columns} data={images} rowKey="id" pagination={{pageSize: 10}} stripe />
-            </Card>
+                </div>
+                <div className="w-full">
+                    <Table loading={loading} columns={columns} data={images} rowKey="id" pagination={{pageSize: 10}} stripe />
+                </div>
+            </div>
 
             <Modal
                 title={editingImage ? "Edit Carousel Image" : "Add Carousel Image"}

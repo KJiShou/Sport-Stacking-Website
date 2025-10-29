@@ -1,5 +1,18 @@
 import {sanitizeEventCodes} from "@/utils/tournament/eventUtils";
-import {collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, setDoc, updateDoc, where} from "firebase/firestore";
+import {
+    Timestamp,
+    collection,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocs,
+    limit,
+    orderBy,
+    query,
+    setDoc,
+    updateDoc,
+    where,
+} from "firebase/firestore";
 import type {TeamMember, TournamentEvent} from "../../schema";
 import {
     type GetFastestRecordData,
@@ -538,6 +551,8 @@ const toGlobalFromOverall = (r: TournamentOverallRecord & {id: string}): (Global
         event: "Overall",
         gender: r.gender ?? "N/A",
         participantId: r.participant_id,
+        participantGlobalId: r.participant_global_id,
+
         participantName: r.participant_name,
         country: r.country ?? undefined,
         time,
@@ -632,4 +647,130 @@ export const getBestRecords = async (): Promise<BestRecordsShape> => {
 // Backwards compatibility: stub
 export const getBestRecordsByAgeGroup = async (): Promise<BestRecordsShape> => {
     return getBestRecords();
+};
+
+/**
+ * Update participant registration records with rankings and overall results
+ * @param tournamentId - The tournament ID
+ * @param classification - The classification type ('prelim' or 'final')
+ */
+export const updateParticipantRankingsAndResults = async (
+    tournamentId: string,
+    classification: "prelim" | "final",
+): Promise<void> => {
+    try {
+        // Get all individual records for this tournament and classification
+        const recordsQuery = query(
+            collection(firestore, "records"),
+            where("tournament_id", "==", tournamentId),
+            where("classification", "==", classification),
+        );
+        const recordsSnap = await getDocs(recordsQuery);
+        const individualRecords = recordsSnap.docs
+            .map((doc) => ({...doc.data(), id: doc.id}))
+            .filter((r) => "participant_id" in r && r.participant_id) as Array<TournamentRecord & {id: string}>;
+
+        // Get overall records for this tournament and classification
+        const overallQuery = query(
+            collection(firestore, "overall_records"),
+            where("tournament_id", "==", tournamentId),
+            where("classification", "==", classification),
+        );
+        const overallSnap = await getDocs(overallQuery);
+        const overallRecords = overallSnap.docs.map((doc) => ({
+            ...doc.data(),
+            id: doc.id,
+        })) as Array<TournamentOverallRecord & {id: string}>;
+
+        // Calculate rankings based on overall results
+        // Sort by overall_time (ascending - lower is better)
+        const sortedOverall = [...overallRecords].sort((a, b) => {
+            const timeA = a.overall_time ?? Number.POSITIVE_INFINITY;
+            const timeB = b.overall_time ?? Number.POSITIVE_INFINITY;
+            return timeA - timeB;
+        });
+
+        // Create ranking map: participant_global_id -> {rank, overall_time}
+        const rankingMap = new Map<
+            string,
+            {
+                rank: number;
+                overall_time: number | null;
+            }
+        >();
+
+        sortedOverall.forEach((record, index) => {
+            if (record.participant_global_id && record.overall_time) {
+                rankingMap.set(record.participant_global_id, {
+                    rank: index + 1, // 1-based ranking
+                    overall_time: record.overall_time,
+                });
+            }
+        });
+
+        // Get all participants from individual records
+        const participantGlobalIds = new Set(individualRecords.map((r) => r.participant_global_id).filter(Boolean));
+
+        // Update each participant's registration record
+        for (const globalId of participantGlobalIds) {
+            if (!globalId) continue;
+
+            // Find user by global_id
+            const usersQuery = query(collection(firestore, "users"), where("global_id", "==", globalId), limit(1));
+            const usersSnap = await getDocs(usersQuery);
+
+            if (usersSnap.empty) continue;
+
+            const userDoc = usersSnap.docs[0];
+            const userData = userDoc.data();
+            const registrationRecords = (userData.registration_records ?? []) as Array<{
+                tournament_id: string;
+                events?: string[];
+                registration_date?: unknown;
+                status?: string;
+                rejection_reason?: string | null;
+                prelim_rank?: number | null;
+                final_rank?: number | null;
+                prelim_overall_result?: number | null;
+                final_overall_result?: number | null;
+                created_at?: unknown;
+                updated_at?: unknown;
+            }>;
+
+            // Find the registration record for this tournament
+            const recordIndex = registrationRecords.findIndex((r) => r.tournament_id === tournamentId);
+
+            if (recordIndex === -1) continue; // No registration record found
+
+            // Get ranking and overall result for this participant
+            const ranking = rankingMap.get(globalId);
+
+            // Update the registration record
+            const updatedRecord = {
+                ...registrationRecords[recordIndex],
+                updated_at: Timestamp.now(),
+            };
+
+            if (classification === "prelim") {
+                updatedRecord.prelim_rank = ranking?.rank ?? null;
+                updatedRecord.prelim_overall_result = ranking?.overall_time ?? null;
+            } else {
+                updatedRecord.final_rank = ranking?.rank ?? null;
+                updatedRecord.final_overall_result = ranking?.overall_time ?? null;
+            }
+
+            // Replace the record in the array
+            const updatedRecords = [...registrationRecords];
+            updatedRecords[recordIndex] = updatedRecord;
+
+            // Update the user document
+            await updateDoc(userDoc.ref, {
+                registration_records: updatedRecords,
+                updated_at: Timestamp.now(),
+            });
+        }
+    } catch (error) {
+        console.error("Error updating participant rankings and results:", error);
+        throw error;
+    }
 };

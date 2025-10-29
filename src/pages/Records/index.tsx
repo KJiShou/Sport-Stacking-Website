@@ -146,6 +146,7 @@ const RecordsIndex: React.FC = () => {
     });
     const [loading, setLoading] = useState(true);
     const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>("Overall");
+    const [searchQuery, setSearchQuery] = useState<string>("");
 
     // Admin modal states
     const [selectedRecord, setSelectedRecord] = useState<RecordDisplay | null>(null);
@@ -556,6 +557,11 @@ const RecordsIndex: React.FC = () => {
             });
         });
 
+        // Apply search filter after ranks are assigned
+        const filteredRecordsData = searchQuery
+            ? recordsData.filter((record) => record.athlete.toLowerCase().includes(searchQuery.toLowerCase()))
+            : recordsData;
+
         const isTeamCategory =
             backendCategory === "Team Relay" || backendCategory === "Double" || backendCategory === "Parent & Child";
 
@@ -585,6 +591,13 @@ const RecordsIndex: React.FC = () => {
                         </div>
 
                         <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
+                            <Input.Search
+                                placeholder="Search athlete/team..."
+                                value={searchQuery}
+                                onChange={setSearchQuery}
+                                allowClear
+                                style={{width: 200}}
+                            />
                             <Text style={{fontSize: "14px", color: "#666"}}>Age Group:</Text>
                             <Select
                                 value={selectedAgeGroup}
@@ -602,14 +615,21 @@ const RecordsIndex: React.FC = () => {
                     </div>
                 </div>
 
-                {recordsData.length === 0 ? (
+                {filteredRecordsData.length === 0 ? (
                     <div style={{textAlign: "center", padding: "60px"}}>
-                        <Empty description={`No ${selectedEvent} records found for this age group`} style={{color: "#666"}} />
+                        <Empty
+                            description={
+                                searchQuery
+                                    ? `No results found for "${searchQuery}"`
+                                    : `No ${selectedEvent} records found for this age group`
+                            }
+                            style={{color: "#666"}}
+                        />
                     </div>
                 ) : (
                     <Table
                         columns={getTableColumns(isTeamCategory)}
-                        data={recordsData}
+                        data={filteredRecordsData}
                         pagination={{
                             pageSize: 20,
                             showTotal: true,
@@ -647,9 +667,7 @@ const RecordsIndex: React.FC = () => {
     }
 
     return (
-        <div
-            className={`flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch `}
-        >
+        <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
                 <div className={`w-full`}>
                     {/* Records Table */}

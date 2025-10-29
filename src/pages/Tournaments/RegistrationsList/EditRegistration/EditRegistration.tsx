@@ -353,8 +353,8 @@ export default function EditTournamentRegistrationPage() {
     }
 
     return (
-        <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-            <Spin loading={loading} tip="Loading…" className={"w-full h-full"}>
+        <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+            <Spin loading={loading} tip="Loading…" className={"w-full"}>
                 <Button
                     type="outline"
                     onClick={() => navigate(`/tournaments/${tournamentId}/registrations`)}

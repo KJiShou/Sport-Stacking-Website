@@ -211,10 +211,10 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="h-full w-full">
-            <Spin tip="Loading..." size={40} loading={loading} className="h-full w-full">
+        <div className="w-full">
+            <Spin tip="Loading..." size={40} loading={loading} className="w-full">
                 {isEditMode ? (
-                    <div className={`flex flex-auto h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10`}>
+                    <div className={`flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10`}>
                         <div
                             className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}
                         >
@@ -395,9 +395,9 @@ export default function RegisterPage() {
                         </div>
                     </div>
                 ) : (
-                    <div className="flex flex-col md:flex-row h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+                    <div className="flex flex-col md:flex-row bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
                         {/* 左边：基本信息卡片 */}
-                        <div className="bg-white flex flex-col w-full md:w-1/3 h-full gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                        <div className="bg-white flex flex-col w-full md:w-1/3 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                             <Avatar className="mx-auto w-48 h-48 rounded-full overflow-hidden relative">
                                 {isImageLoading && <Spin size={24} />}
                                 <img

@@ -707,7 +707,7 @@ const Athletes: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6">
+        <div className="flex flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-left p-6 shadow-lg rounded-lg">
                 <div className="flex flex-col gap-4">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

@@ -1,10 +1,10 @@
 import {useEffect, useMemo, useState} from "react";
-import {Link, useParams} from "react-router-dom";
+import {useParams} from "react-router-dom";
 
 import {
     Avatar,
     Button,
-    Card,
+    Divider,
     Empty,
     Result,
     Space,
@@ -14,23 +14,35 @@ import {
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import {IconArrowLeft} from "@arco-design/web-react/icon";
+import {IconUndo} from "@arco-design/web-react/icon";
+import type {Timestamp} from "firebase/firestore";
 
-import type {AthleteEventSummary, AthleteTournamentParticipation, IndividualEvent} from "@/services/firebase/athleteService";
-import {fetchAthleteProfile} from "@/services/firebase/athleteService";
+import type {FirestoreUser} from "@/schema/UserSchema";
+import {type EventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
+import {getUserByGlobalId} from "@/services/firebase/authService";
 import {formatDateSafe, formatStackingTime} from "@/utils/time";
 
-const {Title, Paragraph, Text} = Typography;
+const {Title, Text} = Typography;
 
-const EVENT_LABELS: Record<IndividualEvent, string> = {
-    "3-3-3": "3-3-3",
-    "3-6-3": "3-6-3",
-    Cycle: "Cycle",
-    Overall: "Overall",
-};
+interface BestTimeRecord {
+    event: EventType;
+    time: number;
+    season: string | null;
+    updatedAt: Date | null;
+    rank: number | null;
+}
 
-type EventRow = AthleteEventSummary;
-type TournamentEventRow = AthleteTournamentParticipation["events"][number];
+interface TournamentRecord {
+    tournamentId: string;
+    tournamentName?: string;
+    events: string[];
+    registrationDate: Date | null;
+    status: string;
+    prelimRank: number | null;
+    finalRank: number | null;
+    prelimOverall: number | null;
+    finalOverall: number | null;
+}
 
 const STATUS_COLORS: Record<string, string> = {
     verified: "green",
@@ -41,11 +53,25 @@ const STATUS_COLORS: Record<string, string> = {
     rejected: "red",
 };
 
+const toDate = (value: Date | Timestamp | null | undefined): Date | null => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if ("toDate" in value && typeof value.toDate === "function") {
+        return value.toDate();
+    }
+    return null;
+};
+
 const AthleteProfilePage = () => {
     const {athleteId} = useParams<{athleteId: string}>();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [profile, setProfile] = useState<Awaited<ReturnType<typeof fetchAthleteProfile>>>(null);
+    const [user, setUser] = useState<FirestoreUser | null>(null);
+    const [rankings, setRankings] = useState<Record<EventType, number | null>>({
+        "3-3-3": null,
+        "3-6-3": null,
+        Cycle: null,
+    });
 
     useEffect(() => {
         if (!athleteId) {
@@ -58,12 +84,28 @@ const AthleteProfilePage = () => {
         setLoading(true);
         setError(null);
 
-        fetchAthleteProfile(athleteId)
-            .then((result) => {
+        Promise.all([
+            getUserByGlobalId(athleteId),
+            getTopAthletesByEvent("3-3-3", 1000),
+            getTopAthletesByEvent("3-6-3", 1000),
+            getTopAthletesByEvent("Cycle", 1000),
+        ])
+            .then(([userData, rankings333, rankings363, rankingsCycle]) => {
                 if (!cancelled) {
-                    setProfile(result);
-                    if (!result) {
+                    setUser(userData ?? null);
+                    if (!userData) {
                         setError("No athlete data found.");
+                    } else {
+                        // Calculate rankings
+                        const rank333 = rankings333.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
+                        const rank363 = rankings363.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
+                        const rankCycle = rankingsCycle.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
+
+                        setRankings({
+                            "3-3-3": rank333 >= 0 ? rank333 + 1 : null,
+                            "3-6-3": rank363 >= 0 ? rank363 + 1 : null,
+                            Cycle: rankCycle >= 0 ? rankCycle + 1 : null,
+                        });
                     }
                 }
             })
@@ -84,68 +126,117 @@ const AthleteProfilePage = () => {
         };
     }, [athleteId]);
 
-    const eventColumns: TableColumnProps<EventRow>[] = useMemo(
+    const bestTimes = useMemo<BestTimeRecord[]>(() => {
+        if (!user?.best_times) return [];
+
+        const events: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
+        return events
+            .map((event) => {
+                const record = user.best_times?.[event];
+                if (!record || !record.time) return null;
+
+                return {
+                    event,
+                    time: record.time,
+                    season: record.season ?? null,
+                    updatedAt: toDate(record.updated_at),
+                    rank: rankings[event],
+                };
+            })
+            .filter((record): record is BestTimeRecord => record !== null);
+    }, [user, rankings]);
+
+    const tournaments = useMemo<TournamentRecord[]>(() => {
+        if (!user?.registration_records) return [];
+
+        // Only show approved registrations
+        return user.registration_records
+            .filter((reg) => reg.status === "approved")
+            .map((reg) => ({
+                tournamentId: reg.tournament_id,
+                events: reg.events ?? [],
+                registrationDate: toDate(reg.updated_at) ?? toDate(reg.registration_date),
+                status: reg.status ?? "pending",
+                prelimRank: reg.prelim_rank ?? null,
+                finalRank: reg.final_rank ?? null,
+                prelimOverall: reg.prelim_overall_result ?? null,
+                finalOverall: reg.final_overall_result ?? null,
+            }));
+    }, [user]);
+
+    const bestTimeColumns: TableColumnProps<BestTimeRecord>[] = useMemo(
         () => [
             {
                 title: "Event",
                 dataIndex: "event",
-                render: (_: IndividualEvent, row: EventRow) => {
-                    const base = EVENT_LABELS[row.event] ?? row.event;
-                    const suffix = row.round ? ` (${row.round === "final" ? "Final" : "Prelim"})` : "";
-                    return `${base}${suffix}`;
-                },
+                width: 120,
             },
             {
                 title: "Best Time",
-                dataIndex: "bestTime",
-                render: (time: number) => <span className="font-semibold">{formatStackingTime(time)}</span>,
+                dataIndex: "time",
+                width: 150,
+                render: (time: number) => <span className="font-semibold text-lg">{formatStackingTime(time)}</span>,
             },
             {
-                title: "Current Rank",
+                title: "Ranking",
                 dataIndex: "rank",
+                width: 120,
                 render: (rank: number | null) =>
-                    typeof rank === "number" ? <Tag color="green">#{rank}</Tag> : <Tag color="gray">N/A</Tag>,
+                    rank ? (
+                        <Tag color="green" className="text-base font-semibold">
+                            #{rank}
+                        </Tag>
+                    ) : (
+                        <Tag color="gray">N/A</Tag>
+                    ),
+            },
+            {
+                title: "Season",
+                dataIndex: "season",
+                width: 120,
+                render: (season: string | null) => season ?? "—",
             },
             {
                 title: "Last Updated",
-                dataIndex: "lastUpdated",
-                render: (value: Date | null) => formatDateSafe(value),
+                dataIndex: "updatedAt",
+                width: 150,
+                render: (date: Date | null) => formatDateSafe(date),
             },
         ],
         [],
     );
 
-    const tournamentEventColumns: TableColumnProps<TournamentEventRow>[] = useMemo(
+    const tournamentColumns: TableColumnProps<TournamentRecord>[] = useMemo(
         () => [
             {
-                title: "Event",
-                dataIndex: "event",
-                render: (_: string, row: TournamentEventRow) => {
-                    const base = EVENT_LABELS[row.event as IndividualEvent] ?? row.event;
-                    const suffix = row.round ? ` (${row.round === "final" ? "Final" : "Prelim"})` : "";
-                    return `${base}${suffix}`;
-                },
+                title: "Date",
+                dataIndex: "registrationDate",
+                width: 150,
+                render: (date: Date | null) => formatDateSafe(date),
             },
             {
-                title: "Time",
-                dataIndex: "time",
-                render: (time: number) => formatStackingTime(time),
+                title: "Prelim Rank",
+                dataIndex: "prelimRank",
+                width: 120,
+                render: (rank: number | null) => (rank ? `#${rank}` : "—"),
             },
             {
-                title: "Status",
-                dataIndex: "status",
-                render: (status: string) => {
-                    const normalized = typeof status === "string" ? status.toLowerCase() : "";
-                    const color = STATUS_COLORS[normalized] ?? "arcoblue";
-                    const label = typeof status === "string" ? status.toUpperCase() : String(status ?? "—");
-                    return <Tag color={color}>{label}</Tag>;
-                },
+                title: "Prelim Overall",
+                dataIndex: "prelimOverall",
+                width: 150,
+                render: (time: number | null) => (time ? formatStackingTime(time) : "—"),
             },
             {
-                title: "Recorded",
-                dataIndex: "updatedAt",
-                render: (_: Date | null, record: TournamentEventRow) =>
-                    formatDateSafe(record.updatedAt ?? record.createdAt ?? null),
+                title: "Final Rank",
+                dataIndex: "finalRank",
+                width: 120,
+                render: (rank: number | null) => (rank ? `#${rank}` : "—"),
+            },
+            {
+                title: "Final Overall",
+                dataIndex: "finalOverall",
+                width: 150,
+                render: (time: number | null) => (time ? formatStackingTime(time) : "—"),
             },
         ],
         [],
@@ -153,121 +244,131 @@ const AthleteProfilePage = () => {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center min-h-screen">
                 <Spin size={32} tip="Loading athlete profile..." />
             </div>
         );
     }
 
-    if (error || !profile) {
+    if (error || !user) {
         return (
-            <div className="flex flex-col items-center justify-center h-full p-6">
+            <div className="flex flex-col items-center justify-center min-h-screen p-6">
                 <Result status="error" title="Unable to load athlete" subTitle={error ?? "Something went wrong."}>
-                    <Link to="/athletes">
-                        <Button icon={<IconArrowLeft />} type="outline">
-                            Back to rankings
-                        </Button>
-                    </Link>
+                    <Button icon={<IconUndo />} type="outline" onClick={() => window.history.back()}>
+                        Go Back
+                    </Button>
                 </Result>
             </div>
         );
     }
 
-    const {name, gender, age, country, avatarUrl, eventSummaries, tournaments, id} = profile;
+    const age = user.birthdate
+        ? (() => {
+              const birthDate = toDate(user.birthdate);
+              if (!birthDate) return null;
+              const now = new Date();
+              let calculatedAge = now.getFullYear() - birthDate.getFullYear();
+              const hasHadBirthdayThisYear =
+                  now.getMonth() > birthDate.getMonth() ||
+                  (now.getMonth() === birthDate.getMonth() && now.getDate() >= birthDate.getDate());
+              if (!hasHadBirthdayThisYear) {
+                  calculatedAge -= 1;
+              }
+              return calculatedAge;
+          })()
+        : null;
+
+    const country = Array.isArray(user.country) && user.country.length > 0 ? user.country[0] : (user.country ?? "—");
 
     return (
-        <div className="flex flex-col h-full bg-ghostwhite overflow-auto p-0 md:p-6 xl:p-10 gap-6">
-            <div className="flex items-center justify-between">
-                <Space size={16} align="center">
-                    <Link to="/athletes">
-                        <Button type="text" icon={<IconArrowLeft />}>
-                            Back
-                        </Button>
-                    </Link>
-                    <Title heading={3} className="!mb-0">
-                        Athlete Profile
-                    </Title>
-                </Space>
-            </div>
+        <div className="flex flex-col bg-ghostwhite p-0 md:p-6 xl:p-10 gap-6">
+            <Button type="outline" onClick={() => window.history.back()} className="w-fit pt-2 pb-2">
+                <IconUndo /> Go Back
+            </Button>
 
-            <Card>
-                <Space size={24} align="start">
-                    <Avatar size={80} shape="circle">
-                        {avatarUrl ? <img src={avatarUrl} alt={name} /> : (name?.charAt(0) ?? "A")}
+            <div className="bg-white flex flex-col w-full h-fit gap-6 items-start p-6 md:p-10 shadow-lg rounded-lg">
+                <div className="flex items-start gap-8 w-full">
+                    <Avatar size={120} shape="circle" className="flex-shrink-0">
+                        {user.image_url ? <img src={user.image_url} alt={user.name} /> : user.name.charAt(0)}
                     </Avatar>
-                    <div className="flex flex-col gap-2">
-                        <Space size={12} align="center">
-                            <Title heading={4} className="!mb-0">
-                                {name}
+                    <div className="flex flex-col gap-4 flex-1">
+                        <div className="flex items-center gap-3">
+                            <Title heading={2} className="flex items-center gap-3">
+                                {user.name}
+                                <Tag color="arcoblue" className="">
+                                    ID: {user.global_id ?? user.id}
+                                </Tag>
                             </Title>
-                            <Tag color="arcoblue">ID: {id}</Tag>
-                        </Space>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="flex flex-col text-sm text-neutral-700">
-                                <Text type="secondary">Country</Text>
-                                <span>{country ?? "—"}</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-base">
+                            <div className="flex flex-col gap-1">
+                                <Text type="secondary" className="text-sm">
+                                    Country
+                                </Text>
+                                <Text className="font-semibold text-lg">{country}</Text>
                             </div>
-                            <div className="flex flex-col text-sm text-neutral-700">
-                                <Text type="secondary">Gender</Text>
-                                <span>{gender ?? "—"}</span>
+                            <div className="flex flex-col gap-1">
+                                <Text type="secondary" className="text-sm">
+                                    Gender
+                                </Text>
+                                <Text className="font-semibold text-lg">{user.gender ?? "—"}</Text>
                             </div>
-                            <div className="flex flex-col text-sm text-neutral-700">
-                                <Text type="secondary">Age</Text>
-                                <span>{typeof age === "number" ? age : "—"}</span>
+                            <div className="flex flex-col gap-1">
+                                <Text type="secondary" className="text-sm">
+                                    Age
+                                </Text>
+                                <Text className="font-semibold text-lg">{age ?? "—"}</Text>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <Text type="secondary" className="text-sm">
+                                    Email
+                                </Text>
+                                <Text className="font-semibold text-base">{user.email}</Text>
                             </div>
                         </div>
                     </div>
-                </Space>
-            </Card>
+                </div>
 
-            <Card title="Best Performances">
-                {eventSummaries.length === 0 ? (
-                    <Empty description="No recorded performances yet." />
-                ) : (
-                    <Table
-                        rowKey={(row) => row.event}
-                        columns={eventColumns}
-                        data={eventSummaries}
-                        pagination={false}
-                        scroll={{x: true}}
-                    />
-                )}
-            </Card>
+                <Divider style={{margin: 0}} />
 
-            <Card title="Tournament Participation">
-                {tournaments.length === 0 ? (
-                    <Empty description="No tournament participation records found." />
-                ) : (
-                    <Space direction="vertical" size={16} className="w-full">
-                        {tournaments.map((tournament) => (
-                            <Card
-                                key={tournament.tournamentId}
-                                size="small"
-                                title={tournament.tournamentName}
-                                bordered
-                                className="w-full"
-                            >
-                                <Space size={16} wrap>
-                                    <Text type="secondary">ID: {tournament.tournamentId}</Text>
-                                    <Text type="secondary">Country: {tournament.country ?? "—"}</Text>
-                                    <Text type="secondary">
-                                        Dates: {formatDateSafe(tournament.startDate)} - {formatDateSafe(tournament.endDate)}
-                                    </Text>
-                                </Space>
-                                <Table
-                                    className="mt-4"
-                                    rowKey={(row) => `${row.event}-${row.id}`}
-                                    columns={tournamentEventColumns}
-                                    data={tournament.events}
-                                    pagination={false}
-                                    size="small"
-                                    scroll={{x: true}}
-                                />
-                            </Card>
-                        ))}
-                    </Space>
-                )}
-            </Card>
+                <div className="w-full">
+                    <Title heading={4} className="!mb-4">
+                        Best Performances
+                    </Title>
+                    {bestTimes.length === 0 ? (
+                        <Empty description="No best times recorded yet." />
+                    ) : (
+                        <Table
+                            rowKey="event"
+                            columns={bestTimeColumns}
+                            data={bestTimes}
+                            pagination={false}
+                            scroll={{x: true}}
+                            border={false}
+                        />
+                    )}
+                </div>
+
+                <Divider style={{margin: 0}} />
+
+                <div className="w-full">
+                    <Title heading={4} className="!mb-4">
+                        Tournament Participation
+                    </Title>
+                    {tournaments.length === 0 ? (
+                        <Empty description="No tournament participation records found." />
+                    ) : (
+                        <Table
+                            rowKey="tournamentId"
+                            columns={tournamentColumns}
+                            data={tournaments}
+                            pagination={{pageSize: 10}}
+                            scroll={{x: true}}
+                            border={false}
+                        />
+                    )}
+                </div>
+            </div>
         </div>
     );
 };

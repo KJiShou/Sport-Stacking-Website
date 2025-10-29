@@ -61,12 +61,14 @@ const App: FC = () => {
                     <Navbar /> {/* 固定顶部 */}
                     <ProtectedRoute>
                         {/* 使用窗口滚动，移除内部滚动容器 */}
-                        <Content className="mt-24">
-                            <Routes>
-                                {routes.map((route) => (
-                                    <Route key={route.path} path={route.path} element={<route.component />} />
-                                ))}
-                            </Routes>
+                        <Content className="mt-24 flex flex-col min-h-[calc(100vh-6rem)]">
+                            <div className="flex-grow">
+                                <Routes>
+                                    {routes.map((route) => (
+                                        <Route key={route.path} path={route.path} element={<route.component />} />
+                                    ))}
+                                </Routes>
+                            </div>
                             <Footer />
                         </Content>
                     </ProtectedRoute>

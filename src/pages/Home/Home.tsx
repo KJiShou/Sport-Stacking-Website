@@ -80,7 +80,7 @@ const Home: React.FC = () => {
     }
 
     return (
-        <div className="flex flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6">
+        <div className="flex flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-left p-6 shadow-lg rounded-lg">
                 <div style={{minHeight: "100vh"}}>
                     {/* Hero Carousel */}
@@ -398,6 +398,123 @@ const Home: React.FC = () => {
                                 </Card>
                             </Col>
                         </Row>
+
+                        {/* Benefits Section */}
+                        <section style={{marginTop: "3rem", marginBottom: "3rem"}}>
+                            <Title heading={3} style={{textAlign: "center", marginBottom: "2rem"}}>
+                                Why Sport Stacking?
+                            </Title>
+                            <Row gutter={24}>
+                                <Col xs={24} sm={8}>
+                                    <Card
+                                        bordered={false}
+                                        style={{
+                                            height: "100%",
+                                            textAlign: "center",
+                                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                fontSize: "3rem",
+                                                marginBottom: "1rem",
+                                            }}
+                                        >
+                                            🎯
+                                        </div>
+                                        <Title heading={5} style={{marginBottom: "0.75rem"}}>
+                                            Hand-Eye Coordination
+                                        </Title>
+                                        <Text type="secondary">
+                                            Improve precision and timing through fast-paced cup stacking sequences
+                                        </Text>
+                                    </Card>
+                                </Col>
+                                <Col xs={24} sm={8}>
+                                    <Card
+                                        bordered={false}
+                                        style={{
+                                            height: "100%",
+                                            textAlign: "center",
+                                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                fontSize: "3rem",
+                                                marginBottom: "1rem",
+                                            }}
+                                        >
+                                            🧠
+                                        </div>
+                                        <Title heading={5} style={{marginBottom: "0.75rem"}}>
+                                            Brain Activation
+                                        </Title>
+                                        <Text type="secondary">
+                                            Activate both left and right brain hemispheres for enhanced cognitive development
+                                        </Text>
+                                    </Card>
+                                </Col>
+                                <Col xs={24} sm={8}>
+                                    <Card
+                                        bordered={false}
+                                        style={{
+                                            height: "100%",
+                                            textAlign: "center",
+                                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                fontSize: "3rem",
+                                                marginBottom: "1rem",
+                                            }}
+                                        >
+                                            ✋
+                                        </div>
+                                        <Title heading={5} style={{marginBottom: "0.75rem"}}>
+                                            Fine Motor Skills
+                                        </Title>
+                                        <Text type="secondary">
+                                            Develop dexterity and muscle control through repetitive stacking movements
+                                        </Text>
+                                    </Card>
+                                </Col>
+                            </Row>
+                        </section>
+
+                        {/* Call to Action Section */}
+                        <section
+                            style={{
+                                marginTop: "3rem",
+                                marginBottom: "3rem",
+                                padding: "3rem 2rem",
+                                background:
+                                    "linear-gradient(135deg, var(--color-primary-light-1) 0%, var(--color-primary-light-2) 100%)",
+                                borderRadius: "12px",
+                                textAlign: "center",
+                            }}
+                        >
+                            <Title heading={2} style={{marginBottom: "1rem"}}>
+                                Ready to Start Stacking?
+                            </Title>
+                            <Paragraph
+                                style={{fontSize: "1.125rem", marginBottom: "2rem", maxWidth: "600px", margin: "0 auto 2rem"}}
+                            >
+                                Join our community and discover the exciting world of sport stacking. Whether you're a beginner or
+                                an experienced stacker, we have something for everyone!
+                            </Paragraph>
+                            <div style={{display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap"}}>
+                                <Link to="/tournaments">
+                                    <Button type="primary" size="large">
+                                        View Tournaments
+                                    </Button>
+                                </Link>
+                                <Link to="/records">
+                                    <Button size="large">View Records</Button>
+                                </Link>
+                            </div>
+                        </section>
                     </div>
                 </div>
             </div>
