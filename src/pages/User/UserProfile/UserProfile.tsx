@@ -155,7 +155,11 @@ export default function RegisterPage() {
     }, [id]);
 
     // 构建统计数据示例
-    const allTimeStats: AllTimeStat[] = [{event: "all-around", time: user?.best_times?.["all-around"] ?? 0, rank: "-"}];
+    const allTimeStats: AllTimeStat[] = [
+        {event: "3-3-3", time: (user?.best_times?.["3-3-3"] as {time?: number} | undefined)?.time ?? 0, rank: "-"},
+        {event: "3-6-3", time: (user?.best_times?.["3-6-3"] as {time?: number} | undefined)?.time ?? 0, rank: "-"},
+        {event: "Cycle", time: (user?.best_times?.Cycle as {time?: number} | undefined)?.time ?? 0, rank: "-"},
+    ];
     const onlineBest: OnlineBest[] = [];
     const records: RecordItem[] = [];
 
@@ -207,10 +211,10 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="h-full w-full">
-            <Spin tip="Loading..." size={40} loading={loading} className="h-full w-full">
+        <div className="w-full">
+            <Spin tip="Loading..." size={40} loading={loading} className="w-full">
                 {isEditMode ? (
-                    <div className={`flex flex-auto h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10`}>
+                    <div className={`flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10`}>
                         <div
                             className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}
                         >
@@ -391,9 +395,9 @@ export default function RegisterPage() {
                         </div>
                     </div>
                 ) : (
-                    <div className="flex flex-col md:flex-row h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+                    <div className="flex flex-col md:flex-row bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
                         {/* 左边：基本信息卡片 */}
-                        <div className="bg-white flex flex-col w-full md:w-1/3 h-full gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                        <div className="bg-white flex flex-col w-full md:w-1/3 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                             <Avatar className="mx-auto w-48 h-48 rounded-full overflow-hidden relative">
                                 {isImageLoading && <Spin size={24} />}
                                 <img
@@ -432,7 +436,22 @@ export default function RegisterPage() {
                                     <div className="bg-white flex flex-col w-full h-1/2 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                                         <Statistic
                                             title="All-around Best Time"
-                                            value={user?.best_times?.["all-around"]?.toFixed(3) ?? "-"}
+                                            value={(() => {
+                                                const three = (user?.best_times?.["3-3-3"] as {time?: number} | undefined)?.time;
+                                                const six = (user?.best_times?.["3-6-3"] as {time?: number} | undefined)?.time;
+                                                const cycle = (user?.best_times?.Cycle as {time?: number} | undefined)?.time;
+                                                if (
+                                                    typeof three === "number" &&
+                                                    three > 0 &&
+                                                    typeof six === "number" &&
+                                                    six > 0 &&
+                                                    typeof cycle === "number" &&
+                                                    cycle > 0
+                                                ) {
+                                                    return (three + six + cycle).toFixed(3);
+                                                }
+                                                return "-";
+                                            })()}
                                             suffix="sec"
                                         />
                                     </div>

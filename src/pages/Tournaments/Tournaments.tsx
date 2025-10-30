@@ -10,9 +10,7 @@ const Tournaments: React.FC = () => {
     const type = searchParams.get("type") as TournamentListType | null;
 
     return (
-        <div
-            className={`flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch `}
-        >
+        <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
             <TournamentList />
         </div>
     );

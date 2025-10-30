@@ -23,6 +23,14 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
     return (
         <Card className="mb-4">
             <div className="space-y-4">
+                {/* Hidden fields to preserve event ID and age brackets */}
+                <Form.Item field={`events.${index}.id`} style={{display: "none"}}>
+                    <input type="hidden" />
+                </Form.Item>
+                <Form.Item field={`events.${index}.age_brackets`} style={{display: "none"}}>
+                    <input type="hidden" />
+                </Form.Item>
+
                 <div className="flex items-center gap-4">
                     <div className="flex-1">
                         <Title heading={6} className="mb-2">

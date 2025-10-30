@@ -10,6 +10,7 @@ import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type {AppRoute} from "@/schema";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
+import {CarouselManagement} from "../pages/Admin/CarouselManagement";
 import TeamRecruitmentManagement from "../pages/Admin/TeamRecruitmentManagement";
 import AthleteProfilePage from "../pages/Athletes/AthleteProfile";
 import Athletes from "../pages/Athletes/Athletes";
@@ -72,6 +73,7 @@ const routes: AppRoute[] = [
     {path: "/users/:id", component: UserProfile},
     {path: "/admins", component: AdminPermissionsPage},
     {path: "/admin/team-recruitment", component: TeamRecruitmentManagement},
+    {path: "/admin/carousel", component: CarouselManagement},
     {path: "/forgot-password", component: ForgotPasswordPage},
 ];
 

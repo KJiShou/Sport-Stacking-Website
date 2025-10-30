@@ -38,9 +38,6 @@ export const TournamentOverallRecordSchema = z.object({
     cycle: z.number(),
     overall_time: z.number(),
     status: recordStatusEnum,
-    try1: z.number(),
-    try2: z.number(),
-    try3: z.number(),
     video_url: z.string().url().optional().nullable(),
     classification: classificationEnum.optional().nullable(),
     submitted_at: z.string(),
@@ -52,7 +49,6 @@ export const TournamentOverallRecordSchema = z.object({
     participant_global_id: z.string(),
     participant_name: z.string(),
     gender: z.string(),
-    round: z.enum(["prelim", "final"]).optional(),
 });
 
 export const TournamentRecordSchema = TournamentRecordBaseSchema.extend({
@@ -73,6 +69,7 @@ export const GlobalResultSchema = z.object({
     event: z.string(),
     gender: z.string(),
     participantId: z.string().optional(),
+    participantGlobalId: z.string().optional(),
     participantName: z.string().optional(),
     country: z.string().optional(),
     time: z.number(),

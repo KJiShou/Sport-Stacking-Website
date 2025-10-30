@@ -1,5 +1,18 @@
 import {sanitizeEventCodes} from "@/utils/tournament/eventUtils";
-import {collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, setDoc, updateDoc, where} from "firebase/firestore";
+import {
+    Timestamp,
+    collection,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocs,
+    limit,
+    orderBy,
+    query,
+    setDoc,
+    updateDoc,
+    where,
+} from "firebase/firestore";
 import type {TeamMember, TournamentEvent} from "../../schema";
 import {
     type GetFastestRecordData,
@@ -14,13 +27,14 @@ import {
 } from "../../schema/RecordSchema";
 import {db as firestore} from "./config";
 import {fetchTournamentEvents} from "./tournamentsService";
+import {updateUserBestTime} from "./userBestTimesService";
 
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
-type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
+type RecordEventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
 const CATEGORIES: Category[] = ["individual", "double", "parent_&_child", "team_relay", "special_need"];
 // Event types constant for maintainability
-const EVENT_TYPES: EventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
+const EVENT_TYPES: RecordEventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
 
 const CATEGORY_LABELS: Record<Category, string> = {
     individual: "Individual",
@@ -30,7 +44,7 @@ const CATEGORY_LABELS: Record<Category, string> = {
     special_need: "Special Need",
 };
 
-const EVENT_NAME_TO_COMBOS: Record<string, Array<{category: Category; eventType: EventType}>> = {
+const EVENT_NAME_TO_COMBOS: Record<string, Array<{category: Category; eventType: RecordEventType}>> = {
     "3-3-3": [{category: "individual", eventType: "3-3-3"}],
     "3-6-3": [{category: "individual", eventType: "3-6-3"}],
     Cycle: [{category: "individual", eventType: "Cycle"}],
@@ -52,7 +66,7 @@ const safeMin = (...values: Array<number | undefined>): number | undefined => {
     return valid.length > 0 ? Math.min(...valid) : undefined;
 };
 
-const buildEventKeyForCategory = (eventType: EventType, category: Category): string =>
+const buildEventKeyForCategory = (eventType: RecordEventType, category: Category): string =>
     `${eventType}-${CATEGORY_LABELS[category]}`;
 
 const isTeamTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentTeamRecord =>
@@ -97,6 +111,31 @@ export const saveRecord = async (data: TournamentRecord): Promise<string> => {
             },
         );
     }
+
+    // Update user's best time after saving the record
+    if (data.participant_global_id && data.best_time > 0) {
+        // Map event name to event type for best times tracking
+        const eventNameLower = data.event.toLowerCase();
+        let eventType: "3-3-3" | "3-6-3" | "Cycle" | null = null;
+
+        if (eventNameLower.includes("3-3-3")) {
+            eventType = "3-3-3";
+        } else if (eventNameLower.includes("3-6-3")) {
+            eventType = "3-6-3";
+        } else if (eventNameLower.includes("cycle")) {
+            eventType = "Cycle";
+        }
+
+        if (eventType) {
+            try {
+                await updateUserBestTime(data.participant_global_id, eventType, data.best_time);
+            } catch (error) {
+                console.error("Failed to update user best time:", error);
+                // Don't fail the record save if best time update fails
+            }
+        }
+    }
+
     return recordId;
 };
 
@@ -117,12 +156,43 @@ export const saveTeamRecord = async (data: TournamentTeamRecord): Promise<string
 
 export const saveOverallRecord = async (data: TournamentOverallRecord): Promise<string> => {
     const now = new Date().toISOString();
-    const recordRef = data.id ? doc(firestore, "overall_records", data.id) : doc(collection(firestore, "overall_records"));
-    const recordId = recordRef.id;
-    const isExistingRecord = Boolean(data.id);
+    let recordRef: ReturnType<typeof doc>;
+    let recordId: string;
+    let isExistingRecord = Boolean(data.id);
+
+    // If no ID provided, check if an overall record already exists for this participant
+    if (!data.id && data.participant_global_id && data.tournament_id) {
+        // Query for existing overall record for this participant in this tournament
+        const existingRecordsQuery = query(
+            collection(firestore, "overall_records"),
+            where("participant_global_id", "==", data.participant_global_id),
+            where("tournament_id", "==", data.tournament_id),
+            where("event_id", "==", data.event_id),
+            where("classification", "==", data.classification),
+            limit(1),
+        );
+
+        const existingRecordsSnap = await getDocs(existingRecordsQuery);
+
+        if (!existingRecordsSnap.empty) {
+            // Found existing record, use it for update
+            const existingDoc = existingRecordsSnap.docs[0];
+            recordRef = existingDoc.ref;
+            recordId = existingDoc.id;
+            isExistingRecord = true;
+        } else {
+            // No existing record, create new one
+            recordRef = doc(collection(firestore, "overall_records"));
+            recordId = recordRef.id;
+        }
+    } else {
+        // ID was provided, use it
+        recordRef = data.id ? doc(firestore, "overall_records", data.id) : doc(collection(firestore, "overall_records"));
+        recordId = recordRef.id;
+    }
 
     if (isExistingRecord) {
-        await updateDoc(recordRef, TournamentOverallRecordSchema.parse({...data, updated_at: now}));
+        await updateDoc(recordRef, TournamentOverallRecordSchema.parse({...data, id: recordId, updated_at: now}));
     } else {
         await setDoc(
             recordRef,
@@ -130,6 +200,25 @@ export const saveOverallRecord = async (data: TournamentOverallRecord): Promise<
             {merge: true},
         );
     }
+
+    if (data.participant_global_id) {
+        try {
+            // Update individual event best times
+            if (data.three_three_three > 0) {
+                await updateUserBestTime(data.participant_global_id, "3-3-3", data.three_three_three);
+            }
+            if (data.three_six_three > 0) {
+                await updateUserBestTime(data.participant_global_id, "3-6-3", data.three_six_three);
+            }
+            if (data.cycle > 0) {
+                await updateUserBestTime(data.participant_global_id, "Cycle", data.cycle);
+            }
+        } catch (error) {
+            console.error("Failed to update user best times:", error);
+            // Don't fail the record save if best time update fails
+        }
+    }
+
     return recordId;
 };
 
@@ -294,7 +383,7 @@ export const getPrelimRecords = async (
 function isCategory(x: string): x is Category {
     return (CATEGORIES as string[]).includes(x);
 }
-function isEventType(x: string): x is EventType {
+function isEventType(x: string): x is RecordEventType {
     return (EVENT_TYPES as string[]).includes(x);
 }
 
@@ -404,6 +493,7 @@ const toGlobalFromIndividual = (r: TournamentRecord & {id: string}): (GlobalResu
         event: (r.code as EventTypeKey) ?? "Cycle",
         gender: r.gender ?? "Overall",
         participantId: r.participant_id,
+        participantGlobalId: r.participant_global_id,
         participantName: r.participant_name,
         country: r.country ?? undefined,
         time,
@@ -459,8 +549,10 @@ const toGlobalFromOverall = (r: TournamentOverallRecord & {id: string}): (Global
     return {
         id: r.id,
         event: "Overall",
-        gender: r.gender ?? "Overall",
+        gender: r.gender ?? "N/A",
         participantId: r.participant_id,
+        participantGlobalId: r.participant_global_id,
+
         participantName: r.participant_name,
         country: r.country ?? undefined,
         time,
@@ -471,12 +563,8 @@ const toGlobalFromOverall = (r: TournamentOverallRecord & {id: string}): (Global
         created_at: r.created_at ?? new Date().toISOString(),
         updated_at: r.updated_at ?? r.created_at ?? new Date().toISOString(),
         age: (typeof r.age === "number" ? r.age : Number.NaN) as number,
-        round: r.round ?? "final",
         classification: r.classification ?? undefined,
         bestTime: time,
-        try1: r.try1,
-        try2: r.try2,
-        try3: r.try3,
         tournamentId: r.tournament_id,
     };
 };
@@ -559,4 +647,130 @@ export const getBestRecords = async (): Promise<BestRecordsShape> => {
 // Backwards compatibility: stub
 export const getBestRecordsByAgeGroup = async (): Promise<BestRecordsShape> => {
     return getBestRecords();
+};
+
+/**
+ * Update participant registration records with rankings and overall results
+ * @param tournamentId - The tournament ID
+ * @param classification - The classification type ('prelim' or 'final')
+ */
+export const updateParticipantRankingsAndResults = async (
+    tournamentId: string,
+    classification: "prelim" | "final",
+): Promise<void> => {
+    try {
+        // Get all individual records for this tournament and classification
+        const recordsQuery = query(
+            collection(firestore, "records"),
+            where("tournament_id", "==", tournamentId),
+            where("classification", "==", classification),
+        );
+        const recordsSnap = await getDocs(recordsQuery);
+        const individualRecords = recordsSnap.docs
+            .map((doc) => ({...doc.data(), id: doc.id}))
+            .filter((r) => "participant_id" in r && r.participant_id) as Array<TournamentRecord & {id: string}>;
+
+        // Get overall records for this tournament and classification
+        const overallQuery = query(
+            collection(firestore, "overall_records"),
+            where("tournament_id", "==", tournamentId),
+            where("classification", "==", classification),
+        );
+        const overallSnap = await getDocs(overallQuery);
+        const overallRecords = overallSnap.docs.map((doc) => ({
+            ...doc.data(),
+            id: doc.id,
+        })) as Array<TournamentOverallRecord & {id: string}>;
+
+        // Calculate rankings based on overall results
+        // Sort by overall_time (ascending - lower is better)
+        const sortedOverall = [...overallRecords].sort((a, b) => {
+            const timeA = a.overall_time ?? Number.POSITIVE_INFINITY;
+            const timeB = b.overall_time ?? Number.POSITIVE_INFINITY;
+            return timeA - timeB;
+        });
+
+        // Create ranking map: participant_global_id -> {rank, overall_time}
+        const rankingMap = new Map<
+            string,
+            {
+                rank: number;
+                overall_time: number | null;
+            }
+        >();
+
+        sortedOverall.forEach((record, index) => {
+            if (record.participant_global_id && record.overall_time) {
+                rankingMap.set(record.participant_global_id, {
+                    rank: index + 1, // 1-based ranking
+                    overall_time: record.overall_time,
+                });
+            }
+        });
+
+        // Get all participants from individual records
+        const participantGlobalIds = new Set(individualRecords.map((r) => r.participant_global_id).filter(Boolean));
+
+        // Update each participant's registration record
+        for (const globalId of participantGlobalIds) {
+            if (!globalId) continue;
+
+            // Find user by global_id
+            const usersQuery = query(collection(firestore, "users"), where("global_id", "==", globalId), limit(1));
+            const usersSnap = await getDocs(usersQuery);
+
+            if (usersSnap.empty) continue;
+
+            const userDoc = usersSnap.docs[0];
+            const userData = userDoc.data();
+            const registrationRecords = (userData.registration_records ?? []) as Array<{
+                tournament_id: string;
+                events?: string[];
+                registration_date?: unknown;
+                status?: string;
+                rejection_reason?: string | null;
+                prelim_rank?: number | null;
+                final_rank?: number | null;
+                prelim_overall_result?: number | null;
+                final_overall_result?: number | null;
+                created_at?: unknown;
+                updated_at?: unknown;
+            }>;
+
+            // Find the registration record for this tournament
+            const recordIndex = registrationRecords.findIndex((r) => r.tournament_id === tournamentId);
+
+            if (recordIndex === -1) continue; // No registration record found
+
+            // Get ranking and overall result for this participant
+            const ranking = rankingMap.get(globalId);
+
+            // Update the registration record
+            const updatedRecord = {
+                ...registrationRecords[recordIndex],
+                updated_at: Timestamp.now(),
+            };
+
+            if (classification === "prelim") {
+                updatedRecord.prelim_rank = ranking?.rank ?? null;
+                updatedRecord.prelim_overall_result = ranking?.overall_time ?? null;
+            } else {
+                updatedRecord.final_rank = ranking?.rank ?? null;
+                updatedRecord.final_overall_result = ranking?.overall_time ?? null;
+            }
+
+            // Replace the record in the array
+            const updatedRecords = [...registrationRecords];
+            updatedRecords[recordIndex] = updatedRecord;
+
+            // Update the user document
+            await updateDoc(userDoc.ref, {
+                registration_records: updatedRecords,
+                updated_at: Timestamp.now(),
+            });
+        }
+    } catch (error) {
+        console.error("Error updating participant rankings and results:", error);
+        throw error;
+    }
 };

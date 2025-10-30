@@ -4926,8 +4926,10 @@ __metadata:
     prettier-eslint: "npm:^16.1.2"
     react: "npm:^18.3.1"
     react-dom: "npm:^18.3.1"
+    react-easy-crop: "npm:^5.5.3"
     react-helmet: "npm:^6.1.0"
     react-hook-form: "npm:^7.54.2"
+    react-image-crop: "npm:^10.1.8"
     react-responsive: "npm:^10.0.0"
     react-router-dom: "npm:^7.1.1"
     react-use: "npm:^17.6.0"
@@ -10392,6 +10394,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"normalize-wheel@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "normalize-wheel@npm:1.0.1"
+  checksum: 10c0/5daf4c97e39f36658a5263a6499bbc148676ae2bd85f12c8d03c46ffe7bc3c68d44564c00413d88d0457ac0d94450559bb1c24c2ce7ae0c107031f82d093ac06
+  languageName: node
+  linkType: hard
+
 "nth-check@npm:^2.0.0":
   version: 2.1.1
   resolution: "nth-check@npm:2.1.1"
@@ -11558,6 +11567,19 @@ __metadata:
   languageName: node
   linkType: hard
 
+"react-easy-crop@npm:^5.5.3":
+  version: 5.5.3
+  resolution: "react-easy-crop@npm:5.5.3"
+  dependencies:
+    normalize-wheel: "npm:^1.0.1"
+    tslib: "npm:^2.0.1"
+  peerDependencies:
+    react: ">=16.4.0"
+    react-dom: ">=16.4.0"
+  checksum: 10c0/2b398a3ae84d2f7dd89d2e4c5aab458d18ca10a653a9bf03ad43c40821cd71690d08b9797336c0ac36d27e5fb40992c771e5a6fc6c752eb5af72f1efa46a2dc2
+  languageName: node
+  linkType: hard
+
 "react-fast-compare@npm:^3.1.1":
   version: 3.2.2
   resolution: "react-fast-compare@npm:3.2.2"
@@ -11605,6 +11627,15 @@ __metadata:
   peerDependencies:
     react: ^16.8.0 || ^17 || ^18 || ^19
   checksum: 10c0/9e87bf1dfb43157ffec1b112092e8c5b2b9d0056c2a8bdea6c15e08d510b365915101f499f2e7698e16e94541ac82b26ab8e3b05af5b0cccfc82d29cf31c1b0b
+  languageName: node
+  linkType: hard
+
+"react-image-crop@npm:^10.1.8":
+  version: 10.1.8
+  resolution: "react-image-crop@npm:10.1.8"
+  peerDependencies:
+    react: ">=16.13.1"
+  checksum: 10c0/7d5da917b95951490041f8e7567d7e7d4cd4ce24a24626edc4893fd3d5d6c4c72572ddbb994fcee78dec6e6f608f6a65d4c9675e484e5f868671ce33856e182e
   languageName: node
   linkType: hard
 

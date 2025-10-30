@@ -70,7 +70,7 @@ export default function ParticipantListPage() {
             setTournament(t);
             const events = await fetchTournamentEvents(tournamentId);
             setEvents(events);
-            setCurrentEventTab(events[0].id ?? "");
+            setCurrentEventTab(events[0]?.id ?? events[0]?.type ?? "");
             const firstBracket = events[0]?.age_brackets?.[0];
             setCurrentBracketTab(firstBracket ? firstBracket.name : "");
             const regs = await fetchApprovedRegistrations(tournamentId);
@@ -142,7 +142,7 @@ export default function ParticipantListPage() {
             return;
         }
 
-        const selectedEvent = events.find((evt) => getEventKey(evt) === key) || events.find((evt) => matchesEventKey(key, evt));
+        const selectedEvent = events.find((evt) => evt.id === key) || events.find((evt) => evt.type === key);
 
         const nextBracket = selectedEvent?.age_brackets?.[0]?.name ?? "";
         setCurrentBracketTab(nextBracket);
@@ -314,7 +314,7 @@ export default function ParticipantListPage() {
     ];
 
     return (
-        <div className="flex flex-col md:flex-col h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+        <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
                 <IconUndo /> Go Back
             </Button>
@@ -435,7 +435,7 @@ export default function ParticipantListPage() {
                 </div>
                 <Tabs type="line" destroyOnHide className="w-full" activeTab={currentEventTab} onChange={handleEventTabChange}>
                     {events?.map((evt) => {
-                        const tabKey = getEventKey(evt);
+                        const tabKey = evt.id ?? evt.type;
                         const isTeamEventForTab = isTeamEvent(evt);
                         const regs = filterRegistrations(tabKey, isTeamEventForTab, evt);
                         const scoringCodes = sanitizeEventCodes(evt.codes);

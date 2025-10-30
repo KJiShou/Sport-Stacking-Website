@@ -277,7 +277,11 @@ export default function TournamentList() {
                     );
                 }
 
-                if (user?.roles?.edit_tournament || user?.global_id === tournament?.editor) {
+                const isEditor = user?.roles?.edit_tournament || user?.global_id === tournament?.editor;
+                const isRecorder = user?.global_id === tournament?.recorder;
+                const canManage = isEditor || isRecorder;
+
+                if (canManage) {
                     if (tournament.status === "On Going") {
                         return (
                             <Dropdown.Button
@@ -304,23 +308,27 @@ export default function TournamentList() {
                                         >
                                             <IconUser /> Participant List
                                         </Button>
-                                        <Button
-                                            type="text"
-                                            loading={loading}
-                                            className={`text-left`}
-                                            onClick={async () => handleEdit(tournament)}
-                                        >
-                                            <IconEdit /> Edit
-                                        </Button>
-                                        <Button
-                                            type="text"
-                                            status="danger"
-                                            loading={loading}
-                                            className={`text-left`}
-                                            onClick={async () => handleDelete(tournament)}
-                                        >
-                                            <IconDelete /> Delete
-                                        </Button>
+                                        {isEditor && (
+                                            <>
+                                                <Button
+                                                    type="text"
+                                                    loading={loading}
+                                                    className={`text-left`}
+                                                    onClick={async () => handleEdit(tournament)}
+                                                >
+                                                    <IconEdit /> Edit
+                                                </Button>
+                                                <Button
+                                                    type="text"
+                                                    status="danger"
+                                                    loading={loading}
+                                                    className={`text-left`}
+                                                    onClick={async () => handleDelete(tournament)}
+                                                >
+                                                    <IconDelete /> Delete
+                                                </Button>
+                                            </>
+                                        )}
                                     </div>
                                 }
                                 buttonProps={{
@@ -329,6 +337,41 @@ export default function TournamentList() {
                             >
                                 <IconPlayArrow />
                                 Record
+                            </Dropdown.Button>
+                        );
+                    }
+
+                    // Only editors can start tournaments
+                    if (!isEditor) {
+                        return (
+                            <Dropdown.Button
+                                type="primary"
+                                trigger={["click", "hover"]}
+                                disabled
+                                droplist={
+                                    <div
+                                        className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                    >
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
+                                        >
+                                            <IconEye /> View Registration List
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => navigate(`/tournaments/${tournament.id}/participants`)}
+                                        >
+                                            <IconUser /> Participant List
+                                        </Button>
+                                    </div>
+                                }
+                            >
+                                View
                             </Dropdown.Button>
                         );
                     }
@@ -476,9 +519,8 @@ export default function TournamentList() {
         setEventsLoading(true);
         try {
             const events = await fetchTournamentEvents(tournamentId);
-            const clonedEvents = events.map((event) => cloneEvent(event));
-            setSelectedTournamentEvents(clonedEvents);
-            form.setFieldValue("events", clonedEvents);
+            setSelectedTournamentEvents(events);
+            form.setFieldValue("events", events);
         } catch (error) {
             console.error("Failed to fetch tournament events", error);
             Message.error("Unable to load tournament events.");
@@ -537,8 +579,9 @@ export default function TournamentList() {
                     continue;
                 }
 
+                // Preserve existing event ID, don't generate new one
                 const sanitizedEvent: TournamentEvent = {
-                    id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
+                    id: id || crypto.randomUUID(), // Use existing ID or generate only if truly missing
                     type,
                     codes: normalizedCodes,
                     age_brackets: cloneAgeBrackets(age_brackets ?? DEFAULT_AGE_BRACKET),
@@ -799,7 +842,7 @@ export default function TournamentList() {
                         ? dayjs(selectedTournament.registration_end_date.toDate())
                         : dayjs(selectedTournament.registration_end_date),
                 ],
-                events: selectedTournamentEvents.length > 0 ? selectedTournamentEvents.map((event) => cloneEvent(event)) : [],
+                events: selectedTournamentEvents.length > 0 ? selectedTournamentEvents : [],
                 description: selectedTournament.description ?? "",
                 agenda: selectedTournament.agenda ?? null,
                 logo: selectedTournament.logo ?? null,

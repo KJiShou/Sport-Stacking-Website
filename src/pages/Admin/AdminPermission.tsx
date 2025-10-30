@@ -126,8 +126,8 @@ export default function AdminPermissionsPage() {
     };
 
     return (
-        <div className={`flex flex-auto h-full bg-ghostwhite relative overflow-auto p-0 md:p-6 xl:p-10 w-full`}>
-            <Spin loading={loading} tip="Loading…" className={"w-full h-full"}>
+        <div className={`flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full`}>
+            <Spin loading={loading} tip="Loading…" className={"w-full"}>
                 <div
                     className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}
                 >

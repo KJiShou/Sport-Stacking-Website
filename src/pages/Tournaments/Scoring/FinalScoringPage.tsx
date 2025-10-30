@@ -7,7 +7,14 @@ import {
     TournamentTeamRecordSchema,
 } from "@/schema/RecordSchema";
 import {fetchTournamentFinalists} from "@/services/firebase/finalistService";
-import {getTournamentFinalRecords, saveOverallRecord, saveRecord, saveTeamRecord} from "@/services/firebase/recordService";
+import {
+    getBestRecords,
+    getTournamentFinalRecords,
+    saveOverallRecord,
+    saveRecord,
+    saveTeamRecord,
+    updateParticipantRankingsAndResults,
+} from "@/services/firebase/recordService";
 import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
@@ -19,6 +26,83 @@ import {useMount} from "react-use";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
+
+/**
+ * Helper function to determine age group based on participant age
+ */
+const getAgeGroup = (age: number): string => {
+    if (age <= 6) return "6U";
+    if (age <= 8) return "8U";
+    if (age <= 10) return "10U";
+    if (age <= 12) return "12U";
+    if (age <= 14) return "14U";
+    if (age <= 17) return "17U";
+    return "Open";
+};
+
+/**
+ * Helper function to check if new record beats the current best record for the participant's age
+ */
+const checkAndNotifyNewRecord = async (bestTime: number, participantAge: number, eventType: string, code?: string) => {
+    try {
+        const bestRecords = await getBestRecords();
+        const ageGroup = getAgeGroup(participantAge);
+
+        // Get records for Individual category and the specific event type
+        const eventKey = code || eventType;
+        const records = bestRecords.Individual?.[eventKey as "3-3-3" | "3-6-3" | "Cycle"];
+
+        if (!records || records.length === 0) {
+            return; // No existing records to compare
+        }
+
+        // Filter records by the same age
+        const ageRecords = records.filter((r) => r.age === participantAge);
+
+        if (ageRecords.length === 0) {
+            return; // No records for this specific age
+        }
+
+        // Get the best time for this age
+        const currentBestRecord = ageRecords[0]; // Records are already sorted by time
+        const currentBestTime =
+            typeof currentBestRecord.time === "number" ? currentBestRecord.time : Number(currentBestRecord.time);
+
+        // Check if new time beats the current best
+        if (bestTime < currentBestTime) {
+            const timeDifference = (currentBestTime - bestTime).toFixed(3);
+
+            Modal.info({
+                title: "🎉 Potential New Record!",
+                content: (
+                    <div>
+                        <p style={{marginBottom: "1rem"}}>
+                            This time ({bestTime.toFixed(3)}s) beats our current best record for age {participantAge}(
+                            {currentBestTime.toFixed(3)}s) by {timeDifference}s!
+                        </p>
+                        <p style={{marginBottom: "1rem"}}>
+                            Please verify if this time also beats the world record for age group <strong>{ageGroup}</strong>.
+                        </p>
+                        <p>
+                            <a
+                                href="https://issf.online/en/Records/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{color: "#165DFF", textDecoration: "underline"}}
+                            >
+                                Check World Records →
+                            </a>
+                        </p>
+                    </div>
+                ),
+                okText: "Got it",
+            });
+        }
+    } catch (error) {
+        console.error("Error checking records:", error);
+        // Don't show error to user, just log it
+    }
+};
 
 export default function FinalScoringPage() {
     const navigate = useNavigate();
@@ -108,7 +192,11 @@ export default function FinalScoringPage() {
         );
     };
 
-    const getExpandableColumns = (codes: string[], eventKey: string): TableColumnProps<Registration>[] => [
+    const getExpandableColumns = (
+        codes: string[],
+        eventId: string | undefined,
+        eventType: string,
+    ): TableColumnProps<Registration>[] => [
         {title: "Global ID", dataIndex: "user_global_id", width: 150},
         {title: "Name", dataIndex: "user_name", width: 200},
         {
@@ -123,10 +211,11 @@ export default function FinalScoringPage() {
                 const isAllCodesRecorded = codes.every((code) =>
                     records.some(
                         (r) =>
-                            r.event === eventKey &&
+                            r.event === eventType &&
                             "participant_id" in r &&
                             r.participant_id === record.user_id &&
-                            r.code === code,
+                            r.code === code &&
+                            (eventId ? r.event_id === eventId : true),
                     ),
                 );
 
@@ -163,7 +252,8 @@ export default function FinalScoringPage() {
                                     (r) =>
                                         r.event === evt.type &&
                                         r.code === code &&
-                                        (r as TournamentRecord).participant_id === record.user_id,
+                                        (r as TournamentRecord).participant_id === record.user_id &&
+                                        (evt.id ? r.event_id === evt.id : true),
                                 ) as TournamentRecord | undefined;
                                 initial[key] = {
                                     try1: existing?.try1 != null ? String(existing.try1) : "",
@@ -184,7 +274,11 @@ export default function FinalScoringPage() {
         },
     ];
 
-    const getTeamExpandableColumns = (codes: string[], eventKey: string): TableColumnProps<Team>[] => [
+    const getTeamExpandableColumns = (
+        codes: string[],
+        eventId: string | undefined,
+        eventType: string,
+    ): TableColumnProps<Team>[] => [
         {title: "Team Name", dataIndex: "name", width: 200},
         {title: "Leader ID", dataIndex: "leader_id", width: 150},
         {
@@ -209,7 +303,14 @@ export default function FinalScoringPage() {
             width: 100,
             render: (_, record) => {
                 const isAllCodesRecorded = codes.every((code) =>
-                    records.some((r) => r.event === eventKey && "team_id" in r && r.team_id === record.id && r.code === code),
+                    records.some(
+                        (r) =>
+                            r.event === eventType &&
+                            "team_id" in r &&
+                            r.team_id === record.id &&
+                            r.code === code &&
+                            (eventId ? r.event_id === eventId : true),
+                    ),
                 );
 
                 return (
@@ -244,7 +345,8 @@ export default function FinalScoringPage() {
                                     (r) =>
                                         r.event === evt.type &&
                                         r.code === code &&
-                                        (r as TournamentTeamRecord).team_id === record.id,
+                                        (r as TournamentTeamRecord).team_id === record.id &&
+                                        (evt.id ? r.event_id === evt.id : true),
                                 ) as TournamentTeamRecord | undefined;
                                 initial[key] = {
                                     try1: existing?.try1 != null ? String(existing.try1) : "",
@@ -305,21 +407,47 @@ export default function FinalScoringPage() {
                 const isTeam = g.participant_type === "Team";
                 const codes = getCodesForGroup(g);
                 const eventType = g.event_type;
+                const eventId = g.event_id;
+
                 for (const pid of g.participant_ids ?? []) {
                     for (const code of codes) {
                         const hasRecord = records.some((r) => {
-                            if (r.event !== eventType || r.code !== code) return false;
-                            return isTeam
-                                ? (r as TournamentTeamRecord).team_id === pid
-                                : (r as TournamentRecord).participant_id === pid;
+                            // Check event type match
+                            if (r.event !== eventType) return false;
+
+                            // Check code match
+                            if (r.code !== code) return false;
+
+                            // Check event_id match when available (critical for duplicate event types)
+                            if (eventId) {
+                                if (r.event_id !== eventId) {
+                                    return false;
+                                }
+                            }
+
+                            // Check participant/team match
+                            if (isTeam) {
+                                return (r as TournamentTeamRecord).team_id === pid;
+                            }
+                            return (r as TournamentRecord).participant_id === pid;
                         });
-                        if (!hasRecord) missing.push({id: pid, code, eventType, eventId: g.event_id ?? undefined});
+
+                        if (!hasRecord) {
+                            missing.push({id: pid, code, eventType, eventId: eventId ?? undefined});
+                        }
                     }
                 }
             }
 
             if (missing.length === 0) {
-                Message.success("All finalists have completed final records. Redirecting to results…");
+                // Update participant rankings and results before navigating
+                try {
+                    await updateParticipantRankingsAndResults(tournamentId, "final");
+                    Message.success("Participant rankings updated! Redirecting to results…");
+                } catch (updateError) {
+                    console.error("Error updating rankings:", updateError);
+                    Message.warning("Records complete but failed to update some rankings.");
+                }
                 navigate(`/tournaments/${tournamentId}/record/final`);
             } else {
                 const resolveName = (id: string, eventType: string) => {
@@ -331,9 +459,18 @@ export default function FinalScoringPage() {
                     const reg = registrations.find((r) => r.user_id === id);
                     return reg ? `${reg.user_name} (${reg.user_global_id})` : id;
                 };
+
+                const getEventName = (m: Missing) => {
+                    if (m.eventId) {
+                        const evt = events.find((e) => e.id === m.eventId);
+                        return evt ? `${evt.type} (ID: ${m.eventId.slice(0, 8)})` : m.eventType;
+                    }
+                    return m.eventType;
+                };
+
                 const preview = missing
                     .slice(0, 12)
-                    .map((m) => `${resolveName(m.id, m.eventType)} [${m.code} - ${m.eventType}]`)
+                    .map((m) => `${resolveName(m.id, m.eventType)} [${m.code} - ${getEventName(m)}]`)
                     .join(", ");
                 const more = missing.length > 12 ? ` and ${missing.length - 12} more` : "";
                 Message.warning(`Some finalists are missing scores: ${preview}${more}`);
@@ -405,6 +542,9 @@ export default function FinalScoringPage() {
                     };
 
                     await saveRecord(TournamentRecordSchema.parse(data));
+
+                    // Check if this beats the current best record
+                    await checkAndNotifyNewRecord(best, selectedParticipant.age, currentEvent.type, code);
                 }
 
                 if (!isIndividual && selectedTeam) {
@@ -559,6 +699,7 @@ export default function FinalScoringPage() {
                     {events?.map((evt) => {
                         const tabKey = evt.id ?? evt.type;
                         const eventTypeKey = evt.type;
+                        const eventIdForModal = evt.id ?? undefined;
                         const isTeamEvent = ["double", "team relay", "parent & child"].includes(evt.type.toLowerCase());
                         const titleCodes = evt.codes?.join(", ") || "N/A";
                         return (
@@ -584,7 +725,11 @@ export default function FinalScoringPage() {
                                                         {isTeamEvent ? (
                                                             <Table
                                                                 style={{width: "100%"}}
-                                                                columns={getTeamExpandableColumns(evt.codes, eventTypeKey)}
+                                                                columns={getTeamExpandableColumns(
+                                                                    evt.codes,
+                                                                    eventIdForModal,
+                                                                    eventTypeKey,
+                                                                )}
                                                                 data={filterTeams(
                                                                     teams.filter(
                                                                         (t) =>
@@ -611,7 +756,11 @@ export default function FinalScoringPage() {
                                                         ) : (
                                                             <Table
                                                                 style={{width: "100%"}}
-                                                                columns={getExpandableColumns(evt.codes, eventTypeKey)}
+                                                                columns={getExpandableColumns(
+                                                                    evt.codes,
+                                                                    eventIdForModal,
+                                                                    eventTypeKey,
+                                                                )}
                                                                 data={filterParticipants(
                                                                     registrations.filter(
                                                                         (r) =>
