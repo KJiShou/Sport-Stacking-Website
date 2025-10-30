@@ -91,24 +91,40 @@ const Home: React.FC = () => {
                             <Carousel autoPlay indicatorType="dot" showArrow="hover" style={{height: "500px"}}>
                                 {carouselImages.map((image) => (
                                     <div key={image.id}>
-                                        <img
-                                            src={image.imageUrl}
-                                            alt={image.title}
+                                        <div
+                                            role="button"
+                                            tabIndex={0}
                                             onClick={() => {
                                                 setSelectedImage(image);
                                                 setDetailModalVisible(true);
                                             }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter" || e.key === " ") {
+                                                    e.preventDefault();
+                                                    setSelectedImage(image);
+                                                    setDetailModalVisible(true);
+                                                }
+                                            }}
                                             style={{
                                                 width: "100%",
                                                 height: "100%",
-                                                objectFit: "cover",
-                                                display: "block",
                                                 position: "absolute",
                                                 top: 0,
                                                 left: 0,
                                                 cursor: "pointer",
                                             }}
-                                        />
+                                        >
+                                            <img
+                                                src={image.imageUrl}
+                                                alt={image.title}
+                                                style={{
+                                                    width: "100%",
+                                                    height: "100%",
+                                                    objectFit: "cover",
+                                                    display: "block",
+                                                }}
+                                            />
+                                        </div>
                                         <div
                                             style={{
                                                 position: "absolute",
