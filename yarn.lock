@@ -4929,6 +4929,7 @@ __metadata:
     react-easy-crop: "npm:^5.5.3"
     react-helmet: "npm:^6.1.0"
     react-hook-form: "npm:^7.54.2"
+    react-image-crop: "npm:^10.1.8"
     react-responsive: "npm:^10.0.0"
     react-router-dom: "npm:^7.1.1"
     react-use: "npm:^17.6.0"
@@ -11626,6 +11627,15 @@ __metadata:
   peerDependencies:
     react: ^16.8.0 || ^17 || ^18 || ^19
   checksum: 10c0/9e87bf1dfb43157ffec1b112092e8c5b2b9d0056c2a8bdea6c15e08d510b365915101f499f2e7698e16e94541ac82b26ab8e3b05af5b0cccfc82d29cf31c1b0b
+  languageName: node
+  linkType: hard
+
+"react-image-crop@npm:^10.1.8":
+  version: 10.1.8
+  resolution: "react-image-crop@npm:10.1.8"
+  peerDependencies:
+    react: ">=16.13.1"
+  checksum: 10c0/7d5da917b95951490041f8e7567d7e7d4cd4ce24a24626edc4893fd3d5d6c4c72572ddbb994fcee78dec6e6f608f6a65d4c9675e484e5f868671ce33856e182e
   languageName: node
   linkType: hard
 

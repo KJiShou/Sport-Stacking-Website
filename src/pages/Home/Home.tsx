@@ -1,4 +1,4 @@
-import {Button, Card, Carousel, Empty, Grid, Spin, Typography} from "@arco-design/web-react";
+import {Button, Card, Carousel, Empty, Grid, Image, Modal, Spin, Typography} from "@arco-design/web-react";
 import {IconCalendar, IconClockCircle, IconLocation, IconTrophy} from "@arco-design/web-react/icon";
 import type React from "react";
 import {useEffect, useState} from "react";
@@ -35,6 +35,8 @@ const Home: React.FC = () => {
     const [upcomingTournaments, setUpcomingTournaments] = useState<Tournament[]>([]);
     const [recentRecords, setRecentRecords] = useState<Array<GlobalResult | GlobalTeamResult>>([]);
     const [loading, setLoading] = useState(true);
+    const [detailModalVisible, setDetailModalVisible] = useState(false);
+    const [selectedImage, setSelectedImage] = useState<HomeCarouselImage | null>(null);
 
     useEffect(() => {
         loadHomePageData();
@@ -89,114 +91,58 @@ const Home: React.FC = () => {
                             <Carousel autoPlay indicatorType="dot" showArrow="hover" style={{height: "500px"}}>
                                 {carouselImages.map((image) => (
                                     <div key={image.id}>
-                                        {image.link ? (
-                                            <a
-                                                href={image.link}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
+                                        <img
+                                            src={image.imageUrl}
+                                            alt={image.title}
+                                            onClick={() => {
+                                                setSelectedImage(image);
+                                                setDetailModalVisible(true);
+                                            }}
+                                            style={{
+                                                width: "100%",
+                                                height: "100%",
+                                                objectFit: "cover",
+                                                display: "block",
+                                                position: "absolute",
+                                                top: 0,
+                                                left: 0,
+                                                cursor: "pointer",
+                                            }}
+                                        />
+                                        <div
+                                            style={{
+                                                position: "absolute",
+                                                bottom: 0,
+                                                left: 0,
+                                                right: 0,
+                                                background: "linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent)",
+                                                padding: "2rem",
+                                                color: "white",
+                                                pointerEvents: "none",
+                                            }}
+                                        >
+                                            <Title
+                                                heading={2}
                                                 style={{
-                                                    width: "100%",
-                                                    height: "100%",
-                                                    display: "block",
-                                                    position: "absolute",
-                                                    top: 0,
-                                                    left: 0,
+                                                    color: "white",
+                                                    marginBottom: "0.5rem",
+                                                    textShadow: "2px 2px 4px rgba(0, 0, 0, 0.8)",
                                                 }}
                                             >
-                                                <img
-                                                    src={image.imageUrl}
-                                                    alt={image.title}
+                                                {image.title}
+                                            </Title>
+                                            {image.description && (
+                                                <Paragraph
                                                     style={{
-                                                        width: "100%",
-                                                        height: "100%",
-                                                        objectFit: "cover",
-                                                        display: "block",
-                                                    }}
-                                                />
-                                                <div
-                                                    style={{
-                                                        position: "absolute",
-                                                        bottom: 0,
-                                                        left: 0,
-                                                        right: 0,
-                                                        background: "linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent)",
-                                                        padding: "2rem",
-                                                        color: "white",
+                                                        color: "rgba(255, 255, 255, 0.9)",
+                                                        marginBottom: 0,
+                                                        textShadow: "1px 1px 2px rgba(0, 0, 0, 0.8)",
                                                     }}
                                                 >
-                                                    <Title
-                                                        heading={2}
-                                                        style={{
-                                                            color: "white",
-                                                            marginBottom: "0.5rem",
-                                                            textShadow: "2px 2px 4px rgba(0, 0, 0, 0.8)",
-                                                        }}
-                                                    >
-                                                        {image.title}
-                                                    </Title>
-                                                    {image.description && (
-                                                        <Paragraph
-                                                            style={{
-                                                                color: "rgba(255, 255, 255, 0.9)",
-                                                                marginBottom: 0,
-                                                                textShadow: "1px 1px 2px rgba(0, 0, 0, 0.8)",
-                                                            }}
-                                                        >
-                                                            {image.description}
-                                                        </Paragraph>
-                                                    )}
-                                                </div>
-                                            </a>
-                                        ) : (
-                                            <>
-                                                <img
-                                                    src={image.imageUrl}
-                                                    alt={image.title}
-                                                    style={{
-                                                        width: "100%",
-                                                        height: "100%",
-                                                        objectFit: "cover",
-                                                        display: "block",
-                                                        position: "absolute",
-                                                        top: 0,
-                                                        left: 0,
-                                                    }}
-                                                />
-                                                <div
-                                                    style={{
-                                                        position: "absolute",
-                                                        bottom: 0,
-                                                        left: 0,
-                                                        right: 0,
-                                                        background: "linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent)",
-                                                        padding: "2rem",
-                                                        color: "white",
-                                                    }}
-                                                >
-                                                    <Title
-                                                        heading={2}
-                                                        style={{
-                                                            color: "white",
-                                                            marginBottom: "0.5rem",
-                                                            textShadow: "2px 2px 4px rgba(0, 0, 0, 0.8)",
-                                                        }}
-                                                    >
-                                                        {image.title}
-                                                    </Title>
-                                                    {image.description && (
-                                                        <Paragraph
-                                                            style={{
-                                                                color: "rgba(255, 255, 255, 0.9)",
-                                                                marginBottom: 0,
-                                                                textShadow: "1px 1px 2px rgba(0, 0, 0, 0.8)",
-                                                            }}
-                                                        >
-                                                            {image.description}
-                                                        </Paragraph>
-                                                    )}
-                                                </div>
-                                            </>
-                                        )}
+                                                    {image.description}
+                                                </Paragraph>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </Carousel>
@@ -516,6 +462,53 @@ const Home: React.FC = () => {
                             </div>
                         </section>
                     </div>
+
+                    {/* Image Detail Modal */}
+                    <Modal
+                        visible={detailModalVisible}
+                        onCancel={() => {
+                            setDetailModalVisible(false);
+                            setSelectedImage(null);
+                        }}
+                        footer={null}
+                        className={`max-w-[95vw] md:max-w-[80vw] lg:max-w-[60vw]`}
+                    >
+                        {selectedImage && (
+                            <div>
+                                <Image
+                                    src={selectedImage.imageUrl}
+                                    alt={selectedImage.title}
+                                    preview
+                                    width="100%"
+                                    style={{
+                                        borderRadius: "8px",
+                                        marginBottom: "1rem",
+                                        cursor: "pointer",
+                                    }}
+                                />
+                                <Title heading={4} style={{marginBottom: "0.5rem"}}>
+                                    {selectedImage.title}
+                                </Title>
+                                {selectedImage.description && (
+                                    <Paragraph style={{color: "var(--color-text-2)", marginBottom: "1rem"}}>
+                                        {selectedImage.description}
+                                    </Paragraph>
+                                )}
+                                {selectedImage.link && (
+                                    <Button
+                                        type="primary"
+                                        onClick={() => {
+                                            if (selectedImage.link) {
+                                                window.open(selectedImage.link, "_blank", "noopener,noreferrer");
+                                            }
+                                        }}
+                                    >
+                                        Visit Link
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+                    </Modal>
                 </div>
             </div>
         </div>
