@@ -2,9 +2,9 @@
 import type {FirebaseConfig} from "@/schema";
 import {initializeApp} from "firebase/app";
 import {getAuth} from "firebase/auth";
+import {ReCaptchaV3Provider, initializeAppCheck} from "firebase/app-check";
 import {getFirestore} from "firebase/firestore";
 import {getStorage} from "firebase/storage";
-import {initializeAppCheck, ReCaptchaV3Provider} from "firebase/app-check";
 
 const firebaseConfig: FirebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
