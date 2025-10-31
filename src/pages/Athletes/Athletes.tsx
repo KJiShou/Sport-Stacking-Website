@@ -22,6 +22,8 @@ import {IconRefresh} from "@arco-design/web-react/icon";
 import type {FirestoreUser} from "@/schema/UserSchema";
 // import type {GlobalResult, GlobalTeamResult} from "@/schema/RecordSchema";
 import {type EventType as RankingEventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {formatStackingTime} from "@/utils/time";
 
 const {Title, Text} = Typography;
@@ -472,6 +474,8 @@ const Athletes: React.FC = () => {
     const [locationOptions, setLocationOptions] = useState<string[]>([]);
     const [seasonOptions, setSeasonOptions] = useState<SeasonValue[]>([]);
 
+    const deviceBreakpoint = useDeviceBreakpoint();
+
     const selectedEvent = useMemo(() => {
         return EVENT_OPTIONS.find((option) => option.key === selectedEventKey) ?? DEFAULT_EVENT;
     }, [selectedEventKey]);
@@ -586,116 +590,68 @@ const Athletes: React.FC = () => {
         });
     }, [rankedRows, searchTerm]);
 
-    const hasTeamMembers = useMemo(
-        () => filteredRows.some((row) => row.isTeam && (row.memberNames.length > 0 || row.members.length > 0)),
-        [filteredRows],
-    );
-
-    const columns = useMemo<TableColumnProps<AthleteTableRow>[]>(() => {
-        const base: TableColumnProps<AthleteTableRow>[] = [
-            {
-                title: "Rank",
-                dataIndex: "rank",
-                width: 60,
-                render: (rank: number) => <span className="font-semibold text-sm md:text-base">{rank}</span>,
-            },
-            {
-                title: selectedEvent.category === "team_relay" ? "Team" : "Athlete",
-                dataIndex: "name",
-                render: (name: string, row) => {
-                    if (!row.isTeam && row.participantId) {
-                        return (
-                            <Link href={`/athletes/${row.participantId}`} hoverable={false}>
-                                {name}
-                            </Link>
-                        );
-                    }
-                    return <span>{name}</span>;
-                },
-            },
-        ];
-
-        if (hasTeamMembers) {
-            base.push({
-                title: "Members",
-                dataIndex: "members",
-                width: 240,
-                render: (_: string[], row) => {
-                    if (!row.isTeam) {
-                        return "—";
-                    }
-                    const ids = Array.isArray(row.members) ? row.members : [];
-                    const labels = row.memberNames.length > 0 ? row.memberNames : ids;
-                    if (!labels || labels.length === 0) {
-                        return "—";
-                    }
+    const columns: (TableColumnProps<(typeof filteredRows)[number]> | false)[] = [
+        {
+            title: "Rank",
+            dataIndex: "rank",
+            width: 60,
+            render: (rank: number) => <span className="font-semibold text-sm md:text-base">{rank}</span>,
+        },
+        {
+            title: selectedEvent.category === "team_relay" ? "Team" : "Athlete",
+            dataIndex: "name",
+            render: (name: string, row) => {
+                if (!row.isTeam && row.participantId) {
                     return (
-                        <Space size={6} wrap>
-                            {labels.map((label, index) => {
-                                const memberLabel = label || ids[index] || "Unknown";
-                                const memberId = ids[index];
-                                const key = `${row.key}-member-${index}-${memberId ?? memberLabel}`;
-                                if (typeof memberId === "string" && memberId.length > 0) {
-                                    return (
-                                        <Link key={key} href={`/athletes/${memberId}`}>
-                                            {memberLabel}
-                                        </Link>
-                                    );
-                                }
-                                return <span key={key}>{memberLabel}</span>;
-                            })}
-                        </Space>
+                        <Link href={`/athletes/${row.participantId}`} hoverable={false}>
+                            {name}
+                        </Link>
                     );
-                },
-            });
-        }
-
-        base.push(
-            {
-                title: "Country",
-                dataIndex: "country",
-                width: 160,
-                render: (country: string) => (
-                    <Space size={6} align="center">
-                        <span>{getCountryFlag(country)}</span>
-                        <span>{country || "Unknown"}</span>
-                    </Space>
-                ),
+                }
+                return <span>{name}</span>;
             },
-            {
-                title: "Division",
-                dataIndex: "ageGroup",
-                width: 120,
-                render: (ageGroup: AgeGroup, row) => (
-                    <Space size={4} align="center">
-                        <Tag color="arcoblue">{ageGroup}</Tag>
-                        {!row.isTeam && typeof row.age === "number" ? (
-                            <span className="text-xs text-neutral-500">({row.age})</span>
-                        ) : null}
-                    </Space>
-                ),
-            },
-            {
-                title: "Gender",
-                dataIndex: "gender",
-                width: 120,
-            },
-            {
-                title: `${selectedEvent.label} Time`,
-                dataIndex: "eventTime",
-                render: (time: number) => <span className="font-semibold">{formatStackingTime(time)}</span>,
-            },
-            {
-                title: "Season",
-                dataIndex: "season",
-                width: 160,
-                render: (season: SeasonValue | null) =>
-                    season ? <Tag color="green">{season}</Tag> : <Tag color="gray">N/A</Tag>,
-            },
-        );
-
-        return base;
-    }, [selectedEvent, hasTeamMembers]);
+        },
+        deviceBreakpoint > DeviceBreakpoint.md && {
+            title: "Country",
+            dataIndex: "country",
+            width: 160,
+            render: (country: string) => (
+                <Space size={6} align="center">
+                    <span>{getCountryFlag(country)}</span>
+                    <span>{country || "Unknown"}</span>
+                </Space>
+            ),
+        },
+        deviceBreakpoint > DeviceBreakpoint.md && {
+            title: "Division",
+            dataIndex: "ageGroup",
+            width: 120,
+            render: (ageGroup: AgeGroup, row) => (
+                <Space size={4} align="center">
+                    <Tag color="arcoblue">{ageGroup}</Tag>
+                    {!row.isTeam && typeof row.age === "number" ? (
+                        <span className="text-xs text-neutral-500">({row.age})</span>
+                    ) : null}
+                </Space>
+            ),
+        },
+        {
+            title: "Gender",
+            dataIndex: "gender",
+            width: 120,
+        },
+        {
+            title: `${selectedEvent.label} Time`,
+            dataIndex: "eventTime",
+            render: (time: number) => <span className="font-semibold">{formatStackingTime(time)}</span>,
+        },
+        deviceBreakpoint > DeviceBreakpoint.md && {
+            title: "Season",
+            dataIndex: "season",
+            width: 160,
+            render: (season: SeasonValue | null) => (season ? <Tag color="green">{season}</Tag> : <Tag color="gray">N/A</Tag>),
+        },
+    ];
 
     const handleResetFilters = () => {
         setSearchTerm("");
@@ -785,7 +741,7 @@ const Athletes: React.FC = () => {
                     <Table
                         rowKey="key"
                         data={filteredRows}
-                        columns={columns}
+                        columns={columns.filter((e): e is TableColumnProps<AthleteTableRow> => !!e)}
                         pagination={{pageSize: 25, hideOnSinglePage: true}}
                         scroll={{x: true}}
                     />
