@@ -1,8 +1,8 @@
 // Import the functions you need from the SDKs you need
 import type {FirebaseConfig} from "@/schema";
 import {initializeApp} from "firebase/app";
-import {getAuth} from "firebase/auth";
 import {ReCaptchaV3Provider, initializeAppCheck} from "firebase/app-check";
+import {getAuth} from "firebase/auth";
 import {getFirestore} from "firebase/firestore";
 import {getStorage} from "firebase/storage";
 
