@@ -4,19 +4,24 @@ import {initializeApp} from "firebase/app";
 import {getAuth} from "firebase/auth";
 import {getFirestore} from "firebase/firestore";
 import {getStorage} from "firebase/storage";
+import {initializeAppCheck, ReCaptchaV3Provider} from "firebase/app-check";
 
 const firebaseConfig: FirebaseConfig = {
-    apiKey: "AIzaSyASIxz9tcaoo7_Bdoyfpgdc1akUjjTCGNU",
-    authDomain: "sport-stacking-website.firebaseapp.com",
-    projectId: "sport-stacking-website",
-    storageBucket: "sport-stacking-website.firebasestorage.app",
-    messagingSenderId: "439583771971",
-    appId: "1:439583771971:web:41c9e41be1cb6bbeb373f6",
-    measurementId: "G-Y70B9ETF5D",
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID,
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+const appCheck = initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider("6LcRC_0rAAAAADINnR7-KKu56U_F-QiCt0I0I0QQ"),
+    isTokenAutoRefreshEnabled: true,
+});
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const auth = getAuth(app);
