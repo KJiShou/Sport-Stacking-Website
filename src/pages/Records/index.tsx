@@ -483,6 +483,7 @@ const RecordsIndex: React.FC = () => {
                 flag: getCountryFlag(record.country),
                 date: formatDate(record.created_at || new Date().toISOString()),
                 ageGroup: recordAgeGroup,
+                age: record.age || null,
                 status: record.status || "submitted",
                 videoUrl: record.videoUrl || undefined,
                 rawTime: record.time,

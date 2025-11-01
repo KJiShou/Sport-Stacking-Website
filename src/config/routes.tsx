@@ -1,3 +1,4 @@
+import TournamentView from "@/pages/Tournaments/Component/TournamentView";
 import FinalResultsPage from "@/pages/Tournaments/FinalResults/FinalResultsPage";
 import ParticipantListPage from "@/pages/Tournaments/ParticipantList/ParticipantListPage";
 import PrelimResultsPage from "@/pages/Tournaments/PrelimResults/PrelimResultsPage";
@@ -23,6 +24,14 @@ import RegisterPage from "../pages/User/Register/RegisterPage";
 import UserProfile from "../pages/User/UserProfile/UserProfile";
 
 const routes: AppRoute[] = [
+    {
+        path: "/tournaments/:id/view",
+        component: TournamentView,
+    },
+    {
+        path: "/tournaments/:id/view",
+        component: TournamentView,
+    },
     {path: "/", component: Home},
     {path: "/athletes", component: Athletes},
     {path: "/athletes/:athleteId", component: AthleteProfilePage},

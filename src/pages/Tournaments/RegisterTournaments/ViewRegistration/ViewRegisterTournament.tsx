@@ -119,6 +119,7 @@ export default function ViewTournamentRegistrationPage() {
                 setRegistration(userReg);
 
                 const teamsData = await fetchTeamsByTournament(tournamentId);
+
                 const membershipTeams = teamsData.filter(
                     (team) =>
                         team.leader_id === user.global_id || (team.members ?? []).some((m) => m.global_id === user.global_id),

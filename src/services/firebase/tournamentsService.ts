@@ -309,12 +309,7 @@ export async function fetchTournamentById(tournamentId: string): Promise<Tournam
 
         if (!docSnap.exists()) {
             console.info("Tournament document not found:", tournamentId);
-            const parsed = TournamentSchema.safeParse({id: docSnap.id, ...docSnap.data()});
-            if (!parsed.success) {
-                console.warn(`Failed to parse tournament ${tournamentId}`, parsed.error.flatten());
-                return null;
-            }
-            return parsed.data;
+            return null;
         }
 
         return docSnap.data() as Tournament;

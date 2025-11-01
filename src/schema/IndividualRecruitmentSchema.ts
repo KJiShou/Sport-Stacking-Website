@@ -8,9 +8,11 @@ export const IndividualRecruitmentSchema = z.object({
     age: z.number(),
     gender: z.enum(["Male", "Female"]),
     country: z.string(),
-    events_interested: z.array(z.string()), // e.g., ["3-6-3-Double", "Cycle-Team Relay"]
+    event_id: z.string(), // Only one event per recruitment
+    event_name: z.string(),
     phone_number: z.string().optional(),
     additional_info: z.string().optional(), // Any additional requirements or info
+    registration_id: z.string().optional(),
     status: z.enum(["active", "matched", "closed"]).default("active"),
     matched_team_id: z.string().optional().nullable(), // ID of team they were assigned to
     created_at: z.date(),

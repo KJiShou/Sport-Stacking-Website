@@ -289,8 +289,14 @@ export default function EditTournamentRegistrationPage() {
             }
             setRegistration({...userReg, id: registrationId});
 
-            const allTeamsData = await fetchTeamsByRegistrationId(registrationId);
-            const normalizedTeams: LegacyTeam[] = allTeamsData.map((team) => {
+            const allTeamsData = await fetchTeamsByTournament(tournamentId);
+            // Only show teams where the participant is leader or member (like ViewRegisterTournament)
+            const membershipTeams = allTeamsData.filter(
+                (team) =>
+                    team.leader_id === userReg.user_global_id ||
+                    (team.members ?? []).some((m) => m.global_id === userReg.user_global_id),
+            );
+            const normalizedTeams: LegacyTeam[] = membershipTeams.map((team) => {
                 const legacyTeam = team as LegacyTeam;
                 const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentData?.events ?? []);
 
@@ -512,7 +518,7 @@ export default function EditTournamentRegistrationPage() {
                                                 />
                                             </Form.Item>
                                             <Form.Item label="Team Leader">
-                                                <Input value={team.leader_id} disabled />
+                                                <Input value={team.leader_id} disabled={!edit} />
                                             </Form.Item>
                                             <Form.Item label="Team Members">
                                                 <div className="flex flex-col gap-2">
