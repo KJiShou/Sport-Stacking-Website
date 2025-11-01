@@ -372,7 +372,7 @@ export default function RegisterTournamentPage() {
             await addUserRegistrationRecord(user.id ?? "", registrationRecord);
 
             Message.success("Registration successful!");
-            //navigate("/tournaments");
+            navigate("/tournaments");
         } catch (error) {
             console.error(error);
             Message.error("Failed to register.");
