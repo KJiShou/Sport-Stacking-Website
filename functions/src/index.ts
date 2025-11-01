@@ -49,14 +49,14 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY]}, (req, res) => {
         }
 
         // Step 2: 校验必要参数
-        const {to, tournamentId, teamId, memberId} = req.body;
-        if (!to || !tournamentId || !teamId || !memberId) {
+        const {to, tournamentId, teamId, memberId, registrationId} = req.body;
+        if (!to || !tournamentId || !teamId || !memberId || !registrationId) {
             res.status(400).json({error: "Missing required fields"});
             return;
         }
 
-        // Step 3: 构造验证链接
-        const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&teamId=${teamId}&memberId=${memberId}`;
+        // Step 3: 构造验证链接，包含 registrationId
+        const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&teamId=${teamId}&memberId=${memberId}&registrationId=${registrationId}`;
         const safeVerifyUrl = verifyUrl.replace(/&/g, "&amp;");
 
         const html = `
@@ -480,9 +480,9 @@ export const updateVerification = onRequest(async (req, res) => {
             return;
         }
 
-        const {tournamentId, teamId, memberId} = req.body;
+        const {tournamentId, teamId, memberId, registrationId} = req.body;
 
-        if (!tournamentId || !teamId || !memberId) {
+        if (!tournamentId || !teamId || !memberId || !registrationId) {
             res.status(400).json({error: "Missing fields"});
             return;
         }
@@ -498,8 +498,18 @@ export const updateVerification = onRequest(async (req, res) => {
             }
             const userDocRef = userSnap.docs[0].ref;
 
+            // Find registration by registrationId
+            const regRef = db.collection("registrations").doc(registrationId);
+            const regSnap = await regRef.get();
+            if (!regSnap.exists) {
+                res.status(404).json({error: "Registration not found"});
+                return;
+            }
+            const registrationData = regSnap.data() as Registration;
+
             await db.runTransaction(async (transaction) => {
-                const teamRef = db.collection("tournaments").doc(tournamentId).collection("teams").doc(teamId);
+                // 'team_recruitments' is now a top-level collection, not under tournaments
+                const teamRef = db.collection("teams").doc(teamId);
                 const teamDoc = await transaction.get(teamRef);
                 const userDoc = await transaction.get(userDocRef);
 
@@ -546,13 +556,6 @@ export const updateVerification = onRequest(async (req, res) => {
                 const updatedMembers = [...teamData.members];
                 updatedMembers[memberIndex].verified = true;
 
-                const regRef = db.collection("tournaments").doc(tournamentId).collection("registrations").doc(userDoc.id);
-                const regSnap = await transaction.get(regRef);
-                if (!regSnap.exists) {
-                    throw new Error("Registration not found");
-                }
-                const registrationData = regSnap.data() as Registration;
-
                 // Update the registration document with the new events
                 const userHasConflict = teamEvents.some((event: string) => registrationData.events_registered.includes(event));
 
@@ -585,7 +588,7 @@ export const updateVerification = onRequest(async (req, res) => {
             } else if (errorMessage === "You are already registered for one or more of these team events.") {
                 res.status(409).json({error: errorMessage});
             } else {
-                res.status(500).json({error: "An unexpected error occurred during verification."});
+                res.status(500).json({error: errorMessage});
             }
         }
     });

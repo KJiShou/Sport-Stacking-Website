@@ -16,9 +16,10 @@ export default function VerifyPage() {
         const tournamentId = params.get("tournamentId");
         const teamId = params.get("teamId");
         const memberId = params.get("memberId");
+        const registrationId = params.get("registrationId");
 
         const update = async () => {
-            if (!tournamentId || !teamId || !memberId) {
+            if (!tournamentId || !teamId || !memberId || !registrationId) {
                 setStatus("missing");
                 return;
             }
@@ -56,6 +57,7 @@ export default function VerifyPage() {
                         tournamentId,
                         teamId,
                         memberId,
+                        registrationId,
                     }),
                 });
 

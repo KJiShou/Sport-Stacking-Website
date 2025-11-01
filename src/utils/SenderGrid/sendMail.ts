@@ -38,7 +38,13 @@ const parseResponse = async (response: Response): Promise<SendEmailPayload | str
     }
 };
 
-export async function sendProtectedEmail(gmail: string, tournamentId: string, teamId: string, memberId: string): Promise<void> {
+export async function sendProtectedEmail(
+    gmail: string,
+    tournamentId: string,
+    teamId: string,
+    memberId: string,
+    registrationId: string,
+): Promise<void> {
     if (!gmail) {
         console.warn("sendProtectedEmail skipped: missing recipient email");
         return;
@@ -66,6 +72,7 @@ export async function sendProtectedEmail(gmail: string, tournamentId: string, te
             tournamentId,
             teamId,
             memberId,
+            registrationId,
         }),
     });
 

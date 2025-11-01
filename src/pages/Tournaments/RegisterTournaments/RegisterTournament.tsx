@@ -325,7 +325,7 @@ export default function RegisterTournamentPage() {
                         const userSnap = await getUserEmailByGlobalId(globalId);
                         const email = userSnap?.email;
                         if (email) {
-                            await sendProtectedEmail(email, tournamentId, teamId, globalId);
+                            await sendProtectedEmail(email, tournamentId, teamId, globalId, registrationId);
                         }
                     } catch (err) {
                         console.error(`❌ Failed to send verification to ${globalId}`, err);
@@ -372,7 +372,7 @@ export default function RegisterTournamentPage() {
             await addUserRegistrationRecord(user.id ?? "", registrationRecord);
 
             Message.success("Registration successful!");
-            //navigate("/tournaments");
+            navigate("/tournaments");
         } catch (error) {
             console.error(error);
             Message.error("Failed to register.");
