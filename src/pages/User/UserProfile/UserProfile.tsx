@@ -398,15 +398,21 @@ export default function RegisterPage() {
                     <div className="flex flex-col md:flex-row bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
                         {/* 左边：基本信息卡片 */}
                         <div className="bg-white flex flex-col w-full md:w-1/3 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                            <Avatar className="mx-auto w-48 h-48 rounded-full overflow-hidden relative">
-                                {isImageLoading && <Spin size={24} />}
-                                <img
-                                    src={user?.image_url}
-                                    alt={user?.name}
-                                    onLoad={() => setIsImageLoading(false)}
-                                    onError={() => setIsImageLoading(false)}
-                                    className={`w-full h-full object-cover transition-opacity duration-300 ${isImageLoading ? "opacity-0" : "opacity-100"}`}
-                                />
+                            <Avatar className="mx-auto w-48 h-48 rounded-full overflow-hidden relative" style={{fontSize: 64}}>
+                                {user?.image_url ? (
+                                    <>
+                                        {isImageLoading && <Spin size={24} />}
+                                        <img
+                                            src={user.image_url}
+                                            alt={user?.name}
+                                            onLoad={() => setIsImageLoading(false)}
+                                            onError={() => setIsImageLoading(false)}
+                                            className={`w-full h-full object-cover transition-opacity duration-300 ${isImageLoading ? "opacity-0" : "opacity-100"}`}
+                                        />
+                                    </>
+                                ) : (
+                                    <IconUser />
+                                )}
                             </Avatar>
                             <Text className="flex items-center justify-center gap-1 text-4xl font-bold mt-2">{user?.name}</Text>
                             <Text className="flex items-center justify-center gap-1">

@@ -1,5 +1,5 @@
 import {Avatar, Message, Spin, Upload} from "@arco-design/web-react";
-import {IconCamera} from "@arco-design/web-react/icon";
+import {IconCamera, IconUser} from "@arco-design/web-react/icon";
 import React, {useState} from "react";
 import type {AvatarUploaderProps} from "../../schema";
 import {updateUserProfile} from "../../services/firebase/authService";
@@ -42,8 +42,10 @@ export function AvatarUploader({user, setUser}: Readonly<AvatarUploaderProps>) {
                 >
                     {uploading ? (
                         <Spin size={24} />
-                    ) : (
+                    ) : user.image_url ? (
                         <img className="w-full h-full object-cover" src={user.image_url} alt={user.name} />
+                    ) : (
+                        <IconUser style={{fontSize: 48}} />
                     )}
                 </Avatar>
             </div>
