@@ -325,7 +325,7 @@ export default function RegisterTournamentPage() {
                         const userSnap = await getUserEmailByGlobalId(globalId);
                         const email = userSnap?.email;
                         if (email) {
-                            await sendProtectedEmail(email, tournamentId, teamId, globalId);
+                            await sendProtectedEmail(email, tournamentId, teamId, globalId, registrationId);
                         }
                     } catch (err) {
                         console.error(`❌ Failed to send verification to ${globalId}`, err);
