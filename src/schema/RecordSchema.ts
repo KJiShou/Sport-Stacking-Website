@@ -129,6 +129,7 @@ export const RecordDisplaySchema = z.object({
     flag: z.string(),
     date: z.string(),
     ageGroup: z.string(),
+    age: z.number().nullable(),
     status: z.enum(["submitted", "verified"]),
     videoUrl: z.string().optional(),
     rawTime: z.number(),

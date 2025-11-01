@@ -138,20 +138,24 @@ export default function RegisterTournamentPage() {
             for (const [teamId, team] of Object.entries(teamsRaw)) {
                 const leaderId = team.leader ?? null;
                 const memberIds = (team.member ?? []).map((m) => m).filter((id) => id != null) as string[];
-                if (!team.looking_for_team_members && leaderId && memberIds.includes(leaderId)) {
+                const isLookingForMembers = team.looking_for_team_members === true;
+                const isLookingForTeammates = lookingForTeams.includes(teamId);
+
+                if (!isLookingForMembers && leaderId && memberIds.includes(leaderId)) {
                     Message.error(`In team "${team.name}", team leader cannot be included in team members.`);
                     setLoading(false);
                     throw new Error(`Team leader ${leaderId} cannot be a member in team ${teamId}`);
                 }
 
                 const userInTeam = leaderId === user.global_id || memberIds.includes(user.global_id ?? "");
-                if (!team.looking_for_team_members && !userInTeam) {
+                if (!isLookingForMembers && !userInTeam) {
                     Message.error(`In team "${team.name}", you must be either leader or one of the members.`);
                     setLoading(false);
                     throw new Error(`User ${user.global_id} is not in team ${teamId}`);
                 }
 
-                if (!team.looking_for_team_members) {
+                // Only check member count if NOT looking for members/teammates
+                if (!isLookingForMembers && !isLookingForTeammates) {
                     const relatedEvent = findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
                     const lowerEventType = (relatedEvent?.type ?? "").toLowerCase();
                     const fallbackTeamSize =
@@ -280,14 +284,29 @@ export default function RegisterTournamentPage() {
 
                 // If looking for members, create a recruitment record
                 if (teamData.looking_for_team_members) {
+                    // Calculate how many members are still needed
+                    const relatedEvent = findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === eventId);
+                    const fallbackTeamSize =
+                        relatedEvent?.teamSize ??
+                        (relatedEvent?.type === "Parent & Child"
+                            ? 2
+                            : relatedEvent?.type?.toLowerCase() === "double"
+                              ? 2
+                              : relatedEvent?.type?.toLowerCase() === "team relay"
+                                ? 4
+                                : undefined);
+                    const currentCount = (teamData.member?.filter(Boolean)?.length ?? 0) + (teamData.leader ? 1 : 0);
+                    const max_members_needed = fallbackTeamSize !== undefined ? Math.max(fallbackTeamSize - currentCount, 0) : 3;
                     await createTeamRecruitment({
                         team_id: teamId,
                         tournament_id: tournamentId,
                         team_name: teamData.name,
                         leader_id: teamData.leader,
-                        events: Array.from(teamEventKeys),
+                        event_id: eventId,
+                        event_name: relatedEvent ? getEventLabel(relatedEvent) : eventId,
                         requirements: "", // You can add form fields for these if needed
-                        max_members_needed: 3, // You can add form fields for these if needed
+                        max_members_needed,
+                        registration_id: registrationId,
                     });
                 }
 
@@ -317,19 +336,23 @@ export default function RegisterTournamentPage() {
             // Handle individual recruitment if user is looking for teams
             if (lookingForTeams.length > 0) {
                 try {
-                    await createIndividualRecruitment({
-                        participant_id: user.global_id ?? "",
-                        tournament_id: tournamentId,
-                        participant_name: user.name ?? "",
-                        age: getAgeAtTournament(user.birthdate ?? new Date(), tournament.start_date ?? new Date()),
-                        gender: (registrationData.gender ?? "Male") as "Male" | "Female",
-                        country: registrationData.country ?? "",
-                        events_interested: lookingForTeams,
-                        phone_number: registrationData.phone_number,
-                        additional_info: `Participant is looking for teams in the following events: ${lookingForTeams
-                            .map((eventId) => getEventLabel(findEventByKey(eventId)))
-                            .join(", ")}`,
-                    });
+                    // Only create one recruitment per event (schema now supports only one event per record)
+                    for (const eventId of lookingForTeams) {
+                        const eventObj = findEventByKey(eventId);
+                        await createIndividualRecruitment({
+                            participant_id: user.global_id ?? "",
+                            tournament_id: tournamentId,
+                            participant_name: user.name ?? "",
+                            age: getAgeAtTournament(user.birthdate ?? new Date(), tournament.start_date ?? new Date()),
+                            gender: (registrationData.gender ?? "Male") as "Male" | "Female",
+                            country: registrationData.country ?? "",
+                            event_id: eventId,
+                            event_name: eventObj ? getEventLabel(eventObj) : eventId,
+                            phone_number: registrationData.phone_number,
+                            additional_info: `Participant is looking for a team in event: ${eventObj ? getEventLabel(eventObj) : eventId}`,
+                            registration_id: registrationId,
+                        });
+                    }
                 } catch (error) {
                     console.error("Failed to create individual recruitment:", error);
                     // Don't fail the entire registration if this fails
@@ -349,7 +372,7 @@ export default function RegisterTournamentPage() {
             await addUserRegistrationRecord(user.id ?? "", registrationRecord);
 
             Message.success("Registration successful!");
-            navigate("/tournaments");
+            //navigate("/tournaments");
         } catch (error) {
             console.error(error);
             Message.error("Failed to register.");
@@ -619,12 +642,21 @@ export default function RegisterTournamentPage() {
                                             {teamEvents.map((event) => {
                                                 const eventId = getEventKey(event);
                                                 const eventLabel = getEventLabel(event);
+                                                const lookingForTeamMembers = form.getFieldValue(
+                                                    `teams.${eventId}.looking_for_team_members`,
+                                                );
                                                 return (
                                                     <Checkbox
                                                         key={`individual-looking-${eventId}`}
                                                         checked={lookingForTeams.includes(eventId)}
+                                                        disabled={!!lookingForTeamMembers}
                                                         onChange={(checked) => {
                                                             if (checked) {
+                                                                // Uncheck 'Looking for Team Members' if checked
+                                                                form.setFieldValue(
+                                                                    `teams.${eventId}.looking_for_team_members`,
+                                                                    false,
+                                                                );
                                                                 setLookingForTeams((prev) =>
                                                                     prev.includes(eventId) ? prev : [...prev, eventId],
                                                                 );
@@ -713,12 +745,17 @@ export default function RegisterTournamentPage() {
                                                 >
                                                     {() => {
                                                         const isLookingTopLevel = lookingForTeams.includes(eventId);
+                                                        // If looking for teammates, always set leader to current user
+                                                        if (isLookingTopLevel && user?.global_id) {
+                                                            // Set the field value directly so it is included in submission
+                                                            form.setFieldValue(`teams.${eventId}.leader`, user.global_id);
+                                                        }
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${eventId}.leader`}
                                                                 label="Team Leader Global ID"
                                                                 rules={isLookingTopLevel ? [] : [{required: true}]}
-                                                                initialValue={!isLookingTopLevel ? (user?.global_id ?? "") : ""}
+                                                                initialValue={user?.global_id ?? ""}
                                                             >
                                                                 <Input
                                                                     disabled
@@ -764,7 +801,10 @@ export default function RegisterTournamentPage() {
                                                                     </div>
                                                                 }
                                                                 rules={
-                                                                    isLookingTopLevel
+                                                                    lookingForTeams.includes(eventId) ||
+                                                                    form.getFieldValue(
+                                                                        `teams.${eventId}.looking_for_team_members`,
+                                                                    )
                                                                         ? []
                                                                         : [
                                                                               {required: true},
@@ -859,10 +899,12 @@ export default function RegisterTournamentPage() {
                                                     triggerPropName="checked"
                                                 >
                                                     <Checkbox
-                                                        onChange={() => {
-                                                            // Don't clear form fields anymore
-                                                            // Just let the checkbox state manage itself via Form.Item field
-                                                            // The form validation will handle required/optional fields based on checked state
+                                                        disabled={lookingForTeams.includes(eventId)}
+                                                        onChange={(checked) => {
+                                                            if (checked) {
+                                                                // Uncheck 'Looking for Teammates' if checked
+                                                                setLookingForTeams((prev) => prev.filter((id) => id !== eventId));
+                                                            }
                                                         }}
                                                     >
                                                         Looking for Team Members

@@ -227,53 +227,48 @@ export default function TournamentList() {
                     } else if (registrationStatus === "rejected") {
                         color = "red";
                         displayText = "Rejected";
-                        tooltipMessage =
-                            "Your registration was rejected. Please contact us to discuss your registration or submit a new application.";
-                    }
-                } else {
-                    // Show tournament status for non-registered users
-                    if (status === "Up Coming") {
-                        color = "blue";
-                        tooltipMessage = "Tournament registration is open. Register now to participate!";
-                    } else if (status === "On Going") {
-                        color = "green";
-                        tooltipMessage = "Tournament is currently in progress.";
-                    } else if (status === "Close Registration") {
-                        color = "red";
-                        tooltipMessage = "Registration is closed. Contact us if you missed the deadline.";
-                    } else if (status === "End") {
-                        color = "gray";
-                        tooltipMessage = "Tournament has ended.";
-                    } else {
-                        color = undefined;
-                        tooltipMessage = status;
+                        tooltipMessage = rejectionReason ? `Rejected: ${rejectionReason}` : "Your registration was rejected.";
                     }
                 }
 
                 return (
-                    <div>
-                        <Tooltip content={tooltipMessage}>
-                            <Tag color={color} style={{cursor: "pointer"}}>
-                                {displayText}
-                            </Tag>
-                        </Tooltip>
-                        {userHasRegistered && registrationStatus === "rejected" && rejectionReason && (
-                            <div className="mt-1 text-xs text-red-500">Reason: {rejectionReason}</div>
-                        )}
-                    </div>
+                    <Tooltip content={tooltipMessage || displayText}>
+                        <Tag color={color}>{displayText}</Tag>
+                    </Tooltip>
                 );
             },
         },
         {
             title: "Action",
             dataIndex: "action",
-            width: 200,
-            render: (_: string, tournament: Tournament) => {
+            width: 220,
+            render: (_: unknown, tournament: Tournament) => {
                 if (!user) {
                     return (
-                        <Button type="primary" onClick={() => handleRegister(tournament.id ?? "")}>
+                        <Dropdown.Button
+                            type="primary"
+                            trigger={["click", "hover"]}
+                            buttonProps={{
+                                loading: loading,
+                                onClick: () => handleRegister(tournament.id ?? ""),
+                            }}
+                            droplist={
+                                <div
+                                    className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                >
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => handleView(tournament)}
+                                    >
+                                        <IconEye /> View Tournament
+                                    </Button>
+                                </div>
+                            }
+                        >
                             Register
-                        </Button>
+                        </Dropdown.Button>
                     );
                 }
 
@@ -292,6 +287,14 @@ export default function TournamentList() {
                                     <div
                                         className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
                                     >
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => handleView(tournament)}
+                                        >
+                                            <IconEye /> View Tournament
+                                        </Button>
                                         <Button
                                             type="text"
                                             loading={loading}
@@ -356,6 +359,14 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
+                                            onClick={async () => handleView(tournament)}
+                                        >
+                                            <IconEye /> View Tournament
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
                                             onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
                                         >
                                             <IconEye /> View Registration List
@@ -412,6 +423,14 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
+                                            onClick={async () => handleView(tournament)}
+                                        >
+                                            <IconEye /> View Tournament
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
                                             onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
                                         >
                                             <IconEye /> View Registration List
@@ -458,13 +477,30 @@ export default function TournamentList() {
 
                 if (alreadyRegistered) {
                     return (
-                        <Button
+                        <Dropdown.Button
                             type="primary"
-                            onClick={() => navigate(`/tournaments/${tournament.id}/register/${user.global_id}/view`)}
-                            loading={loading}
+                            trigger={["click", "hover"]}
+                            buttonProps={{
+                                loading: loading,
+                                onClick: () => navigate(`/tournaments/${tournament.id}/register/${user.global_id}/view`),
+                            }}
+                            droplist={
+                                <div
+                                    className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                                >
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={async () => handleView(tournament)}
+                                    >
+                                        <IconEye /> View Tournament
+                                    </Button>
+                                </div>
+                            }
                         >
                             <IconEye /> View Registration
-                        </Button>
+                        </Dropdown.Button>
                     );
                 }
                 if (!tournament.registration_start_date || !tournament.registration_end_date) {
@@ -499,17 +535,34 @@ export default function TournamentList() {
                     );
                 }
                 return (
-                    <Popover
-                        content={
-                            <span>
-                                <p>This tournament has ended registration.</p>
-                            </span>
+                    <Dropdown.Button
+                        type="primary"
+                        trigger={["click", "hover"]}
+                        droplist={
+                            <div
+                                className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
+                            >
+                                <Button
+                                    type="text"
+                                    loading={loading}
+                                    className={`text-left`}
+                                    onClick={async () => handleView(tournament)}
+                                >
+                                    <IconEye /> View Tournament
+                                </Button>
+                            </div>
                         }
                     >
-                        <Button type="primary" disabled>
+                        <Popover
+                            content={
+                                <span>
+                                    <p>This tournament has ended registration.</p>
+                                </span>
+                            }
+                        >
                             Register
-                        </Button>
-                    </Popover>
+                        </Popover>
+                    </Dropdown.Button>
                 );
             },
         },
@@ -682,73 +735,7 @@ export default function TournamentList() {
     };
 
     const handleView = (tournament: Tournament) => {
-        setSelectedTournament(tournament);
-        setViewModalVisible(true);
-        setTournamentData([
-            {
-                label: "Registration Price",
-                value: <div>RM{tournament?.registration_fee}</div>,
-            },
-            {
-                label: "Member Registration Price",
-                value: <div>RM{tournament?.member_registration_fee}</div>,
-            },
-            {
-                label: "Location",
-                value: (
-                    <Link
-                        onClick={() =>
-                            window.open(
-                                `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(tournament?.address ?? "")}`,
-                                "_blank",
-                            )
-                        }
-                        hoverable={false}
-                    >
-                        {tournament?.address} ({tournament?.country?.join(" / ")}) <IconLaunch />
-                    </Link>
-                ),
-            },
-            {
-                label: "Venue",
-                value: <div>{tournament?.venue}</div>,
-            },
-            {
-                label: "Date",
-                value: (
-                    <div>
-                        {formatDate(tournament?.start_date)} - {formatDate(tournament?.end_date)}
-                    </div>
-                ),
-            },
-            {
-                label: "Max Participants",
-                value: <div>{tournament?.max_participants === 0 ? "No Limit" : tournament?.max_participants}</div>,
-            },
-            {
-                label: "Registration is open until",
-                value: <div>{formatDate(tournament?.registration_end_date)}</div>,
-            },
-            {
-                label: "Description",
-                value: (
-                    <Button onClick={() => setDescriptionModalVisible(true)} type="text">
-                        <IconExclamationCircle />
-                        view description
-                    </Button>
-                ),
-            },
-            {
-                label: "Agenda",
-                value: tournament?.agenda ? (
-                    <Button type="text" onClick={() => window.open(`${tournament?.agenda}`, "_blank")}>
-                        <IconCalendar /> View Agenda
-                    </Button>
-                ) : (
-                    "-"
-                ),
-            },
-        ]);
+        navigate(`/tournaments/${tournament.id}/view`);
     };
 
     const handleDelete = async (tournament: Tournament) => {

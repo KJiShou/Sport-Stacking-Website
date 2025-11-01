@@ -1,3 +1,5 @@
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {
     Button,
     Card,
@@ -14,6 +16,7 @@ import {
     Space,
     Spin,
     Table,
+    type TableColumnProps,
     Tabs,
     Tag,
     Typography,
@@ -153,6 +156,9 @@ const RecordsIndex: React.FC = () => {
     const [editVideoModalVisible, setEditVideoModalVisible] = useState(false);
     const [videoForm] = Form.useForm();
 
+    const deviceBreakpoint = useDeviceBreakpoint();
+    const isMobileView = deviceBreakpoint <= DeviceBreakpoint.sm;
+
     // Check if user has admin permissions
     const isAdmin = user?.roles?.verify_record || user?.roles?.edit_tournament || false;
 
@@ -248,104 +254,29 @@ const RecordsIndex: React.FC = () => {
         }
     };
 
-    const getTableColumns = (isTeamCategory: boolean) => {
-        const cols: Array<{
-            title: string;
-            dataIndex?: string;
-            key: string;
-            width?: number;
-            render?: (val: unknown, record: RecordDisplay & {members?: string[]}) => React.ReactNode;
-            sorter?: (a: RecordDisplay, b: RecordDisplay) => number;
-        }> = [
+    const getTableColumns = (isTeamCategory: boolean, deviceBreakpoint: number) => {
+        const cols: TableColumnProps<RecordDisplay>[] = [
             {
                 title: "Rank",
                 dataIndex: "rank",
-                key: "rank",
-                width: 70,
-                render: (_: unknown, record: RecordDisplay) => (
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontWeight: "bold",
-                            color: record.rank <= 3 ? "#faad14" : "#666",
-                        }}
-                    >
-                        {record.rank <= 3 && (
-                            <span style={{marginRight: "4px"}}>{record.rank === 1 ? "🥇" : record.rank === 2 ? "🥈" : "🥉"}</span>
-                        )}
-                        {record.rank}
-                    </div>
-                ),
-                sorter: (a: RecordDisplay, b: RecordDisplay) => a.rank - b.rank,
-            },
-            {
-                title: "Event",
-                dataIndex: "event",
-                key: "event",
-                width: 120,
-                render: (_: unknown, record: RecordDisplay) => (
-                    <Tag color="blue" style={{fontSize: "12px"}}>
-                        {record.event}
-                    </Tag>
-                ),
-                sorter: (a: RecordDisplay, b: RecordDisplay) => a.event.localeCompare(b.event),
-            },
-            {
-                title: "Time",
-                dataIndex: "time",
-                key: "time",
-                width: 100,
-                render: (_: unknown, record: RecordDisplay) => (
-                    <Text
-                        style={{
-                            fontWeight: "bold",
-                            color: record.rank === 1 ? "#52c41a" : "#1890ff",
-                            fontSize: "14px",
-                            cursor: record.videoUrl && (record.status === "verified" || isAdmin) ? "pointer" : "default",
-                            textDecoration: record.videoUrl && (record.status === "verified" || isAdmin) ? "underline" : "none",
-                        }}
-                        onClick={() => handleTimeClick(record)}
-                    >
-                        {record.time}
-                        {record.videoUrl && <IconVideoCamera style={{marginLeft: "4px", fontSize: "12px"}} />}
-                    </Text>
-                ),
-                sorter: (a: RecordDisplay, b: RecordDisplay) => {
-                    return a.rawTime - b.rawTime;
-                },
+                width: 60,
+                render: (rank: number) => <span className="font-semibold text-sm md:text-base">{rank}</span>,
             },
             {
                 title: isTeamCategory ? "Team" : "Athlete",
                 dataIndex: "athlete",
-                key: "athlete",
-                width: 200,
+                width: 180,
                 render: (_: unknown, record: RecordDisplay) => {
-                    const hasParticipantId = record.participantId && record.participantId.length > 0;
-                    if (hasParticipantId) {
+                    const hasParticipantId = record.participantId ? record.participantId.length > 0 : false;
+                    if (!isTeamCategory && hasParticipantId) {
                         return (
-                            <Link
-                                href={`/athletes/${record.participantId}`}
-                                style={{
-                                    fontWeight: record.rank <= 3 ? "bold" : "500",
-                                }}
-                            >
+                            <Link href={`/athletes/${record.participantId}`} hoverable={false}>
                                 {record.athlete}
                             </Link>
                         );
                     }
-                    return (
-                        <Text
-                            style={{
-                                fontWeight: record.rank <= 3 ? "bold" : "500",
-                            }}
-                        >
-                            {record.athlete}
-                        </Text>
-                    );
+                    return <span>{record.athlete}</span>;
                 },
-                sorter: (a: RecordDisplay, b: RecordDisplay) => a.athlete.localeCompare(b.athlete),
             },
         ];
 
@@ -382,94 +313,100 @@ const RecordsIndex: React.FC = () => {
             });
         }
 
-        return [
-            ...cols,
-            {
-                title: "Country",
-                dataIndex: "country",
-                key: "country",
-                width: 150,
-                render: (_: unknown, record: RecordDisplay) => (
-                    <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
-                        <span style={{fontSize: "16px"}}>{record.flag}</span>
-                        <Text style={{fontSize: "12px"}}>{record.country}</Text>
-                    </div>
-                ),
-                sorter: (a: RecordDisplay, b: RecordDisplay) => a.country.localeCompare(b.country),
-            },
-            {
-                title: "Date",
-                dataIndex: "date",
-                key: "date",
+        cols.push({
+            title: "Time",
+            dataIndex: "time",
+            width: 120,
+            render: (_: unknown, record: RecordDisplay) => (
+                <Text
+                    style={{
+                        fontWeight: "bold",
+                        color: record.rank === 1 ? "#52c41a" : "#1890ff",
+                        cursor: record.videoUrl && (record.status === "verified" || isAdmin) ? "pointer" : "default",
+                        textDecoration: record.videoUrl && (record.status === "verified" || isAdmin) ? "underline" : "none",
+                    }}
+                    onClick={() => handleTimeClick(record)}
+                >
+                    {record.time}
+                    {record.videoUrl && <IconVideoCamera style={{marginLeft: "4px", fontSize: "12px"}} />}
+                </Text>
+            ),
+        });
+
+        // less important columns – only show when screen > md
+        if (deviceBreakpoint > DeviceBreakpoint.md) {
+            cols.push(
+                {
+                    title: "Country",
+                    dataIndex: "country",
+                    width: 160,
+                    render: (country: string) => (
+                        <Space size={6} align="center">
+                            <span>{getCountryFlag(country)}</span>
+                            <span>{country || "Unknown"}</span>
+                        </Space>
+                    ),
+                },
+                {
+                    title: "Division",
+                    dataIndex: "ageGroup",
+                    width: 120,
+                    render: (_: unknown, record: RecordDisplay) => (
+                        <Space size={4} align="center">
+                            <Tag color="arcoblue">{record.ageGroup}</Tag>
+                            {record.age ? <span className="text-xs text-neutral-500">({record.age})</span> : null}
+                        </Space>
+                    ),
+                },
+                {
+                    title: "Gender",
+                    dataIndex: "gender",
+                    width: 100,
+                },
+                {
+                    title: "Date",
+                    dataIndex: "date",
+                    width: 120,
+                    render: (_: unknown, record: RecordDisplay) => (
+                        <Text style={{fontSize: "12px", color: "#666"}}>{record.date}</Text>
+                    ),
+                },
+            );
+        }
+
+        // Admin column — keep it last
+        if (isAdmin && deviceBreakpoint > DeviceBreakpoint.md) {
+            cols.push({
+                title: "Actions",
+                key: "actions",
                 width: 120,
                 render: (_: unknown, record: RecordDisplay) => (
-                    <Text style={{fontSize: "12px", color: "#666"}}>{record.date}</Text>
+                    <Dropdown.Button
+                        type="primary"
+                        size="mini"
+                        trigger={["click"]}
+                        onClick={() => handleToggleVerification(record)}
+                        droplist={
+                            <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg">
+                                <Button type="text" onClick={() => handleEditVideo(record)}>
+                                    <IconVideoCamera style={{marginRight: "8px"}} />
+                                    {record.videoUrl ? "Edit Video" : "Add Video"}
+                                </Button>
+                                <Button type="text" status="danger" onClick={() => handleDeleteRecord(record)}>
+                                    <IconDelete style={{marginRight: "8px"}} />
+                                    Delete
+                                </Button>
+                            </div>
+                        }
+                    >
+                        <IconEye style={{marginRight: "4px"}} />
+                        {record.status === "verified" ? "Unverify" : "Verify"}
+                    </Dropdown.Button>
                 ),
-                sorter: (a: RecordDisplay, b: RecordDisplay) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-            },
-            {
-                title: "Division",
-                dataIndex: "ageGroup",
-                key: "ageGroup",
-                width: 100,
-                render: (_: unknown, record: RecordDisplay) => (
-                    <Tag color="green" style={{fontSize: "11px"}}>
-                        {record.ageGroup}
-                    </Tag>
-                ),
-                sorter: (a: RecordDisplay, b: RecordDisplay) => a.ageGroup.localeCompare(b.ageGroup),
-            },
-            {
-                title: "Status",
-                dataIndex: "status",
-                key: "status",
-                width: 100,
-                render: (_: unknown, record: RecordDisplay) => (
-                    <Tag color={status === "verified" ? "green" : "orange"} style={{fontSize: "11px"}}>
-                        {record.status === "verified" ? "Verified" : "Submitted"}
-                    </Tag>
-                ),
-                sorter: (a: RecordDisplay, b: RecordDisplay) => a.status.localeCompare(b.status),
-            },
-            // Admin actions column - only show if user is admin
-            ...(isAdmin
-                ? [
-                      {
-                          title: "Actions",
-                          key: "actions",
-                          width: 120,
-                          render: (_: unknown, record: RecordDisplay) => (
-                              <Dropdown.Button
-                                  type="primary"
-                                  size="mini"
-                                  trigger={["click"]}
-                                  onClick={() => handleToggleVerification(record)}
-                                  droplist={
-                                      <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg">
-                                          <Button type="text" className="text-left" onClick={() => handleEditVideo(record)}>
-                                              <IconVideoCamera style={{marginRight: "8px"}} />
-                                              {record.videoUrl ? "Edit Video" : "Add Video"}
-                                          </Button>
-                                          <Button
-                                              type="text"
-                                              status="danger"
-                                              className="text-left"
-                                              onClick={() => handleDeleteRecord(record)}
-                                          >
-                                              <IconDelete style={{marginRight: "8px"}} />
-                                              Delete
-                                          </Button>
-                                      </div>
-                                  }
-                              >
-                                  <IconEye style={{marginRight: "4px"}} />
-                                  {record.status === "verified" ? "Unverify" : "Verify"}
-                              </Dropdown.Button>
-                          ),
-                      },
-                  ]
-                : []),
-        ];
+            });
+        }
+
+        return cols;
     };
 
     const [selectedIndividualEvent, setSelectedIndividualEvent] = useState<EventTypeKey>("3-3-3");
@@ -546,6 +483,7 @@ const RecordsIndex: React.FC = () => {
                 flag: getCountryFlag(record.country),
                 date: formatDate(record.created_at || new Date().toISOString()),
                 ageGroup: recordAgeGroup,
+                age: record.age || null,
                 status: record.status || "submitted",
                 videoUrl: record.videoUrl || undefined,
                 rawTime: record.time,
@@ -580,8 +518,17 @@ const RecordsIndex: React.FC = () => {
                         ))}
                     </Tabs>
 
-                    <div style={{display: "flex", justifyContent: "space-between", alignItems: "center"}}>
-                        <div>
+                    <div
+                        style={{
+                            display: "flex",
+                            flexDirection: isMobileView ? "column" : "row",
+                            justifyContent: isMobileView ? "flex-start" : "space-between",
+                            alignItems: isMobileView ? "flex-start" : "center",
+                            gap: isMobileView ? "16px" : "24px",
+                            width: "100%",
+                        }}
+                    >
+                        <div style={{width: isMobileView ? "100%" : "auto"}}>
                             <Text style={{fontSize: "16px", fontWeight: "500", color: "#333"}}>
                                 {backendCategory} {selectedEvent} Records
                             </Text>
@@ -590,27 +537,45 @@ const RecordsIndex: React.FC = () => {
                             </div>
                         </div>
 
-                        <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
+                        <div
+                            style={{
+                                display: "flex",
+                                flexDirection: isMobileView ? "column" : "row",
+                                alignItems: isMobileView ? "stretch" : "center",
+                                gap: "12px",
+                                width: isMobileView ? "100%" : "auto",
+                            }}
+                        >
                             <Input.Search
                                 placeholder="Search athlete/team..."
                                 value={searchQuery}
                                 onChange={setSearchQuery}
                                 allowClear
-                                style={{width: 200}}
+                                style={{width: isMobileView ? "100%" : 240}}
                             />
-                            <Text style={{fontSize: "14px", color: "#666"}}>Age Group:</Text>
-                            <Select
-                                value={selectedAgeGroup}
-                                onChange={(value) => setSelectedAgeGroup(value as AgeGroup)}
-                                style={{width: 120}}
-                                size="small"
+                            <div
+                                style={{
+                                    display: "flex",
+                                    flexDirection: isMobileView ? "column" : "row",
+                                    alignItems: isMobileView ? "flex-start" : "center",
+                                    gap: isMobileView ? "6px" : "8px",
+                                    width: isMobileView ? "100%" : "auto",
+                                }}
                             >
-                                {AGE_GROUPS.map((ageGroup) => (
-                                    <Option key={ageGroup} value={ageGroup}>
-                                        {ageGroup}
-                                    </Option>
-                                ))}
-                            </Select>
+                                <Text style={{fontSize: "14px", color: "#666"}}>Age Group:</Text>
+                                <Select
+                                    value={selectedAgeGroup}
+                                    onChange={(value) => setSelectedAgeGroup(value as AgeGroup)}
+                                    style={{width: isMobileView ? "100%" : 140}}
+                                    size={isMobileView ? "default" : "small"}
+                                >
+                                    {AGE_GROUPS.map((ageGroup) => (
+                                        <Option key={ageGroup} value={ageGroup}>
+                                            {ageGroup}
+                                        </Option>
+                                    ))}
+                                </Select>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -628,7 +593,7 @@ const RecordsIndex: React.FC = () => {
                     </div>
                 ) : (
                     <Table
-                        columns={getTableColumns(isTeamCategory)}
+                        columns={getTableColumns(isTeamCategory, deviceBreakpoint)}
                         data={filteredRecordsData}
                         pagination={{
                             pageSize: 20,

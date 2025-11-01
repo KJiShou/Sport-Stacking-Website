@@ -6,7 +6,11 @@ import {
     getIndividualRecruitmentsByTournament,
     updateIndividualRecruitmentStatus,
 } from "@/services/firebase/individualRecruitmentService";
-import {getActiveTeamRecruitments, getAllTeamRecruitments} from "@/services/firebase/teamRecruitmentService";
+import {
+    getActiveTeamRecruitments,
+    getAllTeamRecruitments,
+    updateTeamRecruitmentMembersNeeded,
+} from "@/services/firebase/teamRecruitmentService";
 import {addMemberToTeam, fetchTournamentsByType} from "@/services/firebase/tournamentsService";
 import {
     Button,
@@ -29,6 +33,7 @@ import {
 } from "@arco-design/web-react";
 import {IconDelete, IconEye, IconMore, IconPlus, IconRefresh, IconUser, IconUserAdd} from "@arco-design/web-react/icon";
 import {useEffect, useState} from "react";
+import {useNavigate, useSearchParams} from "react-router-dom";
 import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
 import {DeviceBreakpoint} from "../../utils/DeviceInspector/deviceStore";
 
@@ -40,7 +45,9 @@ export default function TeamRecruitmentManagement() {
     const {user} = useAuthContext();
     const [loading, setLoading] = useState(false);
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
-    const [selectedTournament, setSelectedTournament] = useState<string>("");
+    // Use search params to store selected tournament
+    const [searchParams, setSearchParams] = useSearchParams();
+    const selectedTournament = searchParams.get("tournament") || "";
 
     // Data states
     const [individuals, setIndividuals] = useState<IndividualRecruitment[]>([]);
@@ -59,6 +66,7 @@ export default function TeamRecruitmentManagement() {
     const deviceBreakpoint = useDeviceBreakpoint();
     const [assignmentForm] = Form.useForm();
 
+    const navigate = useNavigate();
     // Check admin permissions
     const isAdmin = user?.roles?.edit_tournament || user?.roles?.modify_admin || false;
 
@@ -69,7 +77,8 @@ export default function TeamRecruitmentManagement() {
             const [currentList] = await Promise.all([fetchTournamentsByType("current")]);
             setTournaments(currentList);
             if (currentList.length > 0 && !selectedTournament) {
-                setSelectedTournament(currentList[0].id || "");
+                // Set the first tournament as selected in params if not set
+                setSearchParams({tournament: currentList[0].id || ""});
             }
         } catch (error) {
             console.error("Failed to load tournaments:", error);
@@ -108,13 +117,10 @@ export default function TeamRecruitmentManagement() {
 
     // Handle individual assignment to team
     const handleAssignToTeam = (individual: IndividualRecruitment) => {
-        // Find teams that have matching events
-        const matchingEvents = individual.events_interested;
+        // Find teams that have matching event_id
         const availableTeams = teams.filter(
-            (team) =>
-                team.tournament_id === individual.tournament_id && team.events.some((event) => matchingEvents.includes(event)),
+            (team) => team.tournament_id === individual.tournament_id && team.event_id === individual.event_id,
         );
-
         setAssignmentData({individual, availableTeams});
         setAssignmentModalVisible(true);
     };
@@ -146,6 +152,23 @@ export default function TeamRecruitmentManagement() {
                     Message.error(`Failed to update recruitment status: ${errorMessage}`);
                     setLoading(false);
                     return;
+                }
+
+                // Update team recruitment's max_members_needed and status using service
+                const team = teams.find((t) => t.team_id === values.teamId);
+                if (team && typeof team.max_members_needed === "number") {
+                    const updatedNeeded = Math.max(team.max_members_needed - 1, 0);
+                    try {
+                        // Use the service function
+                        await updateTeamRecruitmentMembersNeeded(
+                            team.id,
+                            updatedNeeded,
+                            updatedNeeded === 0 ? "closed" : "active",
+                        );
+                    } catch (error) {
+                        // Log but don't block UI
+                        console.error("Failed to update team recruitment member count:", error);
+                    }
                 }
 
                 Message.success(`${individual.participant_name} has been successfully assigned to the team!`);
@@ -198,6 +221,12 @@ export default function TeamRecruitmentManagement() {
             ),
         },
         {
+            title: "Event",
+            dataIndex: "event_name",
+            width: 180,
+            render: (eventName: string, record: IndividualRecruitment) => <Tag>{eventName}</Tag>,
+        },
+        {
             title: "Age/Gender",
             width: 100,
             render: (_: unknown, record: IndividualRecruitment) => (
@@ -214,20 +243,7 @@ export default function TeamRecruitmentManagement() {
             dataIndex: "country",
             width: 100,
         },
-        {
-            title: "Events Interested",
-            dataIndex: "events_interested",
-            width: 200,
-            render: (events: string[]) => (
-                <div>
-                    {events.map((event) => (
-                        <Tag key={event} size="small" className="mb-1">
-                            {event}
-                        </Tag>
-                    ))}
-                </div>
-            ),
-        },
+        // Removed old events_interested column
         {
             title: "Status",
             dataIndex: "status",
@@ -241,39 +257,17 @@ export default function TeamRecruitmentManagement() {
             key: "actions",
             width: 120,
             render: (_: unknown, record: IndividualRecruitment) => (
-                <Dropdown.Button
-                    size="mini"
-                    trigger={["click"]}
-                    onClick={() => handleAssignToTeam(record)}
-                    droplist={
-                        <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg">
-                            <Button
-                                type="text"
-                                className="text-left"
-                                onClick={() => {
-                                    setSelectedIndividual(record);
-                                    setDetailModalVisible(true);
-                                }}
-                            >
-                                <IconEye style={{marginRight: "8px"}} />
-                                View Details
-                            </Button>
-                            <Button
-                                type="text"
-                                status="danger"
-                                className="text-left"
-                                onClick={() => handleDeleteIndividual(record)}
-                            >
-                                <IconDelete style={{marginRight: "8px"}} />
-                                Delete
-                            </Button>
-                        </div>
-                    }
+                <Button
+                    type="primary"
+                    icon={<IconUserAdd style={{marginRight: "4px"}} />}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        handleAssignToTeam(record);
+                    }}
                     disabled={record.status !== "active"}
                 >
-                    <IconUserAdd style={{marginRight: "4px"}} />
                     Assign
-                </Dropdown.Button>
+                </Button>
             ),
         },
     ].filter(Boolean) as TableColumnProps<IndividualRecruitment>[];
@@ -287,7 +281,6 @@ export default function TeamRecruitmentManagement() {
             render: (name: string, record: TeamRecruitment) => (
                 <div>
                     <div className="font-medium">{name}</div>
-                    <div className="text-xs text-gray-500">ID: {record.team_id}</div>
                 </div>
             ),
         },
@@ -298,15 +291,13 @@ export default function TeamRecruitmentManagement() {
         },
         {
             title: "Events",
-            dataIndex: "events",
+            dataIndex: "event_name",
             width: 200,
-            render: (events: string[]) => (
+            render: (eventName: string) => (
                 <div>
-                    {events.map((event) => (
-                        <Tag key={event} size="small" className="mb-1">
-                            {event}
-                        </Tag>
-                    ))}
+                    <Tag key={eventName} size="small" className="mb-1">
+                        {eventName}
+                    </Tag>
                 </div>
             ),
         },
@@ -336,6 +327,7 @@ export default function TeamRecruitmentManagement() {
         }
     }, [selectedTournament, isAdmin]);
 
+    // Render access denied after all hooks
     if (!isAdmin) {
         return (
             <div className="flex items-center justify-center h-64">
@@ -371,7 +363,7 @@ export default function TeamRecruitmentManagement() {
                                     placeholder="Select Tournament"
                                     style={{width: 250}}
                                     value={selectedTournament}
-                                    onChange={setSelectedTournament}
+                                    onChange={(val) => setSearchParams({tournament: val})}
                                 >
                                     <Option value="">All Tournaments</Option>
                                     {tournaments.map((tournament) => (
@@ -408,6 +400,13 @@ export default function TeamRecruitmentManagement() {
                                         columns={individualColumns}
                                         data={individuals}
                                         pagination={{pageSize: 10}}
+                                        onRow={(individual) => ({
+                                            onClick: () => {
+                                                navigate(
+                                                    `/tournaments/${selectedTournament}/registrations/${individual.registration_id}/edit`,
+                                                );
+                                            },
+                                        })}
                                         className="mt-4"
                                         scroll={{x: 800}}
                                     />
@@ -423,6 +422,13 @@ export default function TeamRecruitmentManagement() {
                                         columns={teamColumns}
                                         data={teams}
                                         pagination={{pageSize: 10}}
+                                        onRow={(team) => ({
+                                            onClick: () => {
+                                                navigate(
+                                                    `/tournaments/${selectedTournament}/registrations/${team.registration_id}/edit`,
+                                                );
+                                            },
+                                        })}
                                         className="mt-4"
                                         scroll={{x: 600}}
                                     />
@@ -458,8 +464,7 @@ export default function TeamRecruitmentManagement() {
                                         ]}
                                     />
                                     <div className="mt-2">
-                                        <strong>Events Interested:</strong>{" "}
-                                        {assignmentData.individual.events_interested.join(", ")}
+                                        <strong>Event:</strong> {assignmentData.individual.event_name}
                                     </div>
                                 </div>
 
@@ -490,7 +495,7 @@ export default function TeamRecruitmentManagement() {
                                                                 <div>
                                                                     <div className="font-medium">{team.team_name}</div>
                                                                     <div className="text-xs text-gray-500">
-                                                                        Events: {team.events.join(", ")}
+                                                                        Event: {team.event_name}
                                                                     </div>
                                                                 </div>
                                                             </Option>
@@ -517,38 +522,7 @@ export default function TeamRecruitmentManagement() {
                         footer={null}
                         className="w-full max-w-2xl"
                     >
-                        {selectedIndividual && (
-                            <div>
-                                <Descriptions
-                                    column={2}
-                                    data={[
-                                        {label: "Participant ID", value: selectedIndividual.participant_id},
-                                        {label: "Name", value: selectedIndividual.participant_name},
-                                        {label: "Age", value: selectedIndividual.age},
-                                        {label: "Gender", value: selectedIndividual.gender},
-                                        {label: "Country", value: selectedIndividual.country},
-                                        {label: "Phone Number", value: selectedIndividual.phone_number || "Not provided"},
-                                        {label: "Status", value: selectedIndividual.status},
-                                    ]}
-                                />
-                                <div className="mt-4">
-                                    <Title heading={6}>Events Interested</Title>
-                                    <div className="mt-2">
-                                        {selectedIndividual.events_interested.map((event) => (
-                                            <Tag key={event} className="mb-1 mr-1">
-                                                {event}
-                                            </Tag>
-                                        ))}
-                                    </div>
-                                </div>
-                                {selectedIndividual.additional_info && (
-                                    <div className="mt-4">
-                                        <Title heading={6}>Additional Information</Title>
-                                        <Paragraph>{selectedIndividual.additional_info}</Paragraph>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        {/* Detail modal removed as per requirements */}
                     </Modal>
                 </div>
             </Spin>
