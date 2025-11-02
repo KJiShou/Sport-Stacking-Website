@@ -382,8 +382,8 @@ export default function RegisterTournamentPage() {
     };
 
     useEffect(() => {
+        if (!tournamentId || !user) return;
         const fetch = async () => {
-            if (!tournamentId) return;
             setLoading(true);
             try {
                 const comp = await fetchTournamentById(tournamentId);
@@ -506,7 +506,7 @@ export default function RegisterTournamentPage() {
             }
         };
         fetch();
-    }, [tournamentId]);
+    }, [tournamentId, user]);
 
     // Remove the problematic useEffect since we handle team updates in onChange
 

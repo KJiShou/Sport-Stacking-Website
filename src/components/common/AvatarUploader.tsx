@@ -35,6 +35,7 @@ export function AvatarUploader({user, setUser}: Readonly<AvatarUploaderProps>) {
         >
             <div className="relative inline-block">
                 <Avatar
+                    style={{backgroundColor: "#3370ff"}}
                     size={100}
                     className="mx-auto w-24 h-24 rounded-full overflow-hidden"
                     triggerIcon={<IconCamera />}

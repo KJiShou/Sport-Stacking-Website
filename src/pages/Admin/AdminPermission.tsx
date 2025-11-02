@@ -70,12 +70,21 @@ export default function AdminPermissionsPage() {
                     onClick={() => {
                         setSelected(record);
                         form.setFieldsValue(
-                            record.roles ?? {
-                                edit_tournament: false,
-                                record_tournament: false,
-                                modify_admin: false,
-                                verify_record: false,
-                            },
+                            record.roles
+                                ? {
+                                      edit_tournament: record.roles.edit_tournament ?? false,
+                                      record_tournament: record.roles.record_tournament ?? false,
+                                      modify_admin: record.roles.modify_admin ?? false,
+                                      verify_record: record.roles.verify_record ?? false,
+                                      memberId: record.memberId ?? "",
+                                  }
+                                : {
+                                      edit_tournament: false,
+                                      record_tournament: false,
+                                      modify_admin: false,
+                                      verify_record: false,
+                                      memberId: record.memberId ?? "",
+                                  },
                         );
                         setModalVisible(true);
                     }}
@@ -163,12 +172,21 @@ export default function AdminPermissionsPage() {
                                 labelAlign="left"
                                 layout="horizontal"
                                 initialValues={
-                                    selected?.roles ?? {
-                                        edit_tournament: false,
-                                        record_tournament: false,
-                                        modify_admin: false,
-                                        verify_record: false,
-                                    }
+                                    selected?.roles
+                                        ? {
+                                              edit_tournament: selected.roles.edit_tournament ?? false,
+                                              record_tournament: selected.roles.record_tournament ?? false,
+                                              modify_admin: selected.roles.modify_admin ?? false,
+                                              verify_record: selected.roles.verify_record ?? false,
+                                              memberId: selected?.memberId ?? "",
+                                          }
+                                        : {
+                                              edit_tournament: false,
+                                              record_tournament: false,
+                                              modify_admin: false,
+                                              verify_record: false,
+                                              memberId: selected?.memberId ?? "",
+                                          }
                                 }
                             >
                                 <Form.Item field="memberId" label="Member ID">

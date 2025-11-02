@@ -829,7 +829,6 @@ export default function FinalScoringPage() {
                                 <h4 className="font-semibold mb-2">
                                     Participant: {selectedParticipant?.user_name} ({selectedParticipant?.user_global_id})
                                 </h4>
-                                <p className="text-sm text-gray-600 mb-4">Event: {currentEventTab}</p>
                             </div>
                         )}
 
@@ -837,7 +836,6 @@ export default function FinalScoringPage() {
                             <div>
                                 <h4 className="font-semibold mb-2">Team: {selectedTeam?.name}</h4>
                                 <p className="text-sm text-gray-600 mb-2">Leader: {selectedTeam?.leader_id}</p>
-                                <p className="text-sm text-gray-600 mb-4">Event: {currentEventTab}</p>
                             </div>
                         )}
 

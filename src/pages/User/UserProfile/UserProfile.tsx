@@ -3,19 +3,19 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {AllTimeStat, FirestoreUser, FirestoreUserSchema, OnlineBest, RecordItem} from "@/schema";
 import {countries} from "@/schema/Country";
 import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
+import {Avatar, Spin} from "@arco-design/web-react";
 import {
-    Avatar,
     Button,
     Cascader,
     DatePicker,
     Descriptions,
+    Empty,
     Form,
     Grid,
     Input,
     Message,
     Modal,
     Select,
-    Spin,
     Statistic,
     Switch,
     Table,
@@ -24,6 +24,28 @@ import {
 } from "@arco-design/web-react";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
 import {IconPhone, IconUser} from "@arco-design/web-react/icon";
+// AvatarWithLoading copied from Navbar for consistent avatar UX
+const AvatarWithLoading = ({src}: {src: string}) => {
+    const [loading, setLoading] = useState(true);
+    return (
+        <div className="relative inline-block">
+            {loading && (
+                <div className="absolute inset-0 flex items-center justify-center z-10 bg-white/80 rounded-full">
+                    <Spin size={24} />
+                </div>
+            )}
+            <Avatar size={192} className="rounded-full overflow-hidden" style={{visibility: loading ? "hidden" : "visible"}}>
+                <img
+                    src={src}
+                    alt="avatar"
+                    onLoad={() => setLoading(false)}
+                    onError={() => setLoading(false)}
+                    className="w-full h-full object-cover rounded-full"
+                />
+            </Avatar>
+        </div>
+    );
+};
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
@@ -398,22 +420,19 @@ export default function RegisterPage() {
                     <div className="flex flex-col md:flex-row bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
                         {/* 左边：基本信息卡片 */}
                         <div className="bg-white flex flex-col w-full md:w-1/3 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                            <Avatar className="mx-auto w-48 h-48 rounded-full overflow-hidden relative" style={{fontSize: 64}}>
-                                {user?.image_url ? (
-                                    <>
-                                        {isImageLoading && <Spin size={24} />}
-                                        <img
-                                            src={user.image_url}
-                                            alt={user?.name}
-                                            onLoad={() => setIsImageLoading(false)}
-                                            onError={() => setIsImageLoading(false)}
-                                            className={`w-full h-full object-cover transition-opacity duration-300 ${isImageLoading ? "opacity-0" : "opacity-100"}`}
-                                        />
-                                    </>
-                                ) : (
-                                    <IconUser />
-                                )}
-                            </Avatar>
+                            {user?.image_url ? (
+                                <AvatarWithLoading src={user.image_url} />
+                            ) : (
+                                <div className="relative inline-block">
+                                    <Avatar
+                                        size={192}
+                                        style={{backgroundColor: "#3370ff"}}
+                                        className={`rounded-full overflow-hidden`}
+                                    >
+                                        <IconUser className="w-full h-full object-cover rounded-full" />
+                                    </Avatar>
+                                </div>
+                            )}
                             <Text className="flex items-center justify-center gap-1 text-4xl font-bold mt-2">{user?.name}</Text>
                             <Text className="flex items-center justify-center gap-1">
                                 <IconUser /> {user?.global_id}
@@ -438,46 +457,144 @@ export default function RegisterPage() {
                         {!user?.roles ? (
                             <div className="flex flex-col w-full md:w-2/3 h-full gap-6">
                                 <div className="flex flex-col h-full gap-6">
-                                    {/* 最佳成绩卡片 */}
-                                    <div className="bg-white flex flex-col w-full h-1/2 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                                        <Statistic
-                                            title="All-around Best Time"
-                                            value={(() => {
-                                                const three = (user?.best_times?.["3-3-3"] as {time?: number} | undefined)?.time;
-                                                const six = (user?.best_times?.["3-6-3"] as {time?: number} | undefined)?.time;
-                                                const cycle = (user?.best_times?.Cycle as {time?: number} | undefined)?.time;
-                                                if (
-                                                    typeof three === "number" &&
-                                                    three > 0 &&
-                                                    typeof six === "number" &&
-                                                    six > 0 &&
-                                                    typeof cycle === "number" &&
-                                                    cycle > 0
-                                                ) {
-                                                    return (three + six + cycle).toFixed(3);
-                                                }
-                                                return "-";
-                                            })()}
-                                            suffix="sec"
-                                        />
+                                    {/* Best Record Section (like AthleteProfile) */}
+                                    <div className="bg-white flex flex-col w-full gap-6 items-start p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                                        <Title heading={4} className="!mb-4">
+                                            Best Performances
+                                        </Title>
+                                        {(() => {
+                                            type EventType = "3-3-3" | "3-6-3" | "Cycle";
+                                            const events: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
+                                            const bestTimes = events
+                                                .map((event) => {
+                                                    const record = user?.best_times?.[event];
+                                                    if (!record || !("time" in record) || !record.time) return null;
+                                                    return {
+                                                        event,
+                                                        time: record.time,
+                                                        season: record.season ?? null,
+                                                        updatedAt: record.updated_at
+                                                            ? record.updated_at instanceof Date
+                                                                ? record.updated_at
+                                                                : "toDate" in record.updated_at
+                                                                  ? record.updated_at.toDate()
+                                                                  : null
+                                                            : null,
+                                                    };
+                                                })
+                                                .filter(Boolean);
+                                            return bestTimes.length === 0 ? (
+                                                <Empty description="No best times recorded yet." />
+                                            ) : (
+                                                <Table
+                                                    rowKey="event"
+                                                    columns={[
+                                                        {title: "Event", dataIndex: "event", width: 120},
+                                                        {
+                                                            title: "Best Time",
+                                                            dataIndex: "time",
+                                                            width: 150,
+                                                            render: (time) => (
+                                                                <span className="font-semibold text-lg">
+                                                                    {typeof time === "number" ? time.toFixed(3) : "-"}
+                                                                </span>
+                                                            ),
+                                                        },
+                                                        {
+                                                            title: "Season",
+                                                            dataIndex: "season",
+                                                            width: 120,
+                                                            render: (season) => season ?? "—",
+                                                        },
+                                                        {
+                                                            title: "Last Updated",
+                                                            dataIndex: "updatedAt",
+                                                            width: 150,
+                                                            render: (date) => (date ? dayjs(date).format("YYYY-MM-DD") : "—"),
+                                                        },
+                                                    ]}
+                                                    data={bestTimes}
+                                                    pagination={false}
+                                                    scroll={{x: true}}
+                                                    border={false}
+                                                />
+                                            );
+                                        })()}
                                     </div>
-
-                                    {/* 全时统计表卡片 */}
-                                    <div className="bg-white flex flex-col w-full flex-1 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                                        <Title>All Time Statistics</Title>
-                                        <Table
-                                            data={allTimeStats}
-                                            columns={[
-                                                {title: "Event", dataIndex: "event"},
-                                                {
-                                                    title: "Time (sec)",
-                                                    dataIndex: "time",
-                                                    render: (val) => val.toFixed(3),
-                                                },
-                                                {title: "Rank", dataIndex: "rank"},
-                                            ]}
-                                            pagination={false}
-                                        />
+                                    {/* Tournament Participation Section (like AthleteProfile) */}
+                                    <div className="bg-white flex flex-col w-full gap-6 items-start p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                                        <Title heading={4} className="!mb-4">
+                                            Tournament Participation
+                                        </Title>
+                                        {(() => {
+                                            const tournaments = (user?.registration_records ?? [])
+                                                .filter((reg) => reg.status === "approved")
+                                                .map((reg) => ({
+                                                    tournamentId: reg.tournament_id,
+                                                    events: reg.events ?? [],
+                                                    registrationDate: reg.updated_at
+                                                        ? reg.updated_at instanceof Date
+                                                            ? reg.updated_at
+                                                            : "toDate" in reg.updated_at
+                                                              ? reg.updated_at.toDate()
+                                                              : null
+                                                        : reg.registration_date
+                                                          ? reg.registration_date instanceof Date
+                                                              ? reg.registration_date
+                                                              : "toDate" in reg.registration_date
+                                                                ? reg.registration_date.toDate()
+                                                                : null
+                                                          : null,
+                                                    status: reg.status ?? "pending",
+                                                    prelimRank: reg.prelim_rank ?? null,
+                                                    finalRank: reg.final_rank ?? null,
+                                                    prelimOverall: reg.prelim_overall_result ?? null,
+                                                    finalOverall: reg.final_overall_result ?? null,
+                                                }));
+                                            return tournaments.length === 0 ? (
+                                                <Empty description="No tournament participation records found." />
+                                            ) : (
+                                                <Table
+                                                    rowKey="tournamentId"
+                                                    columns={[
+                                                        {
+                                                            title: "Date",
+                                                            dataIndex: "registrationDate",
+                                                            width: 150,
+                                                            render: (date) => (date ? dayjs(date).format("YYYY-MM-DD") : "—"),
+                                                        },
+                                                        {
+                                                            title: "Prelim Rank",
+                                                            dataIndex: "prelimRank",
+                                                            width: 120,
+                                                            render: (rank) => (rank ? `#${rank}` : "—"),
+                                                        },
+                                                        {
+                                                            title: "Prelim Overall",
+                                                            dataIndex: "prelimOverall",
+                                                            width: 150,
+                                                            render: (time) => (time ? time.toFixed(3) : "—"),
+                                                        },
+                                                        {
+                                                            title: "Final Rank",
+                                                            dataIndex: "finalRank",
+                                                            width: 120,
+                                                            render: (rank) => (rank ? `#${rank}` : "—"),
+                                                        },
+                                                        {
+                                                            title: "Final Overall",
+                                                            dataIndex: "finalOverall",
+                                                            width: 150,
+                                                            render: (time) => (time ? time.toFixed(3) : "—"),
+                                                        },
+                                                    ]}
+                                                    data={tournaments}
+                                                    pagination={{pageSize: 10}}
+                                                    scroll={{x: true}}
+                                                    border={false}
+                                                />
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             </div>
