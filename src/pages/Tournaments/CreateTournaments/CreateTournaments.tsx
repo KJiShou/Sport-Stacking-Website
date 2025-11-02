@@ -200,11 +200,11 @@ export default function CreateTournamentPage() {
             );
 
             if (agendaFile instanceof File) {
-                agendaUrl = await uploadFile(agendaFile, `agendas/${tournamentId}`);
+                agendaUrl = await uploadFile(agendaFile, `agendas`, `${tournamentId}`);
             }
 
             if (logoFile instanceof File) {
-                logoUrl = await uploadFile(logoFile, `logos/${tournamentId}`);
+                logoUrl = await uploadFile(logoFile, `logos`, `${tournamentId}`);
             }
 
             await updateTournament(user, tournamentId, {
