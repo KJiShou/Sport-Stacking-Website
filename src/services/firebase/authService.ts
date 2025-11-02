@@ -165,6 +165,7 @@ export async function fetchAllUsers(): Promise<FirestoreUser[]> {
         return {
             id: docSnap.id,
             global_id: data.global_id,
+            memberId: data.memberId ?? null,
             name: data.name,
             IC: data.IC,
             email: data.email,
@@ -200,6 +201,7 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
     return {
         id: docSnap.id,
         global_id: data.global_id ?? null,
+        memberId: data.memberId ?? null,
         name: data.name,
         IC: data.IC,
         email: data.email,
@@ -249,7 +251,7 @@ export async function updateUserRoles(userId: string, roles: FirestoreUser["role
     const userRef = doc(db, "users", userId);
     const temp_roles = extractActiveRoles(roles);
     await updateDoc(userRef, {
-        temp_roles,
+        roles: temp_roles,
         updated_at: Timestamp.now(),
     });
 }

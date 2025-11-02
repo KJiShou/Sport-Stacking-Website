@@ -202,6 +202,14 @@ export default function TournamentList() {
                 let rejectionReason: string | undefined;
                 let tooltipMessage = "";
 
+                if (status === "Up Coming") {
+                    color = "gold";
+                } else if (status === "On Going") {
+                    color = "arcoblue";
+                } else if (status === "End") {
+                    color = "gray";
+                }
+
                 if (user) {
                     userHasRegistered = hasRegistered(user, tournament.id ?? "");
                     if (userHasRegistered) {

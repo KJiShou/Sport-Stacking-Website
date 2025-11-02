@@ -97,6 +97,13 @@ const RegisterPage = () => {
                     image_url: avatarUrl || "",
                     best_times: {},
                 });
+                // Fetch user data and update context
+                if (id) {
+                    const userDoc = await getDoc(doc(db, "users", id));
+                    if (userDoc.exists()) {
+                        setUser(userDoc.data() as FirestoreUser);
+                    }
+                }
             } else if (isFromGoogle && firebaseUser) {
                 await registerWithGoogle(
                     firebaseUser,
