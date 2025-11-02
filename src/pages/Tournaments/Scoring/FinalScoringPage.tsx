@@ -129,6 +129,10 @@ export default function FinalScoringPage() {
     const refreshFinalScore = async () => {
         if (!tournamentId) return;
         setLoading(true);
+        // Preserve current tab state
+        const prevEventTab = currentEventTab;
+        const prevBracketTab = currentBracketTab;
+        const prevClassificationTab = currentClassificationTab;
         try {
             const tournament = await fetchTournamentById(tournamentId);
             setTournament(tournament);
@@ -152,9 +156,29 @@ export default function FinalScoringPage() {
                 return TournamentTeamRecordSchema.parse(record);
             });
             setRecords(parsedRecords);
-            setCurrentEventTab(events?.[0]?.id || events?.[0]?.type || "");
-            setCurrentBracketTab(events?.[0]?.age_brackets?.[0]?.name || "");
-            setCurrentClassificationTab(events?.[0]?.age_brackets?.[0]?.final_criteria?.[0]?.classification || "");
+
+            // Restore previous tab state if still valid, else fallback to first
+            const eventTabToSet =
+                events.find((e) => e.id === prevEventTab || e.type === prevEventTab)?.id ||
+                events.find((e) => e.id === prevEventTab || e.type === prevEventTab)?.type ||
+                events?.[0]?.id ||
+                events?.[0]?.type ||
+                "";
+            setCurrentEventTab(eventTabToSet);
+
+            const eventForBracket = events.find((e) => e.id === eventTabToSet || e.type === eventTabToSet);
+            const bracketTabToSet =
+                eventForBracket?.age_brackets?.find((b) => b.name === prevBracketTab)?.name ||
+                eventForBracket?.age_brackets?.[0]?.name ||
+                "";
+            setCurrentBracketTab(bracketTabToSet);
+
+            const bracketForClass = eventForBracket?.age_brackets?.find((b) => b.name === bracketTabToSet);
+            const classTabToSet =
+                bracketForClass?.final_criteria?.find((fc) => fc.classification === prevClassificationTab)?.classification ||
+                bracketForClass?.final_criteria?.[0]?.classification ||
+                "";
+            setCurrentClassificationTab(classTabToSet);
         } catch (error) {
             console.error(error);
             Message.error("Failed to refresh final scores.");
