@@ -687,10 +687,10 @@ export default function TournamentList() {
             let logoUrl = selectedTournament?.logo ?? "";
 
             if (agendaFile instanceof File) {
-                agendaUrl = await uploadFile(agendaFile, `agendas/${selectedTournament.id}`);
+                agendaUrl = await uploadFile(agendaFile, `agendas`, `${selectedTournament.id}`);
             }
             if (logoFile instanceof File) {
-                logoUrl = await uploadFile(logoFile, `logos/${selectedTournament.id}`);
+                logoUrl = await uploadFile(logoFile, `logos`, `${selectedTournament.id}`);
             }
 
             await saveTournamentEvents(selectedTournament.id, sanitizedEvents);
