@@ -365,7 +365,7 @@ export default function TeamRecruitmentManagement() {
                                     value={selectedTournament}
                                     onChange={(val) => setSearchParams({tournament: val})}
                                 >
-                                    <Option value="">All Tournaments</Option>
+                                    {tournaments.length === 0 && <Option value="">No tournaments available</Option>}
                                     {tournaments.map((tournament) => (
                                         <Option key={tournament.id} value={tournament.id || ""}>
                                             {tournament.name}
