@@ -455,12 +455,32 @@ export const toggleRecordVerification = async (
 export const updateRecordVideoUrl = async (recordId: string, videoUrl: string): Promise<void> => {
     try {
         const now = new Date().toISOString();
-        const recordRef = doc(firestore, "records", recordId);
 
-        await updateDoc(recordRef, {
-            videoUrl: videoUrl,
-            updated_at: now,
-        });
+        // Try to update in 'records' collection first
+        const recordRef = doc(firestore, "records", recordId);
+        const recordSnap = await getDoc(recordRef);
+
+        if (recordSnap.exists()) {
+            await updateDoc(recordRef, {
+                video_url: videoUrl,
+                updated_at: now,
+            });
+            return;
+        }
+
+        // If not found, try 'overall_records' collection
+        const overallRecordRef = doc(firestore, "overall_records", recordId);
+        const overallRecordSnap = await getDoc(overallRecordRef);
+
+        if (overallRecordSnap.exists()) {
+            await updateDoc(overallRecordRef, {
+                video_url: videoUrl,
+                updated_at: now,
+            });
+            return;
+        }
+
+        throw new Error(`Record with ID ${recordId} not found in either 'records' or 'overall_records' collection`);
     } catch (error) {
         console.error(`Failed to update video URL for record ${recordId}:`, error);
         throw error;

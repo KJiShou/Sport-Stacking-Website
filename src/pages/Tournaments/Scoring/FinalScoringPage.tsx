@@ -579,6 +579,10 @@ export default function FinalScoringPage() {
                             (r as TournamentTeamRecord).team_id === selectedTeam.id,
                     ) as TournamentTeamRecord | undefined;
 
+                    // Get leader's country from registrations
+                    const leaderRegistration = registrations.find((r) => r.user_global_id === selectedTeam.leader_id);
+                    const teamCountry = leaderRegistration?.country ?? null;
+
                     const data: TournamentTeamRecord = {
                         id: existing?.id ?? "",
                         tournament_id: tournamentId,
@@ -586,7 +590,7 @@ export default function FinalScoringPage() {
                         event: currentEvent.type,
                         code,
                         age: selectedTeam.team_age ?? null,
-                        country: (existing?.country as string | undefined) ?? null,
+                        country: teamCountry,
                         best_time: best,
                         status: (existing?.status ?? "submitted") as "submitted" | "verified",
                         try1: (t1 ?? existing?.try1 ?? 0) as number,
