@@ -554,6 +554,26 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
 
     const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
     const ages: number[] = [];
+
+    // Normalize event names and get event ids (if present)
+    const normalizedEventNames = Array.isArray(teamData.event)
+        ? teamData.event
+              .map((value) => (typeof value === "string" ? value.trim() : ""))
+              .filter((value): value is string => value.length > 0)
+        : [];
+    // If event_id is present, use it, else fallback to normalizedEventNames
+    const eventIds: string[] = [];
+    if (typeof teamData.event_id === "string" && teamData.event_id.length > 0) {
+        eventIds.push(teamData.event_id);
+    } else if (Array.isArray(teamData.event_id)) {
+        eventIds.push(...teamData.event_id.filter((e: string) => typeof e === "string" && e.length > 0));
+    }
+    // If no event_id, try to use normalizedEventNames as event ids (if they look like ids)
+    if (eventIds.length === 0) {
+        eventIds.push(...normalizedEventNames.filter((e) => e.length > 0));
+    }
+
+    // For each member, ensure their registration includes the event id(s)
     for (const id of memberIds) {
         const registrationQuery = query(
             collection(db, "registrations"),
@@ -561,18 +581,30 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
             where("user_id", "==", id),
         );
         const registrationSnapshot = await getDocs(registrationQuery);
-        const registration = registrationSnapshot.docs[0]?.data() as Registration | undefined;
+        const registrationDoc = registrationSnapshot.docs[0];
+        const registration = registrationDoc?.data() as Registration | undefined;
         if (registration?.age != null) {
             ages.push(registration.age);
+        }
+        if (registrationDoc && registration) {
+            // Ensure registration.events_registered is an array
+            const regEvents: string[] = Array.isArray(registration.events_registered)
+                ? registration.events_registered.filter((e: string) => typeof e === "string" && e.length > 0)
+                : [];
+            let updated = false;
+            for (const eid of eventIds) {
+                if (!regEvents.includes(eid)) {
+                    regEvents.push(eid);
+                    updated = true;
+                }
+            }
+            if (updated) {
+                await updateDoc(registrationDoc.ref, {events_registered: regEvents});
+            }
         }
     }
 
     const {id, tournament_id: _ignoredTournamentId, ...restTeamData} = teamData;
-    const normalizedEventNames = Array.isArray(teamData.event)
-        ? teamData.event
-              .map((value) => (typeof value === "string" ? value.trim() : ""))
-              .filter((value): value is string => value.length > 0)
-        : [];
     const teamAge = restTeamData.team_age ?? (ages.length > 0 ? Math.max(...ages) : 0);
 
     await updateDoc(teamRef, {

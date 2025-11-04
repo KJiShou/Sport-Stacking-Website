@@ -73,7 +73,7 @@ const RegisterPage = () => {
 
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school, phone_number} = values;
-        let avatarUrl = firebaseUser?.photoURL ?? "";
+        let avatarUrl = "";
         if (password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
@@ -82,6 +82,20 @@ const RegisterPage = () => {
 
         setLoading(true);
         try {
+            // If user uploaded an avatar (data URL), upload it to storage
+            if (image_url?.startsWith("data:")) {
+                const blob = await (await fetch(image_url)).blob();
+                const file = new File([blob], "avatar.png", {
+                    type: blob.type ?? "image/png",
+                });
+                avatarUrl = await uploadAvatar(file, firebaseUser?.uid ?? id);
+            } else if (isFromGoogle && firebaseUser?.photoURL) {
+                // Already uploaded in useEffect, just use the form value
+                avatarUrl = image_url;
+            } else if (image_url) {
+                avatarUrl = image_url;
+            }
+
             if (!(isFromGoogle && firebaseUser)) {
                 id = await register({
                     email,
@@ -126,15 +140,6 @@ const RegisterPage = () => {
                     setUser(userDoc.data() as FirestoreUser);
                 }
             }
-            if (image_url?.startsWith("data:")) {
-                const blob = await (await fetch(image_url)).blob();
-
-                const file = new File([blob], "avatar.png", {
-                    type: blob.type ?? "image/png",
-                });
-
-                avatarUrl = await uploadAvatar(file, firebaseUser?.uid ?? id);
-            }
             Message.success("Registration successful!");
             navigate("/");
         } catch (err: unknown) {
@@ -149,10 +154,25 @@ const RegisterPage = () => {
     };
 
     useEffect(() => {
-        if (isFromGoogle && firebaseUser?.photoURL) {
-            form.setFieldValue("image_url", firebaseUser.photoURL);
-            form.setFieldValue("email", firebaseUser.email ?? "");
-        }
+        const fetchAndUploadGoogleAvatar = async () => {
+            if (isFromGoogle && firebaseUser?.photoURL) {
+                try {
+                    // Download Google photoURL and upload to storage using uid
+                    const response = await fetch(firebaseUser.photoURL);
+                    const blob = await response.blob();
+                    const file = new File([blob], "avatar.png", {
+                        type: blob.type ?? "image/png",
+                    });
+                    const uploadedUrl = await uploadAvatar(file, firebaseUser.uid);
+                    form.setFieldValue("image_url", uploadedUrl);
+                } catch (err) {
+                    // Fallback: set to Google photoURL if upload fails
+                    form.setFieldValue("image_url", firebaseUser.photoURL);
+                }
+                form.setFieldValue("email", firebaseUser.email ?? "");
+            }
+        };
+        fetchAndUploadGoogleAvatar();
     }, [isFromGoogle, firebaseUser, form]);
 
     useEffect(() => {

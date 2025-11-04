@@ -297,7 +297,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         const headers = team
             ? [["No.", "Global ID", "Role", "Phone Number"]]
             : isTeamEvent
-              ? [["No.", "Team Leader", "Team Name", "Members", "Leader Phone", "Largest Age"]]
+              ? [["No.", "Team Leader", "Team Name", "Members", "Leader Phone", "Team Age"]]
               : [["No.", "Global ID", "Name", "Age", "Phone Number"]];
 
         const columnStyles = team
@@ -977,7 +977,7 @@ export const exportAllBracketsListToPDF = async (
 
                 if (tableData.length > 0) {
                     const headers = isTeamEvent
-                        ? [["No.", "Team Leader", "Team Name", "Members", "Leader Phone", "Largest Age"]]
+                        ? [["No.", "Team Leader", "Team Name", "Members", "Leader Phone", "Team Age"]]
                         : [["No.", "Name", "Global ID", "Age", "Phone"]];
 
                     const columnStyles = isTeamEvent
@@ -1089,7 +1089,7 @@ export const exportNameListStickerPDF = async ({tournament, registrations}: Name
                     doc.line(x, contentY + titleLines.length * 10 + 10, x + stickerWidth, contentY + titleLines.length * 10 + 10);
                     let currentY = contentY + titleLines.length * 10 + 85;
 
-                    // 2. Global ID (Largest)
+                    // 2. Global ID (Team Age)
                     doc.setFontSize(95);
                     doc.setFont("times", "bold");
                     doc.text(registration.user_global_id, centerX, currentY, {align: "center"});

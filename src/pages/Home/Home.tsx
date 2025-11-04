@@ -193,7 +193,7 @@ const Home: React.FC = () => {
                                         <div style={{display: "flex", flexDirection: "column", gap: "1rem"}}>
                                             {upcomingTournaments.map((tournament) => (
                                                 <Link
-                                                    to={`/tournaments/${tournament.id}`}
+                                                    to={`/tournaments/${tournament.id}/view`}
                                                     key={tournament.id}
                                                     style={{
                                                         display: "block",

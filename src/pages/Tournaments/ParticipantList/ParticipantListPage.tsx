@@ -491,7 +491,7 @@ export default function ParticipantListPage() {
                                                     ),
                                                 },
                                                 {
-                                                    title: "Largest Age",
+                                                    title: "Team Age",
                                                     width: 150,
                                                     render: (_, record) => {
                                                         return <Text>{record.team_age ?? "-"}</Text>;
