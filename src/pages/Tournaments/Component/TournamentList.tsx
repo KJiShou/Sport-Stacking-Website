@@ -100,6 +100,9 @@ type EventCode = (typeof EVENT_CODE_OPTIONS)[number];
 const isEventCode = (value: unknown): value is EventCode =>
     typeof value === "string" && (EVENT_CODE_OPTIONS as readonly string[]).includes(value);
 
+// Temporary type for UI tracking with unique ID
+type AgeBracketWithId = TournamentEvent["age_brackets"][number] & {_id?: string};
+
 export default function TournamentList() {
     // Ref and state for scroll position preservation
     const editModalContentRef = useRef<HTMLDivElement | null>(null);
@@ -182,16 +185,23 @@ export default function TournamentList() {
                 return `${country[0]} / ${country[1]}`;
             },
         },
-        {
-            title: "Start Date",
-            dataIndex: "start_date",
-            width: 200,
+
+        deviceBreakpoint > DeviceBreakpoint.md && {
+            title: "Registration Start",
+            dataIndex: "registration_start_date",
+            width: 180,
             render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
-            title: "End Date",
-            dataIndex: "end_date",
-            width: 200,
+            title: "Registration End",
+            dataIndex: "registration_end_date",
+            width: 180,
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+        },
+        {
+            title: "Tournament Start",
+            dataIndex: "start_date",
+            width: 180,
             render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
@@ -1168,6 +1178,10 @@ export default function TournamentList() {
                                             return (
                                                 <>
                                                     {ageBrackets.map((bracket, id) => {
+                                                        // Ensure bracket has a unique ID for React key
+                                                        const bracketId =
+                                                            (bracket as AgeBracketWithId)._id || `bracket-${id}-${bracket.name}`;
+
                                                         const isMinError =
                                                             bracket.min_age === null || bracket.min_age > bracket.max_age;
 
@@ -1189,7 +1203,7 @@ export default function TournamentList() {
                                                             maxAgeHelp = "Max age < Min age";
                                                         }
                                                         return (
-                                                            <div key={`bracket-${id}`} className="border p-4 mb-4 rounded">
+                                                            <div key={bracketId} className="border p-4 mb-4 rounded">
                                                                 <div className="flex gap-4 mb-4 w-full">
                                                                     <Form.Item
                                                                         label="Bracket Name"
@@ -1386,7 +1400,8 @@ export default function TournamentList() {
                                                                     max_age: 0,
                                                                     number_of_participants: 0,
                                                                     final_criteria: getPredefinedFinalCriteria("Individual"),
-                                                                },
+                                                                    _id: crypto.randomUUID(),
+                                                                } as AgeBracketWithId,
                                                             ])
                                                         }
                                                     >

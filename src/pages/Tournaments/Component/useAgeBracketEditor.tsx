@@ -5,15 +5,26 @@ import {type FormInstance, Message} from "@arco-design/web-react";
 import {useState} from "react";
 import FinalCriteriaFields from "./FinalCriteriaFields";
 
+// Temporary type for UI tracking with unique ID
+type AgeBracketWithId = AgeBracket & {_id?: string};
+
 export function useAgeBracketEditor(form: FormInstance, onBracketsSaved?: (brackets: AgeBracket[], index: number) => void) {
     const [ageBracketModalVisible, setAgeBracketModalVisible] = useState(false);
     const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
-    const [ageBrackets, setAgeBrackets] = useState<AgeBracket[]>([]);
+    const [ageBrackets, setAgeBrackets] = useState<AgeBracketWithId[]>([]);
 
     const handleEditAgeBrackets = (index: number) => {
         const currentEvents = form.getFieldValue("events") ?? [];
+        const brackets = currentEvents[index]?.age_brackets ?? [];
+
+        // Ensure each bracket has a unique ID for React keys
+        const bracketsWithIds: AgeBracketWithId[] = brackets.map((bracket: AgeBracket) => ({
+            ...bracket,
+            _id: (bracket as AgeBracketWithId)._id || crypto.randomUUID(),
+        }));
+
         setEditingEventIndex(index);
-        setAgeBrackets(currentEvents[index]?.age_brackets ?? []);
+        setAgeBrackets(bracketsWithIds);
         setAgeBracketModalVisible(true);
     };
 
@@ -77,12 +88,18 @@ export function useAgeBracketEditor(form: FormInstance, onBracketsSaved?: (brack
             return;
         }
 
+        // Remove temporary _id field before saving
+        const cleanedBrackets = ageBrackets.map((bracket) => {
+            const {_id, ...cleanBracket} = bracket;
+            return cleanBracket as AgeBracket;
+        });
+
         const currentEvents = [...(form.getFieldValue("events") ?? [])];
-        currentEvents[editingEventIndex].age_brackets = ageBrackets;
+        currentEvents[editingEventIndex].age_brackets = cleanedBrackets;
         form.setFieldValue("events", currentEvents);
         setAgeBracketModalVisible(false);
         setEditingEventIndex(null);
-        onBracketsSaved?.(ageBrackets, editingEventIndex);
+        onBracketsSaved?.(cleanedBrackets, editingEventIndex);
     };
 
     return {
