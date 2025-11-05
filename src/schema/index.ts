@@ -36,6 +36,7 @@ export {
     GlobalResultSchema,
     GlobalTeamResultSchema,
     RecordDisplaySchema,
+    TournamentOverallRecordSchema,
     TournamentRecordSchema,
     TournamentTeamRecordSchema,
 } from "./RecordSchema";
@@ -43,6 +44,7 @@ export type {
     GlobalResult,
     GlobalTeamResult,
     RecordDisplay,
+    TournamentOverallRecord,
     TournamentRecord,
     TournamentTeamRecord,
     RecordRow,

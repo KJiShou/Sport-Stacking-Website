@@ -6,6 +6,7 @@ const recordStatusEnum = z.enum(["submitted", "verified"]);
 const TournamentRecordBaseSchema = z.object({
     id: z.string(),
     tournament_id: z.string(),
+    tournament_name: z.string().optional().nullable(),
     event_id: z.string(),
     event: z.string(),
     code: z.string(),
@@ -28,6 +29,7 @@ const TournamentRecordBaseSchema = z.object({
 export const TournamentOverallRecordSchema = z.object({
     id: z.string(),
     tournament_id: z.string(),
+    tournament_name: z.string().optional().nullable(),
     event_id: z.string(),
     event: z.string(),
     code: z.string(),
@@ -90,6 +92,7 @@ export const GlobalResultSchema = z.object({
     tournamentId: z.string().optional(),
     teamId: z.string().optional(),
     ageGroup: z.string().optional(),
+    tournament_name: z.string().optional().nullable(),
 });
 
 export const GlobalTeamResultSchema = z.object({
@@ -116,6 +119,7 @@ export const GlobalTeamResultSchema = z.object({
     tournamentId: z.string().optional(),
     teamId: z.string().optional(),
     ageGroup: z.string().optional(),
+    tournament_name: z.string().optional().nullable(),
 });
 
 export const RecordDisplaySchema = z.object({
@@ -136,6 +140,7 @@ export const RecordDisplaySchema = z.object({
     recordId: z.string().optional(),
     participantId: z.string().optional(),
     teamName: z.string().optional(),
+    tournament_name: z.string().optional().nullable(),
     // Team-specific display fields
     members: z.array(z.string()).optional(),
     leaderId: z.string().optional(),

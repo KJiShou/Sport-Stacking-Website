@@ -302,6 +302,54 @@ export const getTournamentFinalRecords = async (tournamentId: string): Promise<(
     return records;
 };
 
+// Fetch overall records for a tournament (prelim)
+export const getTournamentPrelimOverallRecords = async (tournamentId: string): Promise<TournamentOverallRecord[]> => {
+    const records: TournamentOverallRecord[] = [];
+    const tournamentRef = doc(firestore, "tournaments", tournamentId);
+    const tournamentSnap = await getDoc(tournamentRef);
+
+    if (!tournamentSnap.exists()) {
+        return records;
+    }
+
+    const overallRecordsQuery = query(
+        collection(firestore, "overall_records"),
+        where("tournament_id", "==", tournamentId),
+        where("classification", "==", "prelim"),
+    );
+
+    const overallRecordsSnapshot = await getDocs(overallRecordsQuery);
+    for (const recordDoc of overallRecordsSnapshot.docs) {
+        const data = {...recordDoc.data(), id: recordDoc.id};
+        records.push(data as TournamentOverallRecord);
+    }
+    return records;
+};
+
+// Fetch overall records for a tournament (final)
+export const getTournamentFinalOverallRecords = async (tournamentId: string): Promise<TournamentOverallRecord[]> => {
+    const records: TournamentOverallRecord[] = [];
+    const tournamentRef = doc(firestore, "tournaments", tournamentId);
+    const tournamentSnap = await getDoc(tournamentRef);
+
+    if (!tournamentSnap.exists()) {
+        return records;
+    }
+
+    const overallRecordsQuery = query(
+        collection(firestore, "overall_records"),
+        where("tournament_id", "==", tournamentId),
+        where("classification", "!=", "prelim"),
+    );
+
+    const overallRecordsSnapshot = await getDocs(overallRecordsQuery);
+    for (const recordDoc of overallRecordsSnapshot.docs) {
+        const data = {...recordDoc.data(), id: recordDoc.id};
+        records.push(data as TournamentOverallRecord);
+    }
+    return records;
+};
+
 // Keep the original function for backward compatibility
 export const getTournamentRecords = async (tournamentId: string): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
     const [prelimRecords, finalRecords] = await Promise.all([
@@ -422,13 +470,16 @@ export const deleteRecord = async (recordId: string): Promise<void> => {
 export const toggleRecordVerification = async (
     recordId: string,
     verifiedBy: string,
-    currentStatus: "submitted" | "verified",
+    currentStatus?: "submitted" | "verified",
 ): Promise<void> => {
     try {
         const now = new Date().toISOString();
         const recordRef = doc(firestore, "records", recordId);
 
-        if (currentStatus === "submitted") {
+        // Default to "submitted" if status is undefined or invalid
+        const status = currentStatus === "verified" ? "verified" : "submitted";
+
+        if (status === "submitted") {
             // Verify the record
             await updateDoc(recordRef, {
                 status: "verified",
@@ -487,6 +538,203 @@ export const updateRecordVideoUrl = async (recordId: string, videoUrl: string): 
     }
 };
 
+// Get individual event records for a participant (for editing overall records)
+export const getParticipantEventRecords = async (
+    tournamentId: string,
+    participantGlobalId: string,
+    eventId: string,
+    classification: string,
+): Promise<TournamentRecord[]> => {
+    try {
+        const recordsQuery = query(
+            collection(firestore, "records"),
+            where("tournament_id", "==", tournamentId),
+            where("participant_global_id", "==", participantGlobalId),
+            where("event_id", "==", eventId),
+            where("classification", "==", classification),
+        );
+        const recordsSnapshot = await getDocs(recordsQuery);
+
+        const records: TournamentRecord[] = [];
+        for (const doc of recordsSnapshot.docs) {
+            records.push({...doc.data(), id: doc.id} as TournamentRecord);
+        }
+
+        return records;
+    } catch (error) {
+        console.error("Failed to get participant event records:", error);
+        throw error;
+    }
+};
+
+// Delete overall record service - also deletes the three individual event records (3-3-3, 3-6-3, Cycle)
+export const deleteOverallRecord = async (recordId: string): Promise<void> => {
+    try {
+        // First, get the overall record to retrieve participant and tournament info
+        const recordRef = doc(firestore, "overall_records", recordId);
+        const recordSnap = await getDoc(recordRef);
+
+        if (!recordSnap.exists()) {
+            throw new Error(`Overall record ${recordId} not found`);
+        }
+
+        const overallRecord = recordSnap.data() as TournamentOverallRecord;
+
+        // Delete the three individual event records (3-3-3, 3-6-3, Cycle)
+        const eventCodes = ["3-3-3", "3-6-3", "Cycle"];
+        const deleteIndividualPromises = eventCodes.map(async (eventCode) => {
+            const individualRecordsQuery = query(
+                collection(firestore, "records"),
+                where("tournament_id", "==", overallRecord.tournament_id),
+                where("participant_global_id", "==", overallRecord.participant_global_id),
+                where("event_id", "==", overallRecord.event_id),
+                where("classification", "==", overallRecord.classification),
+                where("code", "==", eventCode),
+            );
+            const individualRecordsSnapshot = await getDocs(individualRecordsQuery);
+
+            // Delete all matching individual records for this event code
+            const deletePromises = individualRecordsSnapshot.docs.map((doc) => deleteDoc(doc.ref));
+            await Promise.all(deletePromises);
+        });
+
+        // Wait for all individual records to be deleted
+        await Promise.all(deleteIndividualPromises);
+
+        // Finally, delete the overall record
+        await deleteDoc(recordRef);
+    } catch (error) {
+        console.error(`Failed to delete overall record ${recordId}:`, error);
+        throw error;
+    }
+};
+
+// Delete all records for a participant in a tournament (for individual events - 3-3-3, 3-6-3, Cycle)
+export const deleteParticipantRecords = async (
+    tournamentId: string,
+    participantGlobalId: string,
+    eventId: string,
+    classification: string,
+): Promise<void> => {
+    try {
+        // Delete individual event records (3-3-3, 3-6-3, Cycle)
+        const recordsQuery = query(
+            collection(firestore, "records"),
+            where("tournament_id", "==", tournamentId),
+            where("participant_global_id", "==", participantGlobalId),
+            where("event_id", "==", eventId),
+            where("classification", "==", classification),
+        );
+        const recordsSnapshot = await getDocs(recordsQuery);
+
+        // Delete all matching records
+        const deletePromises = recordsSnapshot.docs.map((doc) => deleteDoc(doc.ref));
+        await Promise.all(deletePromises);
+
+        // Delete the overall record
+        const overallRecordsQuery = query(
+            collection(firestore, "overall_records"),
+            where("tournament_id", "==", tournamentId),
+            where("participant_global_id", "==", participantGlobalId),
+            where("event_id", "==", eventId),
+            where("classification", "==", classification),
+        );
+        const overallRecordsSnapshot = await getDocs(overallRecordsQuery);
+
+        const deleteOverallPromises = overallRecordsSnapshot.docs.map((doc) => deleteDoc(doc.ref));
+        await Promise.all(deleteOverallPromises);
+    } catch (error) {
+        console.error("Failed to delete participant records:", error);
+        throw error;
+    }
+};
+
+// Update tournament record times
+export const updateTournamentRecord = async (
+    recordId: string,
+    updates: {
+        try1?: number;
+        try2?: number;
+        try3?: number;
+        best_time?: number;
+        video_url?: string | null;
+    },
+): Promise<void> => {
+    try {
+        const now = new Date().toISOString();
+        const recordRef = doc(firestore, "records", recordId);
+
+        await updateDoc(recordRef, {
+            ...updates,
+            updated_at: now,
+        });
+    } catch (error) {
+        console.error(`Failed to update tournament record ${recordId}:`, error);
+        throw error;
+    }
+};
+
+// Update overall record times
+export const updateOverallRecord = async (
+    recordId: string,
+    updates: {
+        three_three_three?: number;
+        three_six_three?: number;
+        cycle?: number;
+        overall_time?: number;
+        video_url?: string | null;
+    },
+): Promise<void> => {
+    try {
+        const now = new Date().toISOString();
+        const recordRef = doc(firestore, "overall_records", recordId);
+
+        await updateDoc(recordRef, {
+            ...updates,
+            updated_at: now,
+        });
+    } catch (error) {
+        console.error(`Failed to update overall record ${recordId}:`, error);
+        throw error;
+    }
+};
+
+// Toggle verification for overall records
+export const toggleOverallRecordVerification = async (
+    recordId: string,
+    verifiedBy: string,
+    currentStatus?: "submitted" | "verified",
+): Promise<void> => {
+    try {
+        const now = new Date().toISOString();
+        const recordRef = doc(firestore, "overall_records", recordId);
+
+        // Default to "submitted" if status is undefined or invalid
+        const status = currentStatus === "verified" ? "verified" : "submitted";
+
+        if (status === "submitted") {
+            // Verify the record
+            await updateDoc(recordRef, {
+                status: "verified",
+                verified_by: verifiedBy,
+                verified_at: now,
+                updated_at: now,
+            });
+        } else {
+            // Unverify the record
+            await updateDoc(recordRef, {
+                status: "submitted",
+                verified_by: null,
+                verified_at: null,
+                updated_at: now,
+            });
+        }
+    } catch (error) {
+        console.error(`Failed to toggle verification for overall record ${recordId}:`, error);
+        throw error;
+    }
+};
+
 // ------------------------------
 // Records aggregation for Records page
 // ------------------------------
@@ -531,6 +779,7 @@ const toGlobalFromIndividual = (r: TournamentRecord & {id: string}): (GlobalResu
         try2: r.try2,
         try3: r.try3,
         tournamentId: r.tournament_id,
+        tournament_name: r.tournament_name ?? null,
     };
 };
 
@@ -560,6 +809,7 @@ const toGlobalFromTeam = (r: TournamentTeamRecord & {id: string}): (GlobalTeamRe
         try3: r.try3,
         tournamentId: r.tournament_id,
         teamId: r.team_id,
+        tournament_name: r.tournament_name ?? null,
     } as unknown as GlobalTeamResult & {id: string};
 };
 
@@ -586,6 +836,7 @@ const toGlobalFromOverall = (r: TournamentOverallRecord & {id: string}): (Global
         classification: r.classification ?? undefined,
         bestTime: time,
         tournamentId: r.tournament_id,
+        tournament_name: r.tournament_name ?? null,
     };
 };
 

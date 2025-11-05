@@ -539,6 +539,7 @@ export default function FinalScoringPage() {
                     const data: TournamentRecord = {
                         id: existing?.id ?? "",
                         tournament_id: tournamentId,
+                        tournament_name: tournament?.name ?? null,
                         event_id: currentEvent.id ?? "",
                         event: currentEvent.type,
                         code,
@@ -586,6 +587,7 @@ export default function FinalScoringPage() {
                     const data: TournamentTeamRecord = {
                         id: existing?.id ?? "",
                         tournament_id: tournamentId,
+                        tournament_name: tournament?.name ?? null,
                         event_id: currentEvent.id ?? "",
                         event: currentEvent.type,
                         code,
@@ -652,6 +654,7 @@ export default function FinalScoringPage() {
                         TournamentOverallRecordSchema.parse({
                             id: "",
                             tournament_id: tournamentId,
+                            tournament_name: tournament?.name ?? null,
                             event_id: currentEvent.id ?? "",
                             event: "Individual",
                             code: "Overall",

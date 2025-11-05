@@ -712,13 +712,16 @@ export default function TournamentList() {
             setSelectedTournamentEvents(persistedEvents);
             form.setFieldValue("events", persistedEvents);
 
+            // Check if tournament is ongoing or ended - restrict name and location changes
+            const isOngoingOrEnded = selectedTournament.status === "On Going" || selectedTournament.status === "End";
+
             updateTournament(user, selectedTournament.id, {
-                name: values.name,
+                name: isOngoingOrEnded ? selectedTournament.name : values.name,
                 start_date: startDate,
                 end_date: endDate,
-                country: values.country,
-                venue: values.venue,
-                address: values.address,
+                country: isOngoingOrEnded ? selectedTournament.country : values.country,
+                venue: isOngoingOrEnded ? selectedTournament.venue : values.venue,
+                address: isOngoingOrEnded ? selectedTournament.address : values.address,
                 registration_start_date: registrationStartDate,
                 registration_end_date: registrationEndDate,
                 max_participants: values.max_participants,
@@ -734,7 +737,11 @@ export default function TournamentList() {
             setEditModalVisible(false);
             await fetchTournaments();
 
-            Message.success("Tournament updated successfully!");
+            if (isOngoingOrEnded) {
+                Message.warning("Tournament name and location cannot be changed for ongoing or completed tournaments.");
+            } else {
+                Message.success("Tournament updated successfully!");
+            }
         } catch (error) {
             console.error(error);
             Message.error("Failed to update tournament.");
@@ -937,8 +944,16 @@ export default function TournamentList() {
                         >
                             <Form form={form} layout="horizontal" onSubmit={handleSubmit} requiredSymbol={false}>
                                 <Form.Item label="Tournament Name" field="name" rules={[{required: true}]}>
-                                    <Input placeholder="Enter tournament name" />
+                                    <Input
+                                        placeholder="Enter tournament name"
+                                        disabled={selectedTournament.status === "On Going" || selectedTournament.status === "End"}
+                                    />
                                 </Form.Item>
+                                {(selectedTournament.status === "On Going" || selectedTournament.status === "End") && (
+                                    <div style={{marginTop: -16, marginBottom: 16, color: "#ff7d00", fontSize: 12}}>
+                                        Tournament name cannot be changed for ongoing or completed tournaments.
+                                    </div>
+                                )}
 
                                 <Form.Item label="Tournament Date Range" field="date_range" rules={[{required: true}]}>
                                     <RangePicker
@@ -969,6 +984,7 @@ export default function TournamentList() {
                                         showSearch
                                         changeOnSelect
                                         allowClear
+                                        disabled={selectedTournament.status === "On Going" || selectedTournament.status === "End"}
                                         filterOption={(input, node) => {
                                             return node.label.toLowerCase().includes(input.toLowerCase());
                                         }}
@@ -992,7 +1008,10 @@ export default function TournamentList() {
                                         },
                                     ]}
                                 >
-                                    <Input placeholder="Enter venue name" />
+                                    <Input
+                                        placeholder="Enter venue name"
+                                        disabled={selectedTournament.status === "On Going" || selectedTournament.status === "End"}
+                                    />
                                 </Form.Item>
 
                                 {/* Address */}
@@ -1008,7 +1027,11 @@ export default function TournamentList() {
                                 >
                                     <LocationPicker
                                         value={form.getFieldValue("address")}
-                                        onChange={(val) => form.setFieldValue("address", val)}
+                                        onChange={(val) => {
+                                            if (selectedTournament.status !== "On Going" && selectedTournament.status !== "End") {
+                                                form.setFieldValue("address", val);
+                                            }
+                                        }}
                                         onCountryChange={(countryPath) => {
                                             if (!isValidCountryPath(countryPath)) {
                                                 Message.warning(
@@ -1021,6 +1044,12 @@ export default function TournamentList() {
                                         }}
                                     />
                                 </Form.Item>
+                                {(selectedTournament.status === "On Going" || selectedTournament.status === "End") && (
+                                    <div style={{marginTop: -16, marginBottom: 16, color: "#ff7d00", fontSize: 12}}>
+                                        Location fields (country, venue, address) cannot be changed for ongoing or completed
+                                        tournaments.
+                                    </div>
+                                )}
 
                                 <Form.Item
                                     label="Registration Date Range"
