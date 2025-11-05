@@ -20,7 +20,7 @@ import {
     Typography,
     Upload,
 } from "@arco-design/web-react";
-import {IconDelete, IconExclamationCircle, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import {IconCheck, IconDelete, IconExclamationCircle, IconFile, IconPlus, IconUndo} from "@arco-design/web-react/icon";
 import MDEditor from "@uiw/react-md-editor";
 import dayjs from "dayjs";
 import type {Timestamp} from "firebase/firestore";
@@ -610,7 +610,8 @@ export default function CreateTournamentPage() {
                                 const rawFile = fileList?.[0]?.originFile || null;
                                 form.setFieldValue("agenda", rawFile);
                             }}
-                            showUploadList
+                            showUploadList={{}}
+                            autoUpload={false}
                         />
                     </Form.Item>
 
@@ -623,6 +624,7 @@ export default function CreateTournamentPage() {
                             showUploadList
                             listType="picture-card"
                             imagePreview
+                            autoUpload={false}
                         />
                     </Form.Item>
 

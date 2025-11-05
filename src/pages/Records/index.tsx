@@ -3,6 +3,7 @@ import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {
     Button,
     Card,
+    DatePicker,
     Divider,
     Dropdown,
     Empty,
@@ -42,6 +43,7 @@ type GlobalTeamResultWithId = GlobalTeamResult & {id: string};
 const {Title, Paragraph, Text} = Typography;
 const TabPane = Tabs.TabPane;
 const Option = Select.Option;
+const {RangePicker} = DatePicker;
 
 type RecordCategory = "individual" | "team_relay" | "double" | "parent_&_child" | "special_need";
 type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Double" | "Team Relay" | "Parent & Child";
@@ -150,6 +152,7 @@ const RecordsIndex: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>("Overall");
     const [searchQuery, setSearchQuery] = useState<string>("");
+    const [dateRange, setDateRange] = useState<[Date | undefined, Date | undefined]>([undefined, undefined]);
 
     // Admin modal states
     const [selectedRecord, setSelectedRecord] = useState<RecordDisplay | null>(null);
@@ -333,6 +336,20 @@ const RecordsIndex: React.FC = () => {
             ),
         });
 
+        // Status column - always visible
+        if (deviceBreakpoint > DeviceBreakpoint.md) {
+            cols.push({
+                title: "Status",
+                dataIndex: "status",
+                width: 100,
+                render: (_: unknown, record: RecordDisplay) => (
+                    <Tag color={record.status === "verified" ? "green" : "orange"}>
+                        {record.status === "verified" ? "Verified" : "Submitted"}
+                    </Tag>
+                ),
+            });
+        }
+
         // less important columns – only show when screen > md
         if (deviceBreakpoint > DeviceBreakpoint.md) {
             cols.push(
@@ -472,6 +489,9 @@ const RecordsIndex: React.FC = () => {
                 : (record as GlobalResult).participantName || "Unknown";
             const gender = isTeamResult ? "Team" : (record as GlobalResult).gender || "Overall";
 
+            const recordDate = record.created_at || new Date().toISOString();
+            const recordDateObj = new Date(recordDate);
+
             recordsData.push({
                 key: `${backendCategory}-${selectedEvent}-${index}`,
                 rank: eventRank++,
@@ -481,7 +501,7 @@ const RecordsIndex: React.FC = () => {
                 athlete: athleteName,
                 country: record.country || "Unknown",
                 flag: getCountryFlag(record.country),
-                date: formatDate(record.created_at || new Date().toISOString()),
+                date: formatDate(recordDate),
                 ageGroup: recordAgeGroup,
                 age: record.age || null,
                 status: record.status || "submitted",
@@ -495,10 +515,39 @@ const RecordsIndex: React.FC = () => {
             });
         });
 
-        // Apply search filter after ranks are assigned
+        // Apply date range filter after ranks are assigned (similar to search filter)
+        let filteredByDateRecords = recordsData;
+        const [startDate, endDate] = dateRange;
+        if (startDate || endDate) {
+            filteredByDateRecords = recordsData.filter((record) => {
+                const recordDate = record.date ? new Date(record.date) : null;
+                if (!recordDate) return false;
+
+                // Check start date
+                if (startDate && recordDate < startDate) {
+                    const startDateMinusOne = new Date(startDate);
+                    startDateMinusOne.setDate(startDateMinusOne.getDate() - 1);
+                    if (recordDate <= startDateMinusOne) {
+                        return false;
+                    }
+                }
+
+                // Add 1 day to end date to include records on the selected end date
+                if (endDate) {
+                    const endDatePlusOne = new Date(endDate);
+                    endDatePlusOne.setDate(endDatePlusOne.getDate() + 1);
+                    if (recordDate >= endDatePlusOne) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+
+        // Apply search filter after date filter
         const filteredRecordsData = searchQuery
-            ? recordsData.filter((record) => record.athlete.toLowerCase().includes(searchQuery.toLowerCase()))
-            : recordsData;
+            ? filteredByDateRecords.filter((record) => record.athlete.toLowerCase().includes(searchQuery.toLowerCase()))
+            : filteredByDateRecords;
 
         const isTeamCategory =
             backendCategory === "Team Relay" || backendCategory === "Double" || backendCategory === "Parent & Child";
@@ -562,6 +611,40 @@ const RecordsIndex: React.FC = () => {
                                     width: isMobileView ? "100%" : "auto",
                                 }}
                             >
+                                <Text style={{fontSize: "14px", color: "#666"}}>Date:</Text>
+                                <RangePicker
+                                    value={dateRange as [Date, Date]}
+                                    onChange={(dates) => {
+                                        if (!dates) {
+                                            setDateRange([undefined, undefined]);
+                                        } else {
+                                            const startDate = dates[0] ? new Date(dates[0]) : undefined;
+                                            const endDate = dates[1] ? new Date(dates[1]) : undefined;
+                                            // Set time to 00:00:00 for both dates
+                                            if (startDate) {
+                                                startDate.setHours(0, 0, 0, 0);
+                                            }
+                                            if (endDate) {
+                                                endDate.setHours(0, 0, 0, 0);
+                                            }
+                                            setDateRange([startDate, endDate]);
+                                        }
+                                    }}
+                                    style={{width: isMobileView ? "100%" : 260}}
+                                    size={isMobileView ? "default" : "small"}
+                                    placeholder={["Start Date", "End Date"]}
+                                    allowClear
+                                />
+                            </div>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    flexDirection: isMobileView ? "column" : "row",
+                                    alignItems: isMobileView ? "flex-start" : "center",
+                                    gap: isMobileView ? "6px" : "8px",
+                                    width: isMobileView ? "100%" : "auto",
+                                }}
+                            >
                                 <Text style={{fontSize: "14px", color: "#666"}}>Age Group:</Text>
                                 <Select
                                     value={selectedAgeGroup}
@@ -605,7 +688,6 @@ const RecordsIndex: React.FC = () => {
                         stripe
                         hover
                         style={{backgroundColor: "white"}}
-                        scroll={{x: 800}}
                         rowClassName={(_, index) => (index % 2 === 0 ? "even-row" : "odd-row")}
                     />
                 )}

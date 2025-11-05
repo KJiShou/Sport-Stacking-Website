@@ -723,7 +723,7 @@ export default function ScoringPage() {
 
                 // Get team leader info
                 const leaderInfo = await getUserByGlobalId(selectedTeam.leader_id);
-                const country = leaderInfo?.country?.[0] || "MY";
+                const country = leaderInfo?.country?.[0] || null;
                 const submittedAt = new Date().toISOString();
 
                 const eventCodes = sanitizeEventCodes(event.codes);
@@ -748,6 +748,7 @@ export default function ScoringPage() {
                                     code,
                                     team_id: selectedTeam.id,
                                     team_name: selectedTeam.name,
+                                    team_age: selectedTeam.team_age,
                                     country,
                                     leader_id: selectedTeam.leader_id,
                                     member_global_ids: selectedTeam.members.map((m: TeamMember) => m.global_id),
