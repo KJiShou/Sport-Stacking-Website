@@ -1,10 +1,10 @@
-# SEO Implementation Guide for Sport Stacking Malaysia
+# SEO Implementation Guide for Ranking Stack Malaysia
 
 ## ✅ Completed SEO Optimizations
 
 ### 1. **Meta Tags & HTML Enhancements**
 - ✅ Added comprehensive meta description
-- ✅ Included relevant keywords for sport stacking
+- ✅ Included relevant keywords for sport stacking and ranking stack
 - ✅ Set proper language and robots directives
 - ✅ Added Open Graph tags for social media sharing (Facebook, LinkedIn)
 - ✅ Added Twitter Card meta tags
@@ -147,6 +147,7 @@ Add structured data for:
 ## 🎯 Target Keywords
 
 ### Primary Keywords
+- Ranking Stack Malaysia
 - Sport stacking Malaysia
 - Cup stacking Malaysia
 - Speed stacking Malaysia
@@ -161,6 +162,7 @@ Add structured data for:
 - Cup stacking records
 - Sport stacking world records
 - Speed stacking training
+- Ranking Stack
 
 ### Long-tail Keywords
 - How to start sport stacking in Malaysia
@@ -168,6 +170,7 @@ Add structured data for:
 - Best sport stacking cups Malaysia
 - Sport stacking events near me
 - Malaysian sport stacking champions
+- Ranking Stack tournaments
 
 ## 🌐 Website URLs to Update
 
