@@ -1,0 +1,10 @@
+# Allow all crawlers
+User-agent: *
+Allow: /
+
+# Disallow admin and private pages
+Disallow: /admin
+Disallow: /user/profile
+
+# Sitemap location
+Sitemap: https://rankingstack.com/sitemap.xml
