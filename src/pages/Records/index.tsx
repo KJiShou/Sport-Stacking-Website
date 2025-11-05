@@ -29,9 +29,11 @@ import {useAuthContext} from "../../context/AuthContext";
 import type {GlobalResult, GlobalTeamResult, RecordDisplay} from "../../schema/RecordSchema";
 
 import {
+    deleteOverallRecord,
     deleteRecord,
     getBestRecords,
     getBestRecordsByAgeGroup,
+    toggleOverallRecordVerification,
     toggleRecordVerification,
     updateRecordVideoUrl,
 } from "../../services/firebase/recordService";
@@ -203,7 +205,15 @@ const RecordsIndex: React.FC = () => {
         }
 
         try {
-            await toggleRecordVerification(record.recordId, user.global_id, record.status);
+            // Check if this is an overall record
+            const isOverallRecord = record.event === "Overall";
+
+            if (isOverallRecord) {
+                await toggleOverallRecordVerification(record.recordId, user.global_id, record.status);
+            } else {
+                await toggleRecordVerification(record.recordId, user.global_id, record.status);
+            }
+
             const action = record.status === "submitted" ? "verified" : "unverified";
             Message.success(`Record ${action} successfully for ${record.athlete}`);
             await loadRecords();
@@ -219,14 +229,21 @@ const RecordsIndex: React.FC = () => {
             return;
         }
 
+        const isOverallRecord = record.event === "Overall";
+        const recordType = isOverallRecord ? "overall record" : "record";
+
         Modal.confirm({
             title: "Delete Record",
-            content: `Are you sure you want to delete ${record.athlete}'s ${record.event} record?`,
+            content: `Are you sure you want to delete ${record.athlete}'s ${record.event} ${recordType}?`,
             okText: "Delete",
             okButtonProps: {status: "danger"},
             onOk: async () => {
                 try {
-                    await deleteRecord(record.recordId ?? "");
+                    if (isOverallRecord) {
+                        await deleteOverallRecord(record.recordId ?? "");
+                    } else {
+                        await deleteRecord(record.recordId ?? "");
+                    }
                     Message.success("Record deleted successfully");
                     loadRecords(); // Refresh records
                 } catch (error) {
@@ -362,6 +379,14 @@ const RecordsIndex: React.FC = () => {
                             <span>{getCountryFlag(country)}</span>
                             <span>{country || "Unknown"}</span>
                         </Space>
+                    ),
+                },
+                {
+                    title: "Tournament",
+                    dataIndex: "tournament_name",
+                    width: 180,
+                    render: (tournamentName: string | null | undefined) => (
+                        <Text style={{fontSize: "12px", color: "#666"}}>{tournamentName || "N/A"}</Text>
                     ),
                 },
                 {
@@ -512,6 +537,7 @@ const RecordsIndex: React.FC = () => {
                 teamName: isTeamResult ? (record as GlobalTeamResult).teamName : undefined,
                 members: isTeamResult ? (record as GlobalTeamResult).members : undefined,
                 leaderId: isTeamResult ? (record as GlobalTeamResult).leaderId : undefined,
+                tournament_name: record.tournament_name || null,
             });
         });
 
@@ -546,7 +572,11 @@ const RecordsIndex: React.FC = () => {
 
         // Apply search filter after date filter
         const filteredRecordsData = searchQuery
-            ? filteredByDateRecords.filter((record) => record.athlete.toLowerCase().includes(searchQuery.toLowerCase()))
+            ? filteredByDateRecords.filter(
+                  (record) =>
+                      record.athlete.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      record.tournament_name?.toLowerCase().includes(searchQuery.toLowerCase()),
+              )
             : filteredByDateRecords;
 
         const isTeamCategory =
@@ -596,7 +626,7 @@ const RecordsIndex: React.FC = () => {
                             }}
                         >
                             <Input.Search
-                                placeholder="Search athlete/team..."
+                                placeholder="Search athlete/team/tournament..."
                                 value={searchQuery}
                                 onChange={setSearchQuery}
                                 allowClear

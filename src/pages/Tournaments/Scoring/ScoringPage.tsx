@@ -643,6 +643,7 @@ export default function ScoringPage() {
                                 TournamentRecordSchema.parse({
                                     id: scores.recordId ?? "",
                                     tournament_id: tournamentId,
+                                    tournament_name: tournament.name,
                                     event_id: event.id ?? "",
                                     event: event.type,
                                     code,
@@ -681,6 +682,7 @@ export default function ScoringPage() {
                             TournamentRecordSchema.parse({
                                 id: scores.recordId ?? "",
                                 tournament_id: tournamentId,
+                                tournament_name: tournament.name,
                                 event_id: event.id ?? "",
                                 event: event.type,
                                 participant_id: selectedParticipant.user_id,
@@ -712,7 +714,7 @@ export default function ScoringPage() {
                 );
 
                 // If individual event, try to calculate overall
-                if (selectedEvent === "Individual") {
+                if (event.type === "Individual") {
                     await calculateAndSaveOverallResults();
                 }
 
@@ -743,6 +745,7 @@ export default function ScoringPage() {
                                 TournamentTeamRecordSchema.parse({
                                     id: scores.recordId ?? "",
                                     tournament_id: tournamentId,
+                                    tournament_name: tournament.name,
                                     event_id: event.id ?? "",
                                     event: event.type,
                                     code,
@@ -776,25 +779,27 @@ export default function ScoringPage() {
 
                         const savedRecordId = await saveTeamRecord(
                             TournamentTeamRecordSchema.parse({
-                                id: scores.recordId,
-                                tournamentId,
+                                id: scores.recordId ?? "",
+                                tournament_id: tournamentId,
+                                tournament_name: tournament.name,
                                 event_id: event.id ?? "",
                                 event: event.type,
-                                participantId: selectedTeam.id,
-                                teamName: selectedTeam.name,
+                                code: "",
+                                team_id: selectedTeam.id,
+                                team_name: selectedTeam.name,
+                                team_age: selectedTeam.team_age,
                                 country,
-                                leaderId: selectedTeam.leader_id,
-                                members: selectedTeam.members,
-                                round: "prelim",
-                                classification: undefined,
-                                verified_by: undefined,
-                                verified_at: undefined,
+                                leader_id: selectedTeam.leader_id,
+                                member_global_ids: selectedTeam.members.map((m: TeamMember) => m.global_id),
+                                classification: "prelim",
                                 try1,
                                 try2,
                                 try3,
                                 best_time: Math.min(try1, try2, try3),
                                 status: "submitted",
                                 submitted_at: submittedAt,
+                                verified_by: null,
+                                verified_at: null,
                             }),
                         );
                         updatedModalScores[event.type] = {...scores, recordId: savedRecordId};
@@ -878,6 +883,7 @@ export default function ScoringPage() {
                     TournamentOverallRecordSchema.parse({
                         id: "",
                         tournament_id: tournamentId,
+                        tournament_name: tournament.name,
                         event_id: individualEvent.id ?? "",
                         event: "Individual",
                         code: "Overall",
