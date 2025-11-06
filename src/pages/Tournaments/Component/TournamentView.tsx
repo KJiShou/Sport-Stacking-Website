@@ -405,8 +405,12 @@ export default function TournamentView() {
                             value: <div>{data?.max_participants === 0 ? "No Limit" : data?.max_participants}</div>,
                         },
                         {
-                            label: "Registration is open until",
-                            value: <div>{formatDate(data?.registration_end_date)}</div>,
+                            label: "Registration Period",
+                            value: (
+                                <div>
+                                    {formatDate(data?.registration_start_date)} - {formatDate(data?.registration_end_date)}
+                                </div>
+                            ),
                         },
                         {
                             label: "Description",

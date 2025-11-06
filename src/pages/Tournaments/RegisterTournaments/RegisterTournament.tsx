@@ -915,6 +915,63 @@ export default function RegisterTournamentPage() {
                                     })}
                             </div>
                         </Form.Item>
+
+                        {/* Payment Methods Section */}
+                        {tournament?.payment_methods && tournament.payment_methods.length > 0 && (
+                            <div className="mb-6 p-4 border border-solid border-gray-300 rounded-lg bg-gray-50">
+                                <Title heading={6} className="mb-3">
+                                    💳 Payment Methods
+                                </Title>
+                                <Paragraph type="secondary" className="mb-4 text-sm">
+                                    Please use one of the following payment methods to complete your registration fee of{" "}
+                                    <strong>RM{price}</strong>
+                                </Paragraph>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {tournament.payment_methods.map((method, index) => (
+                                        <div
+                                            key={method.id || index}
+                                            className="border border-solid border-blue-200 rounded-lg p-4 bg-white"
+                                        >
+                                            <div className="flex flex-col gap-3">
+                                                {method.qr_code_image && (
+                                                    <div className="flex justify-center">
+                                                        <Image
+                                                            src={method.qr_code_image}
+                                                            alt={`Payment QR Code ${index + 1}`}
+                                                            width={200}
+                                                            height={200}
+                                                            preview
+                                                            className="rounded"
+                                                        />
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <div className="text-sm text-gray-500 mb-1">Account Name</div>
+                                                    <div className="font-medium text-base">{method.account_name}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm text-gray-500 mb-1">Account Number</div>
+                                                    <div className="font-medium text-base font-mono">{method.account_number}</div>
+                                                </div>
+                                                {method.description && (
+                                                    <div>
+                                                        <div className="text-sm text-gray-500 mb-1">Details</div>
+                                                        <div className="text-sm">{method.description}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-4 p-3 bg-yellow-50 rounded text-sm text-yellow-800">
+                                    ⚠️ <strong>Important:</strong> After making the payment, please upload your payment proof
+                                    below.
+                                </div>
+                            </div>
+                        )}
+
                         <Form.Item
                             label={
                                 <div>

@@ -1,7 +1,7 @@
 import {DEFAULT_AGE_BRACKET, DEFAULT_EVENTS} from "@/constants/tournamentDefaults";
 import {useAuthContext} from "@/context/AuthContext";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
-import type {AgeBracket, Tournament, TournamentEvent} from "@/schema";
+import type {AgeBracket, PaymentMethod, Tournament, TournamentEvent} from "@/schema";
 import {countries} from "@/schema/Country";
 import type {FinalCriterion} from "@/schema/TournamentSchema";
 import {uploadFile} from "@/services/firebase/storageService";
@@ -207,9 +207,32 @@ export default function CreateTournamentPage() {
                 logoUrl = await uploadFile(logoFile, `logos`, `${tournamentId}`);
             }
 
+            // Handle payment methods with QR code uploads
+            const rawPaymentMethods = (form.getFieldValue("payment_methods") ?? []) as Array<
+                PaymentMethod & {qr_code_file?: File}
+            >;
+            const processedPaymentMethods: PaymentMethod[] = [];
+
+            for (const method of rawPaymentMethods) {
+                let qrCodeUrl = method.qr_code_image || "";
+
+                if (method.qr_code_file instanceof File) {
+                    qrCodeUrl = await uploadFile(method.qr_code_file, `payment_qr_codes`, `${tournamentId}_${method.id}`);
+                }
+
+                processedPaymentMethods.push({
+                    id: method.id,
+                    qr_code_image: qrCodeUrl || null,
+                    account_name: method.account_name,
+                    account_number: method.account_number,
+                    description: method.description || null,
+                });
+            }
+
             await updateTournament(user, tournamentId, {
                 agenda: agendaUrl || null,
                 logo: logoUrl || null,
+                payment_methods: processedPaymentMethods.length > 0 ? processedPaymentMethods : null,
             });
             Message.success("Tournament created successfully!");
 
@@ -626,6 +649,95 @@ export default function CreateTournamentPage() {
                             imagePreview
                             autoUpload={false}
                         />
+                    </Form.Item>
+
+                    {/* Payment Methods */}
+                    <Form.Item label="Payment Methods">
+                        <Form.List field="payment_methods">
+                            {(fields, {add, remove}) => (
+                                <>
+                                    {fields.map((field, index) => {
+                                        const paymentMethods = form.getFieldValue("payment_methods") || [];
+                                        const currentMethod = paymentMethods[index] || {};
+
+                                        return (
+                                            <div key={field.key} className="border p-4 mb-4 rounded">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <h4 className="text-sm font-medium">Payment Method {index + 1}</h4>
+                                                    <Button status="danger" size="small" onClick={() => remove(index)}>
+                                                        <IconDelete /> Remove
+                                                    </Button>
+                                                </div>
+
+                                                <Form.Item
+                                                    label="Account Name"
+                                                    field={`payment_methods[${index}].account_name`}
+                                                    rules={[{required: true, message: "Please enter account name"}]}
+                                                >
+                                                    <Input placeholder="Enter account holder name" />
+                                                </Form.Item>
+
+                                                <Form.Item
+                                                    label="Account Number"
+                                                    field={`payment_methods[${index}].account_number`}
+                                                    rules={[{required: true, message: "Please enter account number"}]}
+                                                >
+                                                    <Input placeholder="Enter account number" />
+                                                </Form.Item>
+
+                                                <Form.Item
+                                                    label="Description (Optional)"
+                                                    field={`payment_methods[${index}].description`}
+                                                >
+                                                    <Input.TextArea placeholder="e.g., Bank name, payment platform" rows={2} />
+                                                </Form.Item>
+
+                                                <Form.Item
+                                                    label="QR Code Image (Optional)"
+                                                    extra="PNG or JPG file for payment QR code"
+                                                >
+                                                    <Upload
+                                                        accept="image/png,image/jpeg"
+                                                        limit={1}
+                                                        onChange={(fileList) => {
+                                                            const currentMethods = form.getFieldValue("payment_methods") || [];
+                                                            if (!currentMethods[index]) {
+                                                                currentMethods[index] = {
+                                                                    id: crypto.randomUUID(),
+                                                                    account_name: "",
+                                                                    account_number: "",
+                                                                };
+                                                            }
+                                                            currentMethods[index].qr_code_file = fileList[0]?.originFile || null;
+                                                            form.setFieldValue("payment_methods", currentMethods);
+                                                        }}
+                                                        showUploadList
+                                                        listType="picture-card"
+                                                        imagePreview
+                                                        autoUpload={false}
+                                                    />
+                                                </Form.Item>
+                                            </div>
+                                        );
+                                    })}
+                                    <Button
+                                        type="dashed"
+                                        long
+                                        onClick={() =>
+                                            add({
+                                                id: crypto.randomUUID(),
+                                                account_name: "",
+                                                account_number: "",
+                                                description: "",
+                                                qr_code_image: null,
+                                            })
+                                        }
+                                    >
+                                        <IconPlus /> Add Payment Method
+                                    </Button>
+                                </>
+                            )}
+                        </Form.List>
                     </Form.Item>
 
                     {/* Submit Button */}

@@ -30,6 +30,17 @@ export const EventSchema = z.object({
 export type AgeBracket = z.infer<typeof AgeBracketSchema>;
 export type TournamentEvent = z.infer<typeof EventSchema>;
 
+// payment method schema
+export const PaymentMethodSchema = z.object({
+    id: z.string(),
+    qr_code_image: z.string().optional().nullable(), // URL to QR code image
+    account_name: z.string(),
+    account_number: z.string(),
+    description: z.string().optional().nullable(),
+});
+
+export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
+
 // main tournament schema
 export const TournamentSchema = z.object({
     id: z.string().optional().nullable(),
@@ -62,6 +73,7 @@ export const TournamentSchema = z.object({
         .nullable(),
     registration_fee: z.number().optional().nullable(),
     member_registration_fee: z.number().optional().nullable(),
+    payment_methods: z.array(PaymentMethodSchema).optional().nullable(),
     create_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
     events: z.array(EventSchema).optional(),
