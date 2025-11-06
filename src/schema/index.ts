@@ -2,9 +2,10 @@ export {
     AgeBracketSchema,
     EventSchema,
     FinalCriterionSchema,
+    PaymentMethodSchema,
     TournamentSchema,
 } from "./TournamentSchema";
-export type {AgeBracket, FinalCriterion, Tournament, TournamentEvent} from "./TournamentSchema";
+export type {AgeBracket, FinalCriterion, PaymentMethod, Tournament, TournamentEvent} from "./TournamentSchema";
 
 export {FirestoreUserSchema} from "./UserSchema";
 export type {FirestoreUser} from "./UserSchema";

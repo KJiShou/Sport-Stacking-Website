@@ -1,6 +1,6 @@
 import LoginForm from "@/components/common/Login";
 import {useAuthContext} from "@/context/AuthContext";
-import type {FirestoreUser, Tournament, TournamentEvent} from "@/schema"; // 就是你那个 TournamentSchema infer出来的type
+import type {FirestoreUser, PaymentMethod, Tournament, TournamentEvent} from "@/schema"; // 就是你那个 TournamentSchema infer出来的type
 import {countries} from "@/schema/Country";
 import {
     deleteTournamentById,
@@ -46,6 +46,7 @@ import {
     IconLaunch,
     IconPlayArrow,
     IconPlus,
+    IconSearch,
     IconUser,
 } from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
@@ -163,6 +164,10 @@ export default function TournamentList() {
     const [selectedTournamentEvents, setSelectedTournamentEvents] = useState<TournamentEvent[]>([]);
     const [eventsLoading, setEventsLoading] = useState(false);
 
+    // Search and filter states
+    const [searchTerm, setSearchTerm] = useState("");
+    const [dateFilter, setDateFilter] = useState<[dayjs.Dayjs, dayjs.Dayjs] | undefined>(undefined);
+
     function hasRegistered(user: FirestoreUser, tournamentId: string): boolean {
         return (user.registration_records ?? []).some((record) => record.tournament_id === tournamentId);
     }
@@ -170,6 +175,40 @@ export default function TournamentList() {
     const getUserRegistration = (user: FirestoreUser, tournamentId: string): UserRegistrationRecord | undefined => {
         return user.registration_records?.find((record) => record.tournament_id === tournamentId);
     };
+
+    // Filter tournaments based on search term and date range
+    const filterTournaments = (tournaments: Tournament[]) => {
+        return tournaments.filter((tournament) => {
+            // Search filter
+            const matchesSearch =
+                !searchTerm ||
+                (tournament.name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
+                (tournament.country?.[0]?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
+                (tournament.country?.[1]?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
+                (tournament.venue?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
+
+            // Date filter
+            const matchesDate =
+                !dateFilter ||
+                !dateFilter[0] ||
+                !dateFilter[1] ||
+                (tournament.start_date &&
+                    (() => {
+                        const startDate =
+                            tournament.start_date instanceof Timestamp ? tournament.start_date.toDate() : tournament.start_date;
+                        // Set filter start to 00:00:00 of the selected start date
+                        const filterStart = dateFilter[0].startOf("day").toDate();
+                        // Set filter end to 00:00:00 of the next day (includes entire end date)
+                        const filterEnd = dateFilter[1].add(1, "day").startOf("day").toDate();
+                        return startDate >= filterStart && startDate < filterEnd;
+                    })());
+
+            return matchesSearch && matchesDate;
+        });
+    };
+
+    const filteredCurrentTournaments = filterTournaments(currentTournaments);
+    const filteredHistoryTournaments = filterTournaments(historyTournaments);
 
     const columns: (TableColumnProps<(typeof currentTournaments)[number]> | false)[] = [
         {
@@ -707,6 +746,32 @@ export default function TournamentList() {
                 logoUrl = await uploadFile(logoFile, `logos`, `${selectedTournament.id}`);
             }
 
+            // Handle payment methods with QR code uploads
+            const rawPaymentMethods = (form.getFieldValue("payment_methods") ?? []) as Array<
+                PaymentMethod & {qr_code_file?: File}
+            >;
+            const processedPaymentMethods: PaymentMethod[] = [];
+
+            for (const method of rawPaymentMethods) {
+                let qrCodeUrl = method.qr_code_image || "";
+
+                if (method.qr_code_file instanceof File) {
+                    qrCodeUrl = await uploadFile(
+                        method.qr_code_file,
+                        `payment_qr_codes`,
+                        `${selectedTournament.id}_${method.id}`,
+                    );
+                }
+
+                processedPaymentMethods.push({
+                    id: method.id,
+                    qr_code_image: qrCodeUrl || null,
+                    account_name: method.account_name,
+                    account_number: method.account_number,
+                    description: method.description || null,
+                });
+            }
+
             await saveTournamentEvents(selectedTournament.id, sanitizedEvents);
             const persistedEvents = sanitizedEvents.map((event) => cloneEvent(event));
             setSelectedTournamentEvents(persistedEvents);
@@ -731,6 +796,7 @@ export default function TournamentList() {
                 description: values.description ?? null,
                 registration_fee: values.registration_fee,
                 member_registration_fee: values.member_registration_fee,
+                payment_methods: processedPaymentMethods.length > 0 ? processedPaymentMethods : null,
                 agenda: agendaUrl,
                 logo: logoUrl,
             });
@@ -862,6 +928,7 @@ export default function TournamentList() {
                 description: selectedTournament.description ?? "",
                 agenda: selectedTournament.agenda ?? null,
                 logo: selectedTournament.logo ?? null,
+                payment_methods: selectedTournament.payment_methods ?? [],
             });
         }
     }, [selectedTournament, selectedTournamentEvents, form]);
@@ -885,12 +952,48 @@ export default function TournamentList() {
                 </div>
             </div>
 
+            {/* Search and Filter Controls */}
+            <div className={`w-full flex flex-col md:flex-row gap-4 items-center`}>
+                <Input
+                    prefix={<IconSearch />}
+                    placeholder="Search by name, country, state, or venue..."
+                    value={searchTerm}
+                    onChange={(value) => setSearchTerm(value)}
+                    allowClear
+                    className={`flex-1`}
+                />
+                <RangePicker
+                    prefix={<IconCalendar />}
+                    placeholder={["Start Date", "End Date"]}
+                    value={dateFilter ?? undefined}
+                    onChange={(value) => {
+                        if (value?.[0] && value?.[1]) {
+                            setDateFilter([dayjs(value[0]), dayjs(value[1])]);
+                        } else {
+                            setDateFilter(undefined);
+                        }
+                    }}
+                    allowClear
+                    className={`w-full md:w-auto`}
+                />
+                {(searchTerm || dateFilter) && (
+                    <Button
+                        onClick={() => {
+                            setSearchTerm("");
+                            setDateFilter(undefined);
+                        }}
+                    >
+                        Clear Filters
+                    </Button>
+                )}
+            </div>
+
             <Tabs activeTab={activeTab} onChange={setActiveTab} type="capsule" className={`w-full`}>
                 <TabPane key="current" title="Current Tournaments">
                     <Table
                         rowKey="id"
                         columns={columns.filter((e): e is TableColumnProps<Tournament> => !!e)}
-                        data={currentTournaments}
+                        data={filteredCurrentTournaments}
                         pagination={{pageSize: 10}}
                         className="my-4"
                         loading={loading}
@@ -900,7 +1003,7 @@ export default function TournamentList() {
                     <Table
                         rowKey="id"
                         columns={columns.filter((e): e is TableColumnProps<Tournament> => !!e)}
-                        data={historyTournaments}
+                        data={filteredHistoryTournaments}
                         pagination={{pageSize: 10}}
                         className="my-4"
                         loading={loading}
@@ -1518,6 +1621,117 @@ export default function TournamentList() {
                                         listType="picture-card"
                                         imagePreview
                                     />
+                                </Form.Item>
+
+                                {/* Payment Methods */}
+                                <Form.Item label="Payment Methods">
+                                    <Form.List field="payment_methods">
+                                        {(fields, {add, remove}) => (
+                                            <>
+                                                {fields.map((field, index) => {
+                                                    const paymentMethods = form.getFieldValue("payment_methods") || [];
+                                                    const currentMethod = paymentMethods[index] || {};
+
+                                                    return (
+                                                        <div key={field.key} className="border p-4 mb-4 rounded">
+                                                            <div className="flex justify-between items-center mb-3">
+                                                                <h4 className="text-sm font-medium">
+                                                                    Payment Method {index + 1}
+                                                                </h4>
+                                                                <Button
+                                                                    status="danger"
+                                                                    size="small"
+                                                                    onClick={() => remove(index)}
+                                                                >
+                                                                    <IconDelete /> Remove
+                                                                </Button>
+                                                            </div>
+
+                                                            <Form.Item
+                                                                label="Account Name"
+                                                                field={`payment_methods[${index}].account_name`}
+                                                                rules={[{required: true, message: "Please enter account name"}]}
+                                                            >
+                                                                <Input placeholder="Enter account holder name" />
+                                                            </Form.Item>
+
+                                                            <Form.Item
+                                                                label="Account Number"
+                                                                field={`payment_methods[${index}].account_number`}
+                                                                rules={[{required: true, message: "Please enter account number"}]}
+                                                            >
+                                                                <Input placeholder="Enter account number" />
+                                                            </Form.Item>
+
+                                                            <Form.Item
+                                                                label="Description (Optional)"
+                                                                field={`payment_methods[${index}].description`}
+                                                            >
+                                                                <Input.TextArea
+                                                                    placeholder="e.g., Bank name, payment platform"
+                                                                    rows={2}
+                                                                />
+                                                            </Form.Item>
+
+                                                            <Form.Item
+                                                                label="QR Code Image (Optional)"
+                                                                extra="PNG or JPG file for payment QR code"
+                                                            >
+                                                                <Upload
+                                                                    accept="image/png,image/jpeg"
+                                                                    limit={1}
+                                                                    defaultFileList={
+                                                                        currentMethod.qr_code_image
+                                                                            ? [
+                                                                                  {
+                                                                                      uid: `qr-${index}`,
+                                                                                      name: "QR Code",
+                                                                                      url: currentMethod.qr_code_image,
+                                                                                      status: "done" as const,
+                                                                                  },
+                                                                              ]
+                                                                            : []
+                                                                    }
+                                                                    onChange={(fileList) => {
+                                                                        const currentMethods =
+                                                                            form.getFieldValue("payment_methods") || [];
+                                                                        if (!currentMethods[index]) {
+                                                                            currentMethods[index] = {
+                                                                                id: crypto.randomUUID(),
+                                                                                account_name: "",
+                                                                                account_number: "",
+                                                                            };
+                                                                        }
+                                                                        currentMethods[index].qr_code_file =
+                                                                            fileList[0]?.originFile || null;
+                                                                        form.setFieldValue("payment_methods", currentMethods);
+                                                                    }}
+                                                                    showUploadList
+                                                                    listType="picture-card"
+                                                                    imagePreview
+                                                                />
+                                                            </Form.Item>
+                                                        </div>
+                                                    );
+                                                })}
+                                                <Button
+                                                    type="dashed"
+                                                    long
+                                                    onClick={() =>
+                                                        add({
+                                                            id: crypto.randomUUID(),
+                                                            account_name: "",
+                                                            account_number: "",
+                                                            description: "",
+                                                            qr_code_image: null,
+                                                        })
+                                                    }
+                                                >
+                                                    <IconPlus /> Add Payment Method
+                                                </Button>
+                                            </>
+                                        )}
+                                    </Form.List>
                                 </Form.Item>
 
                                 <Form.Item className={`w-full`} wrapperCol={{span: 24}}>

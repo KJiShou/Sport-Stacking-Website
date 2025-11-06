@@ -101,10 +101,18 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                             <>
                                 <div>
                                     <Title heading={6} className="mb-2">
-                                        Select Event Codes
+                                        Select Event Code{eventType === "Individual" ? "s" : ""}
                                     </Title>
                                     <Form.Item field={`events.${index}.codes`} rules={[{required: true}]}>
-                                        <Select placeholder="Select one or more event codes" mode="multiple" className="w-full">
+                                        <Select
+                                            placeholder={
+                                                eventType === "Individual"
+                                                    ? "Select one or more event codes"
+                                                    : "Select an event code"
+                                            }
+                                            mode={eventType === "Individual" ? "multiple" : undefined}
+                                            className="w-full"
+                                        >
                                             {availableCodes.map((code) => (
                                                 <Select.Option key={code} value={code}>
                                                     {code}
