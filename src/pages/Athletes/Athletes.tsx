@@ -93,7 +93,6 @@ const GENDER_FILTER_OPTIONS: {value: GenderFilter; label: string}[] = [
     {value: "All", label: "All Genders"},
     {value: "Male", label: "Male"},
     {value: "Female", label: "Female"},
-    {value: "Mixed", label: "Mixed"},
 ];
 
 const AGE_FILTER_OPTIONS: {value: AgeFilter; label: string}[] = [
