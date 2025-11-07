@@ -21,6 +21,7 @@ import {fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/to
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
+import {getCountryFlag} from "@/utils/countryFlags";
 import {
     Button,
     Card,
@@ -384,6 +385,13 @@ export default function TournamentView() {
                                     }
                                     hoverable={false}
                                 >
+                                    {data?.country?.[0] && getCountryFlag(data.country[0]) && (
+                                        <img
+                                            src={getCountryFlag(data.country[0])}
+                                            alt={`${data.country[0]} flag`}
+                                            style={{width: 20, height: 15, marginRight: 8, verticalAlign: "middle"}}
+                                        />
+                                    )}
                                     {data?.address} ({data?.country?.join(" / ")}) <IconLaunch />
                                 </Link>
                             ),

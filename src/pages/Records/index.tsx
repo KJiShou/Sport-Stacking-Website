@@ -1,5 +1,6 @@
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
+import {getCountryFlag} from "@/utils/countryFlags";
 import {
     Button,
     Card,
@@ -110,23 +111,6 @@ const formatDate = (dateString: string): string => {
         month: "short",
         year: "numeric",
     });
-};
-
-const getCountryFlag = (country?: string): string => {
-    const flagMap: Record<string, string> = {
-        "United States": "🇺🇸",
-        Malaysia: "🇲🇾",
-        Korea: "🇰🇷",
-        "Chinese Taipei": "🇹🇼",
-        China: "🇨🇳",
-        Japan: "🇯🇵",
-        Singapore: "🇸🇬",
-        Thailand: "🇹🇭",
-        Vietnam: "🇻🇳",
-        Indonesia: "🇮🇩",
-        Philippines: "🇵🇭",
-    };
-    return flagMap[country || ""] || "🌍";
 };
 
 const AGE_GROUPS: AgeGroup[] = ["Overall", "6U", "8U", "10U", "12U", "14U", "17U", "Open"];
@@ -374,12 +358,15 @@ const RecordsIndex: React.FC = () => {
                     title: "Country",
                     dataIndex: "country",
                     width: 160,
-                    render: (country: string) => (
-                        <Space size={6} align="center">
-                            <span>{getCountryFlag(country)}</span>
-                            <span>{country || "Unknown"}</span>
-                        </Space>
-                    ),
+                    render: (country: string) => {
+                        const flagUrl = getCountryFlag(country);
+                        return (
+                            <Space size={6} align="center">
+                                {flagUrl && <img src={flagUrl} alt={`${country} flag`} style={{width: 20, height: 15}} />}
+                                <span>{country || "Unknown"}</span>
+                            </Space>
+                        );
+                    },
                 },
                 {
                     title: "Tournament",
@@ -525,7 +512,7 @@ const RecordsIndex: React.FC = () => {
                 time: formatTime(record.time),
                 athlete: athleteName,
                 country: record.country || "Unknown",
-                flag: getCountryFlag(record.country),
+                flag: "", // No longer used - flag is rendered from country name
                 date: formatDate(recordDate),
                 ageGroup: recordAgeGroup,
                 age: record.age || null,
