@@ -150,9 +150,6 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 | **Icons** | [Arco Design Icons](https://arco.design/react/components/icon) | Icon library |
 | **Notifications** | Arco Message & Notification | Toast notifications |
 
-<!-- Add tech stack visualization here -->
-![Tech Stack Diagram](link-to-your-image)
-
 ---
 
 ## 📦 Available Scripts
