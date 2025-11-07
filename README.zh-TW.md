@@ -150,9 +150,6 @@
 | **圖示** | [Arco Design Icons](https://arco.design/react/components/icon) | 圖示庫 |
 | **通知** | Arco Message & Notification | 通知訊息 |
 
-<!-- 在此添加技術棧視覺化圖表 -->
-![技術棧圖表](link-to-your-image)
-
 ---
 
 ## 📦 可用指令
@@ -239,9 +236,6 @@
     cd ..
     yarn dev
     ```
-
-<!-- 在此添加安裝指南截圖 -->
-![安裝指南](link-to-your-image)
 
 ---
 
@@ -348,40 +342,6 @@
 └── tsconfig.json               # TypeScript 配置
 ```
 
-<!-- 在此添加專案結構圖表 -->
-![專案結構](link-to-your-image)
-
----
-
-## 🗃️ 混合式使用者歷史快取
-
-### 概述
-
-本應用程式實現了一個高效的運動員賽事歷史快取系統，以優化效能並減少資料庫查詢。
-
-<!-- 在此添加快取架構圖 -->
-![快取架構](link-to-your-image)
-
-### 運作方式
-
-- **快取歷史文件**: 雲端函數在 `user_tournament_history/{globalId}` 為每位運動員維護快取歷史文件，透過聚合賽事記錄寫入。
-
-- **自動同步**: 觸發器 `syncUserTournamentHistory` 監聽 `tournaments/{id}/events/**/records` 下的更新，並為每位受影響的參賽者、領隊和團隊成員重建快取。
-
-- **客戶端存取**: 從客戶端使用 `src/services/firebase/userHistoryService.ts` 中的 `fetchUserTournamentHistory` 或 `subscribeUserTournamentHistory` 來消費快取，避免每次載入頁面時掃描賽事子集合。
-
-- **模式驗證**: 快取資料透過 `UserTournamentHistorySchema` 驗證，確保雲端函數和客戶端消費者之間的一致性。
-
-### 優勢
-
-✅ **效能**: 快速減少頁面載入時間，避免深層子集合查詢
-
-✅ **可擴展性**: 有效處理大型賽事資料集
-
-✅ **一致性**: 自動同步確保資料始終保持最新
-
-✅ **成本效益**: 大幅減少 Firestore 讀取操作
-
 ---
 
 ## 🎨 關鍵功能實作
@@ -396,22 +356,6 @@
   - **進階級** (`advance`): 頂尖表現者
   - **中級** (`intermediate`): 中級競爭者
   - **初級** (`beginner`): 入門級決賽
-
-### 顏色編碼
-
-**介面顯示**:
-- 🟢 綠色 (#52c41a) = 進階級
-- 🔵 藍色 (#1890ff) = 中級
-- 🟠 橘色 (#fa8c16) = 初級
-
-**PDF 匯出**:
-- 🟡 黃色 = 進階級
-- 🟢 淺綠色 = 中級
-- 🔵 淺藍色 = 初級
-- 🟠 橘粉色 = 未晉級
-
-<!-- 在此添加分級系統截圖 -->
-![分級系統](link-to-your-image)
 
 ---
 
@@ -465,7 +409,5 @@
 
 **為競技疊杯社群用心打造 ❤️**
 
-<!-- 在此添加頁尾標誌或圖片 -->
-![頁尾](link-to-your-image)
 
 </div>

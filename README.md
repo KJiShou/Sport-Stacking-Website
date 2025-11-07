@@ -240,9 +240,6 @@ A comprehensive web application for managing sport stacking tournaments, athlete
     yarn dev
     ```
 
-<!-- Add installation guide screenshot here -->
-![Installation Guide](link-to-your-image)
-
 ---
 
 ## 📂 Project Structure
@@ -348,40 +345,6 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 └── tsconfig.json               # TypeScript configuration
 ```
 
-<!-- Add project structure diagram here -->
-![Project Structure](link-to-your-image)
-
----
-
-## 🗃️ Hybrid User History Cache
-
-### Overview
-
-The application implements an efficient caching system for athlete tournament history to optimize performance and reduce database queries.
-
-<!-- Add cache architecture diagram here -->
-![Cache Architecture](link-to-your-image)
-
-### How It Works
-
-- **Cached History Documents**: Cloud Functions maintain a cached history document for each athlete at `user_tournament_history/{globalId}` by aggregating tournament record writes.
-
-- **Automatic Sync**: The trigger `syncUserTournamentHistory` listens to updates under `tournaments/{id}/events/**/records` and rebuilds the cache for every affected participant, leader, and team member.
-
-- **Client Access**: Consume the cache from the client with `fetchUserTournamentHistory` or `subscribeUserTournamentHistory` in `src/services/firebase/userHistoryService.ts` to avoid scanning tournament subcollections on every page load.
-
-- **Schema Validation**: The cached payload is validated through `UserTournamentHistorySchema`, ensuring a consistent shape across both Cloud Functions and client consumers.
-
-### Benefits
-
-✅ **Performance**: Dramatically reduces page load times by avoiding deep subcollection queries
-
-✅ **Scalability**: Handles large tournament datasets efficiently
-
-✅ **Consistency**: Automatic synchronization ensures data is always up-to-date
-
-✅ **Cost Efficiency**: Reduces Firestore read operations significantly
-
 ---
 
 ## 🎨 Key Features Implementation
@@ -396,22 +359,6 @@ The tournament system supports a sophisticated classification mechanism:
   - **Advanced** (`advance`): Top performers
   - **Intermediate** (`intermediate`): Mid-level competitors
   - **Beginner** (`beginner`): Entry-level finals
-
-### Color Coding
-
-**UI Display**:
-- 🟢 Green (#52c41a) = Advanced
-- 🔵 Blue (#1890ff) = Intermediate
-- 🟠 Orange (#fa8c16) = Beginner
-
-**PDF Export**:
-- 🟡 Yellow = Advanced
-- 🟢 Light Green = Intermediate
-- 🔵 Light Blue = Beginner
-- 🟠 Peach = Did not qualify
-
-<!-- Add classification system screenshot here -->
-![Classification System](link-to-your-image)
 
 ---
 
@@ -464,8 +411,5 @@ For questions or support, please open an issue on GitHub.
 <div align="center">
 
 **Made with ❤️ for the Sport Stacking Community**
-
-<!-- Add footer logo or image here -->
-![Footer](link-to-your-image)
 
 </div>
