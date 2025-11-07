@@ -510,7 +510,7 @@ export async function fetchTeamsLookingForMembers(tournamentId: string, eventFil
     });
 }
 
-export async function addMemberToTeam(tournamentId: string, teamId: string, memberId: string): Promise<void> {
+export async function addMemberToTeam(tournamentId: string, teamId: string, memberId: string, verified = false): Promise<void> {
     try {
         const teamRef = doc(db, "teams", teamId);
         const teamDoc = await getDoc(teamRef);
@@ -531,10 +531,10 @@ export async function addMemberToTeam(tournamentId: string, teamId: string, memb
             throw new Error("Member is already in this team");
         }
 
-        // Add new member
+        // Add new member with verified status
         const newMember = {
             global_id: memberId,
-            verified: false, // Will need verification
+            verified, // Use the verified parameter
         };
 
         const updatedMembers = [...members, newMember];

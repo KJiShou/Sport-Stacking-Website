@@ -464,10 +464,20 @@ export default function FinalScoringPage() {
             }
 
             if (missing.length === 0) {
-                // Update participant rankings and results before navigating
+                // Update participant rankings and results for all final classifications before navigating
                 try {
-                    await updateParticipantRankingsAndResults(tournamentId, "final");
-                    Message.success("Participant rankings updated! Redirecting to results…");
+                    const finalClassifications: Array<"advance" | "intermediate" | "beginner"> = [
+                        "advance",
+                        "intermediate",
+                        "beginner",
+                    ];
+                    // Update rankings for each classification
+                    await Promise.all(
+                        finalClassifications.map((classification) =>
+                            updateParticipantRankingsAndResults(tournamentId, classification),
+                        ),
+                    );
+                    Message.success("Participant rankings updated for all classifications! Redirecting to results…");
                 } catch (updateError) {
                     console.error("Error updating rankings:", updateError);
                     Message.warning("Records complete but failed to update some rankings.");
@@ -751,72 +761,77 @@ export default function FinalScoringPage() {
                                                 activeTab={currentClassificationTab}
                                                 onChange={(key) => setCurrentClassificationTab(key)}
                                             >
-                                                {br.final_criteria?.map((fc) => (
-                                                    <TabPane key={fc.classification} title={`${fc.classification}`}>
-                                                        {isTeamEvent ? (
-                                                            <Table
-                                                                style={{width: "100%"}}
-                                                                columns={getTeamExpandableColumns(
-                                                                    evt.codes,
-                                                                    eventIdForModal,
-                                                                    eventTypeKey,
-                                                                )}
-                                                                data={filterTeams(
-                                                                    teams.filter(
-                                                                        (t) =>
+                                                {br.final_criteria?.map((fc) => {
+                                                    // Filter finalists for this specific bracket and classification
+                                                    const relevantFinalists = finalist.filter(
+                                                        (f) =>
+                                                            ((f.event_id && f.event_id === evt.id) ||
+                                                                (f.event_type && f.event_type === evt.type)) &&
+                                                            f.bracket_name === br.name &&
+                                                            f.classification === fc.classification,
+                                                    );
+
+                                                    // Extract all participant IDs for this classification
+                                                    const participantIdsInClassification = new Set(
+                                                        relevantFinalists.flatMap((f) => f.participant_ids ?? []),
+                                                    );
+
+                                                    return (
+                                                        <TabPane key={fc.classification} title={`${fc.classification}`}>
+                                                            {isTeamEvent ? (
+                                                                <Table
+                                                                    style={{width: "100%"}}
+                                                                    columns={getTeamExpandableColumns(
+                                                                        evt.codes,
+                                                                        eventIdForModal,
+                                                                        eventTypeKey,
+                                                                    )}
+                                                                    data={filterTeams(
+                                                                        teams.filter((t) => {
                                                                             // Team must belong to current event and be within bracket
-                                                                            t.event_id === evt.id &&
-                                                                            t.team_age >= br.min_age &&
-                                                                            t.team_age <= br.max_age &&
-                                                                            // And must be in the finalist list for this event
-                                                                            finalist.some(
-                                                                                (f) =>
-                                                                                    f.participant_type === "Team" &&
-                                                                                    ((f.event_id && f.event_id === evt.id) ||
-                                                                                        (f.event_type &&
-                                                                                            f.event_type === evt.type)) &&
-                                                                                    Array.isArray(f.participant_ids) &&
-                                                                                    f.participant_ids.includes(t.id),
-                                                                            ),
-                                                                    ),
-                                                                )}
-                                                                pagination={false}
-                                                                loading={loading}
-                                                                rowKey="id"
-                                                            />
-                                                        ) : (
-                                                            <Table
-                                                                style={{width: "100%"}}
-                                                                columns={getExpandableColumns(
-                                                                    evt.codes,
-                                                                    eventIdForModal,
-                                                                    eventTypeKey,
-                                                                )}
-                                                                data={filterParticipants(
-                                                                    registrations.filter(
-                                                                        (r) =>
+                                                                            const matchesEvent = t.event_id === evt.id;
+                                                                            const matchesAge =
+                                                                                t.team_age >= br.min_age &&
+                                                                                t.team_age <= br.max_age;
+                                                                            const isInClassification =
+                                                                                participantIdsInClassification.has(t.id);
+
+                                                                            return (
+                                                                                matchesEvent && matchesAge && isInClassification
+                                                                            );
+                                                                        }),
+                                                                    )}
+                                                                    pagination={false}
+                                                                    loading={loading}
+                                                                    rowKey="id"
+                                                                />
+                                                            ) : (
+                                                                <Table
+                                                                    style={{width: "100%"}}
+                                                                    columns={getExpandableColumns(
+                                                                        evt.codes,
+                                                                        eventIdForModal,
+                                                                        eventTypeKey,
+                                                                    )}
+                                                                    data={filterParticipants(
+                                                                        registrations.filter((r) => {
                                                                             // Participant within age bracket
-                                                                            r.age >= br.min_age &&
-                                                                            r.age <= br.max_age &&
-                                                                            // Must be in finalists for this event
-                                                                            finalist.some(
-                                                                                (f) =>
-                                                                                    f.participant_type === "Individual" &&
-                                                                                    ((f.event_id && f.event_id === evt.id) ||
-                                                                                        (f.event_type &&
-                                                                                            f.event_type === evt.type)) &&
-                                                                                    Array.isArray(f.participant_ids) &&
-                                                                                    f.participant_ids.includes(r.user_id),
-                                                                            ),
-                                                                    ),
-                                                                )}
-                                                                pagination={false}
-                                                                loading={loading}
-                                                                rowKey="user_id"
-                                                            />
-                                                        )}
-                                                    </TabPane>
-                                                ))}
+                                                                            const matchesAge =
+                                                                                r.age >= br.min_age && r.age <= br.max_age;
+                                                                            const isInClassification =
+                                                                                participantIdsInClassification.has(r.user_id);
+
+                                                                            return matchesAge && isInClassification;
+                                                                        }),
+                                                                    )}
+                                                                    pagination={false}
+                                                                    loading={loading}
+                                                                    rowKey="user_id"
+                                                                />
+                                                            )}
+                                                        </TabPane>
+                                                    );
+                                                })}
                                             </Tabs>
                                             <div className="flex justify-end mt-4">
                                                 <Button

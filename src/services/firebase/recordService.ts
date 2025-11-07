@@ -72,15 +72,27 @@ const buildEventKeyForCategory = (eventType: RecordEventType, category: Category
 const isTeamTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentTeamRecord =>
     "team_id" in record && typeof record.team_id === "string";
 
-const determineRecordRound = (record: TournamentRecord | TournamentTeamRecord): "prelim" | "final" => {
+const determineRecordRound = (
+    record: TournamentRecord | TournamentTeamRecord,
+): "prelim" | "advance" | "intermediate" | "beginner" => {
     if (record.classification === "prelim") {
         return "prelim";
     }
-    return "final";
+    if (record.classification === "advance") {
+        return "advance";
+    }
+    if (record.classification === "intermediate") {
+        return "intermediate";
+    }
+    if (record.classification === "beginner") {
+        return "beginner";
+    }
+    // Default to intermediate if classification is undefined
+    return "intermediate";
 };
 
 interface FetchRecordsOptions {
-    round?: "prelim" | "final";
+    round?: "prelim" | "advance" | "intermediate" | "beginner";
     classification?: string;
 }
 
@@ -113,16 +125,15 @@ export const saveRecord = async (data: TournamentRecord): Promise<string> => {
     }
 
     // Update user's best time after saving the record
-    if (data.participant_global_id && data.best_time > 0) {
-        // Map event name to event type for best times tracking
-        const eventNameLower = data.event.toLowerCase();
+    if (data.participant_global_id && data.best_time > 0 && data.code) {
+        // Use the code field directly for best times tracking
         let eventType: "3-3-3" | "3-6-3" | "Cycle" | null = null;
 
-        if (eventNameLower.includes("3-3-3")) {
+        if (data.code === "3-3-3") {
             eventType = "3-3-3";
-        } else if (eventNameLower.includes("3-6-3")) {
+        } else if (data.code === "3-6-3") {
             eventType = "3-6-3";
-        } else if (eventNameLower.includes("cycle")) {
+        } else if (data.code === "Cycle") {
             eventType = "Cycle";
         }
 
@@ -288,14 +299,15 @@ export const getTournamentFinalRecords = async (tournamentId: string): Promise<(
         return records;
     }
 
-    const prelimRecordsQuery = query(
+    // Get records for all non-prelim classifications (advance, intermediate, beginner)
+    const nonPrelimRecordsQuery = query(
         collection(firestore, `records`),
         where("tournament_id", "==", tournamentId),
         where("classification", "!=", "prelim"),
     );
 
-    const prelimRecordsSnapshot = await getDocs(prelimRecordsQuery);
-    for (const recordDoc of prelimRecordsSnapshot.docs) {
+    const nonPrelimRecordsSnapshot = await getDocs(nonPrelimRecordsQuery);
+    for (const recordDoc of nonPrelimRecordsSnapshot.docs) {
         const data = {...recordDoc.data(), id: recordDoc.id};
         records.push(data as TournamentRecord | TournamentTeamRecord);
     }
@@ -326,7 +338,7 @@ export const getTournamentPrelimOverallRecords = async (tournamentId: string): P
     return records;
 };
 
-// Fetch overall records for a tournament (final)
+// Fetch overall records for a tournament (non-prelim: advance, intermediate, beginner)
 export const getTournamentFinalOverallRecords = async (tournamentId: string): Promise<TournamentOverallRecord[]> => {
     const records: TournamentOverallRecord[] = [];
     const tournamentRef = doc(firestore, "tournaments", tournamentId);
@@ -336,6 +348,7 @@ export const getTournamentFinalOverallRecords = async (tournamentId: string): Pr
         return records;
     }
 
+    // Get records for all non-prelim classifications (advance, intermediate, beginner)
     const overallRecordsQuery = query(
         collection(firestore, "overall_records"),
         where("tournament_id", "==", tournamentId),
@@ -772,7 +785,7 @@ const toGlobalFromIndividual = (r: TournamentRecord & {id: string}): (GlobalResu
         created_at: r.created_at ?? new Date().toISOString(),
         updated_at: r.updated_at ?? r.created_at ?? new Date().toISOString(),
         age: (typeof r.age === "number" ? r.age : Number.NaN) as number,
-        round: r.classification === "prelim" ? "prelim" : "final",
+        round: r.classification ?? "intermediate",
         classification: r.classification ?? undefined,
         bestTime: time,
         try1: r.try1,
@@ -801,7 +814,7 @@ const toGlobalFromTeam = (r: TournamentTeamRecord & {id: string}): (GlobalTeamRe
         created_at: r.created_at ?? new Date().toISOString(),
         updated_at: r.updated_at ?? r.created_at ?? new Date().toISOString(),
         age: (typeof r.age === "number" ? r.age : Number.NaN) as number,
-        round: r.classification === "prelim" ? "prelim" : "final",
+        round: r.classification ?? "intermediate",
         classification: r.classification ?? undefined,
         bestTime: time,
         try1: r.try1,
@@ -923,11 +936,11 @@ export const getBestRecordsByAgeGroup = async (): Promise<BestRecordsShape> => {
 /**
  * Update participant registration records with rankings and overall results
  * @param tournamentId - The tournament ID
- * @param classification - The classification type ('prelim' or 'final')
+ * @param classification - The classification type ('prelim', 'advance', 'intermediate', or 'beginner')
  */
 export const updateParticipantRankingsAndResults = async (
     tournamentId: string,
-    classification: "prelim" | "final",
+    classification: "prelim" | "advance" | "intermediate" | "beginner",
 ): Promise<void> => {
     try {
         // Get all individual records for this tournament and classification

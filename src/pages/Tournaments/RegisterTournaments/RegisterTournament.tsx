@@ -631,7 +631,7 @@ export default function RegisterTournamentPage() {
                                 return (
                                     <div className="mb-6 p-4 border border-dashed border-blue-300 rounded-lg bg-blue-50">
                                         <Title heading={6} className="mb-3">
-                                            🔍 Looking for Teammates?
+                                            🔍 Looking for Team?
                                         </Title>
                                         <Paragraph type="secondary" className="mb-3 text-sm">
                                             If you need help finding teammates for team events, check the events below. Tournament
@@ -919,10 +919,10 @@ export default function RegisterTournamentPage() {
                         {/* Payment Methods Section */}
                         {tournament?.payment_methods && tournament.payment_methods.length > 0 && (
                             <div className="mb-6 p-4 border border-solid border-gray-300 rounded-lg bg-gray-50">
-                                <Title heading={6} className="mb-3">
+                                <Title heading={5} className="mb-3">
                                     💳 Payment Methods
                                 </Title>
-                                <Paragraph type="secondary" className="mb-4 text-sm">
+                                <Paragraph type="secondary" className="mb-4 text-base">
                                     Please use one of the following payment methods to complete your registration fee of{" "}
                                     <strong>RM{price}</strong>
                                 </Paragraph>
@@ -947,17 +947,17 @@ export default function RegisterTournamentPage() {
                                                     </div>
                                                 )}
                                                 <div>
-                                                    <div className="text-sm text-gray-500 mb-1">Account Name</div>
-                                                    <div className="font-medium text-base">{method.account_name}</div>
+                                                    <div className="text-base text-gray-600 mb-1 font-medium">Account Name</div>
+                                                    <div className="font-semibold text-lg">{method.account_name}</div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-sm text-gray-500 mb-1">Account Number</div>
-                                                    <div className="font-medium text-base font-mono">{method.account_number}</div>
+                                                    <div className="text-base text-gray-600 mb-1 font-medium">Account Number</div>
+                                                    <div className="font-semibold text-lg font-mono">{method.account_number}</div>
                                                 </div>
                                                 {method.description && (
                                                     <div>
-                                                        <div className="text-sm text-gray-500 mb-1">Details</div>
-                                                        <div className="text-sm">{method.description}</div>
+                                                        <div className="text-base text-gray-600 mb-1 font-medium">Details</div>
+                                                        <div className="text-base">{method.description}</div>
                                                     </div>
                                                 )}
                                             </div>
@@ -965,7 +965,7 @@ export default function RegisterTournamentPage() {
                                     ))}
                                 </div>
 
-                                <div className="mt-4 p-3 bg-yellow-50 rounded text-sm text-yellow-800">
+                                <div className="mt-4 p-3 bg-yellow-50 rounded text-base text-yellow-800">
                                     ⚠️ <strong>Important:</strong> After making the payment, please upload your payment proof
                                     below.
                                 </div>

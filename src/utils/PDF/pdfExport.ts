@@ -708,6 +708,62 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                     });
 
                     currentY = (doc as jsPDF & {lastAutoTable?: {finalY: number}}).lastAutoTable?.finalY + 10 || currentY + 20;
+
+                    // Add classification legend if we're showing prelim results with highlights
+                    if (shouldHighlightRows && rankGroups.length > 0) {
+                        // Add some spacing before the legend
+                        currentY += 5;
+
+                        // Check if we need a new page
+                        if (currentY > doc.internal.pageSize.height - 60) {
+                            doc.addPage();
+                            currentY = await addHeader(doc);
+                        }
+
+                        // Add legend title
+                        doc.setFontSize(10);
+                        doc.setFont(undefined, "bold");
+                        doc.text("Classification Legend:", 20, currentY);
+                        currentY += 6;
+
+                        // Draw legend items
+                        doc.setFont(undefined, "normal");
+                        doc.setFontSize(9);
+
+                        const classificationLabels: {[key: string]: string} = {
+                            advance: "Advance - Top performers (Yellow)",
+                            intermediate: "Intermediate - Mid-level performers (Light Green)",
+                            beginner: "Beginner - Entry-level performers (Light Blue)",
+                        };
+
+                        const classificationColors: {[key: string]: [number, number, number]} = {
+                            advance: [255, 255, 0],
+                            intermediate: [144, 238, 144],
+                            beginner: [173, 216, 230],
+                        };
+
+                        const legendStartX = 25;
+                        const boxSize = 4;
+                        const boxSpacing = 2;
+
+                        for (const group of rankGroups) {
+                            const label = classificationLabels[group.classification];
+                            const color = classificationColors[group.classification];
+
+                            if (label && color) {
+                                // Draw colored box
+                                doc.setFillColor(color[0], color[1], color[2]);
+                                doc.rect(legendStartX, currentY - 3, boxSize, boxSize, "F");
+
+                                // Draw text
+                                doc.setTextColor(0, 0, 0);
+                                doc.text(label, legendStartX + boxSize + boxSpacing, currentY);
+                                currentY += 5;
+                            }
+                        }
+
+                        currentY += 5; // Extra spacing after legend
+                    }
                 } else {
                     doc.setFontSize(10);
                     doc.text("No results for this bracket.", 25, currentY);

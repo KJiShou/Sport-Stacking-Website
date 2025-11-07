@@ -10,7 +10,7 @@ import {fetchUserTournamentHistory} from "./userHistoryService";
 type IndividualEvent = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
 const INDIVIDUAL_EVENTS: IndividualEvent[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
-const ROUND_OPTIONS = new Set(["final", "prelim"]);
+const ROUND_OPTIONS = new Set(["advance", "intermediate", "beginner", "prelim"]);
 
 function normalizeIndividualEventLabel(event?: string | null): IndividualEvent | null {
     if (!event) {
@@ -56,7 +56,7 @@ export interface AthleteEventSummary {
     fasterCount: number | null;
     bestRecord: AthleteRecordSummary;
     lastUpdated: Date | null;
-    round: "final" | "prelim" | null;
+    round: "advance" | "intermediate" | "beginner" | "prelim" | null;
 }
 
 export interface AthleteTournamentParticipation {
@@ -94,12 +94,13 @@ interface EventRecordsResult {
     fasterCount: number | null;
 }
 
-function normalizeRound(round?: string | null): "final" | "prelim" | null {
+function normalizeRound(round?: string | null): "advance" | "intermediate" | "beginner" | "prelim" | null {
     if (!round) {
         return null;
     }
     const lowered = round.toLowerCase();
-    return ROUND_OPTIONS.has(lowered) ? (lowered as "final" | "prelim") : null;
+    const validRounds = new Set(["advance", "intermediate", "beginner", "prelim"]);
+    return validRounds.has(lowered) ? (lowered as "advance" | "intermediate" | "beginner" | "prelim") : null;
 }
 
 function isOverallEventLabel(event?: string | null): boolean {

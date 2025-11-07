@@ -15,7 +15,7 @@ export interface PrelimResultData extends Omit<TournamentRecord, "try1" | "try2"
     try3?: number;
     bestTime?: number;
     classification?: "beginner" | "intermediate" | "advance" | "prelim";
-    round?: "prelim" | "final";
+    round?: "prelim" | "advance" | "intermediate" | "beginner";
 }
 
 export interface BracketResults {
