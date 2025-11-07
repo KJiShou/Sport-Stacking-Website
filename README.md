@@ -5,7 +5,7 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 **[中文版 README](README.zh-TW.md)** | **[English Version](README.md)**
 
 <!-- Add main website screenshot here -->
-![Website Preview](link-to-your-image)
+![Website Preview](image.png)
 
 ---
 
@@ -17,7 +17,7 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 *   **Classification System**: Organize finals into Advanced, Intermediate, and Beginner levels
 
 <!-- Add tournament management screenshot here -->
-![Tournament Management](link-to-your-image)
+![Tournament Management](image-1.png)
 
 ### 📊 Scoring System
 *   **Preliminary Scoring**: Record preliminary round times with automatic qualification
@@ -26,7 +26,7 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 *   **Color-Coded Classifications**: Visual indicators for different qualification levels
 
 <!-- Add scoring interface screenshot here -->
-![Scoring Interface](link-to-your-image)
+![Scoring Interface](image-2.png)
 
 ### 👤 Athlete Management
 *   **Athlete Profiles**: Comprehensive profiles with personal bests and competition history
@@ -35,7 +35,7 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 *   **Avatar Upload**: Personalized profile pictures
 
 <!-- Add athlete profile screenshot here -->
-![Athlete Profile](link-to-your-image)
+![Athlete Profile](image-3.png)
 
 ### 📈 Records & Rankings
 *   **Event Records**: Track records for all sport stacking disciplines
@@ -44,7 +44,7 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 *   **Best Times**: Automatic tracking of personal and tournament bests
 
 <!-- Add records page screenshot here -->
-![Records & Rankings](link-to-your-image)
+![Records & Rankings](image-4.png)
 
 ### 📝 Registration System
 *   **Online Registration**: Easy participant registration for tournaments
@@ -53,7 +53,7 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 *   **Registration Validation**: Automatic validation of participant information
 
 <!-- Add registration form screenshot here -->
-![Registration System](link-to-your-image)
+![Registration System](image-5.png)
 
 ### 📄 PDF Export
 *   **Results Export**: Generate professional PDF reports of tournament results
@@ -61,7 +61,7 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 *   **Complete Brackets**: Export all brackets and classifications
 
 <!-- Add PDF export sample here -->
-![PDF Export Sample](link-to-your-image)
+![PDF Export Sample](image-6.png)
 
 ### 🔐 User Authentication
 *   **Secure Login**: Firebase Authentication for secure access
@@ -75,7 +75,7 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 *   **Site Settings**: Configure global application settings
 
 <!-- Add admin dashboard screenshot here -->
-![Admin Dashboard](link-to-your-image)
+![Admin Dashboard](image-7.png)
 
 ### 📱 Responsive Design
 *   **Mobile Optimized**: Fully responsive layout for all devices
@@ -83,7 +83,7 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 *   **Cross-browser**: Compatible with all modern browsers
 
 <!-- Add responsive design showcase here -->
-![Responsive Design](link-to-your-image)
+![Responsive Design](image-8.png)
 
 ---
 

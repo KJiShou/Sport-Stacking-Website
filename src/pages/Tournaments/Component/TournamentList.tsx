@@ -942,7 +942,7 @@ export default function TournamentList() {
 
     return (
         <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
-            <div className="relative w-full flex items-center">
+            <div className="relative w-full flex items-center mb-6">
                 <h1 className="absolute left-1/2 transform -translate-x-1/2 text-4xl font-semibold">Tournament Management</h1>
                 <div className="ml-auto">
                     {user?.roles?.edit_tournament && (
