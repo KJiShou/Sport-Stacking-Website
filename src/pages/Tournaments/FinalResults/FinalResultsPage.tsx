@@ -37,6 +37,7 @@ const computeTeamMultiCodeResults = (
     bracket: AgeBracket,
     codes: string[],
     context: AggregationContext,
+    classification?: string,
 ): AggregatedFinalResult[] => {
     const aggregates = new Map<string, AggregatedFinalResult>();
 
@@ -48,6 +49,9 @@ const computeTeamMultiCodeResults = (
 
         // Check event_id to distinguish between events with same type
         if (event.id && record.event_id !== event.id) continue;
+
+        // Filter by classification
+        if (classification && record.classification !== classification) continue;
 
         const teamId =
             record.team_id ??
@@ -124,6 +128,7 @@ const computeTeamSingleCodeResults = (
     bracket: AgeBracket,
     code: string,
     context: AggregationContext,
+    classification?: string,
 ): AggregatedFinalResult[] => {
     return context.allRecords
         .map((rawRecord) => rawRecord as TournamentTeamRecord)
@@ -132,6 +137,8 @@ const computeTeamSingleCodeResults = (
             if (record.event !== event.type) return false;
             // Check event_id to distinguish between events with same type
             if (event.id && record.event_id !== event.id) return false;
+            // Filter by classification
+            if (classification && record.classification !== classification) return false;
             return true;
         })
         .filter((record) => {
@@ -184,6 +191,7 @@ const computeIndividualMultiCodeResults = (
     bracket: AgeBracket,
     codes: string[],
     context: AggregationContext,
+    classification?: string,
 ): AggregatedFinalResult[] => {
     const aggregates = new Map<string, AggregatedFinalResult>();
     for (const code of codes) {
@@ -192,6 +200,9 @@ const computeIndividualMultiCodeResults = (
 
             // Check event_id to distinguish between events with same type
             if (event.id && record.event_id !== event.id) continue;
+
+            // Filter by classification
+            if (classification && record.classification !== classification) continue;
 
             const participantId = record.participant_id as string | undefined;
             if (!participantId) continue;
@@ -249,6 +260,7 @@ const computeIndividualSingleCodeResults = (
     bracket: AgeBracket,
     code: string,
     context: AggregationContext,
+    classification?: string,
 ): AggregatedFinalResult[] => {
     return context.allRecords
         .filter((record) => {
@@ -256,6 +268,8 @@ const computeIndividualSingleCodeResults = (
             if (record.event !== event.type) return false;
             // Check event_id to distinguish between events with same type
             if (event.id && record.event_id !== event.id) return false;
+            // Filter by classification
+            if (classification && record.classification !== classification) return false;
             return true;
         })
         .filter((record) => {
@@ -284,23 +298,24 @@ const computeEventBracketResults = (
     event: TournamentEvent,
     bracket: AgeBracket,
     context: AggregationContext,
+    classification?: string,
 ): AggregatedFinalResult[] => {
     const codes = event.codes;
     const isTeam = isTournamentTeamEvent(event);
 
     if (isTeam) {
         if (codes.length > 1) {
-            return computeTeamMultiCodeResults(event, bracket, codes, context);
+            return computeTeamMultiCodeResults(event, bracket, codes, context, classification);
         }
         const primary = codes[0];
-        return computeTeamSingleCodeResults(event, bracket, primary, context);
+        return computeTeamSingleCodeResults(event, bracket, primary, context, classification);
     }
 
     if (codes.length > 1) {
-        return computeIndividualMultiCodeResults(event, bracket, codes, context);
+        return computeIndividualMultiCodeResults(event, bracket, codes, context, classification);
     }
     const primary = codes[0];
-    return computeIndividualSingleCodeResults(event, bracket, primary, context);
+    return computeIndividualSingleCodeResults(event, bracket, primary, context, classification);
 };
 
 const buildTeamColumns = (event: TournamentEvent): TableColumnProps<AggregatedFinalResult>[] => {
@@ -450,6 +465,7 @@ export default function FinalResultsPage() {
     const [teams, setTeams] = useState<Team[]>([]);
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
+    const [currentClassificationTab, setCurrentClassificationTab] = useState<string>("");
 
     useEffect(() => {
         if (!tournamentId) return;
@@ -468,6 +484,10 @@ export default function FinalResultsPage() {
                         const firstBracket = firstEvent.age_brackets?.[0];
                         if (firstBracket) {
                             setCurrentBracketTab(firstBracket.name);
+                            const firstClassification = firstBracket.final_criteria?.[0];
+                            if (firstClassification) {
+                                setCurrentClassificationTab(firstClassification.classification);
+                            }
                         }
                     }
                 } else {
@@ -591,9 +611,19 @@ export default function FinalResultsPage() {
             const resultsData: EventResults[] = (events ?? [])
                 .map((event) => {
                     const brackets = (event.age_brackets ?? [])
-                        .map((bracket) => {
-                            const records = computeEventBracketResults(event, bracket, aggregationContext);
-                            return {bracket, records};
+                        .flatMap((bracket) => {
+                            // For each bracket, create separate entries for each classification
+                            return (bracket.final_criteria ?? []).map((fc) => {
+                                const records = computeEventBracketResults(event, bracket, aggregationContext, fc.classification);
+                                return {
+                                    bracket: {
+                                        ...bracket,
+                                        name: `${bracket.name} - ${fc.classification.charAt(0).toUpperCase() + fc.classification.slice(1)}`,
+                                    },
+                                    records,
+                                    classification: fc.classification,
+                                };
+                            });
                         })
                         .filter((entry) => entry.records.length > 0);
                     return {event, brackets};
@@ -682,6 +712,10 @@ export default function FinalResultsPage() {
                         const firstBracket = event?.age_brackets?.[0];
                         if (firstBracket) {
                             setCurrentBracketTab(firstBracket.name);
+                            const firstClassification = firstBracket.final_criteria?.[0];
+                            if (firstClassification) {
+                                setCurrentClassificationTab(firstClassification.classification);
+                            }
                         }
                     }}
                 >
@@ -699,26 +733,75 @@ export default function FinalResultsPage() {
                                         type="capsule"
                                         className="w-full"
                                         activeTab={currentBracketTab}
-                                        onChange={setCurrentBracketTab}
+                                        onChange={(key) => {
+                                            setCurrentBracketTab(key);
+                                            const bracket = event.age_brackets?.find((b) => b.name === key);
+                                            const firstClassification = bracket?.final_criteria?.[0];
+                                            if (firstClassification) {
+                                                setCurrentClassificationTab(firstClassification.classification);
+                                            }
+                                        }}
                                     >
                                         {event.age_brackets.map((bracket) => {
-                                            const bracketResults = computeEventBracketResults(event, bracket, aggregationContext);
-                                            const expandedRowRender =
-                                                eventCodes.length > 1
-                                                    ? (record: TournamentRecord) =>
-                                                          buildExpandedRows(record, event, eventCodes, isTeamEvent, allRecords)
-                                                    : undefined;
                                             return (
                                                 <TabPane key={bracket.name} title={bracket.name}>
-                                                    <Table
-                                                        style={{width: "100%"}}
-                                                        rowKey={(record) => record.id}
-                                                        columns={columns}
-                                                        data={bracketResults}
-                                                        pagination={false}
-                                                        loading={loading}
-                                                        expandedRowRender={expandedRowRender}
-                                                    />
+                                                    {/* Classification tabs */}
+                                                    {bracket.final_criteria && bracket.final_criteria.length > 0 ? (
+                                                        <Tabs
+                                                            type="rounded"
+                                                            className="w-full"
+                                                            activeTab={currentClassificationTab}
+                                                            onChange={setCurrentClassificationTab}
+                                                        >
+                                                            {bracket.final_criteria.map((fc) => {
+                                                                const bracketResults = computeEventBracketResults(
+                                                                    event,
+                                                                    bracket,
+                                                                    aggregationContext,
+                                                                    fc.classification,
+                                                                );
+                                                                const expandedRowRender =
+                                                                    eventCodes.length > 1
+                                                                        ? (record: TournamentRecord) =>
+                                                                              buildExpandedRows(
+                                                                                  record,
+                                                                                  event,
+                                                                                  eventCodes,
+                                                                                  isTeamEvent,
+                                                                                  allRecords,
+                                                                              )
+                                                                        : undefined;
+                                                                return (
+                                                                    <TabPane
+                                                                        key={fc.classification}
+                                                                        title={
+                                                                            fc.classification.charAt(0).toUpperCase() +
+                                                                            fc.classification.slice(1)
+                                                                        }
+                                                                    >
+                                                                        <Table
+                                                                            style={{width: "100%"}}
+                                                                            rowKey={(record) => record.id}
+                                                                            columns={columns}
+                                                                            data={bracketResults}
+                                                                            pagination={false}
+                                                                            loading={loading}
+                                                                            expandedRowRender={expandedRowRender}
+                                                                        />
+                                                                    </TabPane>
+                                                                );
+                                                            })}
+                                                        </Tabs>
+                                                    ) : (
+                                                        <Table
+                                                            style={{width: "100%"}}
+                                                            rowKey={(record) => record.id}
+                                                            columns={columns}
+                                                            data={[]}
+                                                            pagination={false}
+                                                            loading={loading}
+                                                        />
+                                                    )}
                                                 </TabPane>
                                             );
                                         })}

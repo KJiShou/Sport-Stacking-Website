@@ -18,9 +18,14 @@ export function useAgeBracketEditor(form: FormInstance, onBracketsSaved?: (brack
         const brackets = currentEvents[index]?.age_brackets ?? [];
 
         // Ensure each bracket has a unique ID for React keys
+        // AND ensure each final_criteria has a unique _tempId
         const bracketsWithIds: AgeBracketWithId[] = brackets.map((bracket: AgeBracket) => ({
             ...bracket,
             _id: (bracket as AgeBracketWithId)._id || crypto.randomUUID(),
+            final_criteria: bracket.final_criteria?.map((criterion) => ({
+                ...criterion,
+                _tempId: crypto.randomUUID(),
+            })),
         }));
 
         setEditingEventIndex(index);
@@ -88,10 +93,16 @@ export function useAgeBracketEditor(form: FormInstance, onBracketsSaved?: (brack
             return;
         }
 
-        // Remove temporary _id field before saving
+        // Remove temporary _id and _tempId fields before saving
         const cleanedBrackets = ageBrackets.map((bracket) => {
             const {_id, ...cleanBracket} = bracket;
-            return cleanBracket as AgeBracket;
+            return {
+                ...cleanBracket,
+                final_criteria: cleanBracket.final_criteria?.map((criterion: FinalCriterion & {_tempId?: string}) => {
+                    const {_tempId, ...cleanCriterion} = criterion;
+                    return cleanCriterion as FinalCriterion;
+                }),
+            } as AgeBracket;
         });
 
         const currentEvents = [...(form.getFieldValue("events") ?? [])];

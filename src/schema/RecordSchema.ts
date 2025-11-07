@@ -83,7 +83,7 @@ export const GlobalResultSchema = z.object({
     updated_at: z.string(),
     age: z.number(),
     id: z.string().optional(),
-    round: z.enum(["prelim", "final"]).optional(),
+    round: z.enum(["prelim", "advance", "intermediate", "beginner"]).optional(),
     classification: z.enum(["advance", "intermediate", "beginner", "prelim"]).optional(),
     bestTime: z.number().optional(),
     try1: z.number().optional(),
@@ -110,7 +110,7 @@ export const GlobalTeamResultSchema = z.object({
     updated_at: z.string(),
     age: z.number(),
     id: z.string().optional(),
-    round: z.enum(["prelim", "final"]).optional(),
+    round: z.enum(["prelim", "advance", "intermediate", "beginner"]).optional(),
     classification: z.enum(["advance", "intermediate", "beginner", "prelim"]).optional(),
     bestTime: z.number().optional(),
     try1: z.number().optional(),
@@ -161,7 +161,7 @@ export type GlobalRecord = (GlobalResult | GlobalTeamResult) & {
     try3?: number;
     tournamentId?: string;
     teamId?: string;
-    round?: "prelim" | "final";
+    round?: "prelim" | "advance" | "intermediate" | "beginner";
     participantName?: string;
     teamName?: string;
     memberIds?: string[];
@@ -190,6 +190,6 @@ export interface RecordRankingTableProps {
 
 export interface GetFastestRecordData {
     event: string;
-    round: "prelim" | "final";
+    round: "prelim" | "advance" | "intermediate" | "beginner";
     type: "Individual" | "Team Relay";
 }

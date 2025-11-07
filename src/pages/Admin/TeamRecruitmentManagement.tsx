@@ -134,9 +134,9 @@ export default function TeamRecruitmentManagement() {
             const {individual} = assignmentData;
 
             if (values.action === "assign" && values.teamId) {
-                // First add member to the team
+                // First add member to the team - verified by admin
                 try {
-                    await addMemberToTeam(individual.tournament_id, values.teamId, individual.participant_id);
+                    await addMemberToTeam(individual.tournament_id, values.teamId, individual.participant_id, true);
                 } catch (error) {
                     const errorMessage = error instanceof Error ? error.message : "Unknown error";
                     Message.error(`Failed to add participant to team: ${errorMessage}`);

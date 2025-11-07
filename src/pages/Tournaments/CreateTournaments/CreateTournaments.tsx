@@ -1,9 +1,8 @@
 import {DEFAULT_AGE_BRACKET, DEFAULT_EVENTS} from "@/constants/tournamentDefaults";
 import {useAuthContext} from "@/context/AuthContext";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
-import type {AgeBracket, PaymentMethod, Tournament, TournamentEvent} from "@/schema";
+import type {AgeBracket, FinalCriterion, PaymentMethod, Tournament, TournamentEvent} from "@/schema";
 import {countries} from "@/schema/Country";
-import type {FinalCriterion} from "@/schema/TournamentSchema";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTournament, updateTournament} from "@/services/firebase/tournamentsService";
 import {
@@ -61,6 +60,9 @@ type EventCode = (typeof EVENT_CODE_OPTIONS)[number];
 
 const isEventCode = (value: unknown): value is EventCode =>
     typeof value === "string" && (EVENT_CODE_OPTIONS as readonly string[]).includes(value);
+
+// Temporary type for UI tracking with unique ID
+type FinalCriterionWithId = FinalCriterion & {_tempId?: string};
 
 const {Title} = Typography;
 const {RangePicker} = DatePicker;
@@ -497,74 +499,79 @@ export default function CreateTournamentPage() {
                                                         <h4 className="text-sm font-medium mb-2">
                                                             Final Criteria for {bracket.name}
                                                         </h4>
-                                                        {bracket.final_criteria?.map((criteria, criteriaIndex) => (
-                                                            <div key={criteria.classification} className="flex gap-2 mb-2">
-                                                                <Select
-                                                                    value={criteria.classification}
-                                                                    placeholder="Classification"
-                                                                    onChange={(value) => {
-                                                                        const updated = [...ageBrackets];
-                                                                        const targetBracket = updated[id];
-                                                                        if (!targetBracket) {
-                                                                            return;
-                                                                        }
-                                                                        if (!targetBracket.final_criteria) {
-                                                                            targetBracket.final_criteria = [];
-                                                                        }
-                                                                        const targetCriteria =
-                                                                            targetBracket.final_criteria[criteriaIndex];
-                                                                        if (targetCriteria) {
-                                                                            targetCriteria.classification = value;
-                                                                        }
-                                                                        setAgeBrackets(updated);
-                                                                    }}
-                                                                    style={{width: 150}}
-                                                                >
-                                                                    <Select.Option value="advance">Advanced</Select.Option>
-                                                                    <Select.Option value="intermediate">
-                                                                        Intermediate
-                                                                    </Select.Option>
-                                                                    <Select.Option value="beginner">Beginner</Select.Option>
-                                                                    <Select.Option value="prelim">Prelim</Select.Option>
-                                                                </Select>
-                                                                <InputNumber
-                                                                    value={criteria.number}
-                                                                    placeholder="Number"
-                                                                    min={0}
-                                                                    onChange={(value) => {
-                                                                        const updated = [...ageBrackets];
-                                                                        const targetBracket = updated[id];
-                                                                        if (!targetBracket) {
-                                                                            return;
-                                                                        }
-                                                                        if (!targetBracket.final_criteria) {
-                                                                            targetBracket.final_criteria = [];
-                                                                        }
-                                                                        const targetCriteria =
-                                                                            targetBracket.final_criteria[criteriaIndex];
-                                                                        if (targetCriteria) {
-                                                                            targetCriteria.number = value ?? 0;
-                                                                        }
-                                                                        setAgeBrackets(updated);
-                                                                    }}
-                                                                    style={{width: 100}}
-                                                                />
-                                                                <Button
-                                                                    status="danger"
-                                                                    onClick={() => {
-                                                                        const updated = [...ageBrackets];
-                                                                        const targetBracket = updated[id];
-                                                                        if (!targetBracket?.final_criteria) {
-                                                                            return;
-                                                                        }
-                                                                        targetBracket.final_criteria.splice(criteriaIndex, 1);
-                                                                        setAgeBrackets(updated);
-                                                                    }}
-                                                                >
-                                                                    <IconDelete />
-                                                                </Button>
-                                                            </div>
-                                                        ))}
+                                                        {bracket.final_criteria?.map((criteria, criteriaIndex) => {
+                                                            const criteriaWithId = criteria as FinalCriterionWithId;
+                                                            const criteriaKey =
+                                                                criteriaWithId._tempId || `criteria-${id}-${criteriaIndex}`;
+
+                                                            return (
+                                                                <div key={criteriaKey} className="flex gap-2 mb-2">
+                                                                    <Select
+                                                                        value={criteria.classification}
+                                                                        placeholder="Classification"
+                                                                        onChange={(value) => {
+                                                                            const updated = [...ageBrackets];
+                                                                            const targetBracket = updated[id];
+                                                                            if (!targetBracket) {
+                                                                                return;
+                                                                            }
+                                                                            if (!targetBracket.final_criteria) {
+                                                                                targetBracket.final_criteria = [];
+                                                                            }
+                                                                            const targetCriteria =
+                                                                                targetBracket.final_criteria[criteriaIndex];
+                                                                            if (targetCriteria) {
+                                                                                targetCriteria.classification = value;
+                                                                            }
+                                                                            setAgeBrackets(updated);
+                                                                        }}
+                                                                        style={{width: 150}}
+                                                                    >
+                                                                        <Select.Option value="advance">Advanced</Select.Option>
+                                                                        <Select.Option value="intermediate">
+                                                                            Intermediate
+                                                                        </Select.Option>
+                                                                        <Select.Option value="beginner">Beginner</Select.Option>
+                                                                    </Select>
+                                                                    <InputNumber
+                                                                        value={criteria.number}
+                                                                        placeholder="Number"
+                                                                        min={0}
+                                                                        onChange={(value) => {
+                                                                            const updated = [...ageBrackets];
+                                                                            const targetBracket = updated[id];
+                                                                            if (!targetBracket) {
+                                                                                return;
+                                                                            }
+                                                                            if (!targetBracket.final_criteria) {
+                                                                                targetBracket.final_criteria = [];
+                                                                            }
+                                                                            const targetCriteria =
+                                                                                targetBracket.final_criteria[criteriaIndex];
+                                                                            if (targetCriteria) {
+                                                                                targetCriteria.number = value ?? 0;
+                                                                            }
+                                                                            setAgeBrackets(updated);
+                                                                        }}
+                                                                        style={{width: 100}}
+                                                                    />
+                                                                    <Button
+                                                                        status="danger"
+                                                                        onClick={() => {
+                                                                            const updated = [...ageBrackets];
+                                                                            const targetBracket = updated[id];
+                                                                            if (!targetBracket?.final_criteria) {
+                                                                                return;
+                                                                            }
+                                                                            targetBracket.final_criteria.splice(criteriaIndex, 1);
+                                                                            setAgeBrackets(updated);
+                                                                        }}
+                                                                    >
+                                                                        <IconDelete />
+                                                                    </Button>
+                                                                </div>
+                                                            );
+                                                        })}
                                                         <Button
                                                             type="text"
                                                             size="small"
@@ -580,7 +587,8 @@ export default function CreateTournamentPage() {
                                                                 targetBracket.final_criteria.push({
                                                                     classification: "intermediate",
                                                                     number: 10,
-                                                                });
+                                                                    _tempId: crypto.randomUUID(),
+                                                                } as FinalCriterionWithId);
                                                                 setAgeBrackets(updated);
                                                             }}
                                                             disabled={(bracket.final_criteria?.length ?? 0) >= 4}
