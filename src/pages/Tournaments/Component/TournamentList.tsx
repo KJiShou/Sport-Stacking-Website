@@ -681,16 +681,42 @@ export default function TournamentList() {
             }
 
             const rawEvents = values.events ?? [];
-            const sanitizedEvents: TournamentEvent[] = [];
 
-            for (const rawEvent of rawEvents) {
+            // Check for duplicate event type + code combinations
+            const eventSignatures = new Map<string, number>();
+            for (let i = 0; i < rawEvents.length; i++) {
+                const event = rawEvents[i];
+                if (event.type && Array.isArray(event.codes)) {
+                    for (const code of event.codes) {
+                        const signature = `${event.type}-${code}`;
+                        if (eventSignatures.has(signature)) {
+                            Message.error(
+                                `Duplicate event found: ${event.type} with code ${code}. Each event type and code combination must be unique.`,
+                            );
+                            setLoading(false);
+                            return;
+                        }
+                        eventSignatures.set(signature, i);
+                    }
+                }
+            }
+
+            const sanitizedEvents: TournamentEvent[] = [];
+            const invalidEvents: string[] = [];
+
+            for (let i = 0; i < rawEvents.length; i++) {
+                const rawEvent = rawEvents[i];
                 const {__prevType: _ignored, age_brackets, id, type, codes, teamSize} = rawEvent;
+
                 if (!isTournamentEventType(type)) {
+                    invalidEvents.push(`Event ${i + 1}: Invalid event type "${type}"`);
                     continue;
                 }
 
-                const normalizedCodes = (codes ?? []).filter(isEventCode);
+                // Ensure codes is an array before filtering
+                const normalizedCodes = Array.isArray(codes) ? codes.filter(isEventCode) : [];
                 if (normalizedCodes.length === 0) {
+                    invalidEvents.push(`Event ${i + 1}: No valid event codes selected for "${type}"`);
                     continue;
                 }
 
@@ -707,6 +733,12 @@ export default function TournamentList() {
                 }
 
                 sanitizedEvents.push(sanitizedEvent);
+            }
+
+            if (invalidEvents.length > 0) {
+                Message.error("Cannot save tournament. Cannot have same events in a tournament");
+                setLoading(false);
+                return;
             }
 
             if (sanitizedEvents.length === 0) {
