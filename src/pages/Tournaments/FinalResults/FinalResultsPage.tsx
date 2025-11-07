@@ -656,6 +656,8 @@ export default function FinalResultsPage() {
         Modal.confirm({
             title: "Confirm End of Competition",
             content: "Are you sure you want to mark this tournament as ended? This action cannot be undone.",
+            okText: "Yes",
+            cancelText: "Cancel",
             onOk: async () => {
                 setLoading(true);
                 try {
