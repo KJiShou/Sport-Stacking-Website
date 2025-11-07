@@ -24,10 +24,18 @@ import type {FirestoreUser} from "@/schema/UserSchema";
 import {type EventType as RankingEventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
+import {getCountryFlag as getCountryFlagUtil} from "@/utils/countryFlags";
 import {formatStackingTime} from "@/utils/time";
 
 const {Title, Text} = Typography;
 const Option = Select.Option;
+
+// Wrapper to provide fallback for countries not in our map
+const getCountryFlag = (country?: string): string => {
+    if (!country) return "🌍";
+    const flag = getCountryFlagUtil(country);
+    return flag || "🌍";
+};
 
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
 type EventTypeUnion = "3-3-3" | "3-6-3" | "Cycle";
@@ -126,29 +134,7 @@ const EVENT_OPTIONS: EventOption[] = [
         event: "Cycle",
     },
 ];
-
 const DEFAULT_EVENT = EVENT_OPTIONS[0];
-
-const COUNTRY_FLAG_MAP: Record<string, string> = {
-    "United States": "🇺🇸",
-    Malaysia: "🇲🇾",
-    Korea: "🇰🇷",
-    "Chinese Taipei": "🇹🇼",
-    China: "🇨🇳",
-    Japan: "🇯🇵",
-    Singapore: "🇸🇬",
-    Thailand: "🇹🇭",
-    Vietnam: "🇻🇳",
-    Indonesia: "🇮🇩",
-    Philippines: "🇵🇭",
-};
-
-function getCountryFlag(country?: string): string {
-    if (!country) {
-        return "🌍";
-    }
-    return COUNTRY_FLAG_MAP[country] ?? "🌍";
-}
 
 function parseDate(value: unknown): Date | null {
     if (!value) {
@@ -614,12 +600,15 @@ const Athletes: React.FC = () => {
             title: "Country",
             dataIndex: "country",
             width: 160,
-            render: (country: string) => (
-                <Space size={6} align="center">
-                    <span>{getCountryFlag(country)}</span>
-                    <span>{country || "Unknown"}</span>
-                </Space>
-            ),
+            render: (country: string) => {
+                const flagUrl = getCountryFlagUtil(country);
+                return (
+                    <Space size={6} align="center">
+                        {flagUrl && <img src={flagUrl} alt={`${country} flag`} style={{width: 20, height: 15}} />}
+                        <span>{country || "Unknown"}</span>
+                    </Space>
+                );
+            },
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
             title: "Division",

@@ -10,6 +10,7 @@ import {
     updateTournament,
     updateTournamentStatus,
 } from "@/services/firebase/tournamentsService";
+import {getCountryFlag} from "@/utils/countryFlags";
 import {
     Button,
     Card,
@@ -221,8 +222,20 @@ export default function TournamentList() {
             title: "Country / State",
             dataIndex: "country",
             width: 300,
-            render: (country: string) => {
-                return `${country[0]} / ${country[1]}`;
+            render: (country: string[]) => {
+                const countryName = country[0];
+                const state = country[1];
+                const flagUrl = getCountryFlag(countryName);
+                return (
+                    <span style={{display: "flex", alignItems: "center", gap: 8}}>
+                        {flagUrl && (
+                            <img src={flagUrl} alt={`${countryName} flag`} style={{width: 20, height: 15, objectFit: "cover"}} />
+                        )}
+                        <span>
+                            {countryName} / {state}
+                        </span>
+                    </span>
+                );
             },
         },
 

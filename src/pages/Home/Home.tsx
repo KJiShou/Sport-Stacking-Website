@@ -9,6 +9,7 @@ import type {Tournament} from "../../schema/TournamentSchema";
 import {getActiveCarouselImages} from "../../services/firebase/homeCarouselService";
 import {getNextTournaments} from "../../services/firebase/homeTournamentService";
 import {getBestRecords} from "../../services/firebase/recordService";
+import {getCountryFlag} from "../../utils/countryFlags";
 import {formatStackingTime} from "../../utils/time";
 
 const {Title, Paragraph, Text} = Typography;
@@ -347,7 +348,22 @@ const Home: React.FC = () => {
                                                                 {record.age && <Text type="secondary"> • Age {record.age}</Text>}
                                                             </div>
                                                             {record.country && (
-                                                                <Text type="secondary" style={{fontSize: "0.875rem"}}>
+                                                                <Text
+                                                                    type="secondary"
+                                                                    style={{
+                                                                        fontSize: "0.875rem",
+                                                                        display: "flex",
+                                                                        alignItems: "center",
+                                                                        gap: 6,
+                                                                    }}
+                                                                >
+                                                                    {getCountryFlag(record.country) && (
+                                                                        <img
+                                                                            src={getCountryFlag(record.country)}
+                                                                            alt={`${record.country} flag`}
+                                                                            style={{width: 16, height: 12}}
+                                                                        />
+                                                                    )}
                                                                     {record.country}
                                                                 </Text>
                                                             )}

@@ -12,6 +12,7 @@ import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService"
 import {createTeam, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
+import {getCountryFlag} from "@/utils/countryFlags";
 import {getEventKey, getEventLabel, isTeamEvent, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
 import {
     Button,
@@ -434,6 +435,13 @@ export default function RegisterTournamentPage() {
                                     }
                                     hoverable={false}
                                 >
+                                    {comp?.country?.[0] && getCountryFlag(comp.country[0]) && (
+                                        <img
+                                            src={getCountryFlag(comp.country[0])}
+                                            alt={`${comp.country[0]} flag`}
+                                            style={{width: 20, height: 15, marginRight: 8, verticalAlign: "middle"}}
+                                        />
+                                    )}
                                     {comp?.address} ({comp?.country?.join(" / ")}) <IconLaunch />
                                 </Link>
                             ),
