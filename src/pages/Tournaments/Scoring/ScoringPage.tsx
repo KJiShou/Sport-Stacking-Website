@@ -394,9 +394,9 @@ export default function ScoringPage() {
             const try2 = Number.parseFloat(scores.try2);
             const try3 = Number.parseFloat(scores.try3);
 
-            if (Number.isNaN(try1) || try1 <= 0) invalidTries.push("Try 1");
-            if (Number.isNaN(try2) || try2 <= 0) invalidTries.push("Try 2");
-            if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
+            if (Number.isNaN(try1) || try1 <= 0) invalidTries.push("Try 1 (must be greater than 0)");
+            if (Number.isNaN(try2) || try2 <= 0) invalidTries.push("Try 2 (must be greater than 0)");
+            if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3 (must be greater than 0)");
 
             if (invalidTries.length > 0) {
                 errors.push(`${participantName} (${participantId}): Invalid times in ${label} - ${invalidTries.join(", ")}`);
@@ -573,9 +573,9 @@ export default function ScoringPage() {
                     const try2 = Number.parseFloat(scores.try2);
                     const try3 = Number.parseFloat(scores.try3);
 
-                    if (Number.isNaN(try1) || try1 <= 0) invalidTries.push("Try 1");
-                    if (Number.isNaN(try2) || try2 <= 0) invalidTries.push("Try 2");
-                    if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
+                    if (Number.isNaN(try1) || try1 <= 0) invalidTries.push("Try 1 (must be greater than 0)");
+                    if (Number.isNaN(try2) || try2 <= 0) invalidTries.push("Try 2 (must be greater than 0)");
+                    if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3 (must be greater than 0)");
 
                     if (invalidTries.length > 0) {
                         errors.push(`Invalid times in ${code} (${selectedEvent}) - ${invalidTries.join(", ")}`);
@@ -593,9 +593,9 @@ export default function ScoringPage() {
                 const try2 = Number.parseFloat(scores.try2);
                 const try3 = Number.parseFloat(scores.try3);
 
-                if (Number.isNaN(try1) || try1 <= 0) invalidTries.push("Try 1");
-                if (Number.isNaN(try2) || try2 <= 0) invalidTries.push("Try 2");
-                if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3");
+                if (Number.isNaN(try1) || try1 <= 0) invalidTries.push("Try 1 (must be greater than 0)");
+                if (Number.isNaN(try2) || try2 <= 0) invalidTries.push("Try 2 (must be greater than 0)");
+                if (Number.isNaN(try3) || try3 <= 0) invalidTries.push("Try 3 (must be greater than 0)");
 
                 if (invalidTries.length > 0) {
                     errors.push(`Invalid times in ${selectedEvent} - ${invalidTries.join(", ")}`);

@@ -409,7 +409,7 @@ export default function FinalScoringPage() {
         const t1 = Number.parseFloat(scores.try1);
         const t2 = Number.parseFloat(scores.try2);
         const t3 = Number.parseFloat(scores.try3);
-        const vals = [t1, t2, t3].filter((v) => Number.isFinite(v) && v >= 0);
+        const vals = [t1, t2, t3].filter((v) => Number.isFinite(v) && v > 0);
         if (vals.length === 0) return "N/A";
         return Math.min(...vals).toFixed(3);
     };
@@ -525,6 +525,30 @@ export default function FinalScoringPage() {
             const codes = currentEvent.codes ?? [];
             // Track best times per code while saving
             const bestTimes: Partial<Record<"3-3-3" | "3-6-3" | "Cycle", number>> = {};
+
+            // Validate all scores before saving
+            const validationErrors: string[] = [];
+            for (const code of codes) {
+                const key = `${code}-${currentEvent.type}`;
+                const scores = modalScores[key];
+                if (!scores) continue;
+
+                const t1 = scores.try1 === "" ? undefined : Number.parseFloat(scores.try1);
+                const t2 = scores.try2 === "" ? undefined : Number.parseFloat(scores.try2);
+                const t3 = scores.try3 === "" ? undefined : Number.parseFloat(scores.try3);
+
+                // Check for zero or negative values
+                if (t1 !== undefined && t1 <= 0) validationErrors.push(`${code} Try 1 must be greater than 0`);
+                if (t2 !== undefined && t2 <= 0) validationErrors.push(`${code} Try 2 must be greater than 0`);
+                if (t3 !== undefined && t3 <= 0) validationErrors.push(`${code} Try 3 must be greater than 0`);
+            }
+
+            if (validationErrors.length > 0) {
+                Message.error(`Invalid times: ${validationErrors.join(", ")}`);
+                setLoading(false);
+                return;
+            }
+
             for (const code of codes) {
                 const key = `${code}-${currentEvent.type}`;
                 const scores = modalScores[key];
@@ -532,7 +556,7 @@ export default function FinalScoringPage() {
                 const t1 = scores.try1 === "" ? undefined : Number.parseFloat(scores.try1);
                 const t2 = scores.try2 === "" ? undefined : Number.parseFloat(scores.try2);
                 const t3 = scores.try3 === "" ? undefined : Number.parseFloat(scores.try3);
-                const numbers = [t1, t2, t3].filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+                const numbers = [t1, t2, t3].filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0);
                 if (numbers.length === 0) continue; // skip empty
                 const best = Math.min(...numbers);
                 bestTimes[code] = best;
