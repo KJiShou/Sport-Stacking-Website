@@ -385,13 +385,6 @@ export default function TournamentView() {
                                     }
                                     hoverable={false}
                                 >
-                                    {data?.country?.[0] && getCountryFlag(data.country[0]) && (
-                                        <img
-                                            src={getCountryFlag(data.country[0])}
-                                            alt={`${data.country[0]} flag`}
-                                            style={{width: 20, height: 15, marginRight: 8, verticalAlign: "middle"}}
-                                        />
-                                    )}
                                     {data?.address} ({data?.country?.join(" / ")}) <IconLaunch />
                                 </Link>
                             ),
@@ -472,7 +465,7 @@ export default function TournamentView() {
             </Button>
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
                 <div className={`flex flex-col items-center`}>
-                    <Image src={`${tournament?.logo}`} alt="logo" width={200} />
+                    {tournament?.logo ?? <Image src={`${tournament?.logo}`} alt="logo" width={200} />}
                     <Descriptions
                         column={1}
                         title={

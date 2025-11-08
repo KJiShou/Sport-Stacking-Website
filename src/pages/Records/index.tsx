@@ -503,29 +503,30 @@ const RecordsIndex: React.FC = () => {
 
             const recordDate = record.created_at || new Date().toISOString();
             const recordDateObj = new Date(recordDate);
-
-            recordsData.push({
-                key: `${backendCategory}-${selectedEvent}-${index}`,
-                rank: eventRank++,
-                event: selectedEvent,
-                gender,
-                time: formatTime(record.time),
-                athlete: athleteName,
-                country: record.country || "Unknown",
-                flag: "", // No longer used - flag is rendered from country name
-                date: formatDate(recordDate),
-                ageGroup: recordAgeGroup,
-                age: record.age || null,
-                status: record.status || "submitted",
-                videoUrl: record.videoUrl || undefined,
-                rawTime: record.time,
-                recordId: (record as GlobalResultWithId | GlobalTeamResultWithId).id,
-                participantId: isTeamResult ? undefined : (record as GlobalResult).participantGlobalId,
-                teamName: isTeamResult ? (record as GlobalTeamResult).teamName : undefined,
-                members: isTeamResult ? (record as GlobalTeamResult).members : undefined,
-                leaderId: isTeamResult ? (record as GlobalTeamResult).leaderId : undefined,
-                tournament_name: record.tournament_name || null,
-            });
+            if (formatTime(record.time) !== "DNF") {
+                recordsData.push({
+                    key: `${backendCategory}-${selectedEvent}-${index}`,
+                    rank: eventRank++,
+                    event: selectedEvent,
+                    gender,
+                    time: formatTime(record.time),
+                    athlete: athleteName,
+                    country: record.country || "Unknown",
+                    flag: "", // No longer used - flag is rendered from country name
+                    date: formatDate(recordDate),
+                    ageGroup: recordAgeGroup,
+                    age: record.age || null,
+                    status: record.status || "submitted",
+                    videoUrl: record.videoUrl || undefined,
+                    rawTime: record.time,
+                    recordId: (record as GlobalResultWithId | GlobalTeamResultWithId).id,
+                    participantId: isTeamResult ? undefined : (record as GlobalResult).participantGlobalId,
+                    teamName: isTeamResult ? (record as GlobalTeamResult).teamName : undefined,
+                    members: isTeamResult ? (record as GlobalTeamResult).members : undefined,
+                    leaderId: isTeamResult ? (record as GlobalTeamResult).leaderId : undefined,
+                    tournament_name: record.tournament_name || null,
+                });
+            }
         });
 
         // Apply date range filter after ranks are assigned (similar to search filter)
@@ -562,7 +563,9 @@ const RecordsIndex: React.FC = () => {
             ? filteredByDateRecords.filter(
                   (record) =>
                       record.athlete.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                      record.tournament_name?.toLowerCase().includes(searchQuery.toLowerCase()),
+                      record.tournament_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      record.members?.some((member) => member.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                      record.leaderId?.toLowerCase().includes(searchQuery.toLowerCase()),
               )
             : filteredByDateRecords;
 
