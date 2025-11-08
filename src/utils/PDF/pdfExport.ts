@@ -252,12 +252,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
                 );
             } catch (error) {
                 console.error("Error adding logo to PDF:", error);
-                doc.setFontSize(8);
-                doc.text("LOGO", pageWidth - marginX - logoWidth + 15, marginY + 20);
             }
-        } else {
-            doc.setFontSize(8);
-            doc.text("LOGO", pageWidth - marginX - logoWidth + 15, marginY + 20);
         }
 
         const titleHeight = titleLines.length * 10; // Approximate height of the title
@@ -444,12 +439,7 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
                 doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), logoX, logoY, logoDisplayWidth, logoDisplayHeight);
             } catch (error) {
                 console.error("Error adding logo to PDF:", error);
-                doc.setFontSize(8);
-                doc.text("LOGO", logoX + 5, logoY + 15);
             }
-        } else {
-            doc.setFontSize(8);
-            doc.text("LOGO", logoX + 5, logoY + 15);
         }
 
         const titleHeight = titleLines.length * 10; // Approximate height of the title
@@ -550,12 +540,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                     );
                 } catch (error) {
                     console.error("Error adding logo to PDF:", error);
-                    docInstance.setFontSize(8);
-                    docInstance.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
                 }
-            } else {
-                docInstance.setFontSize(8);
-                docInstance.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
             }
 
             const titleHeight = titleLines.length * 10;
@@ -824,12 +809,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
                     );
                 } catch (error) {
                     console.error("Error adding logo to PDF:", error);
-                    docInstance.setFontSize(8);
-                    docInstance.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
                 }
-            } else {
-                docInstance.setFontSize(8);
-                docInstance.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
             }
 
             const titleHeight = titleLines.length * 10;
@@ -975,12 +955,7 @@ export const exportAllBracketsListToPDF = async (
                 doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), pageWidth - marginX - logoWidth + 5, 10, 30, 30);
             } catch (error) {
                 console.error("Error adding logo to PDF:", error);
-                doc.setFontSize(8);
-                doc.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
             }
-        } else {
-            doc.setFontSize(8);
-            doc.text("LOGO", pageWidth - marginX - logoWidth + 15, 20);
         }
 
         const titleHeight = titleLines.length * 10; // Approximate height of the title
@@ -1308,12 +1283,7 @@ const generateSingleStackingSheet = (
             doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), marginX + 2, startY + 2, 36, titleHeight - 4);
         } catch (error) {
             console.error("Error adding logo to PDF:", error);
-            doc.setFontSize(8);
-            doc.text("LOGO", marginX + 15, startY + 14);
         }
-    } else {
-        doc.setFontSize(8);
-        doc.text("LOGO", marginX + 15, startY + 14);
     }
 
     // Title text (right side)
