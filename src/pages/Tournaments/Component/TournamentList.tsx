@@ -218,7 +218,7 @@ export default function TournamentList() {
             dataIndex: "name",
             width: 200,
         },
-        {
+        deviceBreakpoint > DeviceBreakpoint.md && {
             title: "Country / State",
             dataIndex: "country",
             width: 300,
