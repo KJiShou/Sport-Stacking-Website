@@ -1,4 +1,4 @@
-import {Grid, Typography} from "@arco-design/web-react";
+import {Grid, Link, Typography} from "@arco-design/web-react";
 import {IconEmail, IconFacebook, IconLocation, IconPhone} from "@arco-design/web-react/icon";
 import type * as React from "react";
 
@@ -59,11 +59,9 @@ const Footer: React.FC = () => {
                                 <Title heading={6} style={{color: "#000000", marginBottom: "0.5rem"}}>
                                     Email
                                 </Title>
-                                <Paragraph style={{color: "#000000", margin: 0}}>
-                                    <a href="mailto:jjclub.info@gmail.com" style={{color: "#000000", textDecoration: "none"}}>
-                                        jjclub.info@gmail.com
-                                    </a>
-                                </Paragraph>
+                                <Link style={{margin: 0}}>
+                                    <a href="mailto:jjclub.info@gmail.com">jjclub.info@gmail.com</a>
+                                </Link>
                             </div>
                         </div>
                     </Col>
@@ -76,20 +74,9 @@ const Footer: React.FC = () => {
                                 <Title heading={6} style={{color: "#000000", marginBottom: "0.5rem"}}>
                                     Follow Us
                                 </Title>
-                                <a
-                                    href="https://www.facebook.com/issfmy"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                        color: "#000000",
-                                        textDecoration: "none",
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "0.5rem",
-                                    }}
-                                >
-                                    <Text style={{color: "#000000"}}>Facebook Page</Text>
-                                </a>
+                                <Link href="https://www.facebook.com/issfmy" target="_blank" rel="noopener noreferrer">
+                                    Facebook Page
+                                </Link>
                             </div>
                         </div>
                     </Col>
