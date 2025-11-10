@@ -513,8 +513,6 @@ export default function RegisterTournamentPage() {
         fetch();
     }, [tournamentId, user]);
 
-    // Remove the problematic useEffect since we handle team updates in onChange
-
     if (error) return <Result status="error" title="Error" subTitle={error} />;
     return (
         <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
