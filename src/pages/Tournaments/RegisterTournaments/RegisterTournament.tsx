@@ -176,10 +176,7 @@ export default function RegisterTournamentPage() {
                             const eventLabel = team.name || getEventLabel(relatedEvent) || "This event";
                             const participantLabel = fallbackTeamSize === 1 ? "participant" : "participants";
                             const memberLabel = expectedMembers === 1 ? "member" : "members";
-                            const additionalMessage =
-                                expectedMembers > 0
-                                    ? `Please list ${expectedMembers} additional ${memberLabel}.`
-                                    : "No additional members should be listed.";
+                            const additionalMessage = expectedMembers > 0 ? `` : "No additional members should be listed.";
 
                             Message.error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
                             setLoading(false);
@@ -589,7 +586,7 @@ export default function RegisterTournamentPage() {
                                 style={{width: 345, marginRight: 20}}
                                 mode="multiple"
                                 defaultValue={requiredKeys}
-                                onChange={(value) => {
+                                onChange={(value: string[]) => {
                                     if (!availableEvents) return;
                                     // 确保个人赛事项不能被取消选择
                                     const finalValue = Array.from(new Set([...value, ...requiredKeys]));
@@ -658,7 +655,7 @@ export default function RegisterTournamentPage() {
                                                         key={`individual-looking-${eventId}`}
                                                         checked={lookingForTeams.includes(eventId)}
                                                         disabled={!!lookingForTeamMembers}
-                                                        onChange={(checked) => {
+                                                        onChange={(checked: boolean) => {
                                                             if (checked) {
                                                                 // Uncheck 'Looking for Team Members' if checked
                                                                 form.setFieldValue(
@@ -808,81 +805,11 @@ export default function RegisterTournamentPage() {
                                                                         </Tooltip>
                                                                     </div>
                                                                 }
-                                                                rules={
-                                                                    lookingForTeams.includes(eventId) ||
-                                                                    form.getFieldValue(
-                                                                        `teams.${eventId}.looking_for_team_members`,
-                                                                    )
-                                                                        ? []
-                                                                        : [
-                                                                              {required: true},
-                                                                              {
-                                                                                  validator: (value, callback) => {
-                                                                                      if (!value || value.length === 0) {
-                                                                                          const memberType = isParentChild
-                                                                                              ? "parent"
-                                                                                              : "team members";
-                                                                                          callback(`Please enter ${memberType}`);
-                                                                                          return;
-                                                                                      }
-                                                                                      if (requiredMemberCount !== undefined) {
-                                                                                          if (
-                                                                                              value.length !== requiredMemberCount
-                                                                                          ) {
-                                                                                              const totalParticipants =
-                                                                                                  requiredMemberCount + 1;
-                                                                                              const message =
-                                                                                                  totalParticipants === 1
-                                                                                                      ? "This event does not require additional members."
-                                                                                                      : `This event requires ${totalParticipants} participants in total. Please enter ${requiredMemberCount} additional member${
-                                                                                                            requiredMemberCount ===
-                                                                                                            1
-                                                                                                                ? ""
-                                                                                                                : "s"
-                                                                                                        }.`;
-                                                                                              callback(message);
-                                                                                              return;
-                                                                                          }
-                                                                                      } else {
-                                                                                          if (
-                                                                                              lowerEventType === "team relay" &&
-                                                                                              (value.length < 3 ||
-                                                                                                  value.length > 4)
-                                                                                          ) {
-                                                                                              callback(
-                                                                                                  "Team relay must have 3 to 4 members",
-                                                                                              );
-                                                                                              return;
-                                                                                          }
-                                                                                          if (
-                                                                                              lowerEventType === "double" &&
-                                                                                              value.length !== 1
-                                                                                          ) {
-                                                                                              callback(
-                                                                                                  "Double must have exactly 1 member",
-                                                                                              );
-                                                                                              return;
-                                                                                          }
-                                                                                          if (
-                                                                                              isParentChild &&
-                                                                                              value.length !== 1
-                                                                                          ) {
-                                                                                              callback(
-                                                                                                  "Parent & Child must have exactly 1 parent",
-                                                                                              );
-                                                                                              return;
-                                                                                          }
-                                                                                      }
-                                                                                      callback();
-                                                                                  },
-                                                                              },
-                                                                          ]
-                                                                }
                                                             >
                                                                 <Select
                                                                     mode="multiple"
                                                                     allowCreate={{
-                                                                        formatter: (inputValue, creating) => ({
+                                                                        formatter: (inputValue: string, creating: boolean) => ({
                                                                             value: inputValue,
                                                                             label: `${creating ? "Enter to create: " : ""}${inputValue}`,
                                                                         }),
@@ -908,7 +835,7 @@ export default function RegisterTournamentPage() {
                                                 >
                                                     <Checkbox
                                                         disabled={lookingForTeams.includes(eventId)}
-                                                        onChange={(checked) => {
+                                                        onChange={(checked: boolean) => {
                                                             if (checked) {
                                                                 // Uncheck 'Looking for Teammates' if checked
                                                                 setLookingForTeams((prev) => prev.filter((id) => id !== eventId));
@@ -1003,7 +930,12 @@ export default function RegisterTournamentPage() {
                                 multiple={false}
                                 limit={1}
                                 accept="image/jpeg,image/png,image/gif"
-                                customRequest={async (option) => {
+                                customRequest={async (option: {
+                                    file: File;
+                                    onSuccess?: (file: File) => void;
+                                    onError?: (error: Error) => void;
+                                    onProgress?: (progress: number) => void;
+                                }) => {
                                     const {file, onSuccess, onError, onProgress} = option;
                                     const MAX_SIZE = 10 * 1024 * 1024; // 10MB
                                     const validTypes = ["image/jpeg", "image/png", "image/gif"];

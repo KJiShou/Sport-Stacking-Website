@@ -5,7 +5,7 @@ import {Timestamp as FirestoreTimestamp, getFirestore} from "firebase-admin/fire
 import {defineSecret} from "firebase-functions/params";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
-import {SESClient, SendEmailCommand} from "@aws-sdk/client-ses";
+import nodemailer from "nodemailer";
 import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
@@ -19,14 +19,14 @@ const RESEND_API_URL = process.env.RESEND_API_URL ?? "https://api.resend.com/ema
 const AWS_SES_SMTP_USERNAME = defineSecret("AWS_SES_SMTP_USERNAME");
 const AWS_SES_SMTP_PASSWORD = defineSecret("AWS_SES_SMTP_PASSWORD");
 const AWS_SES_REGION = "ap-southeast-2";
-const AWS_SES_FROM_EMAIL = process.env.AWS_SES_FROM_EMAIL ?? RESEND_FROM_EMAIL;
+const AWS_SES_FROM_EMAIL = process.env.AWS_SES_FROM_EMAIL ?? "RankingStack <noreply@rankingstack.com>";
 
 if (!getApps().length) {
     initializeApp();
 }
 
 /**
- * Send email using AWS SES as a backup when Resend fails
+ * Send email using AWS SES SMTP as a backup when Resend fails
  */
 async function sendEmailViaSES(
     to: string,
@@ -36,37 +36,28 @@ async function sendEmailViaSES(
     password: string,
 ): Promise<{success: boolean; messageId?: string; error?: string}> {
     try {
-        const sesClient = new SESClient({
-            region: AWS_SES_REGION,
-            credentials: {
-                accessKeyId: username,
-                secretAccessKey: password,
+        // Create SMTP transporter for AWS SES
+        const transporter = nodemailer.createTransport({
+            host: `email-smtp.${AWS_SES_REGION}.amazonaws.com`,
+            port: 587,
+            secure: false, // Use STARTTLS
+            auth: {
+                user: username,
+                pass: password,
             },
         });
 
-        const command = new SendEmailCommand({
-            Source: AWS_SES_FROM_EMAIL,
-            Destination: {
-                ToAddresses: [to],
-            },
-            Message: {
-                Subject: {
-                    Data: subject,
-                    Charset: "UTF-8",
-                },
-                Body: {
-                    Html: {
-                        Data: htmlBody,
-                        Charset: "UTF-8",
-                    },
-                },
-            },
+        // Send email
+        const info = await transporter.sendMail({
+            from: AWS_SES_FROM_EMAIL,
+            to: to,
+            subject: subject,
+            html: htmlBody,
         });
 
-        const response = await sesClient.send(command);
-        return {success: true, messageId: response.MessageId};
+        return {success: true, messageId: info.messageId};
     } catch (error) {
-        console.error("❌ AWS SES send failed:", error);
+        console.error("❌ AWS SES SMTP send failed:", error);
         return {
             success: false,
             error: error instanceof Error ? error.message : "Unknown AWS SES error",
@@ -119,25 +110,7 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
     <p>Thank you!</p>
 `;
 
-        // Step 4: 发送邮件
-        // TEMPORARY: Testing AWS SES first (switch back to Resend later)
-        console.info("🧪 Testing AWS SES as primary service...");
-        const sesResult = await sendEmailViaSES(
-            to,
-            "Please verify your competition registration",
-            html,
-            AWS_SES_SMTP_USERNAME.value(),
-            AWS_SES_SMTP_PASSWORD.value(),
-        );
-
-        if (sesResult.success) {
-            console.info("✅ Email sent successfully via AWS SES");
-            res.status(200).json({success: true, id: sesResult.messageId, provider: "aws-ses"});
-            return;
-        }
-
-        // If SES fails, try Resend as backup
-        console.info("⚠️ AWS SES failed, trying Resend as backup...");
+        // Step 4: 发送邮件 (Resend primary, AWS SES backup)
         try {
             const resendResponse = await fetch(RESEND_API_URL, {
                 method: "POST",
@@ -160,24 +133,67 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
 
             if (!resendResponse.ok) {
                 const message = typeof payload === "object" && payload?.error ? payload.error : "Send failed";
-                console.error("❌ Resend backup also failed:", payload || resendResponse.statusText);
-                
+                console.error("❌ Resend error:", payload || resendResponse.statusText);
+
+                // Try AWS SES as backup
+                console.info("⚡ Attempting AWS SES as backup...");
+                const sesResult = await sendEmailViaSES(
+                    to,
+                    "Please verify your competition registration",
+                    html,
+                    AWS_SES_SMTP_USERNAME.value(),
+                    AWS_SES_SMTP_PASSWORD.value(),
+                );
+
+                if (sesResult.success) {
+                    console.info("✅ Email sent successfully via AWS SES backup");
+                    res.status(200).json({success: true, id: sesResult.messageId, provider: "aws-ses"});
+                    return;
+                }
+
                 // Both services failed
+                console.error("❌ Both Resend and AWS SES failed");
                 res.status(500).json({
-                    error: sesResult.error,
-                    backup_error: message,
+                    error: message,
+                    backup_error: sesResult.error,
                 });
                 return;
             }
 
-            console.info("✅ Email sent successfully via Resend backup");
             res.status(200).json({success: true, id: payload?.id, provider: "resend"});
         } catch (err: unknown) {
-            console.error("❌ Both AWS SES and Resend failed");
-            res.status(500).json({
-                error: sesResult.error,
-                backup_error: (err as Error).message || "Resend backup failed",
-            });
+            console.error("❌ Resend send attempt failed:", err);
+
+            // Try AWS SES as backup
+            console.info("⚡ Attempting AWS SES as backup after Resend exception...");
+            try {
+                const sesResult = await sendEmailViaSES(
+                    to,
+                    "Please verify your competition registration",
+                    html,
+                    AWS_SES_SMTP_USERNAME.value(),
+                    AWS_SES_SMTP_PASSWORD.value(),
+                );
+
+                if (sesResult.success) {
+                    console.info("✅ Email sent successfully via AWS SES backup");
+                    res.status(200).json({success: true, id: sesResult.messageId, provider: "aws-ses"});
+                    return;
+                }
+
+                // Both services failed
+                console.error("❌ Both Resend and AWS SES failed");
+                res.status(500).json({
+                    error: (err as Error).message || "Send failed",
+                    backup_error: sesResult.error,
+                });
+            } catch (sesErr: unknown) {
+                console.error("❌ AWS SES backup also threw exception:", sesErr);
+                res.status(500).json({
+                    error: (err as Error).message || "Send failed",
+                    backup_error: (sesErr as Error).message || "AWS SES backup failed",
+                });
+            }
         }
     });
 });
