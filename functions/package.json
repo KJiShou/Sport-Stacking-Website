@@ -16,6 +16,7 @@
   },
   "main": "lib/functions/src/index.js",
   "dependencies": {
+    "@aws-sdk/client-ses": "^3.927.0",
     "@firebase/logger": "^0.4.4",
     "cors": "^2.8.5",
     "firebase-admin": "^13.4.0",
