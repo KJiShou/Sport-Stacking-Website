@@ -175,7 +175,6 @@ export default function RegisterTournamentPage() {
                         if (actualMembers !== fallbackTeamSize) {
                             const eventLabel = team.name || getEventLabel(relatedEvent) || "This event";
                             const participantLabel = fallbackTeamSize === 1 ? "participant" : "participants";
-                            const memberLabel = expectedMembers === 1 ? "member" : "members";
                             const additionalMessage = expectedMembers > 0 ? `` : "No additional members should be listed.";
 
                             Message.error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
@@ -627,7 +626,7 @@ export default function RegisterTournamentPage() {
                                 const selectedEventIds: string[] = form.getFieldValue("events_registered") || [];
                                 const teamEvents = selectedEventIds
                                     .map((eventId) => findEventByKey(eventId))
-                                    .filter((event): event is ExpandedEvent => Boolean(event) && isTeamEvent(event));
+                                    .filter((event) => event && isTeamEvent(event)) as ExpandedEvent[];
 
                                 if (teamEvents.length === 0) return null;
 
@@ -654,18 +653,19 @@ export default function RegisterTournamentPage() {
                                                         checked={lookingForTeams.includes(eventId)}
                                                         disabled={!!lookingForTeamMembers}
                                                         onChange={(checked: boolean) => {
-                                                            if (checked) {
-                                                                // Uncheck 'Looking for Team Members' if checked
-                                                                form.setFieldValue(
-                                                                    `teams.${eventId}.looking_for_team_members`,
-                                                                    false,
-                                                                );
-                                                                setLookingForTeams((prev) =>
-                                                                    prev.includes(eventId) ? prev : [...prev, eventId],
-                                                                );
-                                                            } else {
-                                                                setLookingForTeams((prev) => prev.filter((id) => id !== eventId));
-                                                            }
+                                                            // Uncheck 'Looking for Team Members' if checking this
+                                                            form.setFieldValue(
+                                                                `teams.${eventId}.looking_for_team_members`,
+                                                                false,
+                                                            );
+                                                            // Update looking for teams state
+                                                            setLookingForTeams((prev) =>
+                                                                checked
+                                                                    ? prev.includes(eventId)
+                                                                        ? prev
+                                                                        : [...prev, eventId]
+                                                                    : prev.filter((id) => id !== eventId),
+                                                            );
                                                         }}
                                                     >
                                                         Looking for teammates in <strong>{eventLabel}</strong>
@@ -834,10 +834,10 @@ export default function RegisterTournamentPage() {
                                                     <Checkbox
                                                         disabled={lookingForTeams.includes(eventId)}
                                                         onChange={(checked: boolean) => {
-                                                            if (checked) {
-                                                                // Uncheck 'Looking for Teammates' if checked
-                                                                setLookingForTeams((prev) => prev.filter((id) => id !== eventId));
-                                                            }
+                                                            // Uncheck 'Looking for Teammates' when checking this
+                                                            setLookingForTeams((prev) =>
+                                                                checked ? prev.filter((id) => id !== eventId) : prev,
+                                                            );
                                                         }}
                                                     >
                                                         Looking for Team Members
