@@ -5,6 +5,7 @@ import {Timestamp as FirestoreTimestamp, getFirestore} from "firebase-admin/fire
 import {defineSecret} from "firebase-functions/params";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {onRequest} from "firebase-functions/v2/https";
+import nodemailer from "nodemailer";
 import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
@@ -14,11 +15,57 @@ const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "RankingStack <noreply@rankingstack.com>";
 const RESEND_API_URL = process.env.RESEND_API_URL ?? "https://api.resend.com/emails";
 
+// AWS SES Secrets for backup email delivery
+const AWS_SES_SMTP_USERNAME = defineSecret("AWS_SES_SMTP_USERNAME");
+const AWS_SES_SMTP_PASSWORD = defineSecret("AWS_SES_SMTP_PASSWORD");
+const AWS_SES_REGION = "ap-southeast-2";
+const AWS_SES_FROM_EMAIL = process.env.AWS_SES_FROM_EMAIL ?? "RankingStack <noreply@rankingstack.com>";
+
 if (!getApps().length) {
     initializeApp();
 }
 
-export const sendEmail = onRequest({secrets: [RESEND_API_KEY]}, (req, res) => {
+/**
+ * Send email using AWS SES SMTP as a backup when Resend fails
+ */
+async function sendEmailViaSES(
+    to: string,
+    subject: string,
+    htmlBody: string,
+    username: string,
+    password: string,
+): Promise<{success: boolean; messageId?: string; error?: string}> {
+    try {
+        // Create SMTP transporter for AWS SES
+        const transporter = nodemailer.createTransport({
+            host: `email-smtp.${AWS_SES_REGION}.amazonaws.com`,
+            port: 587,
+            secure: false, // Use STARTTLS
+            auth: {
+                user: username,
+                pass: password,
+            },
+        });
+
+        // Send email
+        const info = await transporter.sendMail({
+            from: AWS_SES_FROM_EMAIL,
+            to: to,
+            subject: subject,
+            html: htmlBody,
+        });
+
+        return {success: true, messageId: info.messageId};
+    } catch (error) {
+        console.error("❌ AWS SES SMTP send failed:", error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown AWS SES error",
+        };
+    }
+}
+
+export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD]}, (req, res) => {
     corsHandler(req, res, async () => {
         const apiKey = RESEND_API_KEY.value();
         const auth = getAuth();
@@ -63,7 +110,7 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY]}, (req, res) => {
     <p>Thank you!</p>
 `;
 
-        // Step 4: 发送邮件
+        // Step 4: 发送邮件 (Resend primary, AWS SES backup)
         try {
             const resendResponse = await fetch(RESEND_API_URL, {
                 method: "POST",
@@ -87,14 +134,66 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY]}, (req, res) => {
             if (!resendResponse.ok) {
                 const message = typeof payload === "object" && payload?.error ? payload.error : "Send failed";
                 console.error("❌ Resend error:", payload || resendResponse.statusText);
-                res.status(500).json({error: message});
+
+                // Try AWS SES as backup
+                console.info("⚡ Attempting AWS SES as backup...");
+                const sesResult = await sendEmailViaSES(
+                    to,
+                    "Please verify your competition registration",
+                    html,
+                    AWS_SES_SMTP_USERNAME.value(),
+                    AWS_SES_SMTP_PASSWORD.value(),
+                );
+
+                if (sesResult.success) {
+                    console.info("✅ Email sent successfully via AWS SES backup");
+                    res.status(200).json({success: true, id: sesResult.messageId, provider: "aws-ses"});
+                    return;
+                }
+
+                // Both services failed
+                console.error("❌ Both Resend and AWS SES failed");
+                res.status(500).json({
+                    error: message,
+                    backup_error: sesResult.error,
+                });
                 return;
             }
 
-            res.status(200).json({success: true, id: payload?.id});
+            res.status(200).json({success: true, id: payload?.id, provider: "resend"});
         } catch (err: unknown) {
             console.error("❌ Resend send attempt failed:", err);
-            res.status(500).json({error: (err as Error).message || "Send failed"});
+
+            // Try AWS SES as backup
+            console.info("⚡ Attempting AWS SES as backup after Resend exception...");
+            try {
+                const sesResult = await sendEmailViaSES(
+                    to,
+                    "Please verify your competition registration",
+                    html,
+                    AWS_SES_SMTP_USERNAME.value(),
+                    AWS_SES_SMTP_PASSWORD.value(),
+                );
+
+                if (sesResult.success) {
+                    console.info("✅ Email sent successfully via AWS SES backup");
+                    res.status(200).json({success: true, id: sesResult.messageId, provider: "aws-ses"});
+                    return;
+                }
+
+                // Both services failed
+                console.error("❌ Both Resend and AWS SES failed");
+                res.status(500).json({
+                    error: (err as Error).message || "Send failed",
+                    backup_error: sesResult.error,
+                });
+            } catch (sesErr: unknown) {
+                console.error("❌ AWS SES backup also threw exception:", sesErr);
+                res.status(500).json({
+                    error: (err as Error).message || "Send failed",
+                    backup_error: (sesErr as Error).message || "AWS SES backup failed",
+                });
+            }
         }
     });
 });
