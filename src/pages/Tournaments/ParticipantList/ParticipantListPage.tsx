@@ -6,6 +6,7 @@ import {
     exportMasterListToPDF,
     exportNameListStickerPDF,
     exportParticipantListToPDF,
+    exportLargeNameListStickerPDF,
     generateAllTeamStackingSheetsPDF,
     generateStackingSheetPDF,
     generateTeamStackingSheetPDF,
@@ -79,6 +80,25 @@ export default function ParticipantListPage() {
             setTeamList(teams.filter((team) => regs.some((r) => r.user_global_id === team.leader_id)));
         } catch {
             Message.error("Unable to fetch participants");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLargeNameListSticker = async () => {
+        if (!tournament) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        setLoading(true);
+        try {
+            await exportLargeNameListStickerPDF({
+                tournament,
+                registrations: registrationList,
+            });
+            Message.success("Large name list sticker PDF opened");
+        } catch (error) {
+            Message.error("Failed to generate large sticker PDF");
         } finally {
             setLoading(false);
         }
@@ -212,15 +232,21 @@ export default function ParticipantListPage() {
             return;
         }
         setLoading(true);
-        await exportMasterListToPDF({
-            tournament,
-            events: events ?? [],
-            registrations: registrationList,
-            ageMap,
-            phoneMap,
-        });
-        setLoading(false);
-        Message.success("Master list PDF opened");
+        try {
+            await exportMasterListToPDF({
+                tournament,
+                events: events ?? [],
+                registrations: registrationList,
+                ageMap,
+                phoneMap,
+                logoDataUrl: tournament.logo ?? undefined,
+            });
+            Message.success("Master list PDF opened");
+        } catch (error) {
+            Message.error("Failed to generate master list PDF");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handlePreviewAllBrackets = async () => {
@@ -358,6 +384,14 @@ export default function ParticipantListPage() {
                                         onClick={handleExportNameListSticker}
                                     >
                                         Name List Sticker
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={handleLargeNameListSticker}
+                                    >
+                                        Large Name List Sticker
                                     </Button>
                                     <Button
                                         type="text"

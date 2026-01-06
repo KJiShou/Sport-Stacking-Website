@@ -22,6 +22,7 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
+import defaultIconSrc from "@/assets/icon.avif";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {nanoid} from "nanoid";
@@ -66,6 +67,61 @@ const openPDFInNewTab = (doc: jsPDF, filename: string): void => {
         newWindow.document.title = filename;
     } else {
         throw new Error("Please allow popups to preview PDF");
+    }
+};
+
+const HEADER_ICON_Y = 8;
+const HEADER_ICON_SIZE = 30;
+const getHeaderTitleY = (): number => HEADER_ICON_Y + HEADER_ICON_SIZE / 2;
+
+let cachedDefaultIconDataUrl: string | undefined;
+const loadDefaultIcon = async (): Promise<string | undefined> => {
+    if (cachedDefaultIconDataUrl !== undefined) return cachedDefaultIconDataUrl;
+    try {
+        cachedDefaultIconDataUrl = await fetchImageFixedOrientation(defaultIconSrc);
+    } catch (error) {
+        console.error("Error loading default icon:", error);
+        cachedDefaultIconDataUrl = undefined;
+    }
+    return cachedDefaultIconDataUrl;
+};
+
+const loadUserLogo = async (logoUrl?: string | null): Promise<string | undefined> => {
+    if (!logoUrl) return undefined;
+    try {
+        return await fetchImageFixedOrientation(logoUrl);
+    } catch (error) {
+        console.error("Error loading user logo:", error);
+        return undefined;
+    }
+};
+
+const addHeaderIcons = async (
+    doc: jsPDF,
+    marginX: number,
+    size: number = HEADER_ICON_SIZE,
+    userLogoUrl?: string | null,
+): Promise<void> => {
+    const [defaultIcon, userLogo] = await Promise.all([loadDefaultIcon(), loadUserLogo(userLogoUrl)]);
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Reserve vertical space; titles should align horizontally between these icons
+    const iconY = HEADER_ICON_Y;
+
+    if (defaultIcon) {
+        try {
+            doc.addImage(defaultIcon, inferImageFormat(defaultIcon), marginX, iconY, size, size);
+        } catch (error) {
+            console.error("Error adding default icon:", error);
+        }
+    }
+
+    if (userLogo) {
+        try {
+            doc.addImage(userLogo, inferImageFormat(userLogo), pageWidth - marginX - size, iconY, size, size);
+        } catch (error) {
+            console.error("Error adding user logo:", error);
+        }
     }
 };
 
@@ -220,8 +276,9 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.getWidth();
         const marginX = 14;
-        const logoWidth = 40;
-        const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
+        const titleMaxWidth = pageWidth - 2 * (marginX + HEADER_ICON_SIZE);
+
+        await addHeaderIcons(doc, marginX, 30, tournament.logo);
 
         // Header
         doc.setFont("times", "bold");
@@ -229,34 +286,11 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         const eventLabel = getEventLabel(event) || event.type;
         const title = team ? `${team.name} Member List` : `${eventLabel} ${bracket.name} Name List`;
         const titleLines = doc.splitTextToSize(title, titleMaxWidth);
-        doc.text(titleLines, marginX, marginY + 20);
-
-        let logoDataUrl: string | undefined;
-        if (tournament.logo) {
-            try {
-                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
-            } catch (error) {
-                console.error("Error loading logo:", error);
-            }
-        }
-
-        if (logoDataUrl) {
-            try {
-                doc.addImage(
-                    logoDataUrl,
-                    inferImageFormat(logoDataUrl),
-                    pageWidth - marginX - logoWidth + 5,
-                    marginY + 5,
-                    30,
-                    30,
-                );
-            } catch (error) {
-                console.error("Error adding logo to PDF:", error);
-            }
-        }
+        const titleY = getHeaderTitleY();
+        doc.text(titleLines, pageWidth / 2, titleY, {align: "center"});
 
         const titleHeight = titleLines.length * 10; // Approximate height of the title
-        let currentY = marginY + 20 + titleHeight;
+        let currentY = titleY + 6 + titleHeight;
 
         if (searchTerm && !team) {
             doc.setFontSize(10);
@@ -350,8 +384,10 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.getWidth();
         const marginX = 14;
-        const logoWidth = 40;
+        const logoWidth = 60;
         const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
+
+        await addHeaderIcons(doc, marginX, 30, tournament.logo);
 
         const eventMetadataMap = new Map<string, {label: string; type: string; code?: string}>();
         if (events) {
@@ -418,29 +454,7 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
         doc.setFontSize(25);
         const title = `${tournament.venue} ${tournament.name} - Master Participant List`;
         const titleLines = doc.splitTextToSize(title, titleMaxWidth);
-        doc.text(titleLines, marginX, marginY + 20);
-
-        let logoDataUrl: string | undefined;
-        if (tournament.logo) {
-            try {
-                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
-            } catch (error) {
-                console.error("Error loading logo:", error);
-            }
-        }
-
-        const logoDisplayWidth = 30;
-        const logoDisplayHeight = 30;
-        const logoX = pageWidth - marginX - logoDisplayWidth;
-        const logoY = marginY + 5;
-
-        if (logoDataUrl) {
-            try {
-                doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), logoX, logoY, logoDisplayWidth, logoDisplayHeight);
-            } catch (error) {
-                console.error("Error adding logo to PDF:", error);
-            }
-        }
+        doc.text(titleLines, pageWidth / 2, marginY + 10, {align: "center"});
 
         const titleHeight = titleLines.length * 10; // Approximate height of the title
         let currentY = marginY + 20 + titleHeight;
@@ -510,41 +524,22 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
         const addHeader = async (docInstance: jsPDF) => {
             const pageWidth = docInstance.internal.pageSize.getWidth();
             const marginX = 14;
-            const logoWidth = 40;
+            const logoWidth = 60;
             const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
+
+            await addHeaderIcons(docInstance, marginX, 30, tournament.logo);
+
+            await addHeaderIcons(docInstance, marginX, 30, tournament.logo);
 
             docInstance.setFont("times", "bold");
             docInstance.setFontSize(25);
             const title = `${tournament.name} - ${round} Results`;
             const titleLines = docInstance.splitTextToSize(title, titleMaxWidth);
-            docInstance.text(titleLines, marginX, 20);
-
-            let logoDataUrl: string | undefined;
-            if (tournament.logo) {
-                try {
-                    logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
-                } catch (error) {
-                    console.error("Error loading logo:", error);
-                }
-            }
-
-            if (logoDataUrl) {
-                try {
-                    docInstance.addImage(
-                        logoDataUrl,
-                        inferImageFormat(logoDataUrl),
-                        pageWidth - marginX - logoWidth + 5,
-                        10,
-                        30,
-                        30,
-                    );
-                } catch (error) {
-                    console.error("Error adding logo to PDF:", error);
-                }
-            }
+            const titleY = getHeaderTitleY();
+            docInstance.text(titleLines, pageWidth / 2, titleY, {align: "center"});
 
             const titleHeight = titleLines.length * 10;
-            const currentY = 25 + titleHeight;
+            const currentY = titleY + 6 + titleHeight;
             docInstance.line(14, currentY, docInstance.internal.pageSize.width - 14, currentY);
             return currentY + 10;
         };
@@ -779,41 +774,20 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
         const addHeader = async (docInstance: jsPDF) => {
             const pageWidth = docInstance.internal.pageSize.getWidth();
             const marginX = 14;
-            const logoWidth = 40;
+            const logoWidth = 60;
             const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
+
+            await addHeaderIcons(docInstance, marginX, 30, tournament.logo);
 
             docInstance.setFont("times", "bold");
             docInstance.setFontSize(25);
             const title = `${tournament.name} - Finalists Name List`;
             const titleLines = docInstance.splitTextToSize(title, titleMaxWidth);
-            docInstance.text(titleLines, marginX, 20);
-
-            let logoDataUrl: string | undefined;
-            if (tournament.logo) {
-                try {
-                    logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
-                } catch (error) {
-                    console.error("Error loading logo:", error);
-                }
-            }
-
-            if (logoDataUrl) {
-                try {
-                    docInstance.addImage(
-                        logoDataUrl,
-                        inferImageFormat(logoDataUrl),
-                        pageWidth - marginX - logoWidth + 5,
-                        10,
-                        30,
-                        30,
-                    );
-                } catch (error) {
-                    console.error("Error adding logo to PDF:", error);
-                }
-            }
+            const titleY = getHeaderTitleY();
+            docInstance.text(titleLines, pageWidth / 2, titleY, {align: "center"});
 
             const titleHeight = titleLines.length * 10;
-            const currentY = 25 + titleHeight;
+            const currentY = titleY + 6 + titleHeight;
             docInstance.line(14, currentY, docInstance.internal.pageSize.width - 14, currentY);
             return currentY + 10;
         };
@@ -931,35 +905,20 @@ export const exportAllBracketsListToPDF = async (
         doc.setFont("times");
         const pageWidth = doc.internal.pageSize.getWidth();
         const marginX = 14;
-        const logoWidth = 40;
-        const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
+        const titleMaxWidth = pageWidth - marginX * 2 - HEADER_ICON_SIZE * 2;
+
+        await addHeaderIcons(doc, marginX, HEADER_ICON_SIZE, tournament.logo);
 
         // Header
         doc.setFont("times", "bold");
         doc.setFontSize(25);
         const title = `${tournament.name} - All Events & Brackets`;
         const titleLines = doc.splitTextToSize(title, titleMaxWidth);
-        doc.text(titleLines, marginX, 20);
-
-        let logoDataUrl: string | undefined;
-        if (tournament.logo) {
-            try {
-                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
-            } catch (error) {
-                console.error("Error loading logo:", error);
-            }
-        }
-
-        if (logoDataUrl) {
-            try {
-                doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), pageWidth - marginX - logoWidth + 5, 10, 30, 30);
-            } catch (error) {
-                console.error("Error adding logo to PDF:", error);
-            }
-        }
+        const titleY = getHeaderTitleY();
+        doc.text(titleLines, pageWidth / 2, titleY, {align: "center"});
 
         const titleHeight = titleLines.length * 10; // Approximate height of the title
-        let currentY = 25 + titleHeight;
+        let currentY = titleY + 6 + titleHeight;
 
         doc.line(14, currentY, doc.internal.pageSize.width - 14, currentY);
         currentY += 10;
@@ -1151,6 +1110,89 @@ export const exportNameListStickerPDF = async ({tournament, registrations}: Name
     }
 };
 
+export const exportLargeNameListStickerPDF = async ({tournament, registrations}: NameListStickerOptions): Promise<void> => {
+    try {
+        const doc = new jsPDF("p", "pt", "a4");
+        const pageHeight = doc.internal.pageSize.height;
+        const pageWidth = doc.internal.pageSize.width;
+
+        const margin = 40;
+        const rowGap = 10;
+        const numCols = 1;
+        const numRows = 3;
+
+        const stickerWidth = pageWidth - margin * 2;
+        const stickerHeight = (pageHeight - margin * 2 - rowGap * (numRows - 1)) / numRows;
+
+        let regIndex = 0;
+        let pageNum = 1;
+
+        while (regIndex < registrations.length) {
+            if (pageNum > 1) {
+                doc.addPage();
+            }
+
+            for (let row = 0; row < numRows; row++) {
+                if (regIndex >= registrations.length) {
+                    break;
+                }
+
+                const registration = registrations[regIndex];
+                const x = margin;
+                const y = margin + row * stickerHeight;
+                const centerX = x + stickerWidth / 2;
+
+                // Border
+                doc.rect(x, y, stickerWidth, stickerHeight);
+
+                const paddingX = 16;
+                const paddingY = 26;
+                const contentX = x + paddingX;
+                const contentWidth = stickerWidth - paddingX * 2;
+
+                // Tournament Name
+                doc.setFontSize(25);
+                doc.setFont("times", "bold");
+                const titleLines = doc.splitTextToSize(tournament.name, contentWidth);
+                const titleBaseY = y + paddingY;
+                doc.text(titleLines, centerX, titleBaseY, {align: "center"});
+                let currentY = titleBaseY + 35;
+
+                // Separator
+                doc.setLineWidth(0.1);
+                doc.line(contentX - 15, currentY, contentX + contentWidth + 15, currentY);
+                currentY += +titleLines.length * 15 + 80;
+
+                // Global ID (large and centered)
+                doc.setFontSize(120);
+                doc.setFont("times", "bold");
+                doc.text(registration.user_global_id, centerX, currentY, {align: "center"});
+                currentY += 28;
+
+                // Separator
+                doc.setLineWidth(0.1);
+                doc.line(contentX - 15, currentY, contentX + contentWidth + 15, currentY);
+                currentY += 25;
+
+                // User Name
+                doc.setFontSize(28);
+                doc.setFont("times", "normal");
+                const nameLines = doc.splitTextToSize(registration.user_name, contentWidth);
+                doc.text(nameLines, centerX, currentY, {align: "center"});
+
+                regIndex++;
+            }
+            pageNum++;
+        }
+
+        const filename = createPDFFilename([tournament.name, "large_name_list_stickers.pdf"]);
+        openPDFInNewTab(doc, filename);
+    } catch (error) {
+        console.error("Error generating large name list sticker PDF:", error);
+        throw error;
+    }
+};
+
 // Stacking Sheet Functions
 export const generateStackingSheetPDF = async (
     tournament: Tournament,
@@ -1179,8 +1221,12 @@ export const generateStackingSheetPDF = async (
             }
         }
 
+        // Two time sheets per page
         targetParticipants.forEach((participant, index) => {
-            if (index > 0) doc.addPage();
+            const isNewPage = index % 2 === 0;
+            if (isNewPage && index > 0) {
+                doc.addPage();
+            }
             generateSingleStackingSheet(
                 doc,
                 tournament,
@@ -1190,6 +1236,7 @@ export const generateStackingSheetPDF = async (
                 division,
                 sheetType,
                 options.eventCodes ?? [],
+                index % 2, // position: 0 top, 1 bottom
             );
         });
 
@@ -1214,16 +1261,19 @@ export const generateTeamStackingSheetPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
-        let logoDataUrl: string | undefined;
-        if (tournament.logo) {
-            try {
-                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
-            } catch (error) {
-                console.error("Error loading logo:", error);
-            }
-        }
+        const userLogo = await loadUserLogo(tournament.logo);
+        const defaultLogo = await loadDefaultIcon();
 
-        generateSingleStackingSheet(doc, tournament, team, ageMap, logoDataUrl, division, sheetType, options.eventCodes ?? []);
+        generateSingleStackingSheet(
+            doc,
+            tournament,
+            team,
+            ageMap,
+            userLogo ?? defaultLogo ?? "",
+            division,
+            sheetType,
+            options.eventCodes ?? [],
+        );
 
         const filename = createPDFFilename([tournament.name, team.name, "timesheet.pdf"]);
         openPDFInNewTab(doc, filename);
@@ -1261,11 +1311,12 @@ const generateSingleStackingSheet = (
     division: string,
     sheetType = "",
     eventCodes: string[] = [],
+    position: number = 0,
 ): void => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginX = 5;
     const contentMaxHeight = 148; // Upper half of A4
-    const startY = 5;
+    const startY = position === 0 ? 5 : contentMaxHeight + 5; // top or bottom half
     const sectionSpacing = 6;
 
     doc.setFont("times", "normal");
@@ -1286,11 +1337,12 @@ const generateSingleStackingSheet = (
         }
     }
 
-    // Title text (right side)
+    // Title text (right side, centered vertically)
     doc.setFont("times", "bold");
     doc.setFontSize(16);
-    doc.text(`${tournament.venue}`, pageWidth / 2 + 20, startY + 10, {align: "center"});
-    doc.text(`${tournament.name}`, pageWidth / 2 + 20, startY + 18, {align: "center"});
+    const titleCenterY = startY + titleHeight / 2;
+    doc.text(`${tournament.venue}`, pageWidth / 2 + 20, titleCenterY - 4, {align: "center"});
+    doc.text(`${tournament.name}`, pageWidth / 2 + 20, titleCenterY + 4, {align: "center"});
 
     // === 2. Subtitle ===
     doc.setFontSize(11);
@@ -1407,9 +1459,14 @@ const generateSingleStackingSheet = (
     // === 5. Notes / Instructions ===
     const notesY = tableY - 3 + rowHeight * (stacks.length + 1);
     doc.setFontSize(7.5);
+    const orderLine = (() => {
+        const labels = resolveStackLabels(sheetType, eventCodes);
+        return `*The Stacks are done IN this order: ${labels.join(", ")}`;
+    })();
+
     const lines = [
         "*Allow up to 2 warm-ups prior to the first “try” of each stack. (Warm-ups must match the stack)",
-        "*The Stacks are done IN this order: 3-3-3, 3-6-3, Cycle",
+        orderLine,
         "*After the warm-ups, the next 3 stacks must be used as their 1st, 2nd, 3rd tries.",
         "( No warm-ups between tries. A single up stack of any type constitutes a warm-up and is counted as scratched try.)",
         "*No time is recorded for an infraction that results in a Scratch. Instead record the appropriate code (S1,S2,S3,S4,S5,S6) from Scratch key below.",

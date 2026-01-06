@@ -74,6 +74,7 @@ export interface ExportMasterListOptions {
     registrations: Registration[];
     ageMap: Record<string, number>;
     phoneMap: Record<string, string>;
+    logoDataUrl?: string;
 }
 
 export interface EventData {
