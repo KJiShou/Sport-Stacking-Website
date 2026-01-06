@@ -47,6 +47,7 @@ const cloneAgeBrackets = (brackets: AgeBracket[] = []): AgeBracket[] =>
 
 const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     ...event,
+    gender: event.gender ?? "Both",
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
 
@@ -168,7 +169,7 @@ export default function CreateTournamentPage() {
 
             for (let i = 0; i < rawEvents.length; i++) {
                 const rawEvent = rawEvents[i];
-                const {age_brackets, id, type, codes, teamSize} = rawEvent;
+                const {age_brackets, id, type, codes, teamSize, gender} = rawEvent;
 
                 if (!isTournamentEventType(type)) {
                     invalidEvents.push(`Event ${i + 1}: Invalid event type "${type}"`);
@@ -182,9 +183,13 @@ export default function CreateTournamentPage() {
                     continue;
                 }
 
+                const normalizedGender =
+                    gender === "Male" || gender === "Female" || gender === "Both" ? gender : ("Both" as TournamentEvent["gender"]);
+
                 const sanitizedEvent: TournamentEvent = {
                     id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
                     type,
+                    gender: normalizedGender,
                     codes: normalizedCodes,
                     age_brackets:
                         Array.isArray(age_brackets) && age_brackets.length > 0
@@ -427,6 +432,7 @@ export default function CreateTournamentPage() {
                                                 id: crypto.randomUUID(),
                                                 codes: [],
                                                 type: "" as TournamentEvent["type"],
+                                                gender: "Both",
                                                 age_brackets: cloneAgeBrackets(DEFAULT_AGE_BRACKET),
                                             });
                                         }}
@@ -451,6 +457,7 @@ export default function CreateTournamentPage() {
                                 return (
                                     <>
                                         {ageBrackets.map((bracket, id) => {
+                                            const bracketKey = (bracket as {_id?: string})._id ?? `bracket-${id}`;
                                             const isMinError = bracket.min_age === null || bracket.min_age > bracket.max_age;
 
                                             let minAgeHelp: string | undefined;
@@ -470,7 +477,7 @@ export default function CreateTournamentPage() {
                                             }
 
                                             return (
-                                                <div key={`bracket-${bracket.name}`} className="border p-4 mb-4 rounded">
+                                                <div key={bracketKey} className="border p-4 mb-4 rounded">
                                                     <div className="flex gap-4 mb-4 w-full">
                                                         <Form.Item
                                                             label="Bracket Name"

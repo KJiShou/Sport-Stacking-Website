@@ -38,7 +38,7 @@ const getCountryFlag = (country?: string): string => {
 };
 
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
-type EventTypeUnion = "3-3-3" | "3-6-3" | "Cycle";
+type EventTypeUnion = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
 type AgeGroup = "Overall" | "6U" | "8U" | "10U" | "12U" | "14U" | "17U" | "Open";
 type AgeFilter = "All" | AgeGroup;
@@ -132,6 +132,12 @@ const EVENT_OPTIONS: EventOption[] = [
         label: "Individual Cycle",
         category: "individual",
         event: "Cycle",
+    },
+    {
+        key: "individual:Overall",
+        label: "Individual Overall",
+        category: "individual",
+        event: "Overall",
     },
 ];
 const DEFAULT_EVENT = EVENT_OPTIONS[0];
@@ -270,8 +276,6 @@ function buildEventStats(record: {
     };
 }
 
-// Overall is no longer tracked in best_times; we no longer derive it for rankings
-
 function getAgeGroup(age: number | null): AgeGroup {
     if (age === null || Number.isNaN(age)) {
         return "Open";
@@ -365,7 +369,7 @@ async function loadRankingData(): Promise<AthleteRankingEntry[]> {
     const map = new Map<string, AthleteRankingEntry>();
 
     // Events we care about for individual rankings
-    const individualEvents: RankingEventType[] = ["3-3-3", "3-6-3", "Cycle"];
+    const individualEvents: RankingEventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
 
     // Fetch top athletes for each event and upsert into the map
     await Promise.all(

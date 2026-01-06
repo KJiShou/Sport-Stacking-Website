@@ -61,6 +61,7 @@ export const FirestoreUserSchema = z.object({
             "3-3-3": BestTimeRecordSchema.optional().nullable(),
             "3-6-3": BestTimeRecordSchema.optional().nullable(),
             Cycle: BestTimeRecordSchema.optional().nullable(),
+            Overall: BestTimeRecordSchema.optional().nullable(),
         })
         .optional()
         .nullable(),

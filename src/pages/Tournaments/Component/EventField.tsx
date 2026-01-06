@@ -47,6 +47,19 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                         </Form.Item>
                     </div>
 
+                    <div className="w-64">
+                        <Title heading={6} className="mb-2">
+                            Gender
+                        </Title>
+                        <Form.Item field={`events.${index}.gender`} rules={[{required: true}]}>
+                            <Select placeholder="Select gender">
+                                <Select.Option value="Male">Male</Select.Option>
+                                <Select.Option value="Female">Female</Select.Option>
+                                <Select.Option value="Both">Both</Select.Option>
+                            </Select>
+                        </Form.Item>
+                    </div>
+
                     <div className="flex flex-col gap-2">
                         <Button type="primary" onClick={() => onEditAgeBrackets(index)}>
                             <IconEdit /> Age Brackets

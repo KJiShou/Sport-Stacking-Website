@@ -23,6 +23,7 @@ export const EventSchema = z.object({
     tournament_id: z.string().optional().nullable(),
     codes: z.array(z.enum(["3-3-3", "3-6-3", "Cycle"])),
     type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"]),
+    gender: z.enum(["Male", "Female", "Both"]).default("Both"),
     teamSize: z.number().optional(),
     age_brackets: z.array(AgeBracketSchema),
 });

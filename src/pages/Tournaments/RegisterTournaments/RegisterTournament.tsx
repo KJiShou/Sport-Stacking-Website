@@ -386,10 +386,22 @@ export default function RegisterTournamentPage() {
                 const comp = await fetchTournamentById(tournamentId);
                 const fetchedEvents = comp?.events?.length ? comp.events : await fetchTournamentEvents(tournamentId);
                 const age = user?.birthdate && comp?.start_date ? getAgeAtTournament(user.birthdate, comp.start_date) : 0;
+                const normalizeGender = (value: unknown): "Male" | "Female" | "Both" => {
+                    return value === "Male" || value === "Female" || value === "Both" ? value : "Both";
+                };
+                const userGender = normalizeGender(user?.gender);
 
                 // Filter events by age brackets and keep them as grouped events
                 const availableGroupedEvents: ExpandedEvent[] = [];
                 for (const event of fetchedEvents) {
+                    const eventGender = normalizeGender((event as {gender?: unknown}).gender);
+
+                    // Skip events that don't match user's gender (unless event is open to both)
+                    const isGenderEligible = eventGender === "Both" || userGender === "Both" || eventGender === userGender;
+                    if (!isGenderEligible) {
+                        continue;
+                    }
+
                     // Filter events by age brackets first
                     const isAgeEligible = event.age_brackets?.some((bracket) => age >= bracket.min_age && age <= bracket.max_age);
                     if (isAgeEligible && event.codes) {

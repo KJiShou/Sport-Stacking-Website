@@ -224,6 +224,9 @@ export const saveOverallRecord = async (data: TournamentOverallRecord): Promise<
             if (data.cycle > 0) {
                 await updateUserBestTime(data.participant_global_id, "Cycle", data.cycle);
             }
+            if (data.overall_time > 0) {
+                await updateUserBestTime(data.participant_global_id, "Overall", data.overall_time);
+            }
         } catch (error) {
             console.error("Failed to update user best times:", error);
             // Don't fail the record save if best time update fails
@@ -706,6 +709,40 @@ export const updateOverallRecord = async (
             ...updates,
             updated_at: now,
         });
+
+        const shouldUpdateBestTimes =
+            (updates.three_three_three ?? 0) > 0 ||
+            (updates.three_six_three ?? 0) > 0 ||
+            (updates.cycle ?? 0) > 0 ||
+            (updates.overall_time ?? 0) > 0;
+
+        if (shouldUpdateBestTimes) {
+            const recordSnap = await getDoc(recordRef);
+            if (recordSnap.exists()) {
+                const record = recordSnap.data() as TournamentOverallRecord;
+                const globalId = record.participant_global_id;
+
+                if (globalId) {
+                    const threeThreeThree = updates.three_three_three;
+                    const threeSixThree = updates.three_six_three;
+                    const cycle = updates.cycle;
+                    const overallTime = updates.overall_time;
+
+                    if (typeof threeThreeThree === "number" && threeThreeThree > 0) {
+                        await updateUserBestTime(globalId, "3-3-3", threeThreeThree);
+                    }
+                    if (typeof threeSixThree === "number" && threeSixThree > 0) {
+                        await updateUserBestTime(globalId, "3-6-3", threeSixThree);
+                    }
+                    if (typeof cycle === "number" && cycle > 0) {
+                        await updateUserBestTime(globalId, "Cycle", cycle);
+                    }
+                    if (typeof overallTime === "number" && overallTime > 0) {
+                        await updateUserBestTime(globalId, "Overall", overallTime);
+                    }
+                }
+            }
+        }
     } catch (error) {
         console.error(`Failed to update overall record ${recordId}:`, error);
         throw error;

@@ -149,6 +149,7 @@ export default function RegisterPage() {
                     gender: data?.gender,
                     birthdate: data?.birthdate,
                     phone_number: data?.phone_number ?? "-",
+                    memberId: data?.memberId,
                 });
                 descData = [
                     {label: "Email", value: data?.email ?? "-"},

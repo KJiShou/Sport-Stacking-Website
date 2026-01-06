@@ -2,7 +2,7 @@ import {collection, getDocs, limit, orderBy, query, where} from "firebase/firest
 import type {FirestoreUser} from "../../schema/UserSchema";
 import {db} from "./config";
 
-export type EventType = "3-3-3" | "3-6-3" | "Cycle";
+export type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
 /**
  * Get top athletes by best time for a specific event
@@ -182,6 +182,7 @@ export const getAthleteBestTimes = async (globalId: string) => {
             "3-3-3": (userData.best_times?.["3-3-3"] as {time?: number} | undefined)?.time ?? null,
             "3-6-3": (userData.best_times?.["3-6-3"] as {time?: number} | undefined)?.time ?? null,
             Cycle: (userData.best_times?.Cycle as {time?: number} | undefined)?.time ?? null,
+            Overall: (userData.best_times?.Overall as {time?: number} | undefined)?.time ?? null,
         };
     } catch (error) {
         console.error(`Failed to fetch best times for athlete ${globalId}:`, error);
