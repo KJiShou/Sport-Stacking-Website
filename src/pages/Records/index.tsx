@@ -139,6 +139,10 @@ const RecordsIndex: React.FC = () => {
     const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>("Overall");
     const [searchQuery, setSearchQuery] = useState<string>("");
     const [dateRange, setDateRange] = useState<[Date | undefined, Date | undefined]>([undefined, undefined]);
+    const [tablePagination, setTablePagination] = useState<{current: number; pageSize: number}>({
+        current: 1,
+        pageSize: 20,
+    });
 
     // Admin modal states
     const [selectedRecord, setSelectedRecord] = useState<RecordDisplay | null>(null);
@@ -444,6 +448,20 @@ const RecordsIndex: React.FC = () => {
     const [selectedParentChildEvent, setSelectedParentChildEvent] = useState<EventTypeKey>("Cycle");
     const [selectedSpecialNeedEvent, setSelectedSpecialNeedEvent] = useState<EventTypeKey>("3-3-3");
 
+    useEffect(() => {
+        setTablePagination((prev) => ({...prev, current: 1}));
+    }, [
+        activeCategory,
+        selectedAgeGroup,
+        searchQuery,
+        dateRange,
+        selectedIndividualEvent,
+        selectedDoubleEvent,
+        selectedTeamRelayEvent,
+        selectedParentChildEvent,
+        selectedSpecialNeedEvent,
+    ]);
+
     const getSelectedEventForCategory = (category: RecordCategory): EventTypeKey => {
         switch (category) {
             case "individual":
@@ -699,11 +717,17 @@ const RecordsIndex: React.FC = () => {
                         columns={getTableColumns(isTeamCategory, deviceBreakpoint)}
                         data={filteredRecordsData}
                         pagination={{
-                            pageSize: 20,
+                            ...tablePagination,
                             showTotal: true,
                             showJumper: true,
                             sizeCanChange: true,
                         }}
+                        onChange={(pagination) =>
+                            setTablePagination((prev) => ({
+                                current: pagination.current ?? prev.current,
+                                pageSize: pagination.pageSize ?? prev.pageSize,
+                            }))
+                        }
                         size="default"
                         stripe
                         hover

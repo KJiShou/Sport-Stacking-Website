@@ -71,6 +71,7 @@ const AthleteProfilePage = () => {
         "3-3-3": null,
         "3-6-3": null,
         Cycle: null,
+        Overall: null,
     });
 
     useEffect(() => {
@@ -89,8 +90,9 @@ const AthleteProfilePage = () => {
             getTopAthletesByEvent("3-3-3", 1000),
             getTopAthletesByEvent("3-6-3", 1000),
             getTopAthletesByEvent("Cycle", 1000),
+            getTopAthletesByEvent("Overall", 1000),
         ])
-            .then(([userData, rankings333, rankings363, rankingsCycle]) => {
+            .then(([userData, rankings333, rankings363, rankingsCycle, rankingsOverall]) => {
                 if (!cancelled) {
                     setUser(userData ?? null);
                     if (!userData) {
@@ -100,11 +102,13 @@ const AthleteProfilePage = () => {
                         const rank333 = rankings333.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
                         const rank363 = rankings363.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
                         const rankCycle = rankingsCycle.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
+                        const rankOverall = rankingsOverall.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
 
                         setRankings({
                             "3-3-3": rank333 >= 0 ? rank333 + 1 : null,
                             "3-6-3": rank363 >= 0 ? rank363 + 1 : null,
                             Cycle: rankCycle >= 0 ? rankCycle + 1 : null,
+                            Overall: rankOverall >= 0 ? rankOverall + 1 : null,
                         });
                     }
                 }
@@ -129,7 +133,7 @@ const AthleteProfilePage = () => {
     const bestTimes = useMemo<BestTimeRecord[]>(() => {
         if (!user?.best_times) return [];
 
-        const events: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
+        const events: EventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
         return events
             .map((event) => {
                 const record = user.best_times?.[event];

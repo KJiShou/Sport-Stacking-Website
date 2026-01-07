@@ -88,6 +88,7 @@ const cloneAgeBrackets = (brackets: TournamentEvent["age_brackets"] = DEFAULT_AG
 
 const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     ...event,
+    gender: event.gender ?? "Both",
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
 
@@ -719,7 +720,7 @@ export default function TournamentList() {
 
             for (let i = 0; i < rawEvents.length; i++) {
                 const rawEvent = rawEvents[i];
-                const {__prevType: _ignored, age_brackets, id, type, codes, teamSize} = rawEvent;
+                const {__prevType: _ignored, age_brackets, id, type, codes, teamSize, gender} = rawEvent;
 
                 if (!isTournamentEventType(type)) {
                     invalidEvents.push(`Event ${i + 1}: Invalid event type "${type}"`);
@@ -737,6 +738,7 @@ export default function TournamentList() {
                 const sanitizedEvent: TournamentEvent = {
                     id: id || crypto.randomUUID(), // Use existing ID or generate only if truly missing
                     type,
+                    gender: gender === "Male" || gender === "Female" || gender === "Both" ? gender : "Both",
                     codes: normalizedCodes,
                     age_brackets: cloneAgeBrackets(age_brackets ?? DEFAULT_AGE_BRACKET),
                 };
@@ -1288,6 +1290,7 @@ export default function TournamentList() {
                                                         add({
                                                             id: undefined, // Let backend/database assign the ID
                                                             type: "" as TournamentEvent["type"],
+                                                            gender: "Both",
                                                             codes: [],
                                                             age_brackets: cloneAgeBrackets(DEFAULT_AGE_BRACKET),
                                                         })

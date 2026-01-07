@@ -21,7 +21,9 @@ import {
     Typography,
 } from "@arco-design/web-react";
 import {IconDelete, IconExclamationCircle, IconUndo} from "@arco-design/web-react/icon";
-import {useEffect, useState} from "react";
+import dayjs from "dayjs";
+import {Timestamp} from "firebase/firestore";
+import {useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 
 const {Title} = Typography;
@@ -81,8 +83,30 @@ export default function ViewTournamentRegistrationPage() {
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
     const [availableEventsState, setAvailableEventsState] = useState<TournamentEvent[]>([]);
 
+    const parseDate = (date: Tournament["registration_start_date"]): dayjs.Dayjs | null => {
+        if (!date) return null;
+        if (date instanceof Timestamp) {
+            return dayjs(date.toDate());
+        }
+        return dayjs(date);
+    };
+
+    const canDeleteRegistration = useMemo(() => {
+        if (!tournament?.registration_start_date || !tournament?.registration_end_date) return true;
+        const start = parseDate(tournament.registration_start_date);
+        const end = parseDate(tournament.registration_end_date);
+        if (!start || !end) return true;
+
+        const now = dayjs();
+        return (now.isAfter(start) || now.isSame(start)) && (now.isBefore(end) || now.isSame(end));
+    }, [tournament]);
+
     const handleDeleteRegistration = async (registrationId: string) => {
         if (!tournamentId) return;
+        if (!canDeleteRegistration) {
+            Message.error("Registration deletions are only allowed during the registration period.");
+            return;
+        }
 
         setLoading(true);
         try {
@@ -281,6 +305,7 @@ export default function ViewTournamentRegistrationPage() {
                             e.stopPropagation();
                         }}
                         okButtonProps={{status: "danger"}}
+                        disabled={!canDeleteRegistration}
                     >
                         <Button
                             title={"Delete this registration"}
@@ -288,8 +313,12 @@ export default function ViewTournamentRegistrationPage() {
                             status="danger"
                             loading={loading}
                             icon={<IconDelete />}
+                            disabled={!canDeleteRegistration}
                             onClick={(e) => {
                                 e.stopPropagation();
+                                if (!canDeleteRegistration) {
+                                    Message.warning("You can only delete registrations within the registration period.");
+                                }
                             }}
                         >
                             Delete Registration

@@ -2,19 +2,40 @@ import type {AgeBracketModalProps} from "@/schema";
 // src/components/tournament/AgeBracketModal.tsx
 import {Button, Form, Input, InputNumber, Modal} from "@arco-design/web-react";
 import {IconDelete, IconPlus} from "@arco-design/web-react/icon";
+import {useEffect, useState} from "react";
 
 export default function AgeBracketModal({visible, brackets, onChange, onCancel, onSave, onDeleteBracket}: AgeBracketModalProps) {
+    // Ensure each rendered bracket has a stable key across edits to prevent input focus jumps
+    const [tempKeys, setTempKeys] = useState<string[]>([]);
+
+    useEffect(() => {
+        setTempKeys((prev) => {
+            const next = [...prev];
+            while (next.length < brackets.length) {
+                next.push(crypto.randomUUID());
+            }
+            return next.slice(0, brackets.length);
+        });
+    }, [brackets.length]);
+
+    const updateBracketAtIndex = (index: number, updater: (current: (typeof brackets)[number]) => (typeof brackets)[number]) => {
+        const updated = [...brackets];
+        updated[index] = updater(updated[index]);
+        onChange(updated);
+    };
+
     return (
         <Modal title="Edit Age Brackets" visible={visible} onCancel={onCancel} onOk={onSave}>
             <Form.List field="age_brackets_modal">
                 {(fields, {add}) => (
                     <>
                         {brackets.map((bracket, index) => {
+                            const bracketKey = (bracket as {_id?: string})._id ?? tempKeys[index] ?? `${index}`;
                             const isMinError = bracket.min_age === null || bracket.min_age > bracket.max_age;
                             const isMaxError = bracket.max_age === null || bracket.max_age < bracket.min_age;
 
                             return (
-                                <div key={bracket.name} className="flex gap-4 mb-4 w-full">
+                                <div key={bracketKey} className="flex gap-4 mb-4 w-full">
                                     <Form.Item
                                         label="Bracket Name"
                                         required
@@ -25,9 +46,7 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
                                         <Input
                                             value={bracket.name}
                                             onChange={(v) => {
-                                                const updated = [...brackets];
-                                                updated[index].name = v;
-                                                onChange(updated);
+                                                updateBracketAtIndex(index, (current) => ({...current, name: v}));
                                             }}
                                             placeholder="Bracket Name"
                                         />
@@ -43,9 +62,7 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
                                             value={bracket.min_age}
                                             min={0}
                                             onChange={(v) => {
-                                                const updated = [...brackets];
-                                                updated[index].min_age = v ?? 0;
-                                                onChange(updated);
+                                                updateBracketAtIndex(index, (current) => ({...current, min_age: v ?? 0}));
                                             }}
                                             placeholder="Min Age"
                                         />
@@ -61,9 +78,7 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
                                             value={bracket.max_age}
                                             min={0}
                                             onChange={(v) => {
-                                                const updated = [...brackets];
-                                                updated[index].max_age = v ?? 0;
-                                                onChange(updated);
+                                                updateBracketAtIndex(index, (current) => ({...current, max_age: v ?? 0}));
                                             }}
                                             placeholder="Max Age"
                                         />
@@ -78,7 +93,18 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
                         })}
                         <Button
                             type="text"
-                            onClick={() => onChange([...brackets, {name: "", min_age: 0, max_age: 0, number_of_participants: 0}])}
+                            onClick={() =>
+                                onChange([
+                                    ...brackets,
+                                    {
+                                        name: "",
+                                        min_age: 0,
+                                        max_age: 0,
+                                        number_of_participants: 0,
+                                        _id: crypto.randomUUID(),
+                                    } as (typeof brackets)[number],
+                                ])
+                            }
                         >
                             <IconPlus /> Add Bracket
                         </Button>

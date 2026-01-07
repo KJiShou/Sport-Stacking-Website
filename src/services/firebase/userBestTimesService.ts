@@ -1,7 +1,7 @@
 import {collection, getDocs, limit, query, updateDoc, where} from "firebase/firestore";
 import {db} from "./config";
 
-export type EventType = "3-3-3" | "3-6-3" | "Cycle";
+export type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
 type BestTimeObject = {time: number; updated_at?: Date | null; season?: string | null};
 type BestTimeRecord = BestTimeObject | null | undefined;
@@ -9,6 +9,7 @@ type BestTimes = {
     "3-3-3"?: BestTimeRecord;
     "3-6-3"?: BestTimeRecord;
     Cycle?: BestTimeRecord;
+    Overall?: BestTimeRecord;
 };
 
 /**
