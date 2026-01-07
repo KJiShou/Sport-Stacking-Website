@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
-  "workspaces": ["functions"],
+  "workspaces": [
+    "functions"
+  ],
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
@@ -30,7 +32,7 @@
     "firebase": "^11.2.0",
     "jotai": "^2.11.0",
     "jotai-utils": "^0.0.0",
-    "jspdf": "^3.0.1",
+    "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.2",
     "nanoid": "^5.1.5",
     "papaparse": "^5.5.3",
@@ -45,7 +47,6 @@
     "react-use": "^17.6.0",
     "scss": "^0.2.4",
     "starship": "^0.0.0",
-    "typescript": "^4.4.4",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -53,8 +54,8 @@
     "@biomejs/biome": "^1.9.4",
     "@eslint/js": "^9.13.0",
     "@types/papaparse": "^5",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
     "@typescript-eslint/eslint-plugin": "8.33.1",
     "@typescript-eslint/parser": "8.33.1",
     "@vitejs/plugin-react": "^4.3.3",
@@ -76,6 +77,7 @@
     "prettier-eslint": "^16.1.2",
     "sass-embedded": "^1.83.0",
     "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.3",
     "vite": "^6.2.1"
   },
   "packageManager": "yarn@4.6.0+sha224.acd0786f07ffc6c933940eb65fc1d627131ddf5455bddcc295dc90fd"
