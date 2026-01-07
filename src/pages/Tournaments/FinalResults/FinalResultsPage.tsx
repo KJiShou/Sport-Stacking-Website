@@ -756,15 +756,9 @@ export default function FinalResultsPage() {
                 const isTeamEvent = isTournamentTeamEvent(event);
                 for (const bracket of event.age_brackets ?? []) {
                     for (const fc of bracket.final_criteria ?? []) {
-                        const bracketResults = computeEventBracketResults(
-                            event,
-                            bracket,
-                            aggregationContext,
-                            fc.classification,
-                        );
+                        const bracketResults = computeEventBracketResults(event, bracket, aggregationContext, fc.classification);
                         for (const record of bracketResults) {
-                            const classificationLabel =
-                                fc.classification.charAt(0).toUpperCase() + fc.classification.slice(1);
+                            const classificationLabel = fc.classification.charAt(0).toUpperCase() + fc.classification.slice(1);
                             const divisionLabel = `${bracket.name} - ${classificationLabel}`;
                             const times = (event.codes ?? []).map((code) => {
                                 const key = `${code} Best`;
@@ -784,9 +778,7 @@ export default function FinalResultsPage() {
                                 participantName: record.name ?? "N/A",
                                 eventLabel,
                                 divisionLabel,
-                                categoryLabel: isTeamEvent
-                                    ? "Team"
-                                    : event.type.charAt(0).toUpperCase() + event.type.slice(1),
+                                categoryLabel: isTeamEvent ? "Team" : event.type.charAt(0).toUpperCase() + event.type.slice(1),
                                 times,
                                 totalTime: typeof record.bestTime === "number" ? formatTime(record.bestTime) : undefined,
                                 placementLabel: getPlacementLabel(record.rank),

@@ -18,7 +18,7 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
         });
     }, [brackets.length]);
 
-    const updateBracketAtIndex = (index: number, updater: (current: typeof brackets[number]) => typeof brackets[number]) => {
+    const updateBracketAtIndex = (index: number, updater: (current: (typeof brackets)[number]) => (typeof brackets)[number]) => {
         const updated = [...brackets];
         updated[index] = updater(updated[index]);
         onChange(updated);
@@ -96,7 +96,13 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
                             onClick={() =>
                                 onChange([
                                     ...brackets,
-                                    {name: "", min_age: 0, max_age: 0, number_of_participants: 0, _id: crypto.randomUUID()} as typeof brackets[number],
+                                    {
+                                        name: "",
+                                        min_age: 0,
+                                        max_age: 0,
+                                        number_of_participants: 0,
+                                        _id: crypto.randomUUID(),
+                                    } as (typeof brackets)[number],
                                 ])
                             }
                         >

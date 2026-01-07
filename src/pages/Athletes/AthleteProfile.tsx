@@ -102,9 +102,7 @@ const AthleteProfilePage = () => {
                         const rank333 = rankings333.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
                         const rank363 = rankings363.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
                         const rankCycle = rankingsCycle.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
-                        const rankOverall = rankingsOverall.findIndex(
-                            (u) => u.global_id === athleteId || u.id === athleteId,
-                        );
+                        const rankOverall = rankingsOverall.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
 
                         setRankings({
                             "3-3-3": rank333 >= 0 ? rank333 + 1 : null,

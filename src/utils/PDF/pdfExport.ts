@@ -1,5 +1,6 @@
 // @ts-nocheck
 // src/utils/pdfExportUtils.ts
+import defaultIconSrc from "@/assets/icon.avif";
 import type {
     AllPrelimResultsPDFParams,
     BracketResults,
@@ -22,7 +23,6 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import defaultIconSrc from "@/assets/icon.avif";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {nanoid} from "nanoid";
@@ -1382,10 +1382,10 @@ export const exportCertificatesPDF = async (options: {
         doc.setFont("times", "normal");
         doc.setFontSize(13);
         let currentY = 194;
-        entry.times.forEach((time) => {
+        for (const time of entry.times) {
             doc.text(`${time.label}: ${formatTimeValue(time.value)}`, centerX, currentY, {align: "center"});
             currentY += 10;
-        });
+        }
 
         if (entry.totalTime) {
             doc.setFont("times", "bold");
@@ -1474,7 +1474,7 @@ const generateSingleStackingSheet = (
     division: string,
     sheetType = "",
     eventCodes: string[] = [],
-    position: number = 0,
+    position = 0,
 ): void => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginX = 5;

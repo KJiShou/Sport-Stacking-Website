@@ -184,7 +184,9 @@ export default function CreateTournamentPage() {
                 }
 
                 const normalizedGender =
-                    gender === "Male" || gender === "Female" || gender === "Both" ? gender : ("Both" as TournamentEvent["gender"]);
+                    gender === "Male" || gender === "Female" || gender === "Both"
+                        ? gender
+                        : ("Both" as TournamentEvent["gender"]);
 
                 const sanitizedEvent: TournamentEvent = {
                     id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),

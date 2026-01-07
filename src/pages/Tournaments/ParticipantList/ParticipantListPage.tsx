@@ -3,11 +3,11 @@ import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebas
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {
     exportAllBracketsListToPDF,
+    exportCombinedTimeSheetsPDF,
+    exportLargeNameListStickerPDF,
     exportMasterListToPDF,
     exportNameListStickerPDF,
     exportParticipantListToPDF,
-    exportLargeNameListStickerPDF,
-    exportCombinedTimeSheetsPDF,
     generateAllTeamStackingSheetsPDF,
     generateStackingSheetPDF,
     generateTeamStackingSheetPDF,
@@ -233,7 +233,6 @@ export default function ParticipantListPage() {
             return;
         }
         setLoading(true);
-        console.log(teamList);
         try {
             const entries = [];
             for (const event of events) {
