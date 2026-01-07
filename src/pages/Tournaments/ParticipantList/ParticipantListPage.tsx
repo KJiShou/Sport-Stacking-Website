@@ -7,6 +7,7 @@ import {
     exportNameListStickerPDF,
     exportParticipantListToPDF,
     exportLargeNameListStickerPDF,
+    exportCombinedTimeSheetsPDF,
     generateAllTeamStackingSheetsPDF,
     generateStackingSheetPDF,
     generateTeamStackingSheetPDF,
@@ -38,7 +39,7 @@ export default function ParticipantListPage() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
-    const [events, setEvents] = useState<TournamentEvent[] | null>(null);
+    const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [registrationList, setRegistrationList] = useState<Registration[]>([]);
     const [teamList, setTeamList] = useState<Team[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
@@ -226,6 +227,75 @@ export default function ParticipantListPage() {
         }
     };
 
+    const handlePrintAllTimeSheets = async () => {
+        if (!tournament || events.length === 0) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        setLoading(true);
+        console.log(teamList);
+        try {
+            const entries = [];
+            for (const event of events) {
+                const eventCodes = sanitizeEventCodes(event.codes);
+                const eventKey = getEventKey(event);
+                const isTeam = isTeamEvent(event);
+
+                for (const bracket of event.age_brackets ?? []) {
+                    if (isTeam) {
+                        const teamsForBracket = teamList.filter((team) => {
+                            const matchesEvent =
+                                teamMatchesEventKey(team, eventKey, events ?? []) ||
+                                teamMatchesEventKey(team, event.id ?? "", events ?? []) ||
+                                teamMatchesEventKey(team, event.type, events ?? []);
+                            if (!matchesEvent) return false;
+                            const age = team.team_age;
+                            return age === undefined || (age >= bracket.min_age && age <= bracket.max_age);
+                        });
+                        for (const team of teamsForBracket) {
+                            entries.push({
+                                participant: team,
+                                division: bracket.name,
+                                sheetType: event.type,
+                                eventCodes: eventCodes,
+                            });
+                        }
+                    } else {
+                        const participantsForBracket = registrationList.filter((r) => {
+                            const matches =
+                                r.events_registered.includes(eventKey) || matchesAnyEventKey(r.events_registered, event);
+                            return matches && r.age >= bracket.min_age && r.age <= bracket.max_age;
+                        });
+                        for (const participant of participantsForBracket) {
+                            entries.push({
+                                participant,
+                                division: bracket.name,
+                                sheetType: event.type,
+                                eventCodes: eventCodes,
+                            });
+                        }
+                    }
+                }
+            }
+            if (entries.length === 0) {
+                Message.warning("No participants found to print time sheets.");
+                setLoading(false);
+                return;
+            }
+            await exportCombinedTimeSheetsPDF({
+                tournament,
+                entries,
+                ageMap,
+                logoUrl: tournament.logo ?? "",
+            });
+            Message.success("Time sheets opened for all events");
+        } catch (error) {
+            Message.error("Failed to generate time sheets");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handlePreviewMasterList = async () => {
         if (!tournament) {
             Message.warning("Tournament data not loaded");
@@ -397,62 +467,7 @@ export default function ParticipantListPage() {
                                         type="text"
                                         loading={loading}
                                         className={`text-left`}
-                                        onClick={async () => {
-                                            setLoading(true);
-                                            try {
-                                                const currentData = getCurrentEventData(
-                                                    tournament,
-                                                    events,
-                                                    currentEventTab,
-                                                    currentBracketTab,
-                                                    registrationList,
-                                                    searchTerm,
-                                                    teamList,
-                                                );
-                                                if (!currentData) {
-                                                    Message.error("No event data found");
-                                                    setLoading(false);
-                                                    return;
-                                                }
-                                                if (currentData.isTeamEvent) {
-                                                    const teamsInBracket = teamList.filter((team) => {
-                                                        return (
-                                                            team.team_age !== undefined &&
-                                                            team.team_age >= currentData.bracket.min_age &&
-                                                            team.team_age <= currentData.bracket.max_age &&
-                                                            teamMatchesEventKey(team, currentEventTab, tournamentEvents)
-                                                        );
-                                                    });
-                                                    await generateAllTeamStackingSheetsPDF(
-                                                        tournament,
-                                                        teamsInBracket,
-                                                        ageMap,
-                                                        currentBracketTab,
-                                                        {
-                                                            logoUrl: tournament.logo ?? "",
-                                                            eventCodes: sanitizeEventCodes(currentData.event.codes),
-                                                        },
-                                                        currentData.event.type,
-                                                    );
-                                                } else {
-                                                    await generateStackingSheetPDF(
-                                                        tournament,
-                                                        currentData.registrations,
-                                                        ageMap,
-                                                        currentBracketTab,
-                                                        {
-                                                            logoUrl: tournament.logo ?? "",
-                                                            eventCodes: sanitizeEventCodes(currentData.event.codes),
-                                                        },
-                                                        currentData.event.type,
-                                                    );
-                                                }
-                                            } catch (error) {
-                                                Message.error("Failed to generate stacking sheet PDF");
-                                            } finally {
-                                                setLoading(false);
-                                            }
-                                        }}
+                                        onClick={handlePrintAllTimeSheets}
                                     >
                                         Time Sheet
                                     </Button>

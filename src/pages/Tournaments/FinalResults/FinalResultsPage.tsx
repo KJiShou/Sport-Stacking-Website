@@ -11,7 +11,7 @@ import {
     fetchTournamentEvents,
     updateTournamentStatus,
 } from "@/services/firebase/tournamentsService";
-import {exportAllPrelimResultsToPDF} from "@/utils/PDF/pdfExport";
+import {exportAllPrelimResultsToPDF, exportCertificatesPDF} from "@/utils/PDF/pdfExport";
 import {getEventLabel, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
 import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
@@ -684,6 +684,20 @@ export default function FinalResultsPage() {
         [currentEvent, currentBracketTab],
     );
 
+    const getPlacementLabel = useCallback((rank?: number): string => {
+        if (!rank) return "Participant";
+        switch (rank) {
+            case 1:
+                return "Champion";
+            case 2:
+                return "1st Runner Up";
+            case 3:
+                return "2nd Runner Up";
+            default:
+                return `Rank ${rank}`;
+        }
+    }, []);
+
     const handlePrint = useCallback(async () => {
         if (!tournament) return;
 
@@ -731,6 +745,76 @@ export default function FinalResultsPage() {
         }
     }, [aggregationContext, events, tournament]);
 
+    const handlePrintCertificates = useCallback(async () => {
+        if (!tournament) return;
+
+        setLoading(true);
+        try {
+            const certificateEntries = [];
+            for (const event of events ?? []) {
+                const eventLabel = getEventLabel(event);
+                const isTeamEvent = isTournamentTeamEvent(event);
+                for (const bracket of event.age_brackets ?? []) {
+                    for (const fc of bracket.final_criteria ?? []) {
+                        const bracketResults = computeEventBracketResults(
+                            event,
+                            bracket,
+                            aggregationContext,
+                            fc.classification,
+                        );
+                        for (const record of bracketResults) {
+                            const classificationLabel =
+                                fc.classification.charAt(0).toUpperCase() + fc.classification.slice(1);
+                            const divisionLabel = `${bracket.name} - ${classificationLabel}`;
+                            const times = (event.codes ?? []).map((code) => {
+                                const key = `${code} Best`;
+                                const timeValue =
+                                    typeof record[key] === "number"
+                                        ? formatTime(record[key] as number)
+                                        : event.codes.length === 1
+                                          ? formatTime(record.bestTime)
+                                          : "N/A";
+                                return {
+                                    label: code,
+                                    value: timeValue,
+                                };
+                            });
+
+                            certificateEntries.push({
+                                participantName: record.name ?? "N/A",
+                                eventLabel,
+                                divisionLabel,
+                                categoryLabel: isTeamEvent
+                                    ? "Team"
+                                    : event.type.charAt(0).toUpperCase() + event.type.slice(1),
+                                times,
+                                totalTime: typeof record.bestTime === "number" ? formatTime(record.bestTime) : undefined,
+                                placementLabel: getPlacementLabel(record.rank),
+                                rank: record.rank ?? undefined,
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (certificateEntries.length === 0) {
+                Message.info("No certificates to generate.");
+                return;
+            }
+
+            await exportCertificatesPDF({
+                tournament,
+                entries: certificateEntries,
+                logoUrl: tournament.logo ?? "",
+            });
+            Message.success("Certificates opened in new tab.");
+        } catch (error) {
+            Message.error("Failed to generate certificates.");
+        } finally {
+            setLoading(false);
+        }
+    }, [aggregationContext, events, getPlacementLabel, tournament]);
+
     const handleEndCompetition = async () => {
         if (!tournamentId || !user) return;
 
@@ -777,6 +861,9 @@ export default function FinalResultsPage() {
                     <div className="flex items-center gap-2">
                         <Button type="primary" icon={<IconPrinter />} onClick={handlePrint} loading={loading}>
                             Print All Brackets
+                        </Button>
+                        <Button type="primary" icon={<IconPrinter />} onClick={handlePrintCertificates} loading={loading}>
+                            Print Certificates
                         </Button>
                         {user?.roles?.edit_tournament && tournament?.status !== "End" && (
                             <Button type="primary" status="success" onClick={handleEndCompetition} loading={loading}>

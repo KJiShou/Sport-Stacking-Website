@@ -1251,6 +1251,169 @@ export const generateStackingSheetPDF = async (
     }
 };
 
+export interface TimeSheetEntry {
+    participant: Registration | Team;
+    division: string;
+    sheetType: string;
+    eventCodes: string[];
+}
+
+export interface CertificateEntry {
+    participantName: string;
+    eventLabel: string;
+    divisionLabel: string;
+    categoryLabel: string;
+    times: {label: string; value: string}[];
+    totalTime?: string;
+    placementLabel: string;
+    rank?: number;
+}
+
+export const exportCombinedTimeSheetsPDF = async (options: {
+    tournament: Tournament;
+    entries: TimeSheetEntry[];
+    ageMap: Record<string, number>;
+    logoUrl?: string;
+    filename?: string;
+}): Promise<void> => {
+    const {tournament, entries, ageMap, logoUrl, filename} = options;
+    const doc = new jsPDF();
+    const userLogo = await loadUserLogo(logoUrl ?? tournament.logo);
+    const defaultLogo = await loadDefaultIcon();
+    const logoDataUrl = userLogo ?? defaultLogo ?? "";
+
+    entries.forEach((entry, index) => {
+        if (index > 0 && index % 2 === 0) {
+            doc.addPage();
+        }
+        generateSingleStackingSheet(
+            doc,
+            tournament,
+            entry.participant,
+            ageMap,
+            logoDataUrl,
+            entry.division,
+            entry.sheetType,
+            entry.eventCodes,
+            index % 2,
+        );
+    });
+
+    const combinedName = filename ?? createPDFFilename([tournament.name, "all_timesheets.pdf"]);
+    openPDFInNewTab(doc, combinedName);
+};
+
+export const exportCertificatesPDF = async (options: {
+    tournament: Tournament;
+    entries: CertificateEntry[];
+    logoUrl?: string;
+}): Promise<void> => {
+    const {tournament, entries, logoUrl} = options;
+
+    if (entries.length === 0) {
+        throw new Error("No certificates to generate");
+    }
+
+    const doc = new jsPDF();
+    const [leftLogo, rightLogoCandidate] = await Promise.all([loadDefaultIcon(), loadUserLogo(logoUrl ?? tournament.logo)]);
+    const rightLogo = rightLogoCandidate ?? leftLogo;
+    const formatTimeValue = (value?: string): string => (value && value.trim().length > 0 ? value : "N/A");
+
+    const drawCertificate = (entry: CertificateEntry) => {
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const centerX = pageWidth / 2;
+        const marginX = 22;
+
+        // Decorative shapes
+        doc.setFillColor(23, 31, 46);
+        doc.triangle(pageWidth - 90, 0, pageWidth, 0, pageWidth, 45, "F");
+        doc.setFillColor(232, 126, 35);
+        doc.triangle(0, pageHeight - 70, 90, pageHeight, 0, pageHeight, "F");
+
+        if (leftLogo) {
+            try {
+                doc.addImage(leftLogo, inferImageFormat(leftLogo), marginX, 18, 34, 34);
+            } catch (error) {
+                console.error("Error adding left logo:", error);
+            }
+        }
+        if (rightLogo) {
+            try {
+                doc.addImage(rightLogo, inferImageFormat(rightLogo), pageWidth - marginX - 34, 18, 34, 34);
+            } catch (error) {
+                console.error("Error adding right logo:", error);
+            }
+        }
+
+        doc.setFont("times", "bold");
+        doc.setFontSize(32);
+        doc.setTextColor(212, 131, 37);
+        doc.text("CERTIFICATE", centerX, 64, {align: "center"});
+
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(16);
+        doc.text("OF RECOGNITION", centerX, 78, {align: "center"});
+
+        doc.setFont("times", "normal");
+        doc.setFontSize(14);
+        doc.text(tournament.name, centerX, 94, {align: "center"});
+
+        doc.setFont("times", "bold");
+        doc.setFontSize(18);
+        doc.text(entry.eventLabel, centerX, 108, {align: "center"});
+
+        doc.setFont("times", "normal");
+        doc.setFontSize(13);
+        doc.text(entry.divisionLabel, centerX, 122, {align: "center"});
+
+        doc.setFont("times", "bold");
+        doc.setFontSize(14);
+        doc.text("THIS CERTIFICATE IS AWARDED TO", centerX, 142, {align: "center"});
+
+        doc.setFont("times", "bold");
+        doc.setFontSize(26);
+        doc.text(entry.participantName, centerX, 162, {align: "center"});
+
+        doc.setFont("times", "bold");
+        doc.setFontSize(16);
+        doc.text(entry.categoryLabel, centerX, 176, {align: "center"});
+
+        doc.setFont("times", "normal");
+        doc.setFontSize(13);
+        let currentY = 194;
+        entry.times.forEach((time) => {
+            doc.text(`${time.label}: ${formatTimeValue(time.value)}`, centerX, currentY, {align: "center"});
+            currentY += 10;
+        });
+
+        if (entry.totalTime) {
+            doc.setFont("times", "bold");
+            doc.setFontSize(14);
+            doc.text(`Overall: ${formatTimeValue(entry.totalTime)}`, centerX, currentY + 4, {align: "center"});
+            currentY += 14;
+        }
+
+        doc.setFont("times", "bold");
+        doc.setFontSize(20);
+        doc.text(entry.placementLabel, centerX, currentY + 14, {align: "center"});
+
+        doc.setFont("times", "normal");
+        doc.setFontSize(13);
+        doc.text(entry.divisionLabel, centerX, currentY + 30, {align: "center"});
+    };
+
+    entries.forEach((entry, index) => {
+        if (index > 0) {
+            doc.addPage();
+        }
+        drawCertificate(entry);
+    });
+
+    const filename = createPDFFilename([tournament.name, "certificates.pdf"]);
+    openPDFInNewTab(doc, filename);
+};
+
 export const generateTeamStackingSheetPDF = async (
     tournament: Tournament,
     team: Team,
@@ -1399,7 +1562,9 @@ const generateSingleStackingSheet = (
         doc.setFontSize(10);
         doc.text(`Division: ${division || "___"}`, marginX, infoY + sectionSpacing);
         doc.text(`Age: ${(ageMap[individual.user_id] || "___").toString()}`, marginX + 80, infoY + sectionSpacing);
-        doc.text(`School & Organizer// ${individual.organizer ?? " - "}`, marginX + 120, infoY + sectionSpacing);
+        const schoolOrCountry =
+            individual.organizer && individual.organizer.trim().length > 0 ? individual.organizer : individual.country;
+        doc.text(`School/Organizer: ${schoolOrCountry ?? " - "}`, marginX + 140, infoY + sectionSpacing);
 
         // ID box (right top)
         const idBoxW = 30;
