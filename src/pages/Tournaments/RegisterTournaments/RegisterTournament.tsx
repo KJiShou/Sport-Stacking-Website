@@ -1,5 +1,6 @@
 // src/pages/RegisterTournamentPage.tsx
 
+import LoginForm from "@/components/common/Login";
 import {useAuthContext} from "@/context/AuthContext";
 import type {ExpandedEvent, Registration, Tournament, TournamentEvent} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
@@ -14,7 +15,6 @@ import {formatDate} from "@/utils/Date/formatDate";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {getCountryFlag} from "@/utils/countryFlags";
 import {getEventKey, getEventLabel, isTeamEvent, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
-import LoginForm from "@/components/common/Login";
 import {
     Button,
     Checkbox,
