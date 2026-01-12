@@ -15,6 +15,7 @@ import {
 } from "@/utils/PDF/pdfExport";
 import {
     getEventKey,
+    getEventLabel,
     getTeamEventLabels,
     isTeamEvent,
     matchesAnyEventKey,
@@ -488,9 +489,8 @@ export default function ParticipantListPage() {
                         const regs = filterRegistrations(tabKey, isTeamEventForTab, evt);
                         const scoringCodes = sanitizeEventCodes(evt.codes);
                         const hasCodes = scoringCodes.length > 0;
-                        const titleCodes = hasCodes ? scoringCodes.join(", ") : evt.codes?.join(", ") || "N/A";
                         return (
-                            <TabPane key={tabKey} title={`${evt.type} (${titleCodes})`}>
+                            <TabPane key={tabKey} title={getEventLabel(evt)}>
                                 {" "}
                                 <Tabs
                                     type="capsule"

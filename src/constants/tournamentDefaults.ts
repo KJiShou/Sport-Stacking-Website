@@ -5,7 +5,7 @@ export const DEFAULT_EVENTS: TournamentEvent[] = [
         id: crypto.randomUUID(),
         codes: ["3-3-3", "3-6-3", "Cycle"],
         type: "Individual",
-        gender: "Both",
+        gender: "Mixed",
         age_brackets: [
             {
                 name: "Under 10",
@@ -28,7 +28,7 @@ export const DEFAULT_EVENTS: TournamentEvent[] = [
         codes: ["Cycle"],
         type: "Team Relay",
         teamSize: 4,
-        gender: "Both",
+        gender: "Mixed",
         age_brackets: [
             {
                 name: "Under 10",

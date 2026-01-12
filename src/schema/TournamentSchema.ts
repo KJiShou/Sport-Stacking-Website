@@ -18,12 +18,17 @@ export const AgeBracketSchema = z.object({
     final_criteria: z.array(FinalCriterionSchema).optional(),
 });
 
+const EventGenderSchema = z.preprocess(
+    (value) => (value === "Both" ? "Mixed" : value),
+    z.enum(["Male", "Female", "Mixed"]).default("Mixed"),
+);
+
 export const EventSchema = z.object({
     id: z.string().optional().nullable(),
     tournament_id: z.string().optional().nullable(),
     codes: z.array(z.enum(["3-3-3", "3-6-3", "Cycle"])),
     type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"]),
-    gender: z.enum(["Male", "Female", "Both"]).default("Both"),
+    gender: EventGenderSchema,
     teamSize: z.number().optional(),
     age_brackets: z.array(AgeBracketSchema),
 });

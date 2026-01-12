@@ -883,7 +883,7 @@ export default function FinalResultsPage() {
                 >
                     {events?.map((event) => {
                         const tabKey = event.id;
-                        const eventLabel = `${event.type} (${event.codes.join(", ")})`;
+                        const eventLabel = getEventLabel(event);
                         const isTeamEvent = isTournamentTeamEvent(event);
                         const eventCodes = event.codes;
                         const columns = buildColumnsForEvent(event);

@@ -88,7 +88,8 @@ export const getEventLabel = (event: TournamentEvent | null | undefined): string
     if (!event) return "";
     const codes = sanitizeEventCodes(event.codes);
     const codesLabel = codes.length > 0 ? ` (${codes.join(", ")})` : "";
-    return `${event.type}${codesLabel}`;
+    const gender = event.gender === "Male" || event.gender === "Female" ? event.gender : "Mixed";
+    return `${event.type} - ${gender}${codesLabel}`;
 };
 
 export const isTeamEvent = (event: TournamentEvent | null | undefined): boolean => {

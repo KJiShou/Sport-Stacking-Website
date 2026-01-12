@@ -9,16 +9,17 @@ import {db} from "../../services/firebase/config";
 
 const {Text} = Typography;
 
-const LoginForm = ({onClose}: {onClose?: () => void}) => {
+const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: string}) => {
     const {firebaseUser} = useAuthContext();
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
+    const nextPath = redirectTo ?? "/";
 
     useEffect(() => {
         if (firebaseUser) {
             if (onClose) onClose();
-            navigate("/");
+            navigate(nextPath);
         }
     }, [firebaseUser]);
 
@@ -28,7 +29,7 @@ const LoginForm = ({onClose}: {onClose?: () => void}) => {
             await login(values.email, values.password);
             Message.success("Login successful");
             if (onClose) onClose();
-            navigate(`${location.pathname}`);
+            navigate(redirectTo ?? location.pathname);
         } catch (err: unknown) {
             if (err instanceof Error) {
                 console.error("Error:", err.message);
@@ -53,7 +54,7 @@ const LoginForm = ({onClose}: {onClose?: () => void}) => {
 
             if (userSnap.exists()) {
                 Message.success("Logged in with Google");
-                navigate(`${location.pathname}`);
+                navigate(redirectTo ?? location.pathname);
                 if (onClose) onClose();
             } else {
                 Message.info("Please complete your registration");
