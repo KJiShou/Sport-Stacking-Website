@@ -45,9 +45,16 @@ const cloneAgeBrackets = (brackets: AgeBracket[] = []): AgeBracket[] =>
         final_criteria: bracket.final_criteria?.map((criterion) => ({...criterion})),
     }));
 
+const normalizeEventGender = (value: unknown): TournamentEvent["gender"] => {
+    if (value === "Male" || value === "Female") {
+        return value;
+    }
+    return "Mixed";
+};
+
 const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     ...event,
-    gender: event.gender ?? "Both",
+    gender: normalizeEventGender(event.gender),
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
 
@@ -145,16 +152,17 @@ export default function CreateTournamentPage() {
             }
             const rawEvents = (form.getFieldValue("events") ?? []) as TournamentEvent[];
 
-            // Check for duplicate event type + code combinations
+            // Check for duplicate event type + code + gender combinations
             const eventSignatures = new Map<string, number>();
             for (let i = 0; i < rawEvents.length; i++) {
                 const event = rawEvents[i];
                 if (event.type && Array.isArray(event.codes)) {
+                    const genderKey = normalizeEventGender(event.gender);
                     for (const code of event.codes) {
-                        const signature = `${event.type}-${code}`;
+                        const signature = `${event.type}-${code}-${genderKey}`;
                         if (eventSignatures.has(signature)) {
                             Message.error(
-                                `Duplicate event found: ${event.type} with code ${code}. Each event type and code combination must be unique.`,
+                                `Duplicate event found: ${event.type} with code ${code} and gender ${genderKey}. Each event type, code, and gender combination must be unique.`,
                             );
                             setLoading(false);
                             return;
@@ -183,10 +191,7 @@ export default function CreateTournamentPage() {
                     continue;
                 }
 
-                const normalizedGender =
-                    gender === "Male" || gender === "Female" || gender === "Both"
-                        ? gender
-                        : ("Both" as TournamentEvent["gender"]);
+                const normalizedGender = normalizeEventGender(gender);
 
                 const sanitizedEvent: TournamentEvent = {
                     id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),
@@ -434,7 +439,7 @@ export default function CreateTournamentPage() {
                                                 id: crypto.randomUUID(),
                                                 codes: [],
                                                 type: "" as TournamentEvent["type"],
-                                                gender: "Both",
+                                                gender: "Mixed",
                                                 age_brackets: cloneAgeBrackets(DEFAULT_AGE_BRACKET),
                                             });
                                         }}

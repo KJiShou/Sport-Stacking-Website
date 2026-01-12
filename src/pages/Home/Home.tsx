@@ -277,7 +277,7 @@ const Home: React.FC = () => {
                                     title={
                                         <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
                                             <IconTrophy />
-                                            <span>World Records</span>
+                                            <span>Best Records</span>
                                         </div>
                                     }
                                     extra={

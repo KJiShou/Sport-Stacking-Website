@@ -22,6 +22,7 @@ import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {getCountryFlag} from "@/utils/countryFlags";
+import {getEventLabel} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Card,
@@ -118,6 +119,8 @@ export default function TournamentView() {
 
     const deviceBreakpoint = useDeviceBreakpoint();
     const {user} = useAuthContext();
+    const individualEvent = events.find((event) => event.type === "Individual");
+    const individualEventLabel = individualEvent ? getEventLabel(individualEvent) : "Individual";
     const isAdmin = user?.roles?.verify_record || user?.roles?.edit_tournament || false;
 
     const handleTimeClick = (videoUrl?: string | null, status?: string) => {
@@ -542,7 +545,7 @@ export default function TournamentView() {
                         </Title>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {events.map((event) => (
-                                <Card key={event.id} title={`${event.type} (${event.codes?.join(", ")})`} bordered>
+                                <Card key={event.id} title={getEventLabel(event)} bordered>
                                     <div className="space-y-2">
                                         {event.age_brackets.map((bracket) => {
                                             const participantsInBracket = registrations.filter(
@@ -584,19 +587,14 @@ export default function TournamentView() {
                                 <div className="space-y-6">
                                     {/* Overall Records Table for Individual Events */}
                                     {prelimOverallRecords.length > 0 && (
-                                        <Card title="Overall Rankings (Individual)" bordered>
-                                            {events.find((e) => e.type === "Individual") &&
+                                        <Card title={`Overall Rankings (${individualEventLabel})`} bordered>
+                                            {individualEvent &&
                                                 (() => {
-                                                    const individualEvent = events.find((e) => e.type === "Individual") as
-                                                        | TournamentEvent
-                                                        | undefined;
-                                                    if (!individualEvent) return null;
                                                     const eventKey = individualEvent.id ?? "Individual";
                                                     const bracketKey = buildBracketKey("prelim", eventKey);
                                                     return renderBracketTabs(individualEvent, bracketKey);
                                                 })()}
                                             {(() => {
-                                                const individualEvent = events.find((e) => e.type === "Individual");
                                                 const eventKey = individualEvent?.id ?? "Individual";
                                                 const bracketKey = buildBracketKey("prelim", eventKey);
                                                 const selectedBracketName = getSelectedBracketName(bracketKey, individualEvent);
@@ -809,6 +807,7 @@ export default function TournamentView() {
                                             (r) => r.event === eventType && "team_id" in r,
                                         ) as TournamentTeamRecord[];
                                         const eventConfig = events.find((e) => e.type === eventType);
+                                        const eventLabel = eventConfig ? getEventLabel(eventConfig) : eventType;
                                         const eventKey = eventConfig?.id ?? eventType;
                                         const bracketKey = buildBracketKey("prelim", eventKey);
                                         const selectedBracketName = getSelectedBracketName(bracketKey, eventConfig);
@@ -946,7 +945,7 @@ export default function TournamentView() {
                                         return (
                                             <Card
                                                 key={`prelim-team-${eventType}`}
-                                                title={`${eventType} - Team Rankings`}
+                                                title={`${eventLabel} - Team Rankings`}
                                                 bordered
                                             >
                                                 {eventConfig && renderBracketTabs(eventConfig, bracketKey)}
@@ -1001,15 +1000,11 @@ export default function TournamentView() {
                                                 {/* Overall Records Table for Individual Events */}
                                                 {classificationOverallRecords.length > 0 && (
                                                     <Card
-                                                        title={`Overall Rankings (Individual) - ${classificationLabel}`}
+                                                        title={`Overall Rankings (${individualEventLabel}) - ${classificationLabel}`}
                                                         bordered
                                                     >
-                                                        {events.find((e) => e.type === "Individual") &&
+                                                        {individualEvent &&
                                                             (() => {
-                                                                const individualEvent = events.find(
-                                                                    (e) => e.type === "Individual",
-                                                                ) as TournamentEvent | undefined;
-                                                                if (!individualEvent) return null;
                                                                 const eventKey = individualEvent.id ?? "Individual";
                                                                 const bracketKey = buildBracketKey(
                                                                     "final",
@@ -1271,6 +1266,7 @@ export default function TournamentView() {
                                                             (r) => r.event === eventType,
                                                         ) as TournamentTeamRecord[];
                                                         const eventConfig = events.find((e) => e.type === eventType);
+                                                        const eventLabel = eventConfig ? getEventLabel(eventConfig) : eventType;
                                                         const eventKey = eventConfig?.id ?? eventType;
                                                         const bracketKey = buildBracketKey("final", eventKey, classification);
                                                         const selectedBracketName = getSelectedBracketName(
@@ -1457,7 +1453,7 @@ export default function TournamentView() {
                                                         return (
                                                             <Card
                                                                 key={`final-team-${classification}-${eventType}`}
-                                                                title={`${eventType} - Team Rankings - ${classificationLabel}`}
+                                                                title={`${eventLabel} - Team Rankings - ${classificationLabel}`}
                                                                 bordered
                                                             >
                                                                 {eventConfig && renderBracketTabs(eventConfig, bracketKey)}

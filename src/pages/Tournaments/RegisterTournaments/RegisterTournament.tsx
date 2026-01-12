@@ -14,6 +14,7 @@ import {formatDate} from "@/utils/Date/formatDate";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {getCountryFlag} from "@/utils/countryFlags";
 import {getEventKey, getEventLabel, isTeamEvent, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
+import LoginForm from "@/components/common/Login";
 import {
     Button,
     Checkbox,
@@ -39,7 +40,7 @@ import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import {Timestamp} from "firebase/firestore";
 import {type ReactNode, useEffect, useState} from "react";
-import {useNavigate, useParams} from "react-router-dom";
+import {useLocation, useNavigate, useParams} from "react-router-dom";
 dayjs.extend(isSameOrAfter);
 const {Title, Paragraph} = Typography;
 const Option = Select.Option;
@@ -55,6 +56,7 @@ export default function RegisterTournamentPage() {
     const [form] = Form.useForm();
     const {firebaseUser, user} = useAuthContext();
     const navigate = useNavigate();
+    const location = useLocation();
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -68,6 +70,15 @@ export default function RegisterTournamentPage() {
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
     const [price, setPrice] = useState<number | null>(null);
     const [lookingForTeams, setLookingForTeams] = useState<string[]>([]); // Events user is looking for teams
+    const [loginModalVisible, setLoginModalVisible] = useState(false);
+
+    useEffect(() => {
+        if (!firebaseUser) {
+            setLoginModalVisible(true);
+        } else {
+            setLoginModalVisible(false);
+        }
+    }, [firebaseUser]);
 
     const findEventByKey = (eventKey: string): ExpandedEvent | undefined =>
         availableEvents.find((event) => getEventKey(event) === eventKey || event.type === eventKey);
@@ -386,8 +397,11 @@ export default function RegisterTournamentPage() {
                 const comp = await fetchTournamentById(tournamentId);
                 const fetchedEvents = comp?.events?.length ? comp.events : await fetchTournamentEvents(tournamentId);
                 const age = user?.birthdate && comp?.start_date ? getAgeAtTournament(user.birthdate, comp.start_date) : 0;
-                const normalizeGender = (value: unknown): "Male" | "Female" | "Both" => {
-                    return value === "Male" || value === "Female" || value === "Both" ? value : "Both";
+                const normalizeGender = (value: unknown): "Male" | "Female" | "Mixed" => {
+                    if (value === "Male" || value === "Female") {
+                        return value;
+                    }
+                    return "Mixed";
                 };
                 const userGender = normalizeGender(user?.gender);
 
@@ -397,7 +411,7 @@ export default function RegisterTournamentPage() {
                     const eventGender = normalizeGender((event as {gender?: unknown}).gender);
 
                     // Skip events that don't match user's gender (unless event is open to both)
-                    const isGenderEligible = eventGender === "Both" || userGender === "Both" || eventGender === userGender;
+                    const isGenderEligible = eventGender === "Mixed" || eventGender === userGender;
                     if (!isGenderEligible) {
                         continue;
                     }
@@ -523,6 +537,31 @@ export default function RegisterTournamentPage() {
         };
         fetch();
     }, [tournamentId, user]);
+
+    if (!firebaseUser) {
+        return (
+            <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+                <Modal
+                    title="Log In Required"
+                    visible={loginModalVisible}
+                    footer={null}
+                    onCancel={() => setLoginModalVisible(false)}
+                >
+                    <LoginForm redirectTo={location.pathname} onClose={() => setLoginModalVisible(false)} />
+                </Modal>
+                <Result
+                    status="403"
+                    title="Please log in to register"
+                    subTitle="You need to log in before registering for a tournament."
+                    extra={
+                        <Button type="primary" onClick={() => setLoginModalVisible(true)}>
+                            Log In
+                        </Button>
+                    }
+                />
+            </div>
+        );
+    }
 
     if (error) return <Result status="error" title="Error" subTitle={error} />;
     return (

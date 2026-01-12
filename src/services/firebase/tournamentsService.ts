@@ -360,7 +360,55 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         throw new Error("Failed to delete tournament teams");
     }
 
-    // 3. Delete scoring/results data if they exist in subcollections
+    // 3. Delete tournament records stored in records collections
+    try {
+        const [recordsSnapshot, overallRecordsSnapshot] = await Promise.all([
+            getDocs(query(collection(db, "records"), where("tournament_id", "==", tournamentId))),
+            getDocs(query(collection(db, "overall_records"), where("tournament_id", "==", tournamentId))),
+        ]);
+
+        const recordDeletePromises = [
+            ...recordsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref)),
+            ...overallRecordsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref)),
+        ];
+
+        await Promise.all(recordDeletePromises);
+    } catch (error) {
+        console.error("Error deleting tournament records:", error);
+        throw new Error("Failed to delete tournament records");
+    }
+
+    // 4. Delete global result records (legacy/aggregated views)
+    try {
+        const globalResultTypes = ["Individual", "Team", "individual", "team"];
+        const globalResultEvents = ["3-3-3", "3-6-3", "Cycle", "Overall"];
+
+        for (const type of globalResultTypes) {
+            for (const event of globalResultEvents) {
+                const globalRef = collection(db, `globalResult/${type}/${event}`);
+                const [byTournamentId, byLegacyId] = await Promise.all([
+                    getDocs(query(globalRef, where("tournamentId", "==", tournamentId))),
+                    getDocs(query(globalRef, where("tournament_id", "==", tournamentId))),
+                ]);
+
+                const docsById = new Map<string, typeof byTournamentId.docs[number]>();
+                for (const docSnap of byTournamentId.docs) {
+                    docsById.set(docSnap.id, docSnap);
+                }
+                for (const docSnap of byLegacyId.docs) {
+                    docsById.set(docSnap.id, docSnap);
+                }
+
+                const deletePromises = Array.from(docsById.values()).map((docSnap) => deleteDoc(docSnap.ref));
+                await Promise.all(deletePromises);
+            }
+        }
+    } catch (error) {
+        console.error("Error deleting global result records:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+
+    // 5. Delete scoring/results data if they exist in subcollections
     try {
         // Check for other subcollections like scores, finalists, etc.
         const subcollections = ["scores", "finalists", "results"];
@@ -380,7 +428,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as these subcollections might not exist
     }
 
-    // 4. Delete individual recruitment records
+    // 6. Delete individual recruitment records
     try {
         const individualRecruitments = await getIndividualRecruitmentsByTournament(tournamentId);
         const individualDeletePromises = individualRecruitments.map((recruitment) => deleteIndividualRecruitment(recruitment.id));
@@ -390,7 +438,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
-    // 5. Delete team recruitment records
+    // 7. Delete team recruitment records
     try {
         const teamRecruitments = await getActiveTeamRecruitments(tournamentId);
         const teamDeletePromises = teamRecruitments.map((recruitment) => deleteTeamRecruitment(recruitment.id));
@@ -400,7 +448,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
-    // 6. Clean up user registration records
+    // 8. Clean up user registration records
     try {
         await removeUserRegistrationRecordsByTournament(tournamentId);
     } catch (error) {
@@ -408,7 +456,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
-    // 7. Delete tournament events stored in the shared events collection
+    // 9. Delete tournament events stored in the shared events collection
     try {
         const eventSnapshots = await getDocs(query(collection(db, "events"), where("tournament_id", "==", tournamentId)));
         const eventDeletePromises = eventSnapshots.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref));
@@ -418,7 +466,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         throw new Error("Failed to delete tournament events");
     }
 
-    // 8. Delete all tournament storage files (agenda, logo, payment proofs, etc.)
+    // 10. Delete all tournament storage files (agenda, logo, payment proofs, etc.)
     try {
         await deleteTournamentStorage(tournamentId);
     } catch (error) {
@@ -426,7 +474,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as storage deletion shouldn't block tournament deletion
     }
 
-    // 9. Finally, delete the tournament document itself
+    // 11. Finally, delete the tournament document itself
     try {
         const tournamentRef = doc(db, "tournaments", tournamentId);
         await deleteDoc(tournamentRef);

@@ -15,6 +15,7 @@ import {
     saveTeamRecord,
     updateParticipantRankingsAndResults,
 } from "@/services/firebase/recordService";
+import {getEventLabel} from "@/utils/tournament/eventUtils";
 import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
@@ -766,9 +767,8 @@ export default function FinalScoringPage() {
                         const eventTypeKey = evt.type;
                         const eventIdForModal = evt.id ?? undefined;
                         const isTeamEvent = ["double", "team relay", "parent & child"].includes(evt.type.toLowerCase());
-                        const titleCodes = evt.codes?.join(", ") || "N/A";
                         return (
-                            <TabPane key={tabKey} title={`${evt.type} (${titleCodes})`}>
+                            <TabPane key={tabKey} title={getEventLabel(evt)}>
                                 <Tabs
                                     type="capsule"
                                     tabPosition="top"

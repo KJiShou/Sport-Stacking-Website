@@ -15,6 +15,7 @@ import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebas
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {
     getEventKey,
+    getEventLabel,
     getTeamEvents,
     getTeamMaxAge,
     matchesAnyEventKey,
@@ -1128,9 +1129,8 @@ export default function ScoringPage() {
                         const isTeamEvent = ["double", "team relay", "parent & child"].includes(evt.type.toLowerCase());
                         const scoringCodes = sanitizeEventCodes(evt.codes);
                         const hasCodes = scoringCodes.length > 0;
-                        const titleCodes = hasCodes ? scoringCodes.join(", ") : evt.codes?.join(", ") || "N/A";
                         return (
-                            <TabPane key={tabKey} title={`${evt.type} (${titleCodes})`}>
+                            <TabPane key={tabKey} title={getEventLabel(evt)}>
                                 <Tabs
                                     type="capsule"
                                     tabPosition="top"
