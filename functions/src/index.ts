@@ -2,14 +2,20 @@ import cors from "cors";
 import {getApps, initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {Timestamp as FirestoreTimestamp, getFirestore} from "firebase-admin/firestore";
+import {getStorage} from "firebase-admin/storage";
+import {randomUUID} from "crypto";
 import {defineSecret} from "firebase-functions/params";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
-import {onRequest} from "firebase-functions/v2/https";
+import {onCall, onRequest} from "firebase-functions/v2/https";
 import nodemailer from "nodemailer";
 import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
-const corsHandler = cors({origin: true});
+
+const corsHandler = cors({
+    origin: ["https://rankingstack.com", "http://localhost:5000"],
+    methods: ["GET", "POST", "OPTIONS"],
+});
 
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "RankingStack <noreply@rankingstack.com>";
@@ -196,6 +202,78 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
             }
         }
     });
+});
+
+export const cacheGoogleAvatarCallable = onCall(async (request) => {
+    if (!request.auth?.uid) {
+        throw new Error("Unauthorized");
+    }
+
+    const photoURL = request.data?.photoURL;
+    if (!photoURL || typeof photoURL !== "string") {
+        throw new Error("Missing photoURL");
+    }
+
+    const uid = request.auth.uid;
+    const bucket = getStorage().bucket();
+    const file = bucket.file(`avatars/${uid}`);
+
+    const buildDownloadUrl = (token: string) => {
+        const encodedPath = encodeURIComponent(file.name);
+        return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${token}`;
+    };
+
+    const ensureDownloadUrl = async () => {
+        const [metadata] = await file.getMetadata();
+        let token = metadata.metadata?.firebaseStorageDownloadTokens;
+        if (!token) {
+            token = randomUUID();
+            try {
+                await file.setMetadata(
+                    {metadata: {firebaseStorageDownloadTokens: token}},
+                    {ifMetagenerationMatch: metadata.metageneration},
+                );
+            } catch {
+                const [retryMetadata] = await file.getMetadata();
+                token = retryMetadata.metadata?.firebaseStorageDownloadTokens ?? token;
+            }
+        }
+        return buildDownloadUrl(String(token));
+    };
+
+    const [exists] = await file.exists();
+    if (exists) {
+        return {url: await ensureDownloadUrl()};
+    }
+
+    const response = await fetch(photoURL);
+    if (!response.ok) {
+        throw new Error("Failed to fetch Google avatar");
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const contentType = response.headers.get("content-type") ?? "image/jpeg";
+    const token = randomUUID();
+
+    try {
+        await file.save(buffer, {
+            contentType,
+            metadata: {
+                firebaseStorageDownloadTokens: token,
+            },
+            preconditionOpts: {
+                ifGenerationMatch: 0,
+            },
+        });
+        return {url: buildDownloadUrl(token)};
+    } catch (err: unknown) {
+        const apiError = err as {code?: number};
+        if (apiError?.code === 409 || apiError?.code === 412) {
+            return {url: await ensureDownloadUrl()};
+        }
+        throw err;
+    }
 });
 
 const db = getFirestore();

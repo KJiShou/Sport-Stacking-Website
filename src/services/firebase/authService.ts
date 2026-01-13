@@ -30,7 +30,8 @@ import {deleteObject, ref} from "firebase/storage";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
-import {auth, db, storage} from "./config";
+import {auth, db, functions, storage} from "./config";
+import {httpsCallable} from "firebase/functions";
 
 async function getNextGlobalId(): Promise<string> {
     const counterRef = doc(db, "counters", "userCounter");
@@ -78,6 +79,16 @@ export const logout = () => signOut(auth);
 export const signInWithGoogle = () => {
     const provider = new GoogleAuthProvider();
     return signInWithPopup(auth, provider);
+};
+
+export const cacheGoogleAvatar = async (photoURL: string): Promise<string> => {
+    const callable = httpsCallable(functions, "cacheGoogleAvatarCallable");
+    const result = await callable({photoURL});
+    const data = result.data as {url?: string};
+    if (!data?.url) {
+        throw new Error("Failed to cache Google avatar.");
+    }
+    return data.url;
 };
 
 // Register and create user in Firestore
@@ -138,7 +149,7 @@ export const registerWithGoogle = async (
         throw new Error("This user is already registered.");
     }
 
-    const imageUrl = imageFile ?? firebaseUser.photoURL;
+    const imageUrl = imageFile ?? "";
 
     const global_id = await getNextGlobalId();
 

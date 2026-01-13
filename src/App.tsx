@@ -28,7 +28,7 @@ const App: FC = () => {
         const prevPathRef = useRef<string>(pathname);
 
         useEffect(() => {
-            if (!firebaseUser || loading) {
+            if (!firebaseUser || loading || !user) {
                 prevPathRef.current = pathname;
                 return;
             }
@@ -40,11 +40,57 @@ const App: FC = () => {
             const isNowOffRegister = !(pathname === "/register" || pathname.startsWith("/register/"));
 
             if (!loading && isGoogleOnly && wasOnRegister && isNowOffRegister) {
-                logout().then(() => navigate("/"));
+                const targetPath = pathname;
+                logout().then(() => navigate(targetPath, {replace: true}));
             }
 
             prevPathRef.current = pathname;
-        }, [firebaseUser, loading, pathname, navigate]);
+        }, [firebaseUser, loading, user, pathname, navigate]);
+
+        return null;
+    };
+    const RedirectOrLogoutMissingProfile = () => {
+        const {firebaseUser, loading, user} = useAuthContext();
+        const {pathname} = useLocation();
+        const navigate = useNavigate();
+        const prevPathRef = useRef<string>(pathname);
+
+        useEffect(() => {
+            if (loading || !firebaseUser || user) {
+                prevPathRef.current = pathname;
+                return;
+            }
+
+            const providers = firebaseUser.providerData.map((p) => p.providerId);
+            const isGoogle = providers.includes("google.com");
+            const wasOnRegister =
+                prevPathRef.current === "/register" || prevPathRef.current.startsWith("/register/");
+            const isOnRegister = pathname === "/register" || pathname.startsWith("/register/");
+            const isNowOffRegister = !isOnRegister;
+
+            if (wasOnRegister && isNowOffRegister) {
+                const targetPath = pathname;
+                logout().then(() => navigate(targetPath, {replace: true}));
+                prevPathRef.current = pathname;
+                return;
+            }
+
+            if (isGoogle) {
+                if (!isOnRegister) {
+                    navigate("/register", {
+                        state: {
+                            email: firebaseUser.email ?? "",
+                            fromGoogle: true,
+                        },
+                    });
+                }
+                prevPathRef.current = pathname;
+                return;
+            }
+
+            logout().then(() => navigate("/"));
+            prevPathRef.current = pathname;
+        }, [firebaseUser, loading, user, pathname, navigate]);
 
         return null;
     };
@@ -56,6 +102,7 @@ const App: FC = () => {
                     <link rel="icon" type="image/avif" href={image} />
                 </Helmet>
                 <AutoLogoutOnLeaveRegister />
+                <RedirectOrLogoutMissingProfile />
                 <DeviceInspector />
                 <Layout className="max-w-full w-full h-screen">
                     <Navbar /> {/* 固定顶部 */}

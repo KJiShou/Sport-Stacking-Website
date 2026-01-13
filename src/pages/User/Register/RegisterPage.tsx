@@ -1,7 +1,7 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
 import {countries} from "@/schema/Country";
-import {register, registerWithGoogle} from "@/services/firebase/authService";
+import {cacheGoogleAvatar, register, registerWithGoogle} from "@/services/firebase/authService";
 import {db} from "@/services/firebase/config";
 import {uploadAvatar} from "@/services/firebase/storageService";
 import {
@@ -157,17 +157,10 @@ const RegisterPage = () => {
         const fetchAndUploadGoogleAvatar = async () => {
             if (isFromGoogle && firebaseUser?.photoURL) {
                 try {
-                    // Download Google photoURL and upload to storage using uid
-                    const response = await fetch(firebaseUser.photoURL);
-                    const blob = await response.blob();
-                    const file = new File([blob], "avatar.png", {
-                        type: blob.type ?? "image/png",
-                    });
-                    const uploadedUrl = await uploadAvatar(file, firebaseUser.uid);
+                    const uploadedUrl = await cacheGoogleAvatar(firebaseUser.photoURL);
                     form.setFieldValue("image_url", uploadedUrl);
                 } catch (err) {
-                    // Fallback: set to Google photoURL if upload fails
-                    form.setFieldValue("image_url", firebaseUser.photoURL);
+                    form.setFieldValue("image_url", "");
                 }
                 form.setFieldValue("email", firebaseUser.email ?? "");
             }
@@ -175,11 +168,25 @@ const RegisterPage = () => {
         fetchAndUploadGoogleAvatar();
     }, [isFromGoogle, firebaseUser, form]);
 
+    const handleResetAvatar = async () => {
+        if (firebaseUser?.photoURL) {
+            try {
+                const uploadedUrl = await cacheGoogleAvatar(firebaseUser.photoURL);
+                form.setFieldValue("image_url", uploadedUrl);
+                return;
+            } catch (err) {
+                form.setFieldValue("image_url", "");
+                return;
+            }
+        }
+        form.setFieldValue("image_url", "");
+    };
+
     useEffect(() => {
-        if (firebaseUser && !isFromGoogle) {
+        if (firebaseUser && user && !isFromGoogle) {
             navigate("/");
         }
-    }, [firebaseUser, isFromGoogle, navigate]);
+    }, [firebaseUser, user, isFromGoogle, navigate]);
 
     return (
         <div className={`flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10`}>
@@ -247,24 +254,29 @@ const RegisterPage = () => {
                                                 triggerIcon={<IconCamera />}
                                                 triggerType="mask"
                                             >
-                                                <img
-                                                    className="w-full h-full object-cover"
-                                                    src={imageUrl as string}
-                                                    alt={user?.name}
-                                                />
+                                                {imageUrl ? (
+                                                    <img
+                                                        className="w-full h-full object-cover"
+                                                        src={imageUrl as string}
+                                                        alt={user?.name}
+                                                        onError={() => form.setFieldValue("image_url", "")}
+                                                    />
+                                                ) : (
+                                                    <IconUser />
+                                                )}
                                             </Avatar>
                                         </div>
                                     </Upload>
 
-                                    {firebaseUser?.photoURL && (
+                                    {firebaseUser && (
                                         <Button
                                             size="mini"
                                             type="text"
                                             onClick={() => {
-                                                form.setFieldValue("image_url", firebaseUser.photoURL as string);
+                                                handleResetAvatar();
                                             }}
                                         >
-                                            Reset to Google Avatar
+                                            Reset Avatar
                                         </Button>
                                     )}
                                 </div>
