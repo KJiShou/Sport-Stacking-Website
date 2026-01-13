@@ -10,18 +10,18 @@ import {db} from "../../services/firebase/config";
 const {Text} = Typography;
 
 const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: string}) => {
-    const {firebaseUser} = useAuthContext();
+    const {firebaseUser, user} = useAuthContext();
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
     const nextPath = redirectTo ?? "/";
 
     useEffect(() => {
-        if (firebaseUser) {
+        if (firebaseUser && user) {
             if (onClose) onClose();
             navigate(nextPath);
         }
-    }, [firebaseUser]);
+    }, [firebaseUser, user, navigate, nextPath, onClose]);
 
     const handleLogin = async (values: {email: string; password: string}) => {
         setLoading(true);
