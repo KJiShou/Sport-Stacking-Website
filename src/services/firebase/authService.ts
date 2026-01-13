@@ -31,9 +31,9 @@ import {FirestoreUserSchema} from "../../schema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
 
-async function getNextGlobalId(): Promise<string> {
+async function getNextGlobalId(idToken?: string): Promise<string> {
     const callable = httpsCallable(functions, "getNextUserGlobalId");
-    const result = await callable();
+    const result = await callable(idToken ? {idToken} : undefined);
     const data = result.data as {globalId?: string};
     if (!data?.globalId || typeof data.globalId !== "string") {
         throw new Error("Failed to generate user ID.");
@@ -98,8 +98,8 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const uid = userCredential.user.uid;
 
-    await userCredential.user.getIdToken(true);
-    const global_id = await getNextGlobalId();
+    const idToken = await userCredential.user.getIdToken(true);
+    const global_id = await getNextGlobalId(idToken);
 
     const newUser: FirestoreUser = {
         id: uid,
@@ -143,8 +143,8 @@ export const registerWithGoogle = async (
 
     const imageUrl = imageFile ?? "";
 
-    await firebaseUser.getIdToken(true);
-    const global_id = await getNextGlobalId();
+    const idToken = await firebaseUser.getIdToken(true);
+    const global_id = await getNextGlobalId(idToken);
 
     // ✅ 3. Prepare new user
     const userDoc = {
