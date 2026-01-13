@@ -22,7 +22,7 @@ import dayjs from "dayjs";
 import type {User} from "firebase/auth";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import {doc, getDoc} from "firebase/firestore";
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 
 const {Title} = Typography;
@@ -36,6 +36,7 @@ const RegisterPage = () => {
     const [form] = Form.useForm<RegisterFormData>();
     const [loading, setLoading] = useState(false);
     const [isICMode, setIsICMode] = useState(true);
+    const avatarRetryRef = useRef(0);
 
     const isFromGoogle = location.state?.fromGoogle === true;
 
@@ -159,6 +160,7 @@ const RegisterPage = () => {
                 try {
                     const uploadedUrl = await cacheGoogleAvatar(firebaseUser.photoURL);
                     form.setFieldValue("image_url", uploadedUrl);
+                    avatarRetryRef.current = 0;
                 } catch (err) {
                     form.setFieldValue("image_url", "");
                 }
@@ -173,6 +175,7 @@ const RegisterPage = () => {
             try {
                 const uploadedUrl = await cacheGoogleAvatar(firebaseUser.photoURL);
                 form.setFieldValue("image_url", uploadedUrl);
+                avatarRetryRef.current = 0;
                 return;
             } catch (err) {
                 form.setFieldValue("image_url", "");
@@ -180,6 +183,16 @@ const RegisterPage = () => {
             }
         }
         form.setFieldValue("image_url", "");
+    };
+
+    const handleAvatarError = async () => {
+        if (avatarRetryRef.current >= 1) {
+            form.setFieldValue("image_url", "");
+            return;
+        }
+        avatarRetryRef.current += 1;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await handleResetAvatar();
     };
 
     useEffect(() => {
@@ -259,7 +272,7 @@ const RegisterPage = () => {
                                                         className="w-full h-full object-cover"
                                                         src={imageUrl as string}
                                                         alt={user?.name}
-                                                        onError={() => form.setFieldValue("image_url", "")}
+                                                        onError={handleAvatarError}
                                                     />
                                                 ) : (
                                                     <IconUser />
