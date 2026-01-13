@@ -152,28 +152,9 @@ export default function CreateTournamentPage() {
             }
             const rawEvents = (form.getFieldValue("events") ?? []) as TournamentEvent[];
 
-            // Check for duplicate event type + code + gender combinations
-            const eventSignatures = new Map<string, number>();
-            for (let i = 0; i < rawEvents.length; i++) {
-                const event = rawEvents[i];
-                if (event.type && Array.isArray(event.codes)) {
-                    const genderKey = normalizeEventGender(event.gender);
-                    for (const code of event.codes) {
-                        const signature = `${event.type}-${code}-${genderKey}`;
-                        if (eventSignatures.has(signature)) {
-                            Message.error(
-                                `Duplicate event found: ${event.type} with code ${code} and gender ${genderKey}. Each event type, code, and gender combination must be unique.`,
-                            );
-                            setLoading(false);
-                            return;
-                        }
-                        eventSignatures.set(signature, i);
-                    }
-                }
-            }
-
             const sanitizedEvents: TournamentEvent[] = [];
             const invalidEvents: string[] = [];
+            const eventSignatures = new Set<string>();
 
             for (let i = 0; i < rawEvents.length; i++) {
                 const rawEvent = rawEvents[i];
@@ -192,6 +173,17 @@ export default function CreateTournamentPage() {
                 }
 
                 const normalizedGender = normalizeEventGender(gender);
+                for (const code of normalizedCodes) {
+                    const signature = `${type}-${code}-${normalizedGender}`;
+                    if (eventSignatures.has(signature)) {
+                        Message.error(
+                            `Duplicate event found: ${type} with code ${code} and gender ${normalizedGender}. Each event type, code, and gender combination must be unique.`,
+                        );
+                        setLoading(false);
+                        return;
+                    }
+                    eventSignatures.add(signature);
+                }
 
                 const sanitizedEvent: TournamentEvent = {
                     id: id && typeof id === "string" && id.length > 0 ? id : crypto.randomUUID(),

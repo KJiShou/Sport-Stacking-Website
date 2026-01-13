@@ -19,9 +19,7 @@ import {
     doc,
     getDoc,
     getDocs,
-    increment,
     query,
-    runTransaction,
     setDoc,
     updateDoc,
     where,
@@ -34,20 +32,13 @@ import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
 
 async function getNextGlobalId(): Promise<string> {
-    const counterRef = doc(db, "counters", "userCounter");
-    const newCount = await runTransaction(db, async (tx) => {
-        const snap = await tx.get(counterRef);
-        if (!snap.exists()) {
-            tx.set(counterRef, {count: 1});
-            return 1;
-        }
-        // 用客户端的 increment 辅助函数自增
-        tx.update(counterRef, {count: increment(1)});
-        // 注意：increment 不会马上返回新值，所以我们手动读取
-        const updated = (snap.data().count as number) + 1;
-        return updated;
-    });
-    return String(newCount).padStart(5, "0");
+    const callable = httpsCallable(functions, "getNextUserGlobalId");
+    const result = await callable();
+    const data = result.data as {globalId?: string};
+    if (!data?.globalId || typeof data.globalId !== "string") {
+        throw new Error("Failed to generate user ID.");
+    }
+    return data.globalId;
 }
 
 type UserRoles = NonNullable<FirestoreUser["roles"]>;
