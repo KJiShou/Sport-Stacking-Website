@@ -277,8 +277,19 @@ export const cacheGoogleAvatarCallable = onCall(async (request) => {
 });
 
 export const getNextUserGlobalId = onCall(async (request) => {
-    if (!request.auth?.uid) {
-        throw new Error("Unauthorized");
+    let uid = request.auth?.uid;
+    if (!uid) {
+        const idToken = request.data?.idToken;
+        if (typeof idToken === "string" && idToken.length > 0) {
+            try {
+                const decoded = await getAuth().verifyIdToken(idToken);
+                uid = decoded.uid;
+            } catch {
+                throw new Error("Unauthorized");
+            }
+        } else {
+            throw new Error("Unauthorized");
+        }
     }
 
     const db = getFirestore();
