@@ -276,39 +276,6 @@ export const cacheGoogleAvatarCallable = onCall(async (request) => {
     }
 });
 
-export const getNextUserGlobalId = onCall(async (request) => {
-    let uid = request.auth?.uid;
-    if (!uid) {
-        const idToken = request.data?.idToken;
-        if (typeof idToken === "string" && idToken.length > 0) {
-            try {
-                const decoded = await getAuth().verifyIdToken(idToken);
-                uid = decoded.uid;
-            } catch {
-                throw new Error("Unauthorized");
-            }
-        } else {
-            throw new Error("Unauthorized");
-        }
-    }
-
-    const db = getFirestore();
-    const counterRef = db.collection("counters").doc("userCounter");
-    const nextCount = await db.runTransaction(async (tx) => {
-        const snap = await tx.get(counterRef);
-        if (!snap.exists) {
-            tx.set(counterRef, {count: 1});
-            return 1;
-        }
-        const current = typeof snap.get("count") === "number" ? (snap.get("count") as number) : 0;
-        const next = current + 1;
-        tx.update(counterRef, {count: next});
-        return next;
-    });
-
-    return {globalId: String(nextCount).padStart(5, "0")};
-});
-
 const db = getFirestore();
 
 export const updateVerification = onRequest(async (req, res) => {
