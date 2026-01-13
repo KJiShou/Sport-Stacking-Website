@@ -19,7 +19,9 @@ import {
     doc,
     getDoc,
     getDocs,
+    increment,
     query,
+    runTransaction,
     setDoc,
     updateDoc,
     where,
@@ -31,14 +33,39 @@ import {FirestoreUserSchema} from "../../schema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
 
-async function getNextGlobalId(idToken?: string): Promise<string> {
-    const callable = httpsCallable(functions, "getNextUserGlobalId");
-    const result = await callable(idToken ? {idToken} : undefined);
-    const data = result.data as {globalId?: string};
-    if (!data?.globalId || typeof data.globalId !== "string") {
-        throw new Error("Failed to generate user ID.");
-    }
-    return data.globalId;
+const ensureAuthReady = (uid: string): Promise<void> =>
+    new Promise((resolve, reject) => {
+        if (auth.currentUser?.uid === uid) {
+            resolve();
+            return;
+        }
+        const unsubscribe = auth.onAuthStateChanged(
+            (current) => {
+                if (current?.uid === uid) {
+                    unsubscribe();
+                    resolve();
+                }
+            },
+            (error) => {
+                unsubscribe();
+                reject(error);
+            },
+        );
+    });
+
+async function getNextGlobalId(): Promise<string> {
+    const counterRef = doc(db, "counters", "userCounter");
+    const newCount = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(counterRef);
+        if (!snap.exists()) {
+            tx.set(counterRef, {count: 1});
+            return 1;
+        }
+        tx.update(counterRef, {count: increment(1)});
+        const updated = (snap.data().count as number) + 1;
+        return updated;
+    });
+    return String(newCount).padStart(5, "0");
 }
 
 type UserRoles = NonNullable<FirestoreUser["roles"]>;
@@ -98,8 +125,8 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const uid = userCredential.user.uid;
 
-    const idToken = await userCredential.user.getIdToken(true);
-    const global_id = await getNextGlobalId(idToken);
+    await ensureAuthReady(uid);
+    const global_id = await getNextGlobalId();
 
     const newUser: FirestoreUser = {
         id: uid,
@@ -143,8 +170,8 @@ export const registerWithGoogle = async (
 
     const imageUrl = imageFile ?? "";
 
-    const idToken = await firebaseUser.getIdToken(true);
-    const global_id = await getNextGlobalId(idToken);
+    await ensureAuthReady(uid);
+    const global_id = await getNextGlobalId();
 
     // ✅ 3. Prepare new user
     const userDoc = {
