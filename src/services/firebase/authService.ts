@@ -98,6 +98,7 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const uid = userCredential.user.uid;
 
+    await userCredential.user.getIdToken(true);
     const global_id = await getNextGlobalId();
 
     const newUser: FirestoreUser = {
@@ -142,6 +143,7 @@ export const registerWithGoogle = async (
 
     const imageUrl = imageFile ?? "";
 
+    await firebaseUser.getIdToken(true);
     const global_id = await getNextGlobalId();
 
     // ✅ 3. Prepare new user
