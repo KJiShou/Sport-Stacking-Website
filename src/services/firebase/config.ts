@@ -3,8 +3,8 @@ import type {FirebaseConfig} from "@/schema";
 import {initializeApp} from "firebase/app";
 import {ReCaptchaV3Provider, initializeAppCheck} from "firebase/app-check";
 import {getAuth} from "firebase/auth";
-import {getFunctions} from "firebase/functions";
 import {getFirestore} from "firebase/firestore";
+import {getFunctions} from "firebase/functions";
 import {getStorage} from "firebase/storage";
 
 const firebaseConfig: FirebaseConfig = {

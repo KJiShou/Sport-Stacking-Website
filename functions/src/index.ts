@@ -1,9 +1,9 @@
+import {randomUUID} from "node:crypto";
 import cors from "cors";
 import {getApps, initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {Timestamp as FirestoreTimestamp, getFirestore} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
-import {randomUUID} from "crypto";
 import {defineSecret} from "firebase-functions/params";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {onCall, onRequest} from "firebase-functions/v2/https";

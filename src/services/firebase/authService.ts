@@ -26,12 +26,12 @@ import {
     updateDoc,
     where,
 } from "firebase/firestore";
+import {httpsCallable} from "firebase/functions";
 import {deleteObject, ref} from "firebase/storage";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
-import {httpsCallable} from "firebase/functions";
 
 async function getNextGlobalId(): Promise<string> {
     const counterRef = doc(db, "counters", "userCounter");
