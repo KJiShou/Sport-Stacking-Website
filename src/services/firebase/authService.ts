@@ -125,6 +125,7 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const uid = userCredential.user.uid;
 
+    await signInWithEmailAndPassword(auth, email, password);
     await ensureAuthReady(uid);
     const global_id = await getNextGlobalId();
 
