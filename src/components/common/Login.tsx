@@ -1,7 +1,7 @@
 import {Button, Form, Input, Link, Message, Typography} from "@arco-design/web-react";
 import {IconEmail, IconLock} from "@arco-design/web-react/icon";
 import {doc, getDoc} from "firebase/firestore";
-import React, {useState, useEffect} from "react";
+import React, {useRef, useState, useEffect} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
 import {login, signInWithGoogle} from "../../services/firebase/authService";
@@ -15,13 +15,30 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
     const navigate = useNavigate();
     const location = useLocation();
     const nextPath = redirectTo ?? "/";
+    const onCloseRef = useRef(onClose);
+    const hasRedirectedRef = useRef(false);
 
     useEffect(() => {
-        if (firebaseUser && user) {
-            if (onClose) onClose();
-            navigate(nextPath);
+        onCloseRef.current = onClose;
+    }, [onClose]);
+
+    useEffect(() => {
+        if (!firebaseUser || !user) {
+            hasRedirectedRef.current = false;
+            return;
         }
-    }, [firebaseUser, user, navigate, nextPath, onClose]);
+
+        if (hasRedirectedRef.current) {
+            return;
+        }
+
+        hasRedirectedRef.current = true;
+        onCloseRef.current?.();
+
+        if (redirectTo && redirectTo !== location.pathname) {
+            navigate(nextPath, {replace: true});
+        }
+    }, [firebaseUser, user, navigate, nextPath, redirectTo, location.pathname]);
 
     const handleLogin = async (values: {email: string; password: string}) => {
         setLoading(true);
@@ -29,7 +46,9 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
             await login(values.email, values.password);
             Message.success("Login successful");
             if (onClose) onClose();
-            navigate(redirectTo ?? location.pathname);
+            if (redirectTo && redirectTo !== location.pathname) {
+                navigate(redirectTo, {replace: true});
+            }
         } catch (err: unknown) {
             if (err instanceof Error) {
                 console.error("Error:", err.message);
@@ -54,7 +73,9 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
 
             if (userSnap.exists()) {
                 Message.success("Logged in with Google");
-                navigate(redirectTo ?? location.pathname);
+                if (redirectTo && redirectTo !== location.pathname) {
+                    navigate(redirectTo, {replace: true});
+                }
                 if (onClose) onClose();
             } else {
                 Message.info("Please complete your registration");
