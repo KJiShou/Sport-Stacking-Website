@@ -44,8 +44,6 @@ const Navbar: React.FC = () => {
 
     const [visible, setVisible] = React.useState(false);
     const {firebaseUser, user} = useAuthContext();
-    const providers = firebaseUser?.providerData.map((p) => p.providerId);
-    const hasPasswordLinked = providers?.includes("password");
     const isRegisterPage = location.pathname === "/register";
     const handleNavigation = (key: string): void => {
         navigate(key);
@@ -120,14 +118,16 @@ const Navbar: React.FC = () => {
             </Menu>
             {!isRegisterPage && (
                 <div className="flex items-center m-10 cursor-pointer">
-                    {user && hasPasswordLinked ? (
+                    {firebaseUser ? (
                         <Dropdown
                             droplist={
                                 <Menu>
-                                    <Menu.Item key="profile" onClick={() => navigate(`/users/${user.id}`)}>
-                                        <IconUser className="mr-2" />
-                                        Profile
-                                    </Menu.Item>
+                                    {user && (
+                                        <Menu.Item key="profile" onClick={() => navigate(`/users/${user.id}`)}>
+                                            <IconUser className="mr-2" />
+                                            Profile
+                                        </Menu.Item>
+                                    )}
                                     <Menu.Item
                                         key="logout"
                                         onClick={async () => {
@@ -148,8 +148,11 @@ const Navbar: React.FC = () => {
                             trigger="click"
                         >
                             <div className="cursor-pointer">
-                                {user.image_url ? (
-                                    <AvatarWithLoading src={user.image_url} key={user.image_url} />
+                                {user?.image_url || firebaseUser?.photoURL ? (
+                                    <AvatarWithLoading
+                                        src={user?.image_url ?? firebaseUser?.photoURL ?? ""}
+                                        key={user?.image_url ?? firebaseUser?.photoURL ?? "avatar"}
+                                    />
                                 ) : (
                                     <Avatar style={{backgroundColor: "#3370ff"}}>
                                         <IconUser />
