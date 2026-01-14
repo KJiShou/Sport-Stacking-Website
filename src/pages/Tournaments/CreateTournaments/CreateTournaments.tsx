@@ -166,7 +166,11 @@ export default function CreateTournamentPage() {
                 }
 
                 // Ensure codes is an array before filtering
-                const normalizedCodes = Array.isArray(codes) ? codes.filter(isEventCode) : [];
+                const normalizedCodes = Array.isArray(codes)
+                    ? codes.filter(isEventCode)
+                    : typeof codes === "string" && isEventCode(codes)
+                      ? [codes]
+                      : [];
                 if (normalizedCodes.length === 0) {
                     invalidEvents.push(`Event ${i + 1}: No valid event codes selected for "${type}"`);
                     continue;

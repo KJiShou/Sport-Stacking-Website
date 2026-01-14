@@ -84,6 +84,12 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                         const prevEventType = form.getFieldValue(`events.${index}.__prevType`);
                         const availableCodes = eventType ? EVENT_TYPES[eventType as keyof typeof EVENT_TYPES] || [] : [];
                         const requiresTeamSize = eventType && TEAM_EVENT_TYPES.includes(eventType as keyof typeof EVENT_TYPES);
+                        const currentCodesRaw = form.getFieldValue(`events.${index}.codes`);
+                        const currentCodes = Array.isArray(currentCodesRaw)
+                            ? currentCodesRaw
+                            : typeof currentCodesRaw === "string" && currentCodesRaw.length > 0
+                              ? [currentCodesRaw]
+                              : [];
 
                         if (eventType && !requiresTeamSize) {
                             const currentTeamSize = form.getFieldValue(`events.${index}.teamSize`);
@@ -102,10 +108,16 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
 
                         // Clear codes if event type changed
                         if (eventType && eventType !== prevEventType) {
-                            const currentCodes = form.getFieldValue(`events.${index}.codes`) || [];
                             const validCodes = currentCodes.filter((code: string) => availableCodes.includes(code));
-                            if (validCodes.length !== currentCodes.length) {
-                                form.setFieldValue(`events.${index}.codes`, validCodes);
+                            if (eventType === "Individual") {
+                                if (!Array.isArray(currentCodesRaw) || validCodes.length !== currentCodes.length) {
+                                    form.setFieldValue(`events.${index}.codes`, validCodes);
+                                }
+                            } else {
+                                const nextCode = validCodes[0];
+                                if (currentCodesRaw !== nextCode) {
+                                    form.setFieldValue(`events.${index}.codes`, nextCode ?? undefined);
+                                }
                             }
                             form.setFieldValue(`events.${index}.__prevType`, eventType);
                         }

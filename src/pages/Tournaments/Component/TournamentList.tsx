@@ -708,9 +708,14 @@ export default function TournamentList() {
             const eventSignatures = new Map<string, number>();
             for (let i = 0; i < rawEvents.length; i++) {
                 const event = rawEvents[i];
-                if (event.type && Array.isArray(event.codes)) {
+                if (event.type) {
+                    const normalizedCodes = Array.isArray(event.codes)
+                        ? event.codes.filter(isEventCode)
+                        : typeof event.codes === "string" && isEventCode(event.codes)
+                          ? [event.codes]
+                          : [];
                     const genderKey = normalizeEventGender(event.gender);
-                    for (const code of event.codes) {
+                    for (const code of normalizedCodes) {
                         const signature = `${event.type}-${code}-${genderKey}`;
                         if (eventSignatures.has(signature)) {
                             Message.error(
@@ -737,7 +742,11 @@ export default function TournamentList() {
                 }
 
                 // Ensure codes is an array before filtering
-                const normalizedCodes = Array.isArray(codes) ? codes.filter(isEventCode) : [];
+                const normalizedCodes = Array.isArray(codes)
+                    ? codes.filter(isEventCode)
+                    : typeof codes === "string" && isEventCode(codes)
+                      ? [codes]
+                      : [];
                 if (normalizedCodes.length === 0) {
                     invalidEvents.push(`Event ${i + 1}: No valid event codes selected for "${type}"`);
                     continue;
