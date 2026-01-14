@@ -68,6 +68,11 @@ const App: FC = () => {
             const isOnRegister = pathname === "/register" || pathname.startsWith("/register/");
             const isNowOffRegister = !isOnRegister;
 
+            if (!isGoogle) {
+                prevPathRef.current = pathname;
+                return;
+            }
+
             if (wasOnRegister && isNowOffRegister) {
                 const targetPath = pathname;
                 logout().then(() => navigate(targetPath, {replace: true}));
@@ -75,20 +80,14 @@ const App: FC = () => {
                 return;
             }
 
-            if (isGoogle) {
-                if (!isOnRegister) {
-                    navigate("/register", {
-                        state: {
-                            email: firebaseUser.email ?? "",
-                            fromGoogle: true,
-                        },
-                    });
-                }
-                prevPathRef.current = pathname;
-                return;
+            if (!isOnRegister) {
+                navigate("/register", {
+                    state: {
+                        email: firebaseUser.email ?? "",
+                        fromGoogle: true,
+                    },
+                });
             }
-
-            logout().then(() => navigate("/"));
             prevPathRef.current = pathname;
         }, [firebaseUser, loading, user, pathname, navigate]);
 

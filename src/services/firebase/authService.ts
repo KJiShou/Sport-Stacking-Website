@@ -39,7 +39,7 @@ const ensureAuthReady = (uid: string): Promise<void> =>
             resolve();
             return;
         }
-        const unsubscribe = auth.onAuthStateChanged(
+        const unsubscribe = auth.onIdTokenChanged(
             (current) => {
                 if (current?.uid === uid) {
                     unsubscribe();
@@ -127,6 +127,7 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
 
     await signInWithEmailAndPassword(auth, email, password);
     await ensureAuthReady(uid);
+    await auth.currentUser?.getIdToken(true);
     const global_id = await getNextGlobalId();
 
     const newUser: FirestoreUser = {
