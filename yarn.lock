@@ -7409,6 +7409,30 @@ __metadata:
   languageName: node
   linkType: hard
 
+"firebase-functions@npm:^7.0.3":
+  version: 7.0.3
+  resolution: "firebase-functions@npm:7.0.3"
+  dependencies:
+    "@types/cors": "npm:^2.8.5"
+    "@types/express": "npm:^4.17.21"
+    cors: "npm:^2.8.5"
+    express: "npm:^4.21.0"
+    protobufjs: "npm:^7.2.2"
+  peerDependencies:
+    "@apollo/server": ^5.2.0
+    "@as-integrations/express4": ^1.1.2
+    firebase-admin: ^11.10.0 || ^12.0.0 || ^13.0.0
+  peerDependenciesMeta:
+    "@apollo/server":
+      optional: true
+    "@as-integrations/express4":
+      optional: true
+  bin:
+    firebase-functions: lib/bin/firebase-functions.js
+  checksum: 10c0/2fb8cbfe46255fb5204e5e150a74531c6fb5c86dbffbe64534c80221da2899188c21d4a788a5b19cb3a0885ff35d5cf716e52c119c5df1c28eb1d7eaa52ef93c
+  languageName: node
+  linkType: hard
+
 "firebase-tools@npm:^14.2.1":
   version: 14.2.1
   resolution: "firebase-tools@npm:14.2.1"
@@ -7752,7 +7776,7 @@ __metadata:
     eslint-config-google: "npm:^0.14.0"
     eslint-plugin-import: "npm:^2.25.4"
     firebase-admin: "npm:^13.4.0"
-    firebase-functions: "npm:^6.3.2"
+    firebase-functions: "npm:^7.0.3"
     firebase-functions-test: "npm:^3.1.0"
     firebase-tools: "npm:^14.2.1"
     jspdf: "npm:4.0.0"

@@ -31,6 +31,237 @@ if (!getApps().length) {
     initializeApp();
 }
 
+const db = getFirestore();
+
+type TeamEventRefs = Partial<Pick<Team, "event_id" | "event">> & {
+    event_ids?: unknown;
+    events?: unknown;
+};
+
+type FirestoreEventRecord = {
+    id?: string;
+    type?: string;
+    gender?: string;
+    codes?: string[];
+};
+
+const addEventReference = (target: Set<string>, value: unknown): void => {
+    if (typeof value !== "string") {
+        return;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+        return;
+    }
+
+    target.add(trimmed);
+};
+
+const addEventReferences = (target: Set<string>, values: unknown): void => {
+    if (!Array.isArray(values)) {
+        return;
+    }
+
+    for (const value of values) {
+        addEventReference(target, value);
+    }
+};
+
+const getTeamEventIdReferences = (team: TeamEventRefs | null | undefined): string[] => {
+    if (!team) {
+        return [];
+    }
+
+    const ids = new Set<string>();
+    if (Array.isArray(team.event_id)) {
+        addEventReferences(ids, team.event_id);
+    } else {
+        addEventReference(ids, team.event_id);
+    }
+    addEventReferences(ids, team.event_ids);
+
+    return Array.from(ids);
+};
+
+const getTeamEventNameReferences = (team: TeamEventRefs | null | undefined): string[] => {
+    if (!team) {
+        return [];
+    }
+
+    const names = new Set<string>();
+    if (Array.isArray(team.event)) {
+        addEventReferences(names, team.event);
+    } else {
+        addEventReference(names, team.event);
+    }
+    addEventReferences(names, team.events);
+
+    return Array.from(names);
+};
+
+const getTeamEventReferences = (team: TeamEventRefs | null | undefined): string[] => {
+    const references = new Set<string>();
+    for (const value of getTeamEventIdReferences(team)) {
+        references.add(value);
+    }
+    for (const value of getTeamEventNameReferences(team)) {
+        references.add(value);
+    }
+    return Array.from(references);
+};
+
+const getPreferredTeamEventKeys = (team: TeamEventRefs | null | undefined, fallback: string[]): string[] => {
+    const ids = getTeamEventIdReferences(team);
+    if (ids.length > 0) {
+        return ids;
+    }
+
+    const names = getTeamEventNameReferences(team);
+    if (names.length > 0) {
+        return names;
+    }
+
+    return fallback;
+};
+
+const normalizeEventValue = (value: string): string => value.trim().toLowerCase();
+
+const buildNormalizedEventSet = (values: string[]): Set<string> => {
+    const normalized = new Set<string>();
+    for (const value of values) {
+        if (typeof value !== "string") {
+            continue;
+        }
+
+        const trimmed = value.trim();
+        if (trimmed.length === 0) {
+            continue;
+        }
+
+        normalized.add(trimmed.toLowerCase());
+    }
+    return normalized;
+};
+
+const hasEventOverlap = (primary: Set<string>, secondary: Set<string>): boolean => {
+    for (const value of primary) {
+        if (secondary.has(value)) {
+            return true;
+        }
+    }
+    return false;
+};
+
+const escapeHtml = (value: string): string =>
+    value.replace(/[&<>"']/g, (character) => {
+        switch (character) {
+            case "&":
+                return "&amp;";
+            case "<":
+                return "&lt;";
+            case ">":
+                return "&gt;";
+            case '"':
+                return "&quot;";
+            case "'":
+                return "&#39;";
+            default:
+                return character;
+        }
+    });
+
+const sanitizeEventCodes = (codes: unknown): string[] =>
+    Array.isArray(codes)
+        ? codes.filter((code): code is string => typeof code === "string" && code.length > 0 && code !== "Overall")
+        : [];
+
+const formatEventLabel = (event: FirestoreEventRecord): string | null => {
+    if (!event.type) {
+        return null;
+    }
+
+    const gender = event.gender === "Male" || event.gender === "Female" ? event.gender : "Mixed";
+    const codes = sanitizeEventCodes(event.codes);
+    const codesLabel = codes.length > 0 ? ` (${codes.join(", ")})` : "";
+    return `${event.type} - ${gender}${codesLabel}`;
+};
+
+const eventMatchesReference = (event: FirestoreEventRecord, reference: string): boolean => {
+    const normalizedReference = normalizeEventValue(reference);
+    if (!normalizedReference) {
+        return false;
+    }
+
+    const candidates: string[] = [];
+    if (event.id) {
+        candidates.push(event.id);
+    }
+    if (event.type) {
+        candidates.push(event.type);
+    }
+    for (const code of sanitizeEventCodes(event.codes)) {
+        candidates.push(code);
+        if (event.type) {
+            candidates.push(`${code}-${event.type}`);
+        }
+    }
+    const label = formatEventLabel(event);
+    if (label) {
+        candidates.push(label);
+    }
+
+    return candidates.some((candidate) => normalizeEventValue(candidate) === normalizedReference);
+};
+
+const resolveEventLabels = async (tournamentId: string, references: string[]): Promise<string[]> => {
+    if (!tournamentId || references.length === 0) {
+        return [];
+    }
+
+    const eventsSnapshot = await db.collection("events").where("tournament_id", "==", tournamentId).get();
+    if (eventsSnapshot.empty) {
+        return [];
+    }
+
+    const events = eventsSnapshot.docs.map((docSnap) => {
+        const raw = docSnap.data() as Record<string, unknown>;
+        return {
+            id: typeof raw.id === "string" && raw.id.length > 0 ? raw.id : docSnap.id,
+            type: typeof raw.type === "string" ? raw.type : undefined,
+            gender: typeof raw.gender === "string" ? raw.gender : undefined,
+            codes: Array.isArray(raw.codes) ? raw.codes.filter((code): code is string => typeof code === "string") : [],
+        } satisfies FirestoreEventRecord;
+    });
+
+    const labels = new Set<string>();
+    for (const reference of references) {
+        const match = events.find((event) => eventMatchesReference(event, reference));
+        if (match) {
+            const label = formatEventLabel(match);
+            if (label) {
+                labels.add(label);
+            }
+        }
+    }
+
+    return Array.from(labels);
+};
+
+const resolveLeaderName = async (leaderId: string): Promise<string | null> => {
+    if (!leaderId) {
+        return null;
+    }
+
+    const leaderSnap = await db.collection("users").where("global_id", "==", leaderId).limit(1).get();
+    if (leaderSnap.empty) {
+        return null;
+    }
+
+    const leaderData = leaderSnap.docs[0]?.data();
+    return typeof leaderData?.name === "string" ? leaderData.name : null;
+};
+
 /**
  * Send email using AWS SES SMTP as a backup when Resend fails
  */
@@ -99,13 +330,37 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
             return;
         }
 
+        const teamSnap = await db.collection("teams").doc(teamId).get();
+        const teamData = teamSnap.exists ? (teamSnap.data() as Team) : null;
+        const teamEventReferences = teamData ? getTeamEventReferences(teamData) : [];
+        const eventLabels = teamData ? await resolveEventLabels(tournamentId, teamEventReferences) : [];
+        const eventLabel = eventLabels.length > 0 ? eventLabels.join(", ") : teamEventReferences[0] ?? "";
+        const teamName = teamData?.name ?? "";
+        const leaderId = teamData?.leader_id ?? "";
+        const leaderName = leaderId ? await resolveLeaderName(leaderId) : null;
+        const leaderLabel = leaderName ? `${leaderName} (${leaderId})` : leaderId;
+
+        const detailItems: string[] = [];
+        if (eventLabel) {
+            detailItems.push(`<li><strong>Event:</strong> ${escapeHtml(eventLabel)}</li>`);
+        }
+        if (teamName) {
+            detailItems.push(`<li><strong>Team:</strong> ${escapeHtml(teamName)}</li>`);
+        }
+        if (leaderLabel) {
+            detailItems.push(`<li><strong>Invited by:</strong> ${escapeHtml(leaderLabel)}</li>`);
+        }
+
+        const detailList = detailItems.length > 0 ? `<p>Verification details:</p><ul>${detailItems.join("")}</ul>` : "";
+
         // Step 3: 构造验证链接，包含 registrationId
         const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&teamId=${teamId}&memberId=${memberId}&registrationId=${registrationId}`;
         const safeVerifyUrl = verifyUrl.replace(/&/g, "&amp;");
 
         const html = `
     <p>Hello,</p>
-    <p>Please click the button below to verify your team membership for the <strong>RankingStack</strong> competition:</p>
+    <p>Please click the button below to verify your team membership for the <strong>RankingStack</strong> competition.</p>
+    ${detailList}
     <p>
         <a href="${safeVerifyUrl}"
    style="padding: 10px 16px; background-color: #165DFF; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
@@ -276,8 +531,6 @@ export const cacheGoogleAvatarCallable = onCall(async (request) => {
     }
 });
 
-const db = getFirestore();
-
 export const updateVerification = onRequest(async (req, res) => {
     corsHandler(req, res, async () => {
         const authHeader = req.headers.authorization;
@@ -342,6 +595,9 @@ export const updateVerification = onRequest(async (req, res) => {
 
                 const teamData = teamDoc.data() as Team;
                 const memberIndex = teamData.members.findIndex((m: TeamMember) => m.global_id === memberId);
+                const teamEventReferences = getTeamEventReferences(teamData);
+                const normalizedTeamEventReferences = buildNormalizedEventSet(teamEventReferences);
+                const eventKeysToRegister = getPreferredTeamEventKeys(teamData, teamEventReferences);
 
                 if (memberIndex === -1) {
                     throw new Error("You are not a member of this team.");
@@ -361,15 +617,53 @@ export const updateVerification = onRequest(async (req, res) => {
                 }
 
                 const record = registrationRecords[recordIndex];
-                const existingEvents = record.events;
-                const teamEvents = Array.isArray(teamData.event) ? teamData.event : [];
-                const hasConflict = teamEvents.some((event: string) => existingEvents.includes(event));
+                const existingEvents = Array.isArray(record.events) ? record.events : [];
 
-                if (hasConflict) {
-                    throw new Error("You are already registered for one or more of these team events.");
+                if (normalizedTeamEventReferences.size > 0) {
+                    const teamsQuery = db.collection("teams").where("tournament_id", "==", tournamentId);
+                    const teamsSnapshot = await transaction.get(teamsQuery);
+                    let conflictingTeamName: string | null = null;
+
+                    for (const teamDocSnap of teamsSnapshot.docs) {
+                        if (teamDocSnap.id === teamId) {
+                            continue;
+                        }
+
+                        const otherTeam = teamDocSnap.data() as Team;
+                        const isLeader = otherTeam.leader_id === memberId;
+                        const memberRecord = Array.isArray(otherTeam.members)
+                            ? otherTeam.members.find((member) => member.global_id === memberId)
+                            : undefined;
+                        const isVerifiedMember = Boolean(memberRecord?.verified);
+
+                        if (!isLeader && !isVerifiedMember) {
+                            continue;
+                        }
+
+                        const otherTeamReferences = getTeamEventReferences(otherTeam);
+                        const normalizedOtherTeamReferences = buildNormalizedEventSet(otherTeamReferences);
+                        if (hasEventOverlap(normalizedTeamEventReferences, normalizedOtherTeamReferences)) {
+                            conflictingTeamName = otherTeam.name ?? "another team";
+                            break;
+                        }
+                    }
+
+                    if (conflictingTeamName) {
+                        throw new Error(`You are already participating in ${conflictingTeamName} for this event.`);
+                    }
                 }
 
-                const updatedEvents = [...new Set([...existingEvents, ...teamEvents])];
+                if (normalizedTeamEventReferences.size > 0) {
+                    const normalizedExistingEvents = buildNormalizedEventSet(existingEvents);
+                    if (hasEventOverlap(normalizedTeamEventReferences, normalizedExistingEvents)) {
+                        throw new Error("You are already registered for one or more of these team events.");
+                    }
+                }
+
+                const updatedEvents =
+                    eventKeysToRegister.length > 0
+                        ? [...new Set([...existingEvents, ...eventKeysToRegister])]
+                        : [...new Set(existingEvents)];
                 const newRegistrationRecords = [...registrationRecords];
                 newRegistrationRecords[recordIndex] = {...record, events: updatedEvents};
 
@@ -377,15 +671,20 @@ export const updateVerification = onRequest(async (req, res) => {
                 updatedMembers[memberIndex].verified = true;
 
                 // Update the registration document with the new events
-                const userHasConflict = teamEvents.some((event: string) => registrationData.events_registered.includes(event));
-
-                if (userHasConflict) {
-                    throw new Error("You are already registered for one or more of these team events.");
+                const registrationEvents = Array.isArray(registrationData.events_registered) ? registrationData.events_registered : [];
+                if (normalizedTeamEventReferences.size > 0) {
+                    const normalizedRegisteredEvents = buildNormalizedEventSet(registrationEvents);
+                    if (hasEventOverlap(normalizedTeamEventReferences, normalizedRegisteredEvents)) {
+                        throw new Error("You are already registered for one or more of these team events.");
+                    }
                 }
 
                 // Update the registration document with the new events
                 await transaction.update(regRef, {
-                    events_registered: [...new Set([...registrationData.events_registered, ...teamEvents])],
+                    events_registered:
+                        eventKeysToRegister.length > 0
+                            ? [...new Set([...registrationEvents, ...eventKeysToRegister])]
+                            : [...new Set(registrationEvents)],
                     updated_at: new Date(),
                 });
 
@@ -406,6 +705,8 @@ export const updateVerification = onRequest(async (req, res) => {
             } else if (errorMessage === "You are not registered for this tournament.") {
                 res.status(400).json({error: errorMessage});
             } else if (errorMessage === "You are already registered for one or more of these team events.") {
+                res.status(409).json({error: errorMessage});
+            } else if (errorMessage.startsWith("You are already participating in")) {
                 res.status(409).json({error: errorMessage});
             } else {
                 res.status(500).json({error: errorMessage});
