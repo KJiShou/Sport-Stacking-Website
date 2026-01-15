@@ -9,10 +9,11 @@ import {fetchRegistrationById, updateRegistration} from "@/services/firebase/reg
 import {uploadFile} from "@/services/firebase/storageService";
 import {
     createTeam,
-    fetchTeamsByRegistrationId,
+    deleteTeam,
     fetchTeamsByTournament,
     fetchTournamentById,
     fetchTournamentEvents,
+    removeMemberFromTeam,
     updateTeam,
 } from "@/services/firebase/tournamentsService";
 import {getEventKey, getEventLabel, isTeamEvent, matchesEventKey} from "@/utils/tournament/eventUtils";
@@ -169,6 +170,30 @@ export default function EditTournamentRegistrationPage() {
                 updated_at: Timestamp.now(),
             };
             await updateRegistration(registrationData);
+
+            const removedTeams = initialTeams.filter(
+                (initialTeam) => !teams.some((team) => team.id === initialTeam.id),
+            );
+            const registrationIds = [registration?.user_global_id, registration?.user_id].filter(
+                (value): value is string => Boolean(value),
+            );
+
+            if (removedTeams.length > 0 && registrationIds.length > 0) {
+                for (const removedTeam of removedTeams) {
+                    if (registrationIds.includes(removedTeam.leader_id)) {
+                        await deleteTeam(removedTeam.id);
+                        continue;
+                    }
+
+                    const memberIdToRemove = (removedTeam.members ?? []).find((member) =>
+                        registrationIds.includes(member.global_id),
+                    )?.global_id;
+
+                    if (memberIdToRemove) {
+                        await removeMemberFromTeam(removedTeam.id, memberIdToRemove);
+                    }
+                }
+            }
 
             for (const team of teams) {
                 const memberIds = team.members.map((m) => m.global_id);

@@ -511,6 +511,16 @@ export async function createTeam(tournamentId: string, teamData: Omit<Team, "id"
     return docRef.id;
 }
 
+export async function deleteTeam(teamId: string): Promise<void> {
+    try {
+        const teamRef = doc(db, "teams", teamId);
+        await deleteDoc(teamRef);
+    } catch (error) {
+        console.error("Error deleting team:", error);
+        throw error;
+    }
+}
+
 export async function fetchTeamsByTournament(tournamentId: string): Promise<Team[]> {
     const teamsCollectionRef = collection(db, "teams");
     const q = query(teamsCollectionRef, where("tournament_id", "==", tournamentId));
@@ -593,6 +603,30 @@ export async function addMemberToTeam(tournamentId: string, teamId: string, memb
         });
     } catch (error) {
         console.error("Error adding member to team:", error);
+        throw error;
+    }
+}
+
+export async function removeMemberFromTeam(teamId: string, memberId: string): Promise<void> {
+    try {
+        const teamRef = doc(db, "teams", teamId);
+        const teamDoc = await getDoc(teamRef);
+
+        if (!teamDoc.exists()) {
+            throw new Error("Team not found");
+        }
+
+        const team = teamDoc.data() as Team;
+        const members = team.members || [];
+        const updatedMembers = members.filter((member) => member.global_id !== memberId);
+
+        if (updatedMembers.length === members.length) {
+            return;
+        }
+
+        await updateDoc(teamRef, {members: updatedMembers});
+    } catch (error) {
+        console.error("Error removing member from team:", error);
         throw error;
     }
 }
