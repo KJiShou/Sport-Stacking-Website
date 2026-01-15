@@ -3,6 +3,8 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {AllTimeStat, FirestoreUser, FirestoreUserSchema, OnlineBest, RecordItem} from "@/schema";
 import {countries} from "@/schema/Country";
 import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {Avatar, Spin} from "@arco-design/web-react";
 import {
     Button,
@@ -54,8 +56,21 @@ import type {z} from "zod";
 
 const {Title, Text} = Typography;
 
+const toNumber = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+};
+
 export default function RegisterPage() {
     const {Row, Col} = Grid;
+    const deviceBreakpoint = useDeviceBreakpoint();
+    const isMobile = deviceBreakpoint <= DeviceBreakpoint.md;
     const {id} = useParams<{id: string}>();
     const {user: authUser} = useAuthContext();
     const navigate = useNavigate();
@@ -501,18 +516,23 @@ export default function RegisterPage() {
                                                                 </span>
                                                             ),
                                                         },
-                                                        {
-                                                            title: "Season",
-                                                            dataIndex: "season",
-                                                            width: 120,
-                                                            render: (season) => season ?? "—",
-                                                        },
-                                                        {
-                                                            title: "Last Updated",
-                                                            dataIndex: "updatedAt",
-                                                            width: 150,
-                                                            render: (date) => (date ? dayjs(date).format("YYYY-MM-DD") : "—"),
-                                                        },
+                                                        ...(isMobile
+                                                            ? []
+                                                            : [
+                                                                  {
+                                                                      title: "Season",
+                                                                      dataIndex: "season",
+                                                                      width: 120,
+                                                                      render: (season: string | null) => season ?? "—",
+                                                                  },
+                                                                  {
+                                                                      title: "Last Updated",
+                                                                      dataIndex: "updatedAt",
+                                                                      width: 150,
+                                                                      render: (date: Date | null) =>
+                                                                          date ? dayjs(date).format("YYYY-MM-DD") : "—",
+                                                                  },
+                                                              ]),
                                                     ]}
                                                     data={bestTimes}
                                                     pagination={false}
@@ -547,53 +567,55 @@ export default function RegisterPage() {
                                                                 : null
                                                           : null,
                                                     status: reg.status ?? "pending",
-                                                    prelimRank: reg.prelim_rank ?? null,
-                                                    finalRank: reg.final_rank ?? null,
-                                                    prelimOverall: reg.prelim_overall_result ?? null,
-                                                    finalOverall: reg.final_overall_result ?? null,
+                                                    prelimRank: toNumber(reg.prelim_rank),
+                                                    finalRank: toNumber(reg.final_rank),
+                                                    prelimOverall: toNumber(reg.prelim_overall_result),
+                                                    finalOverall: toNumber(reg.final_overall_result),
                                                 }));
                                             return tournaments.length === 0 ? (
                                                 <Empty description="No tournament participation records found." />
                                             ) : (
-                                                <Table
-                                                    rowKey="tournamentId"
-                                                    columns={[
-                                                        {
-                                                            title: "Date",
-                                                            dataIndex: "registrationDate",
-                                                            width: 150,
-                                                            render: (date) => (date ? dayjs(date).format("YYYY-MM-DD") : "—"),
-                                                        },
-                                                        {
-                                                            title: "Prelim Rank",
-                                                            dataIndex: "prelimRank",
-                                                            width: 120,
-                                                            render: (rank) => (rank ? `#${rank}` : "—"),
-                                                        },
-                                                        {
-                                                            title: "Prelim Overall",
-                                                            dataIndex: "prelimOverall",
-                                                            width: 150,
-                                                            render: (time) => (time ? time.toFixed(3) : "—"),
-                                                        },
-                                                        {
-                                                            title: "Final Rank",
-                                                            dataIndex: "finalRank",
-                                                            width: 120,
-                                                            render: (rank) => (rank ? `#${rank}` : "—"),
-                                                        },
-                                                        {
-                                                            title: "Final Overall",
-                                                            dataIndex: "finalOverall",
-                                                            width: 150,
-                                                            render: (time) => (time ? time.toFixed(3) : "—"),
-                                                        },
-                                                    ]}
-                                                    data={tournaments}
-                                                    pagination={{pageSize: 10}}
-                                                    scroll={{x: true}}
-                                                    border={false}
-                                                />
+                                                <div className="w-full overflow-x-auto">
+                                                    <Table
+                                                        rowKey="tournamentId"
+                                                        columns={[
+                                                            {
+                                                                title: "Date",
+                                                                dataIndex: "registrationDate",
+                                                                width: 150,
+                                                                render: (date) => (date ? dayjs(date).format("YYYY-MM-DD") : "—"),
+                                                            },
+                                                            {
+                                                                title: "Prelim Rank",
+                                                                dataIndex: "prelimRank",
+                                                                width: 120,
+                                                                render: (rank) => (rank ? `#${rank}` : "—"),
+                                                            },
+                                                            {
+                                                                title: "Prelim Overall",
+                                                                dataIndex: "prelimOverall",
+                                                                width: 150,
+                                                                render: (time: number | null) => (time ? time.toFixed(3) : "—"),
+                                                            },
+                                                            {
+                                                                title: "Final Rank",
+                                                                dataIndex: "finalRank",
+                                                                width: 120,
+                                                                render: (rank) => (rank ? `#${rank}` : "—"),
+                                                            },
+                                                            {
+                                                                title: "Final Overall",
+                                                                dataIndex: "finalOverall",
+                                                                width: 150,
+                                                                render: (time: number | null) => (time ? time.toFixed(3) : "—"),
+                                                            },
+                                                        ]}
+                                                        data={tournaments}
+                                                        pagination={{pageSize: 10}}
+                                                        scroll={{x: "max-content"}}
+                                                        border={false}
+                                                    />
+                                                </div>
                                             );
                                         })()}
                                     </div>

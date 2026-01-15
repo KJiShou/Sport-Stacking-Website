@@ -545,7 +545,7 @@ export default function TournamentView() {
                         </Title>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {events.map((event) => (
-                                <Card key={event.id} title={getEventLabel(event)} bordered>
+                                <Card key={event.id} title={getEventLabel(event)} bordered className="score-card">
                                     <div className="space-y-2">
                                         {event.age_brackets.map((bracket) => {
                                             const participantsInBracket = registrations.filter(
@@ -587,7 +587,7 @@ export default function TournamentView() {
                                 <div className="space-y-6">
                                     {/* Overall Records Table for Individual Events */}
                                     {prelimOverallRecords.length > 0 && (
-                                        <Card title={`Overall Rankings (${individualEventLabel})`} bordered>
+                                        <Card title={`Overall Rankings (${individualEventLabel})`} bordered className="score-card">
                                             {individualEvent &&
                                                 (() => {
                                                     const eventKey = individualEvent.id ?? "Individual";
@@ -947,6 +947,7 @@ export default function TournamentView() {
                                                 key={`prelim-team-${eventType}`}
                                                 title={`${eventLabel} - Team Rankings`}
                                                 bordered
+                                                className="score-card"
                                             >
                                                 {eventConfig && renderBracketTabs(eventConfig, bracketKey)}
                                                 <Table
@@ -1002,6 +1003,7 @@ export default function TournamentView() {
                                                     <Card
                                                         title={`Overall Rankings (${individualEventLabel}) - ${classificationLabel}`}
                                                         bordered
+                                                        className="score-card"
                                                     >
                                                         {individualEvent &&
                                                             (() => {
@@ -1455,6 +1457,7 @@ export default function TournamentView() {
                                                                 key={`final-team-${classification}-${eventType}`}
                                                                 title={`${eventLabel} - Team Rankings - ${classificationLabel}`}
                                                                 bordered
+                                                                className="score-card"
                                                             >
                                                                 {eventConfig && renderBracketTabs(eventConfig, bracketKey)}
                                                                 <Table

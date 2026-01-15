@@ -980,6 +980,16 @@ export const updateParticipantRankingsAndResults = async (
     classification: "prelim" | "advance" | "intermediate" | "beginner",
 ): Promise<void> => {
     try {
+        const computeBestTime = (record: TournamentRecord): number | null => {
+            if (typeof record.best_time === "number" && Number.isFinite(record.best_time) && record.best_time > 0) {
+                return record.best_time;
+            }
+            const tries = [record.try1, record.try2, record.try3]
+                .map((value) => (typeof value === "number" ? value : Number(value)))
+                .filter((value) => Number.isFinite(value) && value > 0);
+            return tries.length > 0 ? Math.min(...tries) : null;
+        };
+
         // Get all individual records for this tournament and classification
         const recordsQuery = query(
             collection(firestore, "records"),
@@ -1028,6 +1038,49 @@ export const updateParticipantRankingsAndResults = async (
                 });
             }
         });
+
+        if (overallRecords.length === 0) {
+            const allowedCodes = new Set(["3-3-3", "3-6-3", "Cycle"]);
+            const perParticipant = new Map<string, Map<string, number>>();
+
+            for (const record of individualRecords) {
+                if (record.event !== "Individual") continue;
+                const code = record.code ?? "";
+                if (!allowedCodes.has(code)) continue;
+                const globalId = record.participant_global_id ?? "";
+                if (!globalId) continue;
+                const bestTime = computeBestTime(record);
+                if (!bestTime) continue;
+
+                const codeMap = perParticipant.get(globalId) ?? new Map<string, number>();
+                const existing = codeMap.get(code);
+                if (existing == null || bestTime < existing) {
+                    codeMap.set(code, bestTime);
+                }
+                perParticipant.set(globalId, codeMap);
+            }
+
+            const fallbackOverall = Array.from(perParticipant.entries())
+                .map(([globalId, codeMap]) => {
+                    if (!Array.from(allowedCodes).every((code) => codeMap.has(code))) {
+                        return null;
+                    }
+                    const total =
+                        (codeMap.get("3-3-3") ?? 0) +
+                        (codeMap.get("3-6-3") ?? 0) +
+                        (codeMap.get("Cycle") ?? 0);
+                    return {globalId, overall_time: total};
+                })
+                .filter((entry): entry is {globalId: string; overall_time: number} => Boolean(entry))
+                .sort((a, b) => a.overall_time - b.overall_time);
+
+            fallbackOverall.forEach((entry, index) => {
+                rankingMap.set(entry.globalId, {
+                    rank: index + 1,
+                    overall_time: entry.overall_time,
+                });
+            });
+        }
 
         // Get all participants from individual records
         const participantGlobalIds = new Set(individualRecords.map((r) => r.participant_global_id).filter(Boolean));

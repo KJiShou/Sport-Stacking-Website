@@ -93,6 +93,7 @@ export default function ViewTournamentRegistrationPage() {
 
     const canDeleteRegistration = useMemo(() => {
         if (!tournament?.registration_start_date || !tournament?.registration_end_date) return true;
+        if (tournament.status === "On Going" || tournament.status === "End") return false;
         const start = parseDate(tournament.registration_start_date);
         const end = parseDate(tournament.registration_end_date);
         if (!start || !end) return true;
