@@ -179,20 +179,22 @@ export default function EditTournamentRegistrationPage() {
             );
 
             if (removedTeams.length > 0 && registrationIds.length > 0) {
-                for (const removedTeam of removedTeams) {
-                    if (registrationIds.includes(removedTeam.leader_id)) {
-                        await deleteTeam(removedTeam.id);
-                        continue;
-                    }
+                await Promise.all(
+                    removedTeams.map(async (removedTeam) => {
+                        if (registrationIds.includes(removedTeam.leader_id)) {
+                            await deleteTeam(removedTeam.id);
+                            return;
+                        }
 
-                    const memberIdToRemove = (removedTeam.members ?? []).find((member) =>
-                        registrationIds.includes(member.global_id),
-                    )?.global_id;
+                        const memberIdToRemove = (removedTeam.members ?? []).find((member) =>
+                            registrationIds.includes(member.global_id),
+                        )?.global_id;
 
-                    if (memberIdToRemove) {
-                        await removeMemberFromTeam(removedTeam.id, memberIdToRemove);
-                    }
-                }
+                        if (memberIdToRemove) {
+                            await removeMemberFromTeam(removedTeam.id, memberIdToRemove);
+                        }
+                    }),
+                );
             }
 
             for (const team of teams) {
