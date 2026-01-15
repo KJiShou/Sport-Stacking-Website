@@ -1315,8 +1315,7 @@ export const exportCertificatesPDF = async (options: {
     }
 
     const doc = new jsPDF();
-    const [leftLogo, rightLogoCandidate] = await Promise.all([loadDefaultIcon(), loadUserLogo(logoUrl ?? tournament.logo)]);
-    const rightLogo = rightLogoCandidate ?? leftLogo;
+    const [leftLogo, rightLogo] = await Promise.all([loadDefaultIcon(), loadUserLogo(logoUrl ?? tournament.logo)]);
     const formatTimeValue = (value?: string): string => (value && value.trim().length > 0 ? value : "N/A");
 
     const drawCertificate = (entry: CertificateEntry) => {

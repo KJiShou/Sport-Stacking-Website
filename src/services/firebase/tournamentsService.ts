@@ -514,6 +514,12 @@ export async function createTeam(tournamentId: string, teamData: Omit<Team, "id"
 export async function deleteTeam(teamId: string): Promise<void> {
     try {
         const teamRef = doc(db, "teams", teamId);
+        const teamDoc = await getDoc(teamRef);
+
+        if (!teamDoc.exists()) {
+            throw new Error("Team not found");
+        }
+
         await deleteDoc(teamRef);
     } catch (error) {
         console.error("Error deleting team:", error);
