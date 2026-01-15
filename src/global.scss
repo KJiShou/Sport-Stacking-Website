@@ -104,3 +104,21 @@ main {
         padding-top: 0px;
     }
 }
+
+.score-table {
+    .arco-table-th {
+        white-space: normal;
+    }
+
+    .arco-table-th-item {
+        white-space: normal;
+        line-height: 1.2;
+    }
+}
+
+.score-card {
+    .arco-card-header-title {
+        white-space: normal;
+        line-height: 1.3;
+    }
+}

@@ -303,10 +303,20 @@ export default function TournamentList() {
                         tooltipMessage =
                             "Your registration is pending approval. Please contact us if you need to update your registration details.";
                     } else if (registrationStatus === "approved") {
-                        color = "green";
-                        displayText = "Approved";
-                        tooltipMessage =
-                            "Your registration has been approved! Contact us if you need to make any changes to your registration.";
+                        if (tournament.status === "On Going") {
+                            color = "arcoblue";
+                            displayText = "On Going";
+                            tooltipMessage = "Your registration is approved. The tournament is currently running.";
+                        } else if (tournament.status === "End") {
+                            color = "gray";
+                            displayText = "End";
+                            tooltipMessage = "Your registration is approved. The tournament has ended.";
+                        } else {
+                            color = "green";
+                            displayText = "Approved";
+                            tooltipMessage =
+                                "Your registration has been approved! Contact us if you need to make any changes to your registration.";
+                        }
                     } else if (registrationStatus === "rejected") {
                         color = "red";
                         displayText = "Rejected";
