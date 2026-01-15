@@ -621,6 +621,7 @@ export async function removeMemberFromTeam(teamId: string, memberId: string): Pr
         const updatedMembers = members.filter((member) => member.global_id !== memberId);
 
         if (updatedMembers.length === members.length) {
+            console.warn(`Member ${memberId} not found in team ${teamId}`);
             return;
         }
 
