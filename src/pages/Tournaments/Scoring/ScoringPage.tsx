@@ -51,6 +51,21 @@ const getAgeGroup = (age: number): string => {
     return "Open";
 };
 
+const normalizeGender = (value: unknown): "Male" | "Female" | "Mixed" => {
+    if (value === "Male" || value === "Female") {
+        return value;
+    }
+    return "Mixed";
+};
+
+const isGenderEligible = (participantGender: unknown, eventGender: TournamentEvent["gender"]): boolean => {
+    const normalizedEventGender = normalizeGender(eventGender);
+    if (normalizedEventGender === "Mixed") {
+        return true;
+    }
+    return normalizeGender(participantGender) === normalizedEventGender;
+};
+
 /**
  * Helper function to check if new record beats the current best record for the participant's age
  */
@@ -134,10 +149,18 @@ export default function ScoringPage() {
     const [selectedEvent, setSelectedEvent] = useState<string>("");
     const [modalScores, setModalScores] = useState<Record<string, Score>>({});
 
-    const registrationMatchesEvent = (eventsRegistered: string[] | undefined, event: TournamentEvent): boolean => {
+    const registrationMatchesEvent = (
+        eventsRegistered: string[] | undefined,
+        event: TournamentEvent | null | undefined,
+        participantGender?: string,
+    ): boolean => {
         const normalizedEvents = eventsRegistered ?? [];
 
         if (!event || normalizedEvents.length === 0) {
+            return false;
+        }
+
+        if (!isGenderEligible(participantGender, event.gender)) {
             return false;
         }
 
@@ -271,7 +294,7 @@ export default function ScoringPage() {
                     const participantScores: Record<string, Score> = {};
                     const augmentedEvents = new Set<string>(r.events_registered);
                     for (const event of tournamentEvents ?? []) {
-                        if (!registrationMatchesEvent(r.events_registered, event)) {
+                        if (!registrationMatchesEvent(r.events_registered, event, r.gender)) {
                             continue;
                         }
 
@@ -411,7 +434,7 @@ export default function ScoringPage() {
         const missingEvents: string[] = [];
 
         for (const event of events ?? []) {
-            if (!registrationMatchesEvent(participant.events_registered, event)) {
+            if (!registrationMatchesEvent(participant.events_registered, event, participant.gender)) {
                 continue;
             }
 
@@ -826,90 +849,94 @@ export default function ScoringPage() {
     const calculateAndSaveOverallResults = async () => {
         if (!tournamentId || !tournament) return;
 
-        // Find Individual event with all three codes
-        const individualEvent = events?.find(
+        const individualEvents = (events ?? []).filter(
             (e) =>
                 e.type === "Individual" && e.codes?.includes("3-3-3") && e.codes?.includes("3-6-3") && e.codes?.includes("Cycle"),
         );
 
-        if (!individualEvent) return;
+        if (individualEvents.length === 0) return;
 
         try {
-            // Get all individual participants who have completed all three events
-            const individualParticipants = registrationList.filter(
-                (p) =>
-                    p.events_registered.includes("Individual") &&
-                    p.scores["3-3-3-Individual"] &&
-                    p.scores["3-3-3-Individual"].try1 &&
-                    p.scores["3-3-3-Individual"].try2 &&
-                    p.scores["3-3-3-Individual"].try3 &&
-                    p.scores["3-6-3-Individual"] &&
-                    p.scores["3-6-3-Individual"].try1 &&
-                    p.scores["3-6-3-Individual"].try2 &&
-                    p.scores["3-6-3-Individual"].try3 &&
-                    p.scores["Cycle-Individual"] &&
-                    p.scores["Cycle-Individual"].try1 &&
-                    p.scores["Cycle-Individual"].try2 &&
-                    p.scores["Cycle-Individual"].try3,
-            );
+            let savedCount = 0;
 
-            // Calculate overall results and save them
-            const overallPromises = individualParticipants.map(async (p) => {
-                const threeScores = p.scores["3-3-3-Individual"];
-                const threeSixThreeScores = p.scores["3-6-3-Individual"];
-                const cycleScores = p.scores["Cycle-Individual"];
-
-                // Get best times for each event
-                const threeBest = Math.min(
-                    Number.parseFloat(threeScores.try1),
-                    Number.parseFloat(threeScores.try2),
-                    Number.parseFloat(threeScores.try3),
-                );
-                const threeSixThreeBest = Math.min(
-                    Number.parseFloat(threeSixThreeScores.try1),
-                    Number.parseFloat(threeSixThreeScores.try2),
-                    Number.parseFloat(threeSixThreeScores.try3),
-                );
-                const cycleBest = Math.min(
-                    Number.parseFloat(cycleScores.try1),
-                    Number.parseFloat(cycleScores.try2),
-                    Number.parseFloat(cycleScores.try3),
+            for (const individualEvent of individualEvents) {
+                // Get all individual participants who have completed all three events
+                const individualParticipants = registrationList.filter(
+                    (p) =>
+                        registrationMatchesEvent(p.events_registered, individualEvent, p.gender) &&
+                        p.scores["3-3-3-Individual"] &&
+                        p.scores["3-3-3-Individual"].try1 &&
+                        p.scores["3-3-3-Individual"].try2 &&
+                        p.scores["3-3-3-Individual"].try3 &&
+                        p.scores["3-6-3-Individual"] &&
+                        p.scores["3-6-3-Individual"].try1 &&
+                        p.scores["3-6-3-Individual"].try2 &&
+                        p.scores["3-6-3-Individual"].try3 &&
+                        p.scores["Cycle-Individual"] &&
+                        p.scores["Cycle-Individual"].try1 &&
+                        p.scores["Cycle-Individual"].try2 &&
+                        p.scores["Cycle-Individual"].try3,
                 );
 
-                // Calculate overall time (sum of best times)
-                const overallTime = threeBest + threeSixThreeBest + cycleBest;
+                // Calculate overall results and save them
+                const overallPromises = individualParticipants.map(async (p) => {
+                    const threeScores = p.scores["3-3-3-Individual"];
+                    const threeSixThreeScores = p.scores["3-6-3-Individual"];
+                    const cycleScores = p.scores["Cycle-Individual"];
 
-                // Save overall record using TournamentOverallRecordSchema
-                const recordId = await saveOverallRecord(
-                    TournamentOverallRecordSchema.parse({
-                        id: "",
-                        tournament_id: tournamentId,
-                        tournament_name: tournament.name,
-                        event_id: individualEvent.id ?? "",
-                        event: "Individual",
-                        code: "Overall",
-                        participant_id: p.user_id,
-                        participant_global_id: p.user_global_id,
-                        participant_name: p.user_name,
-                        age: p.age,
-                        country: p.country,
-                        gender: p.gender || "Male",
-                        three_three_three: threeBest,
-                        three_six_three: threeSixThreeBest,
-                        cycle: cycleBest,
-                        overall_time: overallTime,
-                        classification: "prelim",
-                        status: "submitted",
-                        submitted_at: new Date().toISOString(),
-                    }),
-                );
-                return {participantId: p.user_id, recordId, overallTime};
-            });
+                    // Get best times for each event
+                    const threeBest = Math.min(
+                        Number.parseFloat(threeScores.try1),
+                        Number.parseFloat(threeScores.try2),
+                        Number.parseFloat(threeScores.try3),
+                    );
+                    const threeSixThreeBest = Math.min(
+                        Number.parseFloat(threeSixThreeScores.try1),
+                        Number.parseFloat(threeSixThreeScores.try2),
+                        Number.parseFloat(threeSixThreeScores.try3),
+                    );
+                    const cycleBest = Math.min(
+                        Number.parseFloat(cycleScores.try1),
+                        Number.parseFloat(cycleScores.try2),
+                        Number.parseFloat(cycleScores.try3),
+                    );
 
-            const overallResults = await Promise.all(overallPromises);
+                    // Calculate overall time (sum of best times)
+                    const overallTime = threeBest + threeSixThreeBest + cycleBest;
 
-            if (overallPromises.length > 0) {
-                Message.success(`Calculated and saved ${overallPromises.length} overall results!`);
+                    // Save overall record using TournamentOverallRecordSchema
+                    const recordId = await saveOverallRecord(
+                        TournamentOverallRecordSchema.parse({
+                            id: "",
+                            tournament_id: tournamentId,
+                            tournament_name: tournament.name,
+                            event_id: individualEvent.id ?? "",
+                            event: "Individual",
+                            code: "Overall",
+                            participant_id: p.user_id,
+                            participant_global_id: p.user_global_id,
+                            participant_name: p.user_name,
+                            age: p.age,
+                            country: p.country,
+                            gender: p.gender || "Male",
+                            three_three_three: threeBest,
+                            three_six_three: threeSixThreeBest,
+                            cycle: cycleBest,
+                            overall_time: overallTime,
+                            classification: "prelim",
+                            status: "submitted",
+                            submitted_at: new Date().toISOString(),
+                        }),
+                    );
+                    return {participantId: p.user_id, recordId, overallTime};
+                });
+
+                const overallResults = await Promise.all(overallPromises);
+                savedCount += overallResults.length;
+            }
+
+            if (savedCount > 0) {
+                Message.success(`Calculated and saved ${savedCount} overall results!`);
             }
         } catch (error) {
             console.error("Failed to calculate overall results:", error);
@@ -1191,7 +1218,7 @@ export default function ScoringPage() {
                                                     data={filterParticipants(
                                                         registrationList.filter(
                                                             (r) =>
-                                                                registrationMatchesEvent(r.events_registered, evt) &&
+                                                                registrationMatchesEvent(r.events_registered, evt, r.gender) &&
                                                                 r.age >= br.min_age &&
                                                                 r.age <= br.max_age,
                                                         ),
@@ -1207,7 +1234,7 @@ export default function ScoringPage() {
                                                     data={filterParticipants(
                                                         registrationList.filter(
                                                             (r) =>
-                                                                registrationMatchesEvent(r.events_registered, evt) &&
+                                                                registrationMatchesEvent(r.events_registered, evt, r.gender) &&
                                                                 r.age >= br.min_age &&
                                                                 r.age <= br.max_age,
                                                         ),
@@ -1301,9 +1328,10 @@ export default function ScoringPage() {
                                                                                 registrationMatchesEvent(
                                                                                     r.events_registered,
                                                                                     event,
+                                                                                    r.gender,
                                                                                 ) &&
-                                                                                r.age >= bracket.min_age &&
-                                                                                r.age <= bracket.max_age,
+                                                                r.age >= bracket.min_age &&
+                                                                r.age <= bracket.max_age,
                                                                         );
 
                                                                         for (const participant of participantsForBracket) {

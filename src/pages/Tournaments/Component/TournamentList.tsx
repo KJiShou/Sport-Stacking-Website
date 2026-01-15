@@ -58,7 +58,7 @@ import {DEFAULT_AGE_BRACKET, DEFAULT_EVENTS} from "@/constants/tournamentDefault
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {fetchUserByID} from "@/services/firebase/authService";
-import {uploadFile} from "@/services/firebase/storageService";
+import {deleteFile, uploadFile} from "@/services/firebase/storageService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
@@ -807,9 +807,16 @@ export default function TournamentList() {
 
             if (agendaFile instanceof File) {
                 agendaUrl = await uploadFile(agendaFile, `agendas`, `${selectedTournament.id}`);
+            } else if (agendaFile === null) {
+                agendaUrl = "";
             }
             if (logoFile instanceof File) {
                 logoUrl = await uploadFile(logoFile, `logos`, `${selectedTournament.id}`);
+            } else if (logoFile === null) {
+                if (selectedTournament?.id) {
+                    await deleteFile(`logos/${selectedTournament.id}`);
+                }
+                logoUrl = "";
             }
 
             // Handle payment methods with QR code uploads
@@ -863,8 +870,8 @@ export default function TournamentList() {
                 registration_fee: values.registration_fee,
                 member_registration_fee: values.member_registration_fee,
                 payment_methods: processedPaymentMethods.length > 0 ? processedPaymentMethods : null,
-                agenda: agendaUrl,
-                logo: logoUrl,
+                agenda: agendaUrl || null,
+                logo: logoUrl || null,
             });
             setEditModalVisible(false);
             await fetchTournaments();
