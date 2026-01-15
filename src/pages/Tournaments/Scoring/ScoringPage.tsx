@@ -775,7 +775,7 @@ export default function ScoringPage() {
                                     code,
                                     team_id: selectedTeam.id,
                                     team_name: selectedTeam.name,
-                                    team_age: selectedTeam.team_age,
+                                    age: selectedTeam.team_age,
                                     country,
                                     leader_id: selectedTeam.leader_id,
                                     member_global_ids: selectedTeam.members.map((m: TeamMember) => m.global_id),
@@ -1330,8 +1330,8 @@ export default function ScoringPage() {
                                                                                     event,
                                                                                     r.gender,
                                                                                 ) &&
-                                                                r.age >= bracket.min_age &&
-                                                                r.age <= bracket.max_age,
+                                                                                r.age >= bracket.min_age &&
+                                                                                r.age <= bracket.max_age,
                                                                         );
 
                                                                         for (const participant of participantsForBracket) {
