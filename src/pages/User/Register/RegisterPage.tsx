@@ -1,7 +1,7 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
 import {countries} from "@/schema/Country";
-import {cacheGoogleAvatar, register, registerWithGoogle} from "@/services/firebase/authService";
+import {cacheGoogleAvatar, registerWithGoogle, signInWithGoogle} from "@/services/firebase/authService";
 import {db} from "@/services/firebase/config";
 import {uploadAvatar} from "@/services/firebase/storageService";
 import {
@@ -39,6 +39,9 @@ const RegisterPage = () => {
     const avatarRetryRef = useRef(0);
 
     const isFromGoogle = location.state?.fromGoogle === true;
+    const isGoogleAuth = Boolean(
+        isFromGoogle || firebaseUser?.providerData?.some((provider) => provider.providerId === "google.com"),
+    );
 
     const linkEmailPassword = async (email: string, password: string, user: User) => {
         const credential = EmailAuthProvider.credential(email, password);
@@ -79,47 +82,29 @@ const RegisterPage = () => {
             Message.error("Passwords do not match");
             return;
         }
-        let id = "";
 
         setLoading(true);
         try {
+            if (!isGoogleAuth || !firebaseUser) {
+                Message.error("Please sign in with Google before registering.");
+                return;
+            }
+
             // If user uploaded an avatar (data URL), upload it to storage
             if (image_url?.startsWith("data:")) {
                 const blob = await (await fetch(image_url)).blob();
                 const file = new File([blob], "avatar.png", {
                     type: blob.type ?? "image/png",
                 });
-                avatarUrl = await uploadAvatar(file, firebaseUser?.uid ?? id);
-            } else if (isFromGoogle && firebaseUser?.photoURL) {
+                avatarUrl = await uploadAvatar(file, firebaseUser.uid);
+            } else if (isGoogleAuth && firebaseUser.photoURL) {
                 // Already uploaded in useEffect, just use the form value
                 avatarUrl = image_url;
             } else if (image_url) {
                 avatarUrl = image_url;
             }
 
-            if (!(isFromGoogle && firebaseUser)) {
-                id = await register({
-                    email,
-                    password,
-                    name,
-                    IC,
-                    birthdate,
-                    gender,
-                    country,
-                    school: school || "",
-                    phone_number,
-                    roles: null,
-                    image_url: avatarUrl || "",
-                    best_times: {},
-                });
-                // Fetch user data and update context
-                if (id) {
-                    const userDoc = await getDoc(doc(db, "users", id));
-                    if (userDoc.exists()) {
-                        setUser(userDoc.data() as FirestoreUser);
-                    }
-                }
-            } else if (isFromGoogle && firebaseUser) {
+            if (isGoogleAuth && firebaseUser) {
                 await registerWithGoogle(
                     firebaseUser,
                     {
@@ -142,7 +127,7 @@ const RegisterPage = () => {
                 }
             }
             Message.success("Registration successful!");
-            navigate("/");
+            navigate("/", {replace: true});
         } catch (err: unknown) {
             if (err instanceof Error) {
                 Message.error(err.message);
@@ -156,7 +141,13 @@ const RegisterPage = () => {
 
     useEffect(() => {
         const fetchAndUploadGoogleAvatar = async () => {
-            if (isFromGoogle && firebaseUser?.photoURL) {
+            if (!isGoogleAuth || !firebaseUser) {
+                return;
+            }
+
+            form.setFieldValue("email", firebaseUser.email ?? "");
+
+            if (firebaseUser.photoURL) {
                 try {
                     const uploadedUrl = await cacheGoogleAvatar(firebaseUser.photoURL);
                     form.setFieldValue("image_url", uploadedUrl);
@@ -164,11 +155,10 @@ const RegisterPage = () => {
                 } catch (err) {
                     form.setFieldValue("image_url", "");
                 }
-                form.setFieldValue("email", firebaseUser.email ?? "");
             }
         };
         fetchAndUploadGoogleAvatar();
-    }, [isFromGoogle, firebaseUser, form]);
+    }, [isGoogleAuth, firebaseUser, form]);
 
     const handleResetAvatar = async () => {
         if (firebaseUser?.photoURL) {
@@ -196,10 +186,10 @@ const RegisterPage = () => {
     };
 
     useEffect(() => {
-        if (firebaseUser && user && !isFromGoogle) {
-            navigate("/");
+        if (firebaseUser && user) {
+            navigate("/", {replace: true});
         }
-    }, [firebaseUser, user, isFromGoogle, navigate]);
+    }, [firebaseUser, user, navigate]);
 
     return (
         <div className={`flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10`}>
@@ -213,204 +203,232 @@ const RegisterPage = () => {
                     </div>
                 </Title>
 
-                <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
-                    <Form.Item noStyle field="image_url">
-                        <Input type="hidden" />
-                    </Form.Item>
+                {!isGoogleAuth || !firebaseUser ? (
+                    <div className="flex flex-col items-center gap-4 w-full max-w-xl">
+                        <p className="text-center text-gray-600">
+                            Please sign in with Google to start your registration, then complete your participant details.
+                        </p>
+                        <Button
+                            type="primary"
+                            long
+                            loading={loading}
+                            onClick={async () => {
+                                setLoading(true);
+                                try {
+                                    const result = await signInWithGoogle();
+                                    const userDoc = await getDoc(doc(db, "users", result.user.uid));
+                                    if (userDoc.exists()) {
+                                        Message.success("Account already registered. You're now logged in.");
+                                        navigate("/", {replace: true});
+                                    }
+                                } catch (err) {
+                                    Message.error(err instanceof Error ? err.message : "Failed to sign in with Google.");
+                                } finally {
+                                    setLoading(false);
+                                }
+                            }}
+                            className="flex items-center justify-center gap-x-2"
+                        >
+                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
+                            <span>Continue with Google</span>
+                        </Button>
+                    </div>
+                ) : (
+                    <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
+                        <Form.Item noStyle field="image_url">
+                            <Input type="hidden" />
+                        </Form.Item>
 
-                    <Form.Item
-                        className="flex flex-col items-center gap-2"
-                        label="Avatar (optional)"
-                        shouldUpdate={(prev, curr) => prev.image_url !== curr.image_url}
-                    >
-                        {() => {
-                            const imageUrl = form.getFieldValue("image_url");
+                        <Form.Item
+                            className="flex flex-col items-center gap-2"
+                            label="Avatar (optional)"
+                            shouldUpdate={(prev, curr) => prev.image_url !== curr.image_url}
+                        >
+                            {() => {
+                                const imageUrl = form.getFieldValue("image_url");
 
-                            return (
-                                <div className="flex flex-col items-center gap-2">
-                                    <Upload
-                                        listType="picture-card"
-                                        accept="image/jpeg,image/png,image/gif"
-                                        showUploadList={false}
-                                        customRequest={({file, onSuccess, onError}) => {
-                                            const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-                                            const validTypes = ["image/jpeg", "image/png", "image/gif"];
+                                return (
+                                    <div className="flex flex-col items-center gap-2">
+                                        <Upload
+                                            listType="picture-card"
+                                            accept="image/jpeg,image/png,image/gif"
+                                            showUploadList={false}
+                                            customRequest={({file, onSuccess, onError}) => {
+                                                const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+                                                const validTypes = ["image/jpeg", "image/png", "image/gif"];
 
-                                            if (!validTypes.includes(file.type)) {
-                                                Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
-                                                onError?.(new Error("Invalid file type"));
-                                                return;
-                                            }
+                                                if (!validTypes.includes(file.type)) {
+                                                    Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
+                                                    onError?.(new Error("Invalid file type"));
+                                                    return;
+                                                }
 
-                                            if (file.size > MAX_SIZE) {
-                                                Message.error("File size exceeds 10MB limit");
-                                                onError?.(new Error("File size exceeds 10MB limit"));
-                                                return;
-                                            }
+                                                if (file.size > MAX_SIZE) {
+                                                    Message.error("File size exceeds 10MB limit");
+                                                    onError?.(new Error("File size exceeds 10MB limit"));
+                                                    return;
+                                                }
 
-                                            const reader = new FileReader();
-                                            reader.onload = () => {
-                                                form.setFieldValue("image_url", reader.result as string);
-                                                onSuccess?.();
-                                            };
-                                            reader.onerror = () => {
-                                                Message.error("Failed to read file.");
-                                                onError?.(new Error("Failed to read file."));
-                                            };
-                                            reader.readAsDataURL(file);
-                                        }}
-                                    >
-                                        <div className="relative inline-block">
-                                            <Avatar
-                                                size={100}
-                                                className="mx-auto w-24 h-24 rounded-full overflow-hidden"
-                                                triggerIcon={<IconCamera />}
-                                                triggerType="mask"
-                                            >
-                                                {imageUrl ? (
-                                                    <img
-                                                        className="w-full h-full object-cover"
-                                                        src={imageUrl as string}
-                                                        alt={user?.name}
-                                                        onError={handleAvatarError}
-                                                    />
-                                                ) : (
-                                                    <IconUser />
-                                                )}
-                                            </Avatar>
-                                        </div>
-                                    </Upload>
-
-                                    {firebaseUser && (
-                                        <Button
-                                            size="mini"
-                                            type="text"
-                                            onClick={() => {
-                                                handleResetAvatar();
+                                                const reader = new FileReader();
+                                                reader.onload = () => {
+                                                    form.setFieldValue("image_url", reader.result as string);
+                                                    onSuccess?.();
+                                                };
+                                                reader.onerror = () => {
+                                                    Message.error("Failed to read file.");
+                                                    onError?.(new Error("Failed to read file."));
+                                                };
+                                                reader.readAsDataURL(file);
                                             }}
                                         >
-                                            Reset Avatar
-                                        </Button>
-                                    )}
-                                </div>
-                            );
-                        }}
-                    </Form.Item>
+                                            <div className="relative inline-block">
+                                                <Avatar
+                                                    size={100}
+                                                    className="mx-auto w-24 h-24 rounded-full overflow-hidden"
+                                                    triggerIcon={<IconCamera />}
+                                                    triggerType="mask"
+                                                >
+                                                    {imageUrl ? (
+                                                        <img
+                                                            className="w-full h-full object-cover"
+                                                            src={imageUrl as string}
+                                                            alt={user?.name}
+                                                            onError={handleAvatarError}
+                                                        />
+                                                    ) : (
+                                                        <IconUser />
+                                                    )}
+                                                </Avatar>
+                                            </div>
+                                        </Upload>
 
-                    <Form.Item
-                        field="email"
-                        label="Participant Email"
-                        rules={[{required: true, type: "email", message: "Enter a valid email"}]}
-                    >
-                        <Input
-                            prefix={<IconEmail />}
-                            placeholder="example@mail.com"
-                            disabled={!!firebaseUser?.providerData?.[0]?.providerId?.includes("google")}
-                        />
-                    </Form.Item>
-
-                    <Form.Item
-                        field="name"
-                        label="Participant Full Name"
-                        rules={[{required: true, message: "Enter your full name"}]}
-                    >
-                        <Input prefix={<IconUser />} placeholder="Your full name" />
-                    </Form.Item>
-
-                    <Form.Item
-                        field="IC"
-                        label={
-                            <div className="flex justify-between items-center">
-                                <span>{isICMode ? "Participant IC Number" : "Participant Passport Number"}</span>
-                                <Button
-                                    size="mini"
-                                    type="text"
-                                    onClick={() => {
-                                        setIsICMode(!isICMode);
-                                        form.setFieldValue("IC", "");
-                                    }}
-                                >
-                                    Use {isICMode ? "Passport" : "IC"}
-                                </Button>
-                            </div>
-                        }
-                        rules={[
-                            {
-                                required: true,
-                                message: `Enter your ${isICMode ? "IC" : "passport"} number`,
-                            },
-                            ...(isICMode
-                                ? [
-                                      {
-                                          match: /^\d{12}$/,
-                                          message: "IC must be 12 digits like 050101011234",
-                                      },
-                                  ]
-                                : []),
-                        ]}
-                    >
-                        <Input placeholder={isICMode ? "e.g. 050101011234" : "e.g. A12345678"} onChange={handleICChange} />
-                    </Form.Item>
-
-                    <Form.Item
-                        field="birthdate"
-                        label="Participant Birthdate"
-                        rules={[{required: true, message: "Select your birthdate"}]}
-                    >
-                        <DatePicker style={{width: "100%"}} disabledDate={(current) => current.isAfter(dayjs())} />
-                    </Form.Item>
-
-                    <Form.Item field="gender" label="Participant Gender" rules={[{required: true, message: "Select gender"}]}>
-                        <Select placeholder="Select gender" options={["Male", "Female"]} />
-                    </Form.Item>
-
-                    <Form.Item
-                        field="phone_number"
-                        label="Phone Number"
-                        rules={[{required: true, message: "Enter your phone number"}]}
-                    >
-                        <Input prefix={<IconPhone />} placeholder="Your phone number" />
-                    </Form.Item>
-
-                    <Form.Item
-                        label="Participant Country / State"
-                        field="country"
-                        rules={[{required: true, message: "Please select a country/region"}]}
-                    >
-                        <Cascader
-                            showSearch
-                            changeOnSelect
-                            allowClear
-                            filterOption={(input, node) => {
-                                return node.label.toLowerCase().includes(input.toLowerCase());
+                                        {firebaseUser && (
+                                            <Button
+                                                size="mini"
+                                                type="text"
+                                                onClick={() => {
+                                                    handleResetAvatar();
+                                                }}
+                                            >
+                                                Reset Avatar
+                                            </Button>
+                                        )}
+                                    </div>
+                                );
                             }}
-                            options={countries}
-                            placeholder="Please select location"
-                            expandTrigger="hover"
-                            value={user?.country}
-                        />
-                    </Form.Item>
+                        </Form.Item>
 
-                    <Form.Item label="Participant School/University/College" field="school">
-                        <Input placeholder="Enter School/University/College name" />
-                    </Form.Item>
+                        <Form.Item
+                            field="email"
+                            label="Participant Email"
+                            rules={[{required: true, type: "email", message: "Enter a valid email"}]}
+                        >
+                            <Input prefix={<IconEmail />} placeholder="example@mail.com" disabled={true} />
+                        </Form.Item>
 
-                    <Form.Item field="password" label="Password" rules={[{required: true, message: "Enter your password"}]}>
-                        <Input.Password prefix={<IconLock />} placeholder="Create password" />
-                    </Form.Item>
+                        <Form.Item
+                            field="name"
+                            label="Participant Full Name"
+                            rules={[{required: true, message: "Enter your full name"}]}
+                        >
+                            <Input prefix={<IconUser />} placeholder="Your full name" />
+                        </Form.Item>
 
-                    <Form.Item
-                        field="confirmPassword"
-                        label="Confirm Password"
-                        rules={[{required: true, message: "Confirm your password"}]}
-                    >
-                        <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
-                    </Form.Item>
+                        <Form.Item
+                            field="IC"
+                            label={
+                                <div className="flex justify-between items-center">
+                                    <span>{isICMode ? "Participant IC Number" : "Participant Passport Number"}</span>
+                                    <Button
+                                        size="mini"
+                                        type="text"
+                                        onClick={() => {
+                                            setIsICMode(!isICMode);
+                                            form.setFieldValue("IC", "");
+                                        }}
+                                    >
+                                        Use {isICMode ? "Passport" : "IC"}
+                                    </Button>
+                                </div>
+                            }
+                            rules={[
+                                {
+                                    required: true,
+                                    message: `Enter your ${isICMode ? "IC" : "passport"} number`,
+                                },
+                                ...(isICMode
+                                    ? [
+                                          {
+                                              match: /^\d{12}$/,
+                                              message: "IC must be 12 digits like 050101011234",
+                                          },
+                                      ]
+                                    : []),
+                            ]}
+                        >
+                            <Input placeholder={isICMode ? "e.g. 050101011234" : "e.g. A12345678"} onChange={handleICChange} />
+                        </Form.Item>
 
-                    <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
-                        Register
-                    </Button>
-                </Form>
+                        <Form.Item
+                            field="birthdate"
+                            label="Participant Birthdate"
+                            rules={[{required: true, message: "Select your birthdate"}]}
+                        >
+                            <DatePicker style={{width: "100%"}} disabledDate={(current) => current.isAfter(dayjs())} />
+                        </Form.Item>
+
+                        <Form.Item field="gender" label="Participant Gender" rules={[{required: true, message: "Select gender"}]}>
+                            <Select placeholder="Select gender" options={["Male", "Female"]} />
+                        </Form.Item>
+
+                        <Form.Item
+                            field="phone_number"
+                            label="Phone Number"
+                            rules={[{required: true, message: "Enter your phone number"}]}
+                        >
+                            <Input prefix={<IconPhone />} placeholder="Your phone number" />
+                        </Form.Item>
+
+                        <Form.Item
+                            label="Participant Country / State"
+                            field="country"
+                            rules={[{required: true, message: "Please select a country/region"}]}
+                        >
+                            <Cascader
+                                showSearch
+                                changeOnSelect
+                                allowClear
+                                filterOption={(input, node) => {
+                                    return node.label.toLowerCase().includes(input.toLowerCase());
+                                }}
+                                options={countries}
+                                placeholder="Please select location"
+                                expandTrigger="hover"
+                                value={user?.country}
+                            />
+                        </Form.Item>
+
+                        <Form.Item label="Participant School/University/College" field="school">
+                            <Input placeholder="Enter School/University/College name" />
+                        </Form.Item>
+
+                        <Form.Item field="password" label="Password" rules={[{required: true, message: "Enter your password"}]}>
+                            <Input.Password prefix={<IconLock />} placeholder="Create password" />
+                        </Form.Item>
+
+                        <Form.Item
+                            field="confirmPassword"
+                            label="Confirm Password"
+                            rules={[{required: true, message: "Confirm your password"}]}
+                        >
+                            <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
+                        </Form.Item>
+
+                        <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
+                            Register
+                        </Button>
+                    </Form>
+                )}
             </div>
         </div>
     );
