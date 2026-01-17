@@ -78,17 +78,22 @@ const RegisterPage = () => {
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school, phone_number} = values;
         let avatarUrl = "";
-        if (password !== confirmPassword) {
+        if ((password && !confirmPassword) || (!password && confirmPassword)) {
+            Message.error("Please fill both password fields or leave both empty");
+            return;
+        }
+        if (password && confirmPassword && password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
         }
 
-        setLoading(true);
         try {
             if (!isGoogleAuth || !firebaseUser) {
                 Message.error("Please sign in with Google before registering.");
                 return;
             }
+
+            setLoading(true);
 
             // If user uploaded an avatar (data URL), upload it to storage
             if (image_url?.startsWith("data:")) {
@@ -104,27 +109,27 @@ const RegisterPage = () => {
                 avatarUrl = image_url;
             }
 
-            if (isGoogleAuth && firebaseUser) {
-                await registerWithGoogle(
-                    firebaseUser,
-                    {
-                        IC,
-                        name,
-                        birthdate,
-                        gender,
-                        country,
-                        school: school || "",
-                        phone_number,
-                        roles: null,
-                        best_times: {},
-                    },
-                    avatarUrl,
-                );
+            await registerWithGoogle(
+                firebaseUser,
+                {
+                    IC,
+                    name,
+                    birthdate,
+                    gender,
+                    country,
+                    school: school || "",
+                    phone_number,
+                    roles: null,
+                    best_times: {},
+                },
+                avatarUrl,
+            );
+            if (password && confirmPassword && password === confirmPassword) {
                 await linkEmailPassword(email, password, firebaseUser);
-                const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-                if (userDoc.exists()) {
-                    setUser(userDoc.data() as FirestoreUser);
-                }
+            }
+            const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+            if (userDoc.exists()) {
+                setUser(userDoc.data() as FirestoreUser);
             }
             Message.success("Registration successful!");
             navigate("/", {replace: true});
@@ -219,6 +224,7 @@ const RegisterPage = () => {
                                     const userDoc = await getDoc(doc(db, "users", result.user.uid));
                                     if (userDoc.exists()) {
                                         Message.success("Account already registered. You're now logged in.");
+                                        setUser(userDoc.data() as FirestoreUser);
                                         navigate("/", {replace: true});
                                     }
                                 } catch (err) {
@@ -229,7 +235,7 @@ const RegisterPage = () => {
                             }}
                             className="flex items-center justify-center gap-x-2"
                         >
-                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
+                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google logo" className="w-5 h-5" />
                             <span>Continue with Google</span>
                         </Button>
                     </div>
@@ -323,7 +329,7 @@ const RegisterPage = () => {
                             label="Participant Email"
                             rules={[{required: true, type: "email", message: "Enter a valid email"}]}
                         >
-                            <Input prefix={<IconEmail />} placeholder="example@mail.com" disabled={true} />
+                            <Input prefix={<IconEmail />} placeholder="example@mail.com" disabled={isGoogleAuth} />
                         </Form.Item>
 
                         <Form.Item
@@ -412,16 +418,16 @@ const RegisterPage = () => {
                             <Input placeholder="Enter School/University/College name" />
                         </Form.Item>
 
-                        <Form.Item field="password" label="Password" rules={[{required: true, message: "Enter your password"}]}>
-                            <Input.Password prefix={<IconLock />} placeholder="Create password" />
+                        <Form.Item field="password" label="Password (optional)" rules={[]}>
+                            <Input.Password prefix={<IconLock />} placeholder="Create password (optional)" />
                         </Form.Item>
 
                         <Form.Item
                             field="confirmPassword"
-                            label="Confirm Password"
-                            rules={[{required: true, message: "Confirm your password"}]}
+                            label="Confirm Password (optional)"
+                            rules={[]}
                         >
-                            <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
+                            <Input.Password prefix={<IconLock />} placeholder="Repeat password (optional)" />
                         </Form.Item>
 
                         <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
