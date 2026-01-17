@@ -86,7 +86,6 @@ const RegisterPage = () => {
         try {
             if (!isGoogleAuth || !firebaseUser) {
                 Message.error("Please sign in with Google before registering.");
-                setLoading(false);
                 return;
             }
 
@@ -421,10 +420,10 @@ const RegisterPage = () => {
 
                         <Form.Item
                             field="confirmPassword"
-                            label="Confirm Password"
+                            label="Confirm Password (optional)"
                             rules={[]}
                         >
-                            <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
+                            <Input.Password prefix={<IconLock />} placeholder="Repeat password (optional)" />
                         </Form.Item>
 
                         <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
