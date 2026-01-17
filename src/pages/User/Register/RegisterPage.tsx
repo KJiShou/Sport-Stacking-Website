@@ -78,7 +78,11 @@ const RegisterPage = () => {
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school, phone_number} = values;
         let avatarUrl = "";
-        if ((password || confirmPassword) && password !== confirmPassword) {
+        if ((password && !confirmPassword) || (!password && confirmPassword)) {
+            Message.error("Please fill both password fields or leave both empty");
+            return;
+        }
+        if (password && confirmPassword && password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
         }
