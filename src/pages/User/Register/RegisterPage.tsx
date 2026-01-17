@@ -120,7 +120,7 @@ const RegisterPage = () => {
                 },
                 avatarUrl,
             );
-            if (password && password === confirmPassword) {
+            if (password && confirmPassword && password === confirmPassword) {
                 await linkEmailPassword(email, password, firebaseUser);
             }
             const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
