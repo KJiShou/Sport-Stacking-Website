@@ -78,7 +78,7 @@ const RegisterPage = () => {
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school, phone_number} = values;
         let avatarUrl = "";
-        if (password && confirmPassword && password !== confirmPassword) {
+        if ((password || confirmPassword) && password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
         }
@@ -120,7 +120,7 @@ const RegisterPage = () => {
                 },
                 avatarUrl,
             );
-            if (password) {
+            if (password && password === confirmPassword) {
                 await linkEmailPassword(email, password, firebaseUser);
             }
             const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
