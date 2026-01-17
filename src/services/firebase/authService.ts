@@ -181,7 +181,7 @@ export const registerWithGoogle = async (
         global_id,
         email: firebaseUser.email,
         image_url: imageUrl,
-        registeration_records: [],
+        registration_records: [],
         created_at: Timestamp.now(),
         ...extraData,
     };
