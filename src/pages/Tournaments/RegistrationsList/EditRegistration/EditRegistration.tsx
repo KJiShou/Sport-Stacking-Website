@@ -2,11 +2,13 @@
 
 import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament, TournamentEvent} from "@/schema";
+import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
 import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
+import {createTeamRecruitment, getActiveTeamRecruitments} from "@/services/firebase/teamRecruitmentService";
 import {
     createTeam,
     deleteTeam,
@@ -29,6 +31,7 @@ import {
     Select,
     Spin,
     Tag,
+    Tooltip,
     Typography,
     Upload,
 } from "@arco-design/web-react";
@@ -112,13 +115,17 @@ export default function EditTournamentRegistrationPage() {
     const [registration, setRegistration] = useState<Registration | null>(null);
     const [teams, setTeams] = useState<LegacyTeam[]>([]);
     const [initialTeams, setInitialTeams] = useState<LegacyTeam[]>([]);
+    const [teamRecruitments, setTeamRecruitments] = useState<TeamRecruitment[]>([]);
     const [loading, setLoading] = useState(true);
     const [edit, setEdit] = useState<boolean>(false);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | File | null>(null);
+    const [recruitmentModalVisible, setRecruitmentModalVisible] = useState(false);
+    const [recruitmentTeam, setRecruitmentTeam] = useState<LegacyTeam | null>(null);
 
     const [isMounted, setIsMounted] = useState<boolean>(false);
     const mountedRef = useRef(false);
 
+    const [recruitmentForm] = Form.useForm();
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
 
@@ -296,6 +303,51 @@ export default function EditTournamentRegistrationPage() {
         }
     };
 
+    const handleCreateRecruitment = async () => {
+        if (!recruitmentTeam || !tournamentId || !registrationId) return;
+        const {eventId, eventName} = resolveTeamEvent(recruitmentTeam, events ?? []);
+        if (!eventId || !eventName) {
+            Message.error("Unable to resolve event for this team.");
+            return;
+        }
+        if (!recruitmentTeam.name) {
+            Message.error("Team name is required before creating recruitment.");
+            return;
+        }
+        if (!recruitmentTeam.leader_id) {
+            Message.error("Team leader is required before creating recruitment.");
+            return;
+        }
+
+        try {
+            const values = await recruitmentForm.validate();
+            setLoading(true);
+            await createTeamRecruitment({
+                team_id: recruitmentTeam.id,
+                tournament_id: tournamentId,
+                team_name: recruitmentTeam.name,
+                leader_id: recruitmentTeam.leader_id,
+                event_id: eventId,
+                event_name: eventName,
+                requirements: values.requirements?.trim() || undefined,
+                max_members_needed: values.max_members_needed,
+                registration_id: registrationId,
+            });
+            Message.success("Team recruitment created.");
+            setRecruitmentModalVisible(false);
+            setRecruitmentTeam(null);
+            recruitmentForm.resetFields();
+            const activeRecruitments = await getActiveTeamRecruitments(tournamentId);
+            setTeamRecruitments(activeRecruitments);
+        } catch (error) {
+            console.error("Failed to create team recruitment:", error);
+            const errorMessage = error instanceof Error ? error.message : "Failed to create recruitment.";
+            Message.error(errorMessage);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const loadData = async () => {
         if (!tournamentId || !user?.global_id || !registrationId) return;
         setLoading(true);
@@ -336,6 +388,9 @@ export default function EditTournamentRegistrationPage() {
             });
             setTeams(normalizedTeams);
             setInitialTeams(normalizedTeams);
+
+            const activeRecruitments = await getActiveTeamRecruitments(tournamentId);
+            setTeamRecruitments(activeRecruitments);
 
             setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
@@ -529,6 +584,18 @@ export default function EditTournamentRegistrationPage() {
                                 {teams.map((team) => {
                                     const {eventName} = resolveTeamEvent(team, events ?? []);
                                     const teamEventLabel = eventName || "Team Event";
+                                    const activeRecruitment = teamRecruitments.find(
+                                        (recruitment) => recruitment.team_id === team.id,
+                                    );
+                                    const isPersistedTeam = initialTeams.some((initialTeam) => initialTeam.id === team.id);
+                                    const addRecruitmentDisabled = !edit || !isPersistedTeam || Boolean(activeRecruitment);
+                                    const addRecruitmentDisabledReason = !edit
+                                        ? "Enable edit to add recruitment."
+                                        : !isPersistedTeam
+                                          ? "Save registration before creating recruitment."
+                                          : activeRecruitment
+                                            ? "Recruitment already exists."
+                                            : "";
 
                                     return (
                                         <div key={team.id} className="border p-4 rounded-md shadow-sm">
@@ -645,6 +712,34 @@ export default function EditTournamentRegistrationPage() {
                                                     </Button>
                                                 </div>
                                             </Form.Item>
+                                            <div className="mt-3 flex flex-col gap-2">
+                                                {activeRecruitment ? (
+                                                    <Tag color={activeRecruitment.status === "active" ? "blue" : "gray"}>
+                                                        Recruitment {activeRecruitment.status}
+                                                        {typeof activeRecruitment.max_members_needed === "number"
+                                                            ? ` · Need ${activeRecruitment.max_members_needed}`
+                                                            : ""}
+                                                    </Tag>
+                                                ) : (
+                                                    <Tag color="gray">No recruitment yet</Tag>
+                                                )}
+                                                <Tooltip content={addRecruitmentDisabledReason}>
+                                                    <Button
+                                                        type="outline"
+                                                        disabled={addRecruitmentDisabled}
+                                                        onClick={() => {
+                                                            setRecruitmentTeam(team);
+                                                            recruitmentForm.setFieldsValue({
+                                                                max_members_needed: undefined,
+                                                                requirements: "",
+                                                            });
+                                                            setRecruitmentModalVisible(true);
+                                                        }}
+                                                    >
+                                                        Add Team Recruitment
+                                                    </Button>
+                                                </Tooltip>
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -703,6 +798,37 @@ export default function EditTournamentRegistrationPage() {
                                 }}
                             />
                         </Form.Item>
+
+                        <Modal
+                            title="Add Team Recruitment"
+                            visible={recruitmentModalVisible}
+                            onCancel={() => {
+                                setRecruitmentModalVisible(false);
+                                setRecruitmentTeam(null);
+                                recruitmentForm.resetFields();
+                            }}
+                            onOk={handleCreateRecruitment}
+                            okText="Create"
+                            className="w-full max-w-xl"
+                        >
+                            {recruitmentTeam && (
+                                <Form form={recruitmentForm} layout="vertical">
+                                    <div className="mb-4 text-sm text-gray-600">
+                                        Team: <strong>{recruitmentTeam.name || "Untitled Team"}</strong>
+                                    </div>
+                                    <Form.Item
+                                        label="Members Needed"
+                                        field="max_members_needed"
+                                        rules={[{required: true, message: "Enter members needed."}]}
+                                    >
+                                        <InputNumber min={1} placeholder="e.g., 2" />
+                                    </Form.Item>
+                                    <Form.Item label="Requirements" field="requirements">
+                                        <Input.TextArea placeholder="Optional notes" allowClear autoSize={{minRows: 2, maxRows: 4}} />
+                                    </Form.Item>
+                                </Form>
+                            )}
+                        </Modal>
 
                         {!edit ? (
                             <Form.Item>

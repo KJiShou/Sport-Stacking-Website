@@ -71,6 +71,7 @@ export default function RegisterTournamentPage() {
     const [price, setPrice] = useState<number | null>(null);
     const [lookingForTeams, setLookingForTeams] = useState<string[]>([]); // Events user is looking for teams
     const [loginModalVisible, setLoginModalVisible] = useState(false);
+    const requiresPaymentProof = (price ?? 0) > 0;
 
     useEffect(() => {
         if (!firebaseUser) {
@@ -148,27 +149,28 @@ export default function RegisterTournamentPage() {
             const teamsRaw = (values.teams ?? {}) as Record<string, Team>;
 
             for (const [teamId, team] of Object.entries(teamsRaw)) {
+                const relatedEvent = findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
+                const eventLabel = getEventLabel(relatedEvent) || team.label || "This event";
                 const leaderId = team.leader ?? null;
                 const memberIds = (team.member ?? []).map((m) => m).filter((id) => id != null) as string[];
                 const isLookingForMembers = team.looking_for_team_members === true;
                 const isLookingForTeammates = lookingForTeams.includes(teamId);
 
                 if (!isLookingForMembers && leaderId && memberIds.includes(leaderId)) {
-                    Message.error(`In team "${team.name}", team leader cannot be included in team members.`);
+                    Message.error(`${eventLabel}: team leader cannot be included in team members.`);
                     setLoading(false);
-                    throw new Error(`Team leader ${leaderId} cannot be a member in team ${teamId}`);
+                    throw new Error(`${eventLabel}: team leader cannot be included in team members.`);
                 }
 
                 const userInTeam = leaderId === user.global_id || memberIds.includes(user.global_id ?? "");
                 if (!isLookingForMembers && !userInTeam) {
-                    Message.error(`In team "${team.name}", you must be either leader or one of the members.`);
+                    Message.error(`${eventLabel}: you must be either leader or one of the members.`);
                     setLoading(false);
-                    throw new Error(`User ${user.global_id} is not in team ${teamId}`);
+                    throw new Error(`${eventLabel}: you must be either leader or one of the members.`);
                 }
 
                 // Only check member count if NOT looking for members/teammates
                 if (!isLookingForMembers && !isLookingForTeammates) {
-                    const relatedEvent = findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
                     const lowerEventType = (relatedEvent?.type ?? "").toLowerCase();
                     const fallbackTeamSize =
                         relatedEvent?.teamSize ??
@@ -184,13 +186,12 @@ export default function RegisterTournamentPage() {
                         const expectedMembers = Math.max(fallbackTeamSize - 1, 0);
                         const actualMembers = (team.member?.filter(Boolean)?.length ?? 0) + (team.leader ? 1 : 0);
                         if (actualMembers !== fallbackTeamSize) {
-                            const eventLabel = team.name || getEventLabel(relatedEvent) || "This event";
                             const participantLabel = fallbackTeamSize === 1 ? "participant" : "participants";
                             const additionalMessage = expectedMembers > 0 ? `` : "No additional members should be listed.";
 
                             Message.error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
                             setLoading(false);
-                            throw new Error(`Team ${teamId} has ${actualMembers} participant(s); expected ${fallbackTeamSize}.`);
+                            throw new Error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
                         }
                     }
                 }
@@ -605,19 +606,39 @@ export default function RegisterTournamentPage() {
                 <div className="w-full">
                     <Title heading={5}>Register for Event</Title>
                     <Form requiredSymbol={false} form={form} layout="vertical" onSubmit={handleRegister}>
-                        <Form.Item disabled label="ID" field="id" rules={[{required: true}]}>
+                        <Form.Item
+                            disabled
+                            label="ID"
+                            field="id"
+                            rules={[{required: true, message: "ID is required."}]}
+                        >
                             <Input disabled placeholder="Enter your ID" />
                         </Form.Item>
-                        <Form.Item label="Name" field="user_name" rules={[{required: true}]}>
+                        <Form.Item label="Name" field="user_name" rules={[{required: true, message: "Name is required."}]}>
                             <Input disabled placeholder="Enter your name" />
                         </Form.Item>
-                        <Form.Item disabled label="Age" field="age" rules={[{required: true}]}>
+                        <Form.Item
+                            disabled
+                            label="Age"
+                            field="age"
+                            rules={[{required: true, message: "Age is required."}]}
+                        >
                             <InputNumber disabled placeholder="Enter your age" />
                         </Form.Item>
-                        <Form.Item disabled label="Gender" field="gender" rules={[{required: true}]}>
+                        <Form.Item
+                            disabled
+                            label="Gender"
+                            field="gender"
+                            rules={[{required: true, message: "Gender is required."}]}
+                        >
                             <Select disabled placeholder="Update your gender at profile" options={["Male", "Female"]} />
                         </Form.Item>
-                        <Form.Item disabled label="Phone Number" field="phone_number" rules={[{required: true}]}>
+                        <Form.Item
+                            disabled
+                            label="Phone Number"
+                            field="phone_number"
+                            rules={[{required: true, message: "Phone number is required."}]}
+                        >
                             <Input disabled placeholder="Update your phone number at profile" />
                         </Form.Item>
                         <Form.Item disabled label="Organizer" field="organizer">
@@ -638,7 +659,7 @@ export default function RegisterTournamentPage() {
                                 </div>
                             }
                             field="events_registered"
-                            rules={[{required: true}]}
+                            rules={[{required: true, message: "Please select at least one event."}]}
                         >
                             <Select
                                 placeholder="Select events"
@@ -791,7 +812,11 @@ export default function RegisterTournamentPage() {
                                                             <Form.Item
                                                                 field={`teams.${eventId}.name`}
                                                                 label="Team Name"
-                                                                rules={isLookingTopLevel ? [] : [{required: true}]}
+                                                                rules={
+                                                                    isLookingTopLevel
+                                                                        ? []
+                                                                        : [{required: true, message: "Please enter team name."}]
+                                                                }
                                                             >
                                                                 <Input
                                                                     disabled={isLookingTopLevel}
@@ -819,7 +844,11 @@ export default function RegisterTournamentPage() {
                                                             <Form.Item
                                                                 field={`teams.${eventId}.leader`}
                                                                 label="Team Leader Global ID"
-                                                                rules={isLookingTopLevel ? [] : [{required: true}]}
+                                                                rules={
+                                                                    isLookingTopLevel
+                                                                        ? []
+                                                                        : [{required: true, message: "Team leader is required."}]
+                                                                }
                                                                 initialValue={user?.global_id ?? ""}
                                                             >
                                                                 <Input
@@ -912,7 +941,7 @@ export default function RegisterTournamentPage() {
                         </Form.Item>
 
                         {/* Payment Methods Section */}
-                        {tournament?.payment_methods && tournament.payment_methods.length > 0 && (
+                        {requiresPaymentProof && tournament?.payment_methods && tournament.payment_methods.length > 0 && (
                             <div className="mb-6 p-4 border border-solid border-gray-300 rounded-lg bg-gray-50">
                                 <Title heading={5} className="mb-3">
                                     💳 Payment Methods
@@ -967,77 +996,79 @@ export default function RegisterTournamentPage() {
                             </div>
                         )}
 
-                        <Form.Item
-                            label={
-                                <div>
-                                    Payment Proof
-                                    <Tooltip content="Please upload a picture of your payment proof.">
-                                        <IconExclamationCircle
-                                            style={{
-                                                margin: "0 8px",
-                                                color: "rgb(var(--arcoblue-6))",
-                                            }}
-                                        />
-                                    </Tooltip>
-                                </div>
-                            }
-                            field="payment_proof"
-                            rules={[{required: !paymentProofUrl, message: "Payment proof is required."}]}
-                        >
-                            <Upload
-                                className={"w-full flex flex-col items-center justify-center mb-10"}
-                                drag
-                                multiple={false}
-                                limit={1}
-                                accept="image/jpeg,image/png,image/gif"
-                                customRequest={async (option: {
-                                    file: File;
-                                    onSuccess?: (file: File) => void;
-                                    onError?: (error: Error) => void;
-                                    onProgress?: (progress: number) => void;
-                                }) => {
-                                    const {file, onSuccess, onError, onProgress} = option;
-                                    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-                                    const validTypes = ["image/jpeg", "image/png", "image/gif"];
+                        {requiresPaymentProof && (
+                            <Form.Item
+                                label={
+                                    <div>
+                                        Payment Proof
+                                        <Tooltip content="Please upload a picture of your payment proof.">
+                                            <IconExclamationCircle
+                                                style={{
+                                                    margin: "0 8px",
+                                                    color: "rgb(var(--arcoblue-6))",
+                                                }}
+                                            />
+                                        </Tooltip>
+                                    </div>
+                                }
+                                field="payment_proof"
+                                rules={[{required: !paymentProofUrl, message: "Payment proof is required."}]}
+                            >
+                                <Upload
+                                    className={"w-full flex flex-col items-center justify-center mb-10"}
+                                    drag
+                                    multiple={false}
+                                    limit={1}
+                                    accept="image/jpeg,image/png,image/gif"
+                                    customRequest={async (option: {
+                                        file: File;
+                                        onSuccess?: (file: File) => void;
+                                        onError?: (error: Error) => void;
+                                        onProgress?: (progress: number) => void;
+                                    }) => {
+                                        const {file, onSuccess, onError, onProgress} = option;
+                                        const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+                                        const validTypes = ["image/jpeg", "image/png", "image/gif"];
 
-                                    if (!validTypes.includes(file.type)) {
-                                        Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
-                                        onError?.(new Error("Invalid file type"));
-                                        return;
-                                    }
+                                        if (!validTypes.includes(file.type)) {
+                                            Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
+                                            onError?.(new Error("Invalid file type"));
+                                            return;
+                                        }
 
-                                    if (file.size > MAX_SIZE) {
-                                        Message.error("File size exceeds 10MB limit");
-                                        onError?.(new Error("File size exceeds 10MB limit"));
-                                        return;
-                                    }
+                                        if (file.size > MAX_SIZE) {
+                                            Message.error("File size exceeds 10MB limit");
+                                            onError?.(new Error("File size exceeds 10MB limit"));
+                                            return;
+                                        }
 
-                                    if (!user?.global_id) {
-                                        Message.error("User not authenticated");
-                                        onError?.(new Error("User not authenticated"));
-                                        return;
-                                    }
-                                    try {
-                                        setLoading(true);
-                                        const downloadURL = await uploadFile(
-                                            file as File,
-                                            `tournaments/${tournamentId}/registrations/payment_proof`,
-                                            user.global_id,
-                                            (progress) => {
-                                                onProgress?.(progress);
-                                            },
-                                        );
-                                        setPaymentProofUrl(downloadURL);
-                                        setLoading(false);
-                                        onSuccess?.(file);
-                                    } catch (err) {
-                                        Message.error("Failed to upload file.");
-                                        onError?.(err as Error);
-                                    }
-                                }}
-                                tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
-                            />
-                        </Form.Item>
+                                        if (!user?.global_id) {
+                                            Message.error("User not authenticated");
+                                            onError?.(new Error("User not authenticated"));
+                                            return;
+                                        }
+                                        try {
+                                            setLoading(true);
+                                            const downloadURL = await uploadFile(
+                                                file as File,
+                                                `tournaments/${tournamentId}/registrations/payment_proof`,
+                                                user.global_id,
+                                                (progress) => {
+                                                    onProgress?.(progress);
+                                                },
+                                            );
+                                            setPaymentProofUrl(downloadURL);
+                                            setLoading(false);
+                                            onSuccess?.(file);
+                                        } catch (err) {
+                                            Message.error("Failed to upload file.");
+                                            onError?.(err as Error);
+                                        }
+                                    }}
+                                    tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
+                                />
+                            </Form.Item>
+                        )}
 
                         <Form.Item>
                             <Button type="primary" htmlType="submit" long loading={loading} disabled={loading}>

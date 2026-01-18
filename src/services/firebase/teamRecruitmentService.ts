@@ -12,7 +12,7 @@ export async function updateTeamRecruitmentMembersNeeded(
         throw error;
     }
 }
-import {addDoc, collection, deleteDoc, doc, getDocs, query, where} from "firebase/firestore";
+import {addDoc, collection, deleteDoc, doc, getDocs, query, updateDoc, where} from "firebase/firestore";
 import type {TeamRecruitment} from "../../schema/TeamRecruitmentSchema";
 import {db} from "./config";
 
@@ -87,6 +87,19 @@ export async function deleteTeamRecruitment(recruitmentId: string): Promise<void
         await deleteDoc(recruitmentRef);
     } catch (error) {
         console.error("Error deleting team recruitment:", error);
+        throw error;
+    }
+}
+
+export async function updateTeamRecruitmentDetails(
+    recruitmentId: string,
+    updates: Partial<Pick<TeamRecruitment, "max_members_needed" | "status" | "requirements">>,
+): Promise<void> {
+    try {
+        const recruitmentRef = doc(db, TEAM_RECRUITMENT_COLLECTION, recruitmentId);
+        await updateDoc(recruitmentRef, updates);
+    } catch (error) {
+        console.error("Error updating team recruitment details:", error);
         throw error;
     }
 }
