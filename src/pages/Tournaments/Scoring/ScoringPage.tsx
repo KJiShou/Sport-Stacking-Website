@@ -16,6 +16,7 @@ import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from
 import {
     getEventKey,
     getEventLabel,
+    getEventTypeOrderIndex,
     getTeamEvents,
     getTeamMaxAge,
     matchesAnyEventKey,
@@ -141,6 +142,11 @@ export default function ScoringPage() {
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
     const [searchTerm, setSearchTerm] = useState<string>("");
     const mountedRef = useRef(false);
+    const sortedEvents = [...(events ?? [])].sort((a, b) => {
+        const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
+        if (orderDiff !== 0) return orderDiff;
+        return a.type.localeCompare(b.type);
+    });
 
     // Modal state
     const [modalVisible, setModalVisible] = useState(false);
@@ -201,7 +207,12 @@ export default function ScoringPage() {
             const tournamentEvents = await fetchTournamentEvents(tournamentId);
             setEvents(tournamentEvents);
             if (tournamentEvents?.[0]) {
-                const firstEvent = tournamentEvents[0];
+                const sortedTournamentEvents = [...tournamentEvents].sort((a, b) => {
+                    const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
+                    if (orderDiff !== 0) return orderDiff;
+                    return a.type.localeCompare(b.type);
+                });
+                const firstEvent = sortedTournamentEvents[0];
                 const firstEventTabKey = firstEvent.id ?? firstEvent.type;
                 setCurrentEventTab(firstEventTabKey);
                 if (firstEvent.age_brackets?.[0]) {
@@ -1150,7 +1161,7 @@ export default function ScoringPage() {
                         }
                     }}
                 >
-                    {events?.map((evt) => {
+                    {sortedEvents.map((evt) => {
                         const tabKey = evt.id ?? evt.type;
                         const eventTypeKey = evt.type;
                         const eventIdForModal = evt.id ?? evt.type; // Use event ID for modal

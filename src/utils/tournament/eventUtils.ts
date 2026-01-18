@@ -72,6 +72,13 @@ const getAllTeamEventReferences = (team: TeamEventRefs | null | undefined): stri
 };
 
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
+export const EVENT_TYPE_ORDER = ["Individual", "Double", "Parent & Child", "Team Relay", "Special Need"] as const;
+
+export const getEventTypeOrderIndex = (eventType?: string): number => {
+    if (!eventType) return EVENT_TYPE_ORDER.length;
+    const index = EVENT_TYPE_ORDER.indexOf(eventType as (typeof EVENT_TYPE_ORDER)[number]);
+    return index === -1 ? EVENT_TYPE_ORDER.length : index;
+};
 
 export const sanitizeEventCodes = (codes?: string[]): string[] =>
     (codes ?? []).filter((code) => code != null && code !== "" && code !== "Overall");

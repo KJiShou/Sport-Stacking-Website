@@ -137,8 +137,7 @@ export default function TournamentView() {
         return (a.type ?? "").localeCompare(b.type ?? "");
     });
 
-    const getParticipantCount = (target: Tournament): number | undefined =>
-        (target as {participants?: number}).participants;
+    const getParticipantCount = (target: Tournament): number | undefined => (target as {participants?: number}).participants;
 
     const isTournamentFull = (target: Tournament): boolean => {
         const maxParticipants = target.max_participants;
@@ -568,8 +567,7 @@ export default function TournamentView() {
                                 !!tournament.registration_start_date && !!tournament.registration_end_date;
                             const tournamentFull = isTournamentFull(tournament);
                             const registrationOpen = isRegistrationOpen(tournament);
-                            const isDisabled =
-                                !id || !hasRegistrationDates || tournamentFull || !registrationOpen;
+                            const isDisabled = !id || !hasRegistrationDates || tournamentFull || !registrationOpen;
                             let disabledMessage = "";
 
                             if (!hasRegistrationDates) {

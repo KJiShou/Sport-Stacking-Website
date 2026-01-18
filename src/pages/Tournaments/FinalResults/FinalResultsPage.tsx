@@ -12,7 +12,7 @@ import {
     updateTournamentStatus,
 } from "@/services/firebase/tournamentsService";
 import {exportAllPrelimResultsToPDF, exportCertificatesPDF} from "@/utils/PDF/pdfExport";
-import {getEventLabel, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
+import {getEventLabel, getEventTypeOrderIndex, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
 import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconPrinter, IconUndo} from "@arco-design/web-react/icon";
@@ -547,6 +547,15 @@ export default function FinalResultsPage() {
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
     const [currentClassificationTab, setCurrentClassificationTab] = useState<string>("");
+    const sortedEvents = useMemo(
+        () =>
+            [...(events ?? [])].sort((a, b) => {
+                const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
+                if (orderDiff !== 0) return orderDiff;
+                return a.type.localeCompare(b.type);
+            }),
+        [events],
+    );
 
     useEffect(() => {
         if (!tournamentId) return;
@@ -559,7 +568,12 @@ export default function FinalResultsPage() {
                 if (fetchedEvents) {
                     setTournament(fetchedTournament);
                     setEvents(fetchedEvents);
-                    const firstEvent = fetchedEvents[0];
+                    const sortedEventList = [...fetchedEvents].sort((a, b) => {
+                        const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
+                        if (orderDiff !== 0) return orderDiff;
+                        return a.type.localeCompare(b.type);
+                    });
+                    const firstEvent = sortedEventList[0];
                     if (firstEvent) {
                         setCurrentEventTab(firstEvent.id);
                         const firstBracket = firstEvent.age_brackets?.[0];
@@ -881,7 +895,7 @@ export default function FinalResultsPage() {
                         }
                     }}
                 >
-                    {events?.map((event) => {
+                    {sortedEvents.map((event) => {
                         const tabKey = event.id;
                         const eventLabel = getEventLabel(event);
                         const isTeamEvent = isTournamentTeamEvent(event);

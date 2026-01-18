@@ -305,7 +305,12 @@ export async function addUserRegistrationRecord(userId: string, newRecord: UserR
     const tournamentData = tournamentSnap.data() as {max_participants?: number | null; participants?: number | null};
     const maxParticipants = tournamentData.max_participants ?? null;
     const participants = tournamentData.participants ?? null;
-    if (typeof maxParticipants === "number" && maxParticipants > 0 && typeof participants === "number" && participants >= maxParticipants) {
+    if (
+        typeof maxParticipants === "number" &&
+        maxParticipants > 0 &&
+        typeof participants === "number" &&
+        participants >= maxParticipants
+    ) {
         throw new Error("Tournament registration is full.");
     }
 

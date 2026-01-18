@@ -17,7 +17,7 @@ import {
 } from "@/services/firebase/recordService";
 import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
-import {getEventLabel} from "@/utils/tournament/eventUtils";
+import {getEventLabel, getEventTypeOrderIndex} from "@/utils/tournament/eventUtils";
 import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch, IconUndo} from "@arco-design/web-react/icon";
@@ -126,6 +126,11 @@ export default function FinalScoringPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const mountedRef = useRef(false);
     const [modalScores, setModalScores] = useState<Record<string, {try1: string; try2: string; try3: string; id?: string}>>({});
+    const sortedEvents = [...events].sort((a, b) => {
+        const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
+        if (orderDiff !== 0) return orderDiff;
+        return a.type.localeCompare(b.type);
+    });
 
     const refreshFinalScore = async () => {
         if (!tournamentId) return;
@@ -159,11 +164,16 @@ export default function FinalScoringPage() {
             setRecords(parsedRecords);
 
             // Restore previous tab state if still valid, else fallback to first
+            const sortedEventList = [...events].sort((a, b) => {
+                const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
+                if (orderDiff !== 0) return orderDiff;
+                return a.type.localeCompare(b.type);
+            });
             const eventTabToSet =
                 events.find((e) => e.id === prevEventTab || e.type === prevEventTab)?.id ||
                 events.find((e) => e.id === prevEventTab || e.type === prevEventTab)?.type ||
-                events?.[0]?.id ||
-                events?.[0]?.type ||
+                sortedEventList?.[0]?.id ||
+                sortedEventList?.[0]?.type ||
                 "";
             setCurrentEventTab(eventTabToSet);
 
@@ -762,7 +772,7 @@ export default function FinalScoringPage() {
                         }
                     }}
                 >
-                    {events?.map((evt) => {
+                    {sortedEvents.map((evt) => {
                         const tabKey = evt.id ?? evt.type;
                         const eventTypeKey = evt.type;
                         const eventIdForModal = evt.id ?? undefined;

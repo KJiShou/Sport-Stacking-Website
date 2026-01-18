@@ -235,7 +235,11 @@ const RegisterPage = () => {
                             }}
                             className="flex items-center justify-center gap-x-2"
                         >
-                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google logo" className="w-5 h-5" />
+                            <img
+                                src="https://www.svgrepo.com/show/475656/google-color.svg"
+                                alt="Google logo"
+                                className="w-5 h-5"
+                            />
                             <span>Continue with Google</span>
                         </Button>
                     </div>
@@ -422,11 +426,7 @@ const RegisterPage = () => {
                             <Input.Password prefix={<IconLock />} placeholder="Create password (optional)" />
                         </Form.Item>
 
-                        <Form.Item
-                            field="confirmPassword"
-                            label="Confirm Password (optional)"
-                            rules={[]}
-                        >
+                        <Form.Item field="confirmPassword" label="Confirm Password (optional)" rules={[]}>
                             <Input.Password prefix={<IconLock />} placeholder="Repeat password (optional)" />
                         </Form.Item>
 

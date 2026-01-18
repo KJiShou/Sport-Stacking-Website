@@ -334,7 +334,7 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
         const teamData = teamSnap.exists ? (teamSnap.data() as Team) : null;
         const teamEventReferences = teamData ? getTeamEventReferences(teamData) : [];
         const eventLabels = teamData ? await resolveEventLabels(tournamentId, teamEventReferences) : [];
-        const eventLabel = eventLabels.length > 0 ? eventLabels.join(", ") : teamEventReferences[0] ?? "";
+        const eventLabel = eventLabels.length > 0 ? eventLabels.join(", ") : (teamEventReferences[0] ?? "");
         const teamName = teamData?.name ?? "";
         const leaderId = teamData?.leader_id ?? "";
         const leaderName = leaderId ? await resolveLeaderName(leaderId) : null;
@@ -671,7 +671,9 @@ export const updateVerification = onRequest(async (req, res) => {
                 updatedMembers[memberIndex].verified = true;
 
                 // Update the registration document with the new events
-                const registrationEvents = Array.isArray(registrationData.events_registered) ? registrationData.events_registered : [];
+                const registrationEvents = Array.isArray(registrationData.events_registered)
+                    ? registrationData.events_registered
+                    : [];
                 if (normalizedTeamEventReferences.size > 0) {
                     const normalizedRegisteredEvents = buildNormalizedEventSet(registrationEvents);
                     if (hasEventOverlap(normalizedTeamEventReferences, normalizedRegisteredEvents)) {

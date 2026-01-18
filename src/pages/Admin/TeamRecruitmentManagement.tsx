@@ -35,16 +35,7 @@ import {
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import {
-    IconDelete,
-    IconEdit,
-    IconEye,
-    IconMore,
-    IconPlus,
-    IconRefresh,
-    IconUser,
-    IconUserAdd,
-} from "@arco-design/web-react/icon";
+import {IconDelete, IconEdit, IconEye, IconMore, IconPlus, IconRefresh, IconUser, IconUserAdd} from "@arco-design/web-react/icon";
 import {useEffect, useState} from "react";
 import {useNavigate, useSearchParams} from "react-router-dom";
 import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
@@ -647,7 +638,11 @@ export default function TeamRecruitmentManagement() {
                                     </Select>
                                 </Form.Item>
                                 <Form.Item label="Requirements" field="requirements">
-                                    <Input.TextArea placeholder="Notes or requirements" allowClear autoSize={{minRows: 2, maxRows: 4}} />
+                                    <Input.TextArea
+                                        placeholder="Notes or requirements"
+                                        allowClear
+                                        autoSize={{minRows: 2, maxRows: 4}}
+                                    />
                                 </Form.Item>
                             </Form>
                         )}

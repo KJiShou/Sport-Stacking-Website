@@ -191,7 +191,9 @@ export default function RegisterTournamentPage() {
 
                             Message.error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
                             setLoading(false);
-                            throw new Error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
+                            throw new Error(
+                                `${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`,
+                            );
                         }
                     }
                 }
@@ -606,23 +608,13 @@ export default function RegisterTournamentPage() {
                 <div className="w-full">
                     <Title heading={5}>Register for Event</Title>
                     <Form requiredSymbol={false} form={form} layout="vertical" onSubmit={handleRegister}>
-                        <Form.Item
-                            disabled
-                            label="ID"
-                            field="id"
-                            rules={[{required: true, message: "ID is required."}]}
-                        >
+                        <Form.Item disabled label="ID" field="id" rules={[{required: true, message: "ID is required."}]}>
                             <Input disabled placeholder="Enter your ID" />
                         </Form.Item>
                         <Form.Item label="Name" field="user_name" rules={[{required: true, message: "Name is required."}]}>
                             <Input disabled placeholder="Enter your name" />
                         </Form.Item>
-                        <Form.Item
-                            disabled
-                            label="Age"
-                            field="age"
-                            rules={[{required: true, message: "Age is required."}]}
-                        >
+                        <Form.Item disabled label="Age" field="age" rules={[{required: true, message: "Age is required."}]}>
                             <InputNumber disabled placeholder="Enter your age" />
                         </Form.Item>
                         <Form.Item
