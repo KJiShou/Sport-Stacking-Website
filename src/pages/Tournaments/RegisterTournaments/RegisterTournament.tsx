@@ -150,7 +150,7 @@ export default function RegisterTournamentPage() {
 
             for (const [teamId, team] of Object.entries(teamsRaw)) {
                 const relatedEvent = findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
-                const eventLabel = team.label || getEventLabel(relatedEvent) || "This event";
+                const eventLabel = getEventLabel(relatedEvent) || team.label || "This event";
                 const leaderId = team.leader ?? null;
                 const memberIds = (team.member ?? []).map((m) => m).filter((id) => id != null) as string[];
                 const isLookingForMembers = team.looking_for_team_members === true;

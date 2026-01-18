@@ -590,7 +590,9 @@ export default function TournamentView() {
                                 </Button>
                             );
 
-                            if (!isDisabled || disabledMessage.length === 0) {
+                            const showPopover = isDisabled && disabledMessage.length > 0;
+
+                            if (!showPopover) {
                                 return button;
                             }
 
