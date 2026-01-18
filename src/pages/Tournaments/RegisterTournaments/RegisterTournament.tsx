@@ -785,7 +785,7 @@ export default function RegisterTournamentPage() {
                                             requiredTeamSize !== undefined ? Math.max(requiredTeamSize - 1, 0) : undefined;
                                         const isDoubleEvent = lowerEventType === "double";
                                         const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
-                                        const teamLeaderLabel = isDoubleEvent ? "Double Leader" : "Team Leader Global ID";
+                                        const teamLeaderLabel = isDoubleEvent ? "Double Leader Global ID" : "Team Leader Global ID";
                                         const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
