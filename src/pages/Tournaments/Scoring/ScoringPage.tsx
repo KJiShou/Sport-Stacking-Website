@@ -733,13 +733,14 @@ export default function ScoringPage() {
                 setModalScores(updatedModalScores);
 
                 // Update the participant in the list with new scores
-                setRegistrationList((prev) =>
-                    prev.map((p) => (p.user_id === selectedParticipant.user_id ? {...p, scores: updatedModalScores} : p)),
+                const nextRegistrationList = registrationList.map((p) =>
+                    p.user_id === selectedParticipant.user_id ? {...p, scores: updatedModalScores} : p,
                 );
+                setRegistrationList(nextRegistrationList);
 
                 // If individual event, try to calculate overall
                 if (event.type === "Individual") {
-                    await calculateAndSaveOverallResults();
+                    await calculateAndSaveOverallResults(nextRegistrationList);
                 }
 
                 Message.success(`Record saved for ${selectedParticipant.user_name}!`);
@@ -846,7 +847,7 @@ export default function ScoringPage() {
         }
     };
 
-    const calculateAndSaveOverallResults = async () => {
+    const calculateAndSaveOverallResults = async (participants: ParticipantScore[] = registrationList) => {
         if (!tournamentId || !tournament) return;
 
         const individualEvents = (events ?? []).filter(
@@ -861,7 +862,7 @@ export default function ScoringPage() {
 
             for (const individualEvent of individualEvents) {
                 // Get all individual participants who have completed all three events
-                const individualParticipants = registrationList.filter(
+                const individualParticipants = participants.filter(
                     (p) =>
                         registrationMatchesEvent(p.events_registered, individualEvent, p.gender) &&
                         p.scores["3-3-3-Individual"] &&
