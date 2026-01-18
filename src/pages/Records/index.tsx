@@ -1,6 +1,7 @@
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {getCountryFlag} from "@/utils/countryFlags";
+import {formatGenderLabel} from "@/utils/genderLabel";
 import {
     Button,
     Card,
@@ -395,6 +396,7 @@ const RecordsIndex: React.FC = () => {
                     title: "Gender",
                     dataIndex: "gender",
                     width: 100,
+                    render: (gender: string) => formatGenderLabel(gender),
                 },
                 {
                     title: "Date",

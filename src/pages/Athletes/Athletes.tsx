@@ -25,6 +25,7 @@ import {type EventType as RankingEventType, getTopAthletesByEvent} from "@/servi
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {getCountryFlag as getCountryFlagUtil} from "@/utils/countryFlags";
+import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatStackingTime} from "@/utils/time";
 
 const {Title, Text} = Typography;
@@ -631,6 +632,7 @@ const Athletes: React.FC = () => {
             title: "Gender",
             dataIndex: "gender",
             width: 120,
+            render: (gender: GenderOption) => formatGenderLabel(gender),
         },
         {
             title: `${selectedEvent.label} Time`,

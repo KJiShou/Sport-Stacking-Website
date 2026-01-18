@@ -62,6 +62,14 @@ import {useNavigate, useParams} from "react-router-dom";
 
 const {Title, Text} = Typography;
 
+const EVENT_TYPE_ORDER = ["Individual", "Double", "Parent & Child", "Team Relay", "Special Need"] as const;
+
+const getEventOrderIndex = (eventType?: string): number => {
+    if (!eventType) return EVENT_TYPE_ORDER.length;
+    const index = EVENT_TYPE_ORDER.indexOf(eventType as (typeof EVENT_TYPE_ORDER)[number]);
+    return index === -1 ? EVENT_TYPE_ORDER.length : index;
+};
+
 const formatTime = (time: number): string => {
     if (time === 0) return "DNF";
     const total = time;
@@ -122,6 +130,11 @@ export default function TournamentView() {
     const individualEvent = events.find((event) => event.type === "Individual");
     const individualEventLabel = individualEvent ? getEventLabel(individualEvent) : "Individual";
     const isAdmin = user?.roles?.verify_record || user?.roles?.edit_tournament || false;
+    const sortedEvents = [...events].sort((a, b) => {
+        const orderDiff = getEventOrderIndex(a.type) - getEventOrderIndex(b.type);
+        if (orderDiff !== 0) return orderDiff;
+        return (a.type ?? "").localeCompare(b.type ?? "");
+    });
 
     const handleTimeClick = (videoUrl?: string | null, status?: string) => {
         if (videoUrl && (status === "verified" || isAdmin)) {
@@ -544,7 +557,7 @@ export default function TournamentView() {
                             Event Participation
                         </Title>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {events.map((event) => (
+                            {sortedEvents.map((event) => (
                                 <Card key={event.id} title={getEventLabel(event)} bordered className="score-card">
                                     <div className="space-y-2">
                                         {event.age_brackets.map((bracket) => {
@@ -802,7 +815,13 @@ export default function TournamentView() {
                                                 .filter((r) => "team_id" in r) // Only team records
                                                 .map((r) => r.event),
                                         ),
-                                    ).map((eventType) => {
+                                    )
+                                        .sort((a, b) => {
+                                            const orderDiff = getEventOrderIndex(a) - getEventOrderIndex(b);
+                                            if (orderDiff !== 0) return orderDiff;
+                                            return a.localeCompare(b);
+                                        })
+                                        .map((eventType) => {
                                         const eventRecords = prelimRecords.filter(
                                             (r) => r.event === eventType && "team_id" in r,
                                         ) as TournamentTeamRecord[];
@@ -1262,8 +1281,13 @@ export default function TournamentView() {
                                                 )}
 
                                                 {/* Team Event Rankings for this classification */}
-                                                {Array.from(new Set(classificationTeamRecords.map((r) => r.event))).map(
-                                                    (eventType) => {
+                                                {Array.from(new Set(classificationTeamRecords.map((r) => r.event)))
+                                                    .sort((a, b) => {
+                                                        const orderDiff = getEventOrderIndex(a) - getEventOrderIndex(b);
+                                                        if (orderDiff !== 0) return orderDiff;
+                                                        return a.localeCompare(b);
+                                                    })
+                                                    .map((eventType) => {
                                                         const eventRecords = classificationTeamRecords.filter(
                                                             (r) => r.event === eventType,
                                                         ) as TournamentTeamRecord[];

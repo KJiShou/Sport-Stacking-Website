@@ -12,6 +12,7 @@ import {
     updateTeamRecruitmentMembersNeeded,
 } from "@/services/firebase/teamRecruitmentService";
 import {addMemberToTeam, fetchTournamentsByType} from "@/services/firebase/tournamentsService";
+import {formatGenderLabel} from "@/utils/genderLabel";
 import {
     Button,
     Card,
@@ -233,7 +234,7 @@ export default function TeamRecruitmentManagement() {
                 <div className="text-center">
                     <div>{record.age}</div>
                     <Tag size="small" color={record.gender === "Male" ? "blue" : "pink"}>
-                        {record.gender}
+                        {formatGenderLabel(record.gender)}
                     </Tag>
                 </div>
             ),
@@ -459,7 +460,7 @@ export default function TeamRecruitmentManagement() {
                                         data={[
                                             {label: "Name", value: assignmentData.individual.participant_name},
                                             {label: "Age", value: assignmentData.individual.age},
-                                            {label: "Gender", value: assignmentData.individual.gender},
+                                            {label: "Gender", value: formatGenderLabel(assignmentData.individual.gender)},
                                             {label: "Country", value: assignmentData.individual.country},
                                         ]}
                                     />
