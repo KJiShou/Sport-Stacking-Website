@@ -253,7 +253,7 @@ export default function ViewTournamentRegistrationPage() {
                                     const isDoubleEvent = eventDefinition?.type === "Double";
                                     const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
                                     const teamLeaderLabel = isDoubleEvent ? "Double Leader" : "Team Leader";
-                                    const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Members";
+                                    const teamMemberLabel = isDoubleEvent ? "Double Partner Members" : "Team Members";
                                     return (
                                         <div key={team.id}>
                                             <div className={`text-center font-semibold mb-2`}>{teamEventLabel}</div>
