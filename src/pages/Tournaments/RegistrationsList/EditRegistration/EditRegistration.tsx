@@ -289,7 +289,8 @@ export default function EditTournamentRegistrationPage() {
             Message.success("Completely save the changes!");
         } catch (err) {
             console.error(err);
-            throw err;
+            const errorMessage = err instanceof Error ? err.message : "Failed to save registration.";
+            Message.error(errorMessage);
         } finally {
             setLoading(false);
         }

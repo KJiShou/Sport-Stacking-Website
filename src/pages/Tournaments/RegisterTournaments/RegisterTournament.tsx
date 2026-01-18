@@ -383,7 +383,8 @@ export default function RegisterTournamentPage() {
             navigate("/tournaments");
         } catch (error) {
             console.error(error);
-            Message.error("Failed to register.");
+            const errorMessage = error instanceof Error ? error.message : "Failed to register.";
+            Message.error(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -477,6 +478,16 @@ export default function RegisterTournamentPage() {
                             value: (
                                 <div>
                                     {formatDate(comp?.start_date)} - {formatDate(comp?.end_date)}
+                                </div>
+                            ),
+                        },
+                        {
+                            label: "Current Participants",
+                            value: (
+                                <div>
+                                    {typeof (comp as {participants?: number}).participants === "number"
+                                        ? (comp as {participants?: number}).participants
+                                        : 0}
                                 </div>
                             ),
                         },

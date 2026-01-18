@@ -66,6 +66,7 @@ export const TournamentSchema = z.object({
         .union([z.instanceof(Timestamp), z.instanceof(Date)])
         .optional()
         .nullable(),
+    participants: z.number().optional().nullable(),
     max_participants: z.number().optional().nullable(),
     editor: z.string().optional().nullable(),
     recorder: z.string().optional().nullable(),

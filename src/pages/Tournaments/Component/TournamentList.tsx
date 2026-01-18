@@ -186,6 +186,28 @@ export default function TournamentList() {
         return user.registration_records?.find((record) => record.tournament_id === tournamentId);
     };
 
+    const getParticipantCount = (tournament: Tournament): number | undefined =>
+        (tournament as {participants?: number}).participants;
+
+    const isTournamentFull = (tournament: Tournament): boolean => {
+        const maxParticipants = tournament.max_participants;
+        const participantCount = getParticipantCount(tournament);
+        return (
+            typeof maxParticipants === "number" &&
+            maxParticipants > 0 &&
+            typeof participantCount === "number" &&
+            participantCount >= maxParticipants
+        );
+    };
+
+    const renderFullAction = (tournament: Tournament) => (
+        <Tooltip content="Participant limit reached.">
+            <Button type="primary" onClick={() => handleView(tournament)}>
+                <IconEye /> View Tournament
+            </Button>
+        </Tooltip>
+    );
+
     // Filter tournaments based on search term and date range
     const filterTournaments = (tournaments: Tournament[]) => {
         return tournaments.filter((tournament) => {
@@ -276,11 +298,14 @@ export default function TournamentList() {
                 let registrationStatus: string | undefined;
                 let rejectionReason: string | undefined;
                 let tooltipMessage = "";
+                const tournamentFull = isTournamentFull(tournament);
 
                 if (status === "Up Coming") {
                     color = "gold";
                 } else if (status === "On Going") {
                     color = "arcoblue";
+                } else if (status === "Close Registration") {
+                    color = "orange";
                 } else if (status === "End") {
                     color = "gray";
                 }
@@ -322,6 +347,10 @@ export default function TournamentList() {
                         displayText = "Rejected";
                         tooltipMessage = rejectionReason ? `Rejected: ${rejectionReason}` : "Your registration was rejected.";
                     }
+                } else if (tournamentFull) {
+                    color = "red";
+                    displayText = "Full";
+                    tooltipMessage = "Participant limit reached.";
                 }
 
                 return (
@@ -336,7 +365,11 @@ export default function TournamentList() {
             dataIndex: "action",
             width: 220,
             render: (_: unknown, tournament: Tournament) => {
+                const tournamentFull = isTournamentFull(tournament);
                 if (!user) {
+                    if (tournamentFull) {
+                        return renderFullAction(tournament);
+                    }
                     return (
                         <Dropdown.Button
                             type="primary"
@@ -598,6 +631,9 @@ export default function TournamentList() {
                 }
                 if (!tournament.registration_start_date || !tournament.registration_end_date) {
                     return;
+                }
+                if (tournamentFull) {
+                    return renderFullAction(tournament);
                 }
                 if (tournament.registration_end_date > Timestamp.now()) {
                     return (

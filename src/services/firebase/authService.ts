@@ -293,6 +293,22 @@ export async function updateUserRoles(userId: string, roles: FirestoreUser["role
  * 增加单条 registration_records（常用）
  */
 export async function addUserRegistrationRecord(userId: string, newRecord: UserRegistrationRecord): Promise<void> {
+    if (!newRecord.tournament_id) {
+        throw new Error("Tournament id is required.");
+    }
+
+    const tournamentRef = doc(db, "tournaments", newRecord.tournament_id);
+    const tournamentSnap = await getDoc(tournamentRef);
+    if (!tournamentSnap.exists()) {
+        throw new Error("Tournament not found");
+    }
+    const tournamentData = tournamentSnap.data() as {max_participants?: number | null; participants?: number | null};
+    const maxParticipants = tournamentData.max_participants ?? null;
+    const participants = tournamentData.participants ?? null;
+    if (typeof maxParticipants === "number" && maxParticipants > 0 && typeof participants === "number" && participants >= maxParticipants) {
+        throw new Error("Tournament registration is full.");
+    }
+
     const userRef = doc(db, "users", userId);
     const userSnap = await getDoc(userRef);
 
