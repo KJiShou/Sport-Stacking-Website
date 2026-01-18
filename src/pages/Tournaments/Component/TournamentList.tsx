@@ -426,7 +426,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleCopyRegisterLink(tournament.id)}
+                                            onClick={async () => handleCopyRegisterLink(tournament.id ?? "")}
                                         >
                                             <IconCopy /> Copy Register Link
                                         </Button>
@@ -502,7 +502,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleCopyRegisterLink(tournament.id)}
+                                            onClick={async () => handleCopyRegisterLink(tournament.id ?? "")}
                                         >
                                             <IconCopy /> Copy Register Link
                                         </Button>
@@ -574,7 +574,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleCopyRegisterLink(tournament.id)}
+                                            onClick={async () => handleCopyRegisterLink(tournament.id ?? "")}
                                         >
                                             <IconCopy /> Copy Register Link
                                         </Button>

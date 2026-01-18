@@ -20,6 +20,7 @@ import type {Timestamp} from "firebase/firestore";
 import type {FirestoreUser} from "@/schema/UserSchema";
 import {type EventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
 import {getUserByGlobalId} from "@/services/firebase/authService";
+import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatDateSafe, formatStackingTime} from "@/utils/time";
 
 const {Title, Text} = Typography;
@@ -315,7 +316,9 @@ const AthleteProfilePage = () => {
                                 <Text type="secondary" className="text-sm">
                                     Gender
                                 </Text>
-                                <Text className="font-semibold text-lg">{user.gender ?? "—"}</Text>
+                                <Text className="font-semibold text-lg">
+                                    {user.gender ? formatGenderLabel(user.gender) : "—"}
+                                </Text>
                             </div>
                             <div className="flex flex-col gap-1">
                                 <Text type="secondary" className="text-sm">
