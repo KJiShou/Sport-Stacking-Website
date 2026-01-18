@@ -6,15 +6,48 @@ import {
     doc,
     getDoc,
     getDocs,
+    increment,
     query,
     setDoc,
     updateDoc,
     where,
 } from "firebase/firestore";
-import type {FirestoreUser, Registration, Team} from "../../schema";
+import type {FirestoreUser, Registration, Team, Tournament} from "../../schema";
 import {db} from "./config";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
 import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
+
+async function getApprovedRegistrationCount(tournamentId: string): Promise<number> {
+    const registrationsRef = query(
+        collection(db, "registrations"),
+        where("tournament_id", "==", tournamentId),
+        where("registration_status", "==", "approved"),
+    );
+    const querySnapshot = await getDocs(registrationsRef);
+    return querySnapshot.size;
+}
+
+async function ensureTournamentHasCapacity(tournamentId: string, maxParticipants?: number | null): Promise<void> {
+    let resolvedMax = maxParticipants;
+
+    if (resolvedMax == null) {
+        const tournamentDoc = await getDoc(doc(db, "tournaments", tournamentId));
+        if (!tournamentDoc.exists()) {
+            throw new Error("Tournament not found");
+        }
+        const tournament = tournamentDoc.data() as Tournament;
+        resolvedMax = typeof tournament.max_participants === "number" ? tournament.max_participants : null;
+    }
+
+    if (typeof resolvedMax !== "number" || resolvedMax <= 0) {
+        return;
+    }
+
+    const approvedCount = await getApprovedRegistrationCount(tournamentId);
+    if (approvedCount >= resolvedMax) {
+        throw new Error("Tournament registration is full.");
+    }
+}
 
 export async function createRegistration(user: FirestoreUser, data: Registration): Promise<string> {
     if (!user?.id) {
@@ -30,6 +63,10 @@ export async function createRegistration(user: FirestoreUser, data: Registration
     if (!tournament) {
         throw new Error("Tournament not found");
     }
+    await ensureTournamentHasCapacity(
+        data.tournament_id,
+        typeof tournament.max_participants === "number" ? tournament.max_participants : null,
+    );
 
     // 确保 created_at / updated_at 都有填入
     const payload: Omit<Registration, "id"> = {
@@ -143,6 +180,13 @@ export async function updateRegistration(data: Registration): Promise<void> {
     const old = snap.data() as Registration;
     const toUpdate: Partial<Record<keyof Registration, Registration[keyof Registration]>> = {};
 
+    const currentStatus = old.registration_status ?? "pending";
+    const nextStatus = data.registration_status ?? currentStatus;
+    const statusChanged = currentStatus !== nextStatus;
+    if (nextStatus === "approved" && currentStatus !== "approved") {
+        await ensureTournamentHasCapacity(data.tournament_id);
+    }
+
     // 对比字段，仅当值有变化（或有值）时才加入更新对象
     for (const key of Object.keys(data) as (keyof typeof data)[]) {
         const newVal = data[key];
@@ -161,6 +205,14 @@ export async function updateRegistration(data: Registration): Promise<void> {
     }
 
     await updateDoc(registrationRef, toUpdate);
+
+    if (statusChanged) {
+        const tournamentRef = doc(db, "tournaments", data.tournament_id);
+        const delta = nextStatus === "approved" ? 1 : currentStatus === "approved" ? -1 : 0;
+        if (delta !== 0) {
+            await updateDoc(tournamentRef, {participants: increment(delta)});
+        }
+    }
 }
 
 export async function deleteRegistrationById(tournamentId: string, registrationId: string): Promise<void> {
