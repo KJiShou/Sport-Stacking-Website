@@ -9,7 +9,9 @@ import {
 import {
     getActiveTeamRecruitments,
     getAllTeamRecruitments,
+    deleteTeamRecruitment,
     updateTeamRecruitmentMembersNeeded,
+    updateTeamRecruitmentDetails,
 } from "@/services/firebase/teamRecruitmentService";
 import {addMemberToTeam, fetchTournamentsByType} from "@/services/firebase/tournamentsService";
 import {formatGenderLabel} from "@/utils/genderLabel";
@@ -22,6 +24,7 @@ import {
     Empty,
     Form,
     Input,
+    InputNumber,
     Message,
     Modal,
     Select,
@@ -32,7 +35,16 @@ import {
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import {IconDelete, IconEye, IconMore, IconPlus, IconRefresh, IconUser, IconUserAdd} from "@arco-design/web-react/icon";
+import {
+    IconDelete,
+    IconEdit,
+    IconEye,
+    IconMore,
+    IconPlus,
+    IconRefresh,
+    IconUser,
+    IconUserAdd,
+} from "@arco-design/web-react/icon";
 import {useEffect, useState} from "react";
 import {useNavigate, useSearchParams} from "react-router-dom";
 import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
@@ -66,6 +78,10 @@ export default function TeamRecruitmentManagement() {
 
     const deviceBreakpoint = useDeviceBreakpoint();
     const [assignmentForm] = Form.useForm();
+    const [teamRecruitmentForm] = Form.useForm();
+
+    const [editTeamRecruitmentModalVisible, setEditTeamRecruitmentModalVisible] = useState(false);
+    const [editingTeamRecruitment, setEditingTeamRecruitment] = useState<TeamRecruitment | null>(null);
 
     const navigate = useNavigate();
     // Check admin permissions
@@ -208,6 +224,37 @@ export default function TeamRecruitmentManagement() {
         });
     };
 
+    const handleSaveTeamRecruitment = async () => {
+        if (!editingTeamRecruitment) return;
+        try {
+            const values = await teamRecruitmentForm.validate();
+            const updates: {
+                max_members_needed?: number;
+                status: "active" | "closed";
+                requirements?: string;
+            } = {
+                status: values.status as "active" | "closed",
+            };
+
+            if (typeof values.max_members_needed === "number") {
+                updates.max_members_needed = values.max_members_needed;
+            }
+
+            updates.requirements = typeof values.requirements === "string" ? values.requirements : "";
+
+            await updateTeamRecruitmentDetails(editingTeamRecruitment.id, updates);
+            Message.success("Recruitment updated.");
+            setEditTeamRecruitmentModalVisible(false);
+            setEditingTeamRecruitment(null);
+            teamRecruitmentForm.resetFields();
+            loadRecruitmentData();
+        } catch (error) {
+            console.error("Failed to update team recruitment:", error);
+            const errorMessage = error instanceof Error ? error.message : "Failed to update recruitment.";
+            Message.error(errorMessage);
+        }
+    };
+
     // Individual recruitments table columns
     const individualColumns: TableColumnProps<IndividualRecruitment>[] = [
         {
@@ -309,10 +356,63 @@ export default function TeamRecruitmentManagement() {
             render: (count: number) => count || "Not specified",
         },
         {
+            title: "Requirements",
+            dataIndex: "requirements",
+            width: 200,
+            render: (requirements: string | undefined) => requirements || "—",
+        },
+        {
             title: "Status",
             dataIndex: "status",
             width: 80,
             render: (status: string) => <Tag color={status === "active" ? "blue" : "gray"}>{status}</Tag>,
+        },
+        {
+            title: "Actions",
+            width: 140,
+            render: (_: unknown, record: TeamRecruitment) => (
+                <div className="flex gap-2">
+                    <Button
+                        size="mini"
+                        type="primary"
+                        icon={<IconEdit />}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingTeamRecruitment(record);
+                            teamRecruitmentForm.setFieldsValue({
+                                max_members_needed: record.max_members_needed,
+                                status: record.status,
+                                requirements: record.requirements ?? "",
+                            });
+                            setEditTeamRecruitmentModalVisible(true);
+                        }}
+                    />
+                    <Button
+                        size="mini"
+                        status="danger"
+                        icon={<IconDelete />}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            Modal.confirm({
+                                title: "Delete Team Recruitment",
+                                content: `Delete recruitment for ${record.team_name}?`,
+                                okText: "Delete",
+                                okButtonProps: {status: "danger"},
+                                onOk: async () => {
+                                    try {
+                                        await deleteTeamRecruitment(record.id);
+                                        Message.success("Recruitment deleted.");
+                                        loadRecruitmentData();
+                                    } catch (error) {
+                                        console.error("Failed to delete team recruitment:", error);
+                                        Message.error("Failed to delete recruitment.");
+                                    }
+                                },
+                            });
+                        }}
+                    />
+                </div>
+            ),
         },
     ];
 
@@ -507,6 +607,47 @@ export default function TeamRecruitmentManagement() {
                                         }
                                         return null;
                                     }}
+                                </Form.Item>
+                            </Form>
+                        )}
+                    </Modal>
+
+                    <Modal
+                        title="Edit Team Recruitment"
+                        visible={editTeamRecruitmentModalVisible}
+                        onCancel={() => {
+                            setEditTeamRecruitmentModalVisible(false);
+                            setEditingTeamRecruitment(null);
+                            teamRecruitmentForm.resetFields();
+                        }}
+                        onOk={handleSaveTeamRecruitment}
+                        okText="Save"
+                        className="w-full max-w-2xl"
+                    >
+                        {editingTeamRecruitment && (
+                            <Form form={teamRecruitmentForm} layout="vertical">
+                                <div className="mb-4 p-4 bg-gray-50 rounded">
+                                    <Title heading={6}>Team Information</Title>
+                                    <Descriptions
+                                        column={2}
+                                        data={[
+                                            {label: "Team", value: editingTeamRecruitment.team_name},
+                                            {label: "Leader", value: editingTeamRecruitment.leader_id},
+                                            {label: "Event", value: editingTeamRecruitment.event_name},
+                                        ]}
+                                    />
+                                </div>
+                                <Form.Item label="Max Members Needed" field="max_members_needed">
+                                    <InputNumber min={0} placeholder="0 for none" />
+                                </Form.Item>
+                                <Form.Item label="Status" field="status" rules={[{required: true, message: "Select status."}]}>
+                                    <Select placeholder="Select status">
+                                        <Option value="active">Active</Option>
+                                        <Option value="closed">Closed</Option>
+                                    </Select>
+                                </Form.Item>
+                                <Form.Item label="Requirements" field="requirements">
+                                    <Input.TextArea placeholder="Notes or requirements" allowClear autoSize={{minRows: 2, maxRows: 4}} />
                                 </Form.Item>
                             </Form>
                         )}
