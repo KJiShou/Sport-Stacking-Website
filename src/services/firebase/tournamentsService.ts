@@ -391,7 +391,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
                     getDocs(query(globalRef, where("tournament_id", "==", tournamentId))),
                 ]);
 
-                const docsById = new Map<string, typeof byTournamentId.docs[number]>();
+                const docsById = new Map<string, (typeof byTournamentId.docs)[number]>();
                 for (const docSnap of byTournamentId.docs) {
                     docsById.set(docSnap.id, docSnap);
                 }

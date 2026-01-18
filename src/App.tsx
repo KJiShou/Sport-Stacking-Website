@@ -63,8 +63,7 @@ const App: FC = () => {
 
             const providers = firebaseUser.providerData.map((p) => p.providerId);
             const isGoogle = providers.includes("google.com");
-            const wasOnRegister =
-                prevPathRef.current === "/register" || prevPathRef.current.startsWith("/register/");
+            const wasOnRegister = prevPathRef.current === "/register" || prevPathRef.current.startsWith("/register/");
             const isOnRegister = pathname === "/register" || pathname.startsWith("/register/");
             const isNowOffRegister = !isOnRegister;
 

@@ -1065,10 +1065,7 @@ export const updateParticipantRankingsAndResults = async (
                     if (!Array.from(allowedCodes).every((code) => codeMap.has(code))) {
                         return null;
                     }
-                    const total =
-                        (codeMap.get("3-3-3") ?? 0) +
-                        (codeMap.get("3-6-3") ?? 0) +
-                        (codeMap.get("Cycle") ?? 0);
+                    const total = (codeMap.get("3-3-3") ?? 0) + (codeMap.get("3-6-3") ?? 0) + (codeMap.get("Cycle") ?? 0);
                     return {globalId, overall_time: total};
                 })
                 .filter((entry): entry is {globalId: string; overall_time: number} => Boolean(entry))

@@ -178,11 +178,9 @@ export default function EditTournamentRegistrationPage() {
             };
             await updateRegistration(registrationData);
 
-            const removedTeams = initialTeams.filter(
-                (initialTeam) => !teams.some((team) => team.id === initialTeam.id),
-            );
-            const registrationIds = [registration?.user_global_id, registration?.user_id].filter(
-                (value): value is string => Boolean(value),
+            const removedTeams = initialTeams.filter((initialTeam) => !teams.some((team) => team.id === initialTeam.id));
+            const registrationIds = [registration?.user_global_id, registration?.user_id].filter((value): value is string =>
+                Boolean(value),
             );
 
             if (removedTeams.length > 0 && registrationIds.length > 0) {
@@ -824,7 +822,11 @@ export default function EditTournamentRegistrationPage() {
                                         <InputNumber min={1} placeholder="e.g., 2" />
                                     </Form.Item>
                                     <Form.Item label="Requirements" field="requirements">
-                                        <Input.TextArea placeholder="Optional notes" allowClear autoSize={{minRows: 2, maxRows: 4}} />
+                                        <Input.TextArea
+                                            placeholder="Optional notes"
+                                            allowClear
+                                            autoSize={{minRows: 2, maxRows: 4}}
+                                        />
                                     </Form.Item>
                                 </Form>
                             )}

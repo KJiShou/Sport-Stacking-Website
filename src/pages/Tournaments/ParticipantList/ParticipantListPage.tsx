@@ -16,6 +16,7 @@ import {
 import {
     getEventKey,
     getEventLabel,
+    getEventTypeOrderIndex,
     getTeamEventLabels,
     isTeamEvent,
     matchesAnyEventKey,
@@ -47,6 +48,11 @@ export default function ParticipantListPage() {
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
     const mountedRef = useRef(false);
+    const sortedEvents = [...events].sort((a, b) => {
+        const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
+        if (orderDiff !== 0) return orderDiff;
+        return a.type.localeCompare(b.type);
+    });
 
     const ageMap: Record<string, number> = registrationList.reduce(
         (acc, r) => {
@@ -73,8 +79,13 @@ export default function ParticipantListPage() {
             setTournament(t);
             const events = await fetchTournamentEvents(tournamentId);
             setEvents(events);
-            setCurrentEventTab(events[0]?.id ?? events[0]?.type ?? "");
-            const firstBracket = events[0]?.age_brackets?.[0];
+            const sortedEventList = [...events].sort((a, b) => {
+                const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
+                if (orderDiff !== 0) return orderDiff;
+                return a.type.localeCompare(b.type);
+            });
+            setCurrentEventTab(sortedEventList[0]?.id ?? sortedEventList[0]?.type ?? "");
+            const firstBracket = sortedEventList[0]?.age_brackets?.[0];
             setCurrentBracketTab(firstBracket ? firstBracket.name : "");
             const regs = await fetchApprovedRegistrations(tournamentId);
             const teams = await fetchTeamsByTournament(tournamentId);
@@ -483,7 +494,7 @@ export default function ParticipantListPage() {
                     </div>
                 </div>
                 <Tabs type="line" destroyOnHide className="w-full" activeTab={currentEventTab} onChange={handleEventTabChange}>
-                    {events?.map((evt) => {
+                    {sortedEvents.map((evt) => {
                         const tabKey = evt.id ?? evt.type;
                         const isTeamEventForTab = isTeamEvent(evt);
                         const regs = filterRegistrations(tabKey, isTeamEventForTab, evt);
