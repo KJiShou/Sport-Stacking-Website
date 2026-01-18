@@ -12,6 +12,8 @@ import {uploadFile} from "@/services/firebase/storageService";
 import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService";
 import {createTeam, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {getCountryFlag} from "@/utils/countryFlags";
 import {getEventKey, getEventLabel, isTeamEvent, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
@@ -57,6 +59,9 @@ export default function RegisterTournamentPage() {
     const {firebaseUser, user} = useAuthContext();
     const navigate = useNavigate();
     const location = useLocation();
+    const deviceBreakpoint = useDeviceBreakpoint();
+    const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
+    const eventSelectWidth = isSmallScreen ? 200 : 345;
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -552,6 +557,22 @@ export default function RegisterTournamentPage() {
         fetch();
     }, [tournamentId, user]);
 
+    useEffect(() => {
+        if (!user?.name || haveTeam.length === 0) return;
+        for (const entry of haveTeam) {
+            const eventType = entry.event?.type ?? "";
+            const isParentChild = eventType === "Parent & Child";
+            const isDoubleEvent = eventType.toLowerCase() === "double";
+            if (!isParentChild && !isDoubleEvent) {
+                continue;
+            }
+            const teamNameField = `teams.${entry.eventId}.name`;
+            if (form.getFieldValue(teamNameField) !== user.name) {
+                form.setFieldValue(teamNameField, user.name);
+            }
+        }
+    }, [form, haveTeam, user?.name]);
+
     if (!firebaseUser) {
         return (
             <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
@@ -584,14 +605,25 @@ export default function RegisterTournamentPage() {
                 {tournament?.logo && <Image src={tournament.logo} alt="logo" width={200} />}
                 <Descriptions
                     column={1}
+                    layout={isSmallScreen ? "vertical" : "horizontal"}
                     title={
                         <Title style={{textAlign: "center", width: "100%"}} heading={3}>
                             {tournament?.name}
                         </Title>
                     }
                     data={tournamentData}
-                    style={{marginBottom: 20}}
-                    labelStyle={{textAlign: "right", paddingRight: 36}}
+                    style={{marginBottom: 20, width: "100%"}}
+                    labelStyle={{
+                        textAlign: isSmallScreen ? "left" : "right",
+                        paddingRight: isSmallScreen ? 0 : 36,
+                        width: isSmallScreen ? "100%" : 160,
+                    }}
+                    valueStyle={{
+                        textAlign: "left",
+                        width: "100%",
+                        wordBreak: "break-word",
+                        overflowWrap: "anywhere",
+                    }}
                 />
                 <Modal
                     title="Tournament Description"
@@ -655,8 +687,9 @@ export default function RegisterTournamentPage() {
                         >
                             <Select
                                 placeholder="Select events"
-                                style={{width: 345, marginRight: 20}}
+                                style={{width: eventSelectWidth, marginRight: 20}}
                                 mode="multiple"
+                                className="select-wrap"
                                 defaultValue={requiredKeys}
                                 onChange={(value: string[]) => {
                                     if (!availableEvents) return;
@@ -785,7 +818,9 @@ export default function RegisterTournamentPage() {
                                             requiredTeamSize !== undefined ? Math.max(requiredTeamSize - 1, 0) : undefined;
                                         const isDoubleEvent = lowerEventType === "double";
                                         const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
-                                        const teamLeaderLabel = isDoubleEvent ? "Double Leader Global ID" : "Team Leader Global ID";
+                                        const teamLeaderLabel = isDoubleEvent
+                                            ? "Double Leader Global ID"
+                                            : "Team Leader Global ID";
                                         const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
@@ -804,6 +839,8 @@ export default function RegisterTournamentPage() {
                                                 >
                                                     {() => {
                                                         const isLookingTopLevel = lookingForTeams.includes(eventId);
+                                                        const isLockedTeamName =
+                                                            isLookingTopLevel || isDoubleEvent || isParentChild;
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${eventId}.name`}
@@ -815,7 +852,7 @@ export default function RegisterTournamentPage() {
                                                                 }
                                                             >
                                                                 <Input
-                                                                    disabled={isLookingTopLevel}
+                                                                    disabled={isLockedTeamName}
                                                                     placeholder={`Please enter ${teamNameLabel.toLowerCase()}`}
                                                                 />
                                                             </Form.Item>

@@ -68,6 +68,7 @@ export default function TeamRecruitmentManagement() {
     const [statusFilter, setStatusFilter] = useState<string>("");
 
     const deviceBreakpoint = useDeviceBreakpoint();
+    const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
     const [assignmentForm] = Form.useForm();
     const [teamRecruitmentForm] = Form.useForm();
 
@@ -547,13 +548,26 @@ export default function TeamRecruitmentManagement() {
                                 <div className="mb-4 p-4 bg-gray-50 rounded">
                                     <Title heading={6}>Participant Information</Title>
                                     <Descriptions
-                                        column={2}
+                                        column={isSmallScreen ? 1 : 2}
+                                        layout={isSmallScreen ? "vertical" : "horizontal"}
                                         data={[
                                             {label: "Name", value: assignmentData.individual.participant_name},
                                             {label: "Age", value: assignmentData.individual.age},
                                             {label: "Gender", value: formatGenderLabel(assignmentData.individual.gender)},
                                             {label: "Country", value: assignmentData.individual.country},
                                         ]}
+                                        style={{width: "100%"}}
+                                        labelStyle={{
+                                            textAlign: isSmallScreen ? "left" : "right",
+                                            paddingRight: isSmallScreen ? 0 : 24,
+                                            width: isSmallScreen ? "100%" : 140,
+                                        }}
+                                        valueStyle={{
+                                            textAlign: "left",
+                                            width: "100%",
+                                            wordBreak: "break-word",
+                                            overflowWrap: "anywhere",
+                                        }}
                                     />
                                     <div className="mt-2">
                                         <strong>Event:</strong> {assignmentData.individual.event_name}
@@ -620,12 +634,25 @@ export default function TeamRecruitmentManagement() {
                                 <div className="mb-4 p-4 bg-gray-50 rounded">
                                     <Title heading={6}>Team Information</Title>
                                     <Descriptions
-                                        column={2}
+                                        column={isSmallScreen ? 1 : 2}
+                                        layout={isSmallScreen ? "vertical" : "horizontal"}
                                         data={[
                                             {label: "Team", value: editingTeamRecruitment.team_name},
                                             {label: "Leader", value: editingTeamRecruitment.leader_id},
                                             {label: "Event", value: editingTeamRecruitment.event_name},
                                         ]}
+                                        style={{width: "100%"}}
+                                        labelStyle={{
+                                            textAlign: isSmallScreen ? "left" : "right",
+                                            paddingRight: isSmallScreen ? 0 : 24,
+                                            width: isSmallScreen ? "100%" : 140,
+                                        }}
+                                        valueStyle={{
+                                            textAlign: "left",
+                                            width: "100%",
+                                            wordBreak: "break-word",
+                                            overflowWrap: "anywhere",
+                                        }}
                                     />
                                 </div>
                                 <Form.Item label="Max Members Needed" field="max_members_needed">

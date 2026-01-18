@@ -128,6 +128,7 @@ export default function TournamentView() {
 
     const deviceBreakpoint = useDeviceBreakpoint();
     const {user} = useAuthContext();
+    const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
     const individualEvent = events.find((event) => event.type === "Individual");
     const individualEventLabel = individualEvent ? getEventLabel(individualEvent) : "Individual";
     const isAdmin = user?.roles?.verify_record || user?.roles?.edit_tournament || false;
@@ -551,14 +552,25 @@ export default function TournamentView() {
                     {tournament?.logo && <Image src={tournament.logo} alt="logo" width={200} />}
                     <Descriptions
                         column={1}
+                        layout={isSmallScreen ? "vertical" : "horizontal"}
                         title={
                             <Title style={{textAlign: "center", width: "100%"}} heading={3}>
                                 {tournament?.name}
                             </Title>
                         }
                         data={tournamentData}
-                        style={{marginBottom: 20}}
-                        labelStyle={{textAlign: "right", paddingRight: 36}}
+                        style={{marginBottom: 20, width: "100%"}}
+                        labelStyle={{
+                            textAlign: isSmallScreen ? "left" : "right",
+                            paddingRight: isSmallScreen ? 0 : 36,
+                            width: isSmallScreen ? "100%" : 160,
+                        }}
+                        valueStyle={{
+                            textAlign: "left",
+                            width: "100%",
+                            wordBreak: "break-word",
+                            overflowWrap: "anywhere",
+                        }}
                     />
                     <div className="flex justify-center w-full mb-4">
                         {(() => {
@@ -1587,9 +1599,7 @@ export default function TournamentView() {
                             finalRecords.length === 0 &&
                             prelimOverallRecords.length === 0 &&
                             finalOverallRecords.length === 0 && (
-                                <Text type="secondary">
-                                    No records available yet. Click "View All Records" to see detailed results.
-                                </Text>
+                                <Text type="secondary">No records available yet. Check back later!</Text>
                             )}
                     </div>
                 )}
