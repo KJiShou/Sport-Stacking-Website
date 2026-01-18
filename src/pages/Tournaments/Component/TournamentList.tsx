@@ -1020,7 +1020,7 @@ export default function TournamentList() {
             Message.error("Invalid tournament ID.");
             return;
         }
-        const registerLink = `${window.location.origin}/tournaments/${tournamentId}/register`;
+        const registerLink = `${window.location.origin}/tournaments/${tournamentId}/view`;
         try {
             await navigator.clipboard.writeText(registerLink);
             Message.success("Register link copied.");

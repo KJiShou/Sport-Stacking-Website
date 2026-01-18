@@ -1587,9 +1587,7 @@ export default function TournamentView() {
                             finalRecords.length === 0 &&
                             prelimOverallRecords.length === 0 &&
                             finalOverallRecords.length === 0 && (
-                                <Text type="secondary">
-                                    No records available yet. Click "View All Records" to see detailed results.
-                                </Text>
+                                <Text type="secondary">No records available yet. Check back later!</Text>
                             )}
                     </div>
                 )}
