@@ -552,6 +552,22 @@ export default function RegisterTournamentPage() {
         fetch();
     }, [tournamentId, user]);
 
+    useEffect(() => {
+        if (!user?.name || haveTeam.length === 0) return;
+        for (const entry of haveTeam) {
+            const eventType = entry.event?.type ?? "";
+            const isParentChild = eventType === "Parent & Child";
+            const isDoubleEvent = eventType.toLowerCase() === "double";
+            if (!isParentChild && !isDoubleEvent) {
+                continue;
+            }
+            const teamNameField = `teams.${entry.eventId}.name`;
+            if (form.getFieldValue(teamNameField) !== user.name) {
+                form.setFieldValue(teamNameField, user.name);
+            }
+        }
+    }, [form, haveTeam, user?.name]);
+
     if (!firebaseUser) {
         return (
             <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
@@ -804,6 +820,7 @@ export default function RegisterTournamentPage() {
                                                 >
                                                     {() => {
                                                         const isLookingTopLevel = lookingForTeams.includes(eventId);
+                                                        const isLockedTeamName = isLookingTopLevel || isDoubleEvent || isParentChild;
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${eventId}.name`}
@@ -815,7 +832,7 @@ export default function RegisterTournamentPage() {
                                                                 }
                                                             >
                                                                 <Input
-                                                                    disabled={isLookingTopLevel}
+                                                                    disabled={isLockedTeamName}
                                                                     placeholder={`Please enter ${teamNameLabel.toLowerCase()}`}
                                                                 />
                                                             </Form.Item>

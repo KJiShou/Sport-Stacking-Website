@@ -57,13 +57,23 @@ async function getNextGlobalId(): Promise<string> {
     const counterRef = doc(db, "counters", "userCounter");
     const newCount = await runTransaction(db, async (tx) => {
         const snap = await tx.get(counterRef);
+        const nextAvailableCount = (current: number) => {
+            let next = current + 1;
+            while (String(next).includes("4")) {
+                next += 1;
+            }
+            return next;
+        };
         if (!snap.exists()) {
-            tx.set(counterRef, {count: 1});
-            return 1;
+            const initialCount = 0;
+            const next = nextAvailableCount(initialCount);
+            tx.set(counterRef, {count: next});
+            return next;
         }
-        tx.update(counterRef, {count: increment(1)});
-        const updated = (snap.data().count as number) + 1;
-        return updated;
+        const current = (snap.data().count as number) ?? 0;
+        const next = nextAvailableCount(current);
+        tx.update(counterRef, {count: next});
+        return next;
     });
     return String(newCount).padStart(5, "0");
 }
