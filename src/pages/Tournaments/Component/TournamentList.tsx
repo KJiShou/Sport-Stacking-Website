@@ -126,6 +126,7 @@ export default function TournamentList() {
     const navigate = useNavigate();
 
     const deviceBreakpoint = useDeviceBreakpoint();
+    const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
 
     const {handleTournamentDateChange, handleRangeChangeSmart} = useSmartDateHandlers(form);
 
@@ -1918,14 +1919,25 @@ export default function TournamentList() {
                     <Image src={`${selectedTournament?.logo}`} alt="logo" width={200} />
                     <Descriptions
                         column={1}
+                        layout={isSmallScreen ? "vertical" : "horizontal"}
                         title={
                             <Title style={{textAlign: "center", width: "100%"}} heading={3}>
                                 {selectedTournament?.name}
                             </Title>
                         }
                         data={tournamentData}
-                        style={{marginBottom: 20}}
-                        labelStyle={{textAlign: "right", paddingRight: 36}}
+                        style={{marginBottom: 20, width: "100%"}}
+                        labelStyle={{
+                            textAlign: isSmallScreen ? "left" : "right",
+                            paddingRight: isSmallScreen ? 0 : 36,
+                            width: isSmallScreen ? "100%" : 160,
+                        }}
+                        valueStyle={{
+                            textAlign: "left",
+                            width: "100%",
+                            wordBreak: "break-word",
+                            overflowWrap: "anywhere",
+                        }}
                     />
                     <Modal
                         title="Tournament Description"

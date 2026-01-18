@@ -6,6 +6,36 @@
     display: none !important;
 }
 
+.select-wrap {
+    .arco-select-view {
+        flex-wrap: wrap;
+        height: auto;
+    }
+
+    .arco-input-tag-view {
+        flex-wrap: wrap;
+    }
+
+    .arco-input-tag-inner {
+        gap: 4px;
+    }
+
+    .arco-input-tag-tag {
+        height: auto;
+        line-height: 1.2;
+        align-items: flex-start;
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+
+    .arco-tag-content {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+        overflow-wrap: anywhere;
+    }
+}
+
 :root {
     font-size: 10px;
 

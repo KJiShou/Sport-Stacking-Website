@@ -13,6 +13,8 @@ import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService"
 import {createTeam, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {getCountryFlag} from "@/utils/countryFlags";
 import {getEventKey, getEventLabel, isTeamEvent, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
 import {
@@ -57,6 +59,9 @@ export default function RegisterTournamentPage() {
     const {firebaseUser, user} = useAuthContext();
     const navigate = useNavigate();
     const location = useLocation();
+    const deviceBreakpoint = useDeviceBreakpoint();
+    const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
+    const eventSelectWidth = isSmallScreen ? 200 : 345;
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -600,14 +605,25 @@ export default function RegisterTournamentPage() {
                 {tournament?.logo && <Image src={tournament.logo} alt="logo" width={200} />}
                 <Descriptions
                     column={1}
+                    layout={isSmallScreen ? "vertical" : "horizontal"}
                     title={
                         <Title style={{textAlign: "center", width: "100%"}} heading={3}>
                             {tournament?.name}
                         </Title>
                     }
                     data={tournamentData}
-                    style={{marginBottom: 20}}
-                    labelStyle={{textAlign: "right", paddingRight: 36}}
+                    style={{marginBottom: 20, width: "100%"}}
+                    labelStyle={{
+                        textAlign: isSmallScreen ? "left" : "right",
+                        paddingRight: isSmallScreen ? 0 : 36,
+                        width: isSmallScreen ? "100%" : 160,
+                    }}
+                    valueStyle={{
+                        textAlign: "left",
+                        width: "100%",
+                        wordBreak: "break-word",
+                        overflowWrap: "anywhere",
+                    }}
                 />
                 <Modal
                     title="Tournament Description"
@@ -671,8 +687,9 @@ export default function RegisterTournamentPage() {
                         >
                             <Select
                                 placeholder="Select events"
-                                style={{width: 345, marginRight: 20}}
+                                style={{width: eventSelectWidth, marginRight: 20}}
                                 mode="multiple"
+                                className="select-wrap"
                                 defaultValue={requiredKeys}
                                 onChange={(value: string[]) => {
                                     if (!availableEvents) return;
@@ -801,7 +818,9 @@ export default function RegisterTournamentPage() {
                                             requiredTeamSize !== undefined ? Math.max(requiredTeamSize - 1, 0) : undefined;
                                         const isDoubleEvent = lowerEventType === "double";
                                         const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
-                                        const teamLeaderLabel = isDoubleEvent ? "Double Leader Global ID" : "Team Leader Global ID";
+                                        const teamLeaderLabel = isDoubleEvent
+                                            ? "Double Leader Global ID"
+                                            : "Team Leader Global ID";
                                         const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
@@ -820,7 +839,8 @@ export default function RegisterTournamentPage() {
                                                 >
                                                     {() => {
                                                         const isLookingTopLevel = lookingForTeams.includes(eventId);
-                                                        const isLockedTeamName = isLookingTopLevel || isDoubleEvent || isParentChild;
+                                                        const isLockedTeamName =
+                                                            isLookingTopLevel || isDoubleEvent || isParentChild;
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${eventId}.name`}

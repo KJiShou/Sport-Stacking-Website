@@ -71,6 +71,7 @@ export default function RegisterPage() {
     const {Row, Col} = Grid;
     const deviceBreakpoint = useDeviceBreakpoint();
     const isMobile = deviceBreakpoint <= DeviceBreakpoint.md;
+    const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
     const {id} = useParams<{id: string}>();
     const {user: authUser} = useAuthContext();
     const navigate = useNavigate();
@@ -453,7 +454,24 @@ export default function RegisterPage() {
                             <Text className="flex items-center justify-center gap-1">
                                 <IconUser /> {user?.global_id}
                             </Text>
-                            <Descriptions className={"w-full h-full py-8 px-4"} border column={1} data={descData} />
+                            <Descriptions
+                                className={"w-full h-full py-8 px-4"}
+                                border
+                                column={1}
+                                layout={isSmallScreen ? "vertical" : "horizontal"}
+                                data={descData}
+                                labelStyle={{
+                                    textAlign: isSmallScreen ? "left" : "right",
+                                    paddingRight: isSmallScreen ? 0 : 24,
+                                    width: isSmallScreen ? "100%" : 140,
+                                }}
+                                valueStyle={{
+                                    textAlign: "left",
+                                    width: "100%",
+                                    wordBreak: "break-word",
+                                    overflowWrap: "anywhere",
+                                }}
+                            />
                             <Button
                                 className="w-full"
                                 type="primary"
