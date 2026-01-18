@@ -847,7 +847,7 @@ export default function ScoringPage() {
         }
     };
 
-    const calculateAndSaveOverallResults = async (participants: ParticipantScore[] = registrationList) => {
+    const calculateAndSaveOverallResults = async (participants: ParticipantScore[]) => {
         if (!tournamentId || !tournament) return;
 
         const individualEvents = (events ?? []).filter(
