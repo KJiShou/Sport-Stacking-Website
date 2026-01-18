@@ -7,11 +7,11 @@ import {
     updateIndividualRecruitmentStatus,
 } from "@/services/firebase/individualRecruitmentService";
 import {
+    deleteTeamRecruitment,
     getActiveTeamRecruitments,
     getAllTeamRecruitments,
-    deleteTeamRecruitment,
-    updateTeamRecruitmentMembersNeeded,
     updateTeamRecruitmentDetails,
+    updateTeamRecruitmentMembersNeeded,
 } from "@/services/firebase/teamRecruitmentService";
 import {addMemberToTeam, fetchTournamentsByType} from "@/services/firebase/tournamentsService";
 import {formatGenderLabel} from "@/utils/genderLabel";
