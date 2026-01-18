@@ -82,6 +82,11 @@ export default function ViewTournamentRegistrationPage() {
     const [loading, setLoading] = useState(true);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
     const [availableEventsState, setAvailableEventsState] = useState<TournamentEvent[]>([]);
+    const registrationPrice = useMemo(
+        () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee),
+        [tournament, user],
+    );
+    const requiresPaymentProof = (registrationPrice ?? 0) > 0;
 
     const parseDate = (date: Tournament["registration_start_date"]): dayjs.Dayjs | null => {
         if (!date) return null;
@@ -270,13 +275,19 @@ export default function ViewTournamentRegistrationPage() {
                             </div>
                         </Form.Item>
 
-                        <Form.Item label="Payment Proof">
-                            {paymentProofUrl ? (
-                                <Image width={200} src={paymentProofUrl} alt="Payment Proof" />
-                            ) : (
-                                <Typography.Text type="secondary">No payment proof uploaded.</Typography.Text>
-                            )}
-                        </Form.Item>
+                        {requiresPaymentProof ? (
+                            <Form.Item label="Payment Proof">
+                                {paymentProofUrl ? (
+                                    <Image width={200} src={paymentProofUrl} alt="Payment Proof" />
+                                ) : (
+                                    <Typography.Text type="secondary">No payment proof uploaded.</Typography.Text>
+                                )}
+                            </Form.Item>
+                        ) : (
+                            <Form.Item label="Payment Proof">
+                                <Typography.Text type="secondary">Payment proof not required.</Typography.Text>
+                            </Form.Item>
+                        )}
                     </Form>
                     <Popconfirm
                         focusLock
