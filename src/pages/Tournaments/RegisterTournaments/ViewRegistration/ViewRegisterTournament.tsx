@@ -244,19 +244,27 @@ export default function ViewTournamentRegistrationPage() {
                         <Form.Item shouldUpdate noStyle>
                             <div className={`flex flex-row w-full gap-10`}>
                                 {teams.map((team) => {
-                                    const {eventName} = resolveTeamEvent(team, availableEventsState);
+                                    const {eventId, eventName} = resolveTeamEvent(team, availableEventsState);
                                     const teamEventLabel = eventName || "Team Event";
+                                    const eventDefinition =
+                                        availableEventsState.find(
+                                            (evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt),
+                                        ) ?? null;
+                                    const isDoubleEvent = eventDefinition?.type === "Double";
+                                    const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
+                                    const teamLeaderLabel = isDoubleEvent ? "Double Leader" : "Team Leader";
+                                    const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Members";
                                     return (
                                         <div key={team.id}>
                                             <div className={`text-center font-semibold mb-2`}>{teamEventLabel}</div>
                                             <Divider />
-                                            <Form.Item label="Team Name">
+                                            <Form.Item label={teamNameLabel}>
                                                 <Input value={team.name} disabled />
                                             </Form.Item>
-                                            <Form.Item label="Team Leader">
+                                            <Form.Item label={teamLeaderLabel}>
                                                 <Input value={team.leader_id} disabled />
                                             </Form.Item>
-                                            <Form.Item label="Team Members">
+                                            <Form.Item label={teamMemberLabel}>
                                                 <div className="flex flex-col gap-2">
                                                     {team.members.map((m) => (
                                                         <Button

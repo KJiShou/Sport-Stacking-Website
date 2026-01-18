@@ -580,8 +580,12 @@ export default function EditTournamentRegistrationPage() {
                         <Form.Item shouldUpdate noStyle>
                             <div className="flex flex-row w-full gap-10">
                                 {teams.map((team) => {
-                                    const {eventName} = resolveTeamEvent(team, events ?? []);
+                                    const {eventName, eventDefinition} = resolveTeamEvent(team, events ?? []);
                                     const teamEventLabel = eventName || "Team Event";
+                                    const isDoubleEvent = eventDefinition?.type === "Double";
+                                    const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
+                                    const teamLeaderLabel = isDoubleEvent ? "Double Leader" : "Team Leader";
+                                    const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Members";
                                     const activeRecruitment = teamRecruitments.find(
                                         (recruitment) => recruitment.team_id === team.id,
                                     );
@@ -599,7 +603,7 @@ export default function EditTournamentRegistrationPage() {
                                         <div key={team.id} className="border p-4 rounded-md shadow-sm">
                                             <Title heading={6}>{teamEventLabel}</Title>
                                             <Divider />
-                                            <Form.Item label="Team Name">
+                                            <Form.Item label={teamNameLabel}>
                                                 <Input
                                                     value={team.name}
                                                     disabled={!edit}
@@ -610,10 +614,10 @@ export default function EditTournamentRegistrationPage() {
                                                     }}
                                                 />
                                             </Form.Item>
-                                            <Form.Item label="Team Leader">
+                                            <Form.Item label={teamLeaderLabel}>
                                                 <Input value={team.leader_id} disabled={!edit} />
                                             </Form.Item>
-                                            <Form.Item label="Team Members">
+                                            <Form.Item label={teamMemberLabel}>
                                                 <div className="flex flex-col gap-2">
                                                     {team.members.map((m, i) => (
                                                         <div key={nanoid()} className="flex gap-2 items-center">

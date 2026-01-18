@@ -783,6 +783,10 @@ export default function RegisterTournamentPage() {
                                                     : undefined);
                                         const requiredMemberCount =
                                             requiredTeamSize !== undefined ? Math.max(requiredTeamSize - 1, 0) : undefined;
+                                        const isDoubleEvent = lowerEventType === "double";
+                                        const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
+                                        const teamLeaderLabel = isDoubleEvent ? "Double Leader" : "Team Leader Global ID";
+                                        const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
                                             <div key={eventId}>
@@ -803,7 +807,7 @@ export default function RegisterTournamentPage() {
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${eventId}.name`}
-                                                                label="Team Name"
+                                                                label={teamNameLabel}
                                                                 rules={
                                                                     isLookingTopLevel
                                                                         ? []
@@ -812,7 +816,7 @@ export default function RegisterTournamentPage() {
                                                             >
                                                                 <Input
                                                                     disabled={isLookingTopLevel}
-                                                                    placeholder="Please enter team name"
+                                                                    placeholder={`Please enter ${teamNameLabel.toLowerCase()}`}
                                                                 />
                                                             </Form.Item>
                                                         );
@@ -835,7 +839,7 @@ export default function RegisterTournamentPage() {
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${eventId}.leader`}
-                                                                label="Team Leader Global ID"
+                                                                label={teamLeaderLabel}
                                                                 rules={
                                                                     isLookingTopLevel
                                                                         ? []
@@ -845,7 +849,7 @@ export default function RegisterTournamentPage() {
                                                             >
                                                                 <Input
                                                                     disabled
-                                                                    placeholder="Please enter team leader global ID"
+                                                                    placeholder={`Please enter ${teamLeaderLabel.toLowerCase()}`}
                                                                 />
                                                             </Form.Item>
                                                         );
@@ -865,7 +869,7 @@ export default function RegisterTournamentPage() {
                                                                 field={`teams.${eventId}.member`}
                                                                 label={
                                                                     <div>
-                                                                        {isParentChild ? "Parent Global ID" : "Team Member"}
+                                                                        {isParentChild ? "Parent Global ID" : teamMemberLabel}
                                                                         <Tooltip
                                                                             content={
                                                                                 requiredMemberCount !== undefined
