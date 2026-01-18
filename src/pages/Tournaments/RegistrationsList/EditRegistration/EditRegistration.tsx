@@ -585,7 +585,7 @@ export default function EditTournamentRegistrationPage() {
                                     const isDoubleEvent = eventDefinition?.type === "Double";
                                     const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
                                     const teamLeaderLabel = isDoubleEvent ? "Double Leader" : "Team Leader";
-                                    const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Members";
+                                    const teamMemberLabel = isDoubleEvent ? "Double Partner Members" : "Team Members";
                                     const activeRecruitment = teamRecruitments.find(
                                         (recruitment) => recruitment.team_id === team.id,
                                     );
