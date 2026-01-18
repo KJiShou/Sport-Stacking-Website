@@ -40,6 +40,7 @@ import {
 } from "@arco-design/web-react";
 import {
     IconCalendar,
+    IconCopy,
     IconDelete,
     IconEdit,
     IconExclamationCircle,
@@ -425,6 +426,14 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
+                                            onClick={async () => handleCopyRegisterLink(tournament.id)}
+                                        >
+                                            <IconCopy /> Copy Register Link
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
                                             onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
                                         >
                                             <IconEye /> View Registration List
@@ -493,6 +502,14 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
+                                            onClick={async () => handleCopyRegisterLink(tournament.id)}
+                                        >
+                                            <IconCopy /> Copy Register Link
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
                                             onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
                                         >
                                             <IconEye /> View Registration List
@@ -552,6 +569,14 @@ export default function TournamentList() {
                                             onClick={async () => handleView(tournament)}
                                         >
                                             <IconEye /> View Tournament
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            loading={loading}
+                                            className={`text-left`}
+                                            onClick={async () => handleCopyRegisterLink(tournament.id)}
+                                        >
+                                            <IconCopy /> Copy Register Link
                                         </Button>
                                         <Button
                                             type="text"
@@ -988,6 +1013,21 @@ export default function TournamentList() {
             return;
         }
         navigate(`/tournaments/${tournamentId}/register`);
+    };
+
+    const handleCopyRegisterLink = async (tournamentId?: string) => {
+        if (!tournamentId) {
+            Message.error("Invalid tournament ID.");
+            return;
+        }
+        const registerLink = `${window.location.origin}/tournaments/${tournamentId}/register`;
+        try {
+            await navigator.clipboard.writeText(registerLink);
+            Message.success("Register link copied.");
+        } catch (error) {
+            console.error("Failed to copy register link:", error);
+            Message.error("Failed to copy register link.");
+        }
     };
 
     useEffect(() => {
