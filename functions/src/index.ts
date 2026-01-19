@@ -571,14 +571,30 @@ export const updateVerification = onRequest(async (req, res) => {
             }
             const userDocRef = userSnap.docs[0].ref;
 
-            // Find registration by registrationId
-            const regRef = db.collection("registrations").doc(registrationId);
-            const regSnap = await regRef.get();
-            if (!regSnap.exists) {
-                res.status(404).json({error: "Registration not found"});
-                return;
+            // Find registration by registrationId, but fall back to member's registration if needed
+            let regRef = db.collection("registrations").doc(registrationId);
+            let regSnap = await regRef.get();
+            let registrationData: Registration | null = regSnap.exists ? (regSnap.data() as Registration) : null;
+
+            const registrationMatchesMember =
+                registrationData?.user_global_id === memberId || registrationData?.user_id === memberId;
+
+            if (!registrationData || !registrationMatchesMember) {
+                const registrationQuery = db
+                    .collection("registrations")
+                    .where("tournament_id", "==", tournamentId)
+                    .where("user_global_id", "==", memberId);
+                const registrationSnapshot = await registrationQuery.get();
+
+                if (registrationSnapshot.empty) {
+                    res.status(404).json({error: "Registration not found for member"});
+                    return;
+                }
+
+                regSnap = registrationSnapshot.docs[0];
+                regRef = regSnap.ref;
+                registrationData = regSnap.data() as Registration;
             }
-            const registrationData = regSnap.data() as Registration;
 
             await db.runTransaction(async (transaction) => {
                 // 'team_recruitments' is now a top-level collection, not under tournaments
@@ -594,6 +610,9 @@ export const updateVerification = onRequest(async (req, res) => {
                 }
 
                 const teamData = teamDoc.data() as Team;
+                if (teamData.tournament_id !== tournamentId) {
+                    throw new Error("Team does not belong to this tournament.");
+                }
                 const memberIndex = teamData.members.findIndex((m: TeamMember) => m.global_id === memberId);
                 const teamEventReferences = getTeamEventReferences(teamData);
                 const normalizedTeamEventReferences = buildNormalizedEventSet(teamEventReferences);
@@ -705,6 +724,8 @@ export const updateVerification = onRequest(async (req, res) => {
             } else if (errorMessage === "You are not a member of this team.") {
                 res.status(400).json({error: errorMessage});
             } else if (errorMessage === "You are not registered for this tournament.") {
+                res.status(400).json({error: errorMessage});
+            } else if (errorMessage === "Team does not belong to this tournament.") {
                 res.status(400).json({error: errorMessage});
             } else if (errorMessage === "You are already registered for one or more of these team events.") {
                 res.status(409).json({error: errorMessage});
