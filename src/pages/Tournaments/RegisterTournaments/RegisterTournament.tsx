@@ -685,47 +685,53 @@ export default function RegisterTournamentPage() {
                             field="events_registered"
                             rules={[{required: true, message: "Please select at least one event."}]}
                         >
-                            <Select
-                                placeholder="Select events"
-                                style={{width: eventSelectWidth, marginRight: 20}}
-                                mode="multiple"
-                                className="select-wrap"
-                                defaultValue={requiredKeys}
-                                onChange={(value: string[]) => {
-                                    if (!availableEvents) return;
-                                    // 确保个人赛事项不能被取消选择
-                                    const finalValue = Array.from(new Set([...value, ...requiredKeys]));
+                            <div className="flex flex-col gap-2">
+                                <Typography.Text type="secondary">
+                                    For Double, Parent & Child, and Team Relay, only the team leader selects the event here.
+                                    Members should wait for the leader's invitation.
+                                </Typography.Text>
+                                <Select
+                                    placeholder="Select events"
+                                    style={{width: eventSelectWidth}}
+                                    mode="multiple"
+                                    className="select-wrap"
+                                    defaultValue={requiredKeys}
+                                    onChange={(value: string[]) => {
+                                        if (!availableEvents) return;
+                                        // 确保个人赛事项不能被取消选择
+                                        const finalValue = Array.from(new Set([...value, ...requiredKeys]));
 
-                                    // 更新表单值
-                                    form.setFieldsValue({events_registered: finalValue});
+                                        // 更新表单值
+                                        form.setFieldsValue({events_registered: finalValue});
 
-                                    // 更新团队事件的状态
-                                    setHaveTeam(buildTeamEntries(finalValue));
+                                        // 更新团队事件的状态
+                                        setHaveTeam(buildTeamEntries(finalValue));
 
-                                    // 清理已取消选择的"寻找队伍"记录
-                                    setLookingForTeams((prev) => prev.filter((eventId) => finalValue.includes(eventId)));
-                                }}
-                                notFoundContent={<Empty description="No Available Events" />}
-                            >
-                                {options?.map((option) => {
-                                    const key = getEventKey(option);
-                                    const isRequired = requiredKeys.includes(key);
-                                    const displayText = getEventLabel(option);
-                                    return (
-                                        <Option
-                                            key={key}
-                                            value={key}
-                                            disabled={isRequired}
-                                            style={{
-                                                opacity: isRequired ? 0.6 : 1,
-                                                backgroundColor: isRequired ? "#f5f5f5" : "transparent",
-                                            }}
-                                        >
-                                            {displayText} {isRequired && "(Required)"}
-                                        </Option>
-                                    );
-                                })}
-                            </Select>
+                                        // 清理已取消选择的"寻找队伍"记录
+                                        setLookingForTeams((prev) => prev.filter((eventId) => finalValue.includes(eventId)));
+                                    }}
+                                    notFoundContent={<Empty description="No Available Events" />}
+                                >
+                                    {options?.map((option) => {
+                                        const key = getEventKey(option);
+                                        const isRequired = requiredKeys.includes(key);
+                                        const displayText = getEventLabel(option);
+                                        return (
+                                            <Option
+                                                key={key}
+                                                value={key}
+                                                disabled={isRequired}
+                                                style={{
+                                                    opacity: isRequired ? 0.6 : 1,
+                                                    backgroundColor: isRequired ? "#f5f5f5" : "transparent",
+                                                }}
+                                            >
+                                                {displayText} {isRequired && "(Required)"}
+                                            </Option>
+                                        );
+                                    })}
+                                </Select>
+                            </div>
                         </Form.Item>
 
                         {/* Individual Looking for Teams Section */}

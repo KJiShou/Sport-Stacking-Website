@@ -40,7 +40,7 @@ import {IconClose, IconPlus, IconUndo} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {nanoid} from "nanoid";
-import {useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 
@@ -377,9 +377,14 @@ export default function EditTournamentRegistrationPage() {
             const normalizedTeams: LegacyTeam[] = membershipTeams.map((team) => {
                 const legacyTeam = team as LegacyTeam;
                 const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentData?.events ?? []);
+                const normalizedLeaderId =
+                    legacyTeam.leader_id === userReg.user_id && userReg.user_global_id
+                        ? userReg.user_global_id
+                        : legacyTeam.leader_id;
 
                 return {
                     ...legacyTeam,
+                    leader_id: normalizedLeaderId,
                     event_id: eventId ? eventId : null,
                     event: eventName ? [eventName] : Array.isArray(legacyTeam.event) ? legacyTeam.event : [],
                 };
@@ -430,6 +435,24 @@ export default function EditTournamentRegistrationPage() {
         const event = events?.find((evt) => getEventKey(evt) === eventId);
         return event ? getEventLabel(event) : eventId;
     };
+
+    useEffect(() => {
+        if (!registration?.user_name || teams.length === 0) return;
+        const updatedTeams = teams.map((team) => {
+            const {eventDefinition} = resolveTeamEvent(team, events ?? []);
+            const eventType = (eventDefinition?.type ?? "").toLowerCase();
+            const isDoubleEvent = eventType.includes("double");
+            const isParentChild = eventType.includes("parent") && eventType.includes("child");
+            if ((isDoubleEvent || isParentChild) && !team.name) {
+                return {...team, name: registration.user_name};
+            }
+            return team;
+        });
+        const hasChanges = updatedTeams.some((team, index) => team.name !== teams[index]?.name);
+        if (hasChanges) {
+            setTeams(updatedTeams);
+        }
+    }, [events, registration?.user_name, teams]);
 
     const extraEventIds = (registration?.events_registered ?? []).filter(
         (eventId) => !events?.some((event) => getEventKey(event) === eventId),
@@ -534,11 +557,14 @@ export default function EditTournamentRegistrationPage() {
                                     if (newTeamEvents.length > 0) {
                                         const newTeamsToAdd: LegacyTeam[] = newTeamEvents.map((event) => {
                                             const eventKey = getEventKey(event);
+                                            const eventType = (event.type ?? "").toLowerCase();
+                                            const isDoubleEvent = eventType.includes("double");
+                                            const isParentChild = eventType.includes("parent") && eventType.includes("child");
                                             return {
                                                 id: nanoid(),
                                                 tournament_id: tournamentId ?? "",
-                                                name: "",
-                                                leader_id: registration?.user_id ?? "",
+                                                name: isDoubleEvent || isParentChild ? registration?.user_name ?? "" : "",
+                                                leader_id: registration?.user_global_id ?? registration?.user_id ?? "",
                                                 members: [],
                                                 event_id: eventKey,
                                                 event: [getEventLabel(event)],
@@ -555,7 +581,13 @@ export default function EditTournamentRegistrationPage() {
                                             !selectedTeamEvents.some((event) => teamMatchesEvent(team, event, tournamentEvents)),
                                     );
                                     if (removedTeamEvents.length > 0) {
-                                        const removedTeamIds = removedTeamEvents.map((t) => t.id);
+                                        const registrationLeaderIds = [
+                                            registration?.user_global_id,
+                                            registration?.user_id,
+                                        ].filter((value): value is string => Boolean(value));
+                                        const removedTeamIds = removedTeamEvents
+                                            .filter((team) => registrationLeaderIds.includes(team.leader_id))
+                                            .map((t) => t.id);
                                         setTeams((prev) => prev.filter((team) => !removedTeamIds.includes(team.id)));
                                     }
                                 }}
