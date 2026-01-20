@@ -12,7 +12,7 @@ import {
     updateDoc,
     where,
 } from "firebase/firestore";
-import type {FirestoreUser, Registration, Team, Tournament} from "../../schema";
+import type {FirestoreUser, Registration, Team, Tournament, UserTournamentHistory} from "../../schema";
 import {db} from "./config";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
 import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
@@ -56,6 +56,28 @@ export async function createRegistration(user: FirestoreUser, data: Registration
 
     if (!data.user_id) {
         throw new Error("User id is required in registration payload.");
+    }
+
+    const existingByUserIdQuery = query(
+        collection(db, "registrations"),
+        where("tournament_id", "==", data.tournament_id),
+        where("user_id", "==", data.user_id),
+    );
+    const existingByUserIdSnapshot = await getDocs(existingByUserIdQuery);
+    if (!existingByUserIdSnapshot.empty) {
+        throw new Error("You have already registered for this tournament.");
+    }
+
+    if (data.user_global_id) {
+        const existingByGlobalIdQuery = query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", data.tournament_id),
+            where("user_global_id", "==", data.user_global_id),
+        );
+        const existingByGlobalIdSnapshot = await getDocs(existingByGlobalIdQuery);
+        if (!existingByGlobalIdSnapshot.empty) {
+            throw new Error("You have already registered for this tournament.");
+        }
     }
 
     const tournamentDoc = await getDoc(doc(db, "tournaments", data.tournament_id));
@@ -215,7 +237,203 @@ export async function updateRegistration(data: Registration): Promise<void> {
     }
 }
 
-export async function deleteRegistrationById(tournamentId: string, registrationId: string): Promise<void> {
+type DeleteRegistrationOptions = {
+    adminDelete?: boolean;
+};
+
+const normalizeEventValue = (value: string): string => value.trim().toLowerCase();
+
+const getTeamEventKeys = (team: Team): string[] => {
+    const keys = new Set<string>();
+    const addKey = (value: unknown) => {
+        if (typeof value !== "string") {
+            return;
+        }
+        const trimmed = value.trim();
+        if (trimmed.length > 0) {
+            keys.add(trimmed);
+        }
+    };
+
+    if (typeof team.event_id === "string") {
+        addKey(team.event_id);
+    }
+    if (Array.isArray(team.event)) {
+        for (const value of team.event) {
+            addKey(value);
+        }
+    } else {
+        addKey(team.event);
+    }
+
+    return Array.from(keys);
+};
+
+const buildNormalizedEventSet = (values: string[]): Set<string> => {
+    const normalized = new Set<string>();
+    for (const value of values) {
+        if (typeof value !== "string") {
+            continue;
+        }
+        const trimmed = value.trim();
+        if (trimmed.length === 0) {
+            continue;
+        }
+        normalized.add(trimmed.toLowerCase());
+    }
+    return normalized;
+};
+
+const filterEventList = (events: string[], toRemove: Set<string>): string[] =>
+    events.filter((event) => !toRemove.has(normalizeEventValue(event)));
+
+const removeTeamEventsFromUserRegistration = async (
+    globalId: string,
+    tournamentId: string,
+    eventKeys: string[],
+): Promise<void> => {
+    if (!globalId || eventKeys.length === 0) {
+        return;
+    }
+
+    const normalizedKeys = buildNormalizedEventSet(eventKeys);
+    if (normalizedKeys.size === 0) {
+        return;
+    }
+
+    const userQuery = query(collection(db, "users"), where("global_id", "==", globalId));
+    const userSnapshot = await getDocs(userQuery);
+    const userDoc = userSnapshot.empty ? null : userSnapshot.docs[0];
+    const now = Timestamp.now();
+
+    if (userDoc) {
+        const userData = userDoc.data() as FirestoreUser;
+        const registrationRecords = userData.registration_records ?? [];
+        const recordIndex = registrationRecords.findIndex((record) => record.tournament_id === tournamentId);
+        if (recordIndex !== -1) {
+            const record = registrationRecords[recordIndex];
+            const existingEvents = Array.isArray(record.events) ? record.events : [];
+            const filteredEvents = filterEventList(existingEvents, normalizedKeys);
+            if (filteredEvents.length !== existingEvents.length) {
+                const updatedRecord = {
+                    ...record,
+                    events: filteredEvents,
+                    updated_at: now,
+                };
+                const updatedRecords = [...registrationRecords];
+                updatedRecords[recordIndex] = updatedRecord;
+
+                await updateDoc(userDoc.ref, {
+                    registration_records: updatedRecords,
+                    updated_at: now,
+                });
+            }
+        }
+    }
+
+    const registrationQuery = query(
+        collection(db, "registrations"),
+        where("tournament_id", "==", tournamentId),
+        where("user_global_id", "==", globalId),
+    );
+    const registrationSnapshot = await getDocs(registrationQuery);
+    if (!registrationSnapshot.empty) {
+        const registrationDoc = registrationSnapshot.docs[0];
+        const registrationData = registrationDoc.data() as Registration;
+        const registrationEvents = Array.isArray(registrationData.events_registered)
+            ? registrationData.events_registered
+            : [];
+        const filteredRegistrationEvents = filterEventList(registrationEvents, normalizedKeys);
+        if (filteredRegistrationEvents.length !== registrationEvents.length) {
+            await updateDoc(registrationDoc.ref, {
+                events_registered: filteredRegistrationEvents,
+                updated_at: now,
+            });
+        }
+    }
+};
+
+const removeTeamEventsFromUserHistory = async (
+    globalId: string,
+    tournamentId: string,
+    eventKeys: string[],
+): Promise<void> => {
+    if (!globalId || eventKeys.length === 0) {
+        return;
+    }
+
+    const normalizedKeys = buildNormalizedEventSet(eventKeys);
+    if (normalizedKeys.size === 0) {
+        return;
+    }
+
+    const historyRef = doc(db, "user_tournament_history", globalId.trim());
+    const historySnap = await getDoc(historyRef);
+    if (!historySnap.exists()) {
+        return;
+    }
+
+    const historyData = historySnap.data() as UserTournamentHistory;
+    const tournaments = Array.isArray(historyData.tournaments) ? historyData.tournaments : [];
+    let changed = false;
+    const updatedTournaments = tournaments.flatMap((summary) => {
+        if (summary.tournamentId !== tournamentId) {
+            return [summary];
+        }
+
+        const results = Array.isArray(summary.results) ? summary.results : [];
+        const filteredResults = results.filter((result) => {
+            const eventCandidates = [result.eventKey, result.event].filter((value): value is string => Boolean(value));
+            if (eventCandidates.length === 0) {
+                return true;
+            }
+            return !eventCandidates.some((value) => normalizedKeys.has(normalizeEventValue(value)));
+        });
+
+        if (filteredResults.length === results.length) {
+            return [summary];
+        }
+
+        changed = true;
+        if (filteredResults.length === 0) {
+            return [];
+        }
+
+        return [{...summary, results: filteredResults}];
+    });
+
+    if (!changed) {
+        return;
+    }
+
+    const recordCount = updatedTournaments.reduce((total, summary) => total + (summary.results?.length ?? 0), 0);
+    await updateDoc(historyRef, {
+        tournaments: updatedTournaments,
+        tournamentCount: updatedTournaments.length,
+        recordCount,
+        updatedAt: Timestamp.now(),
+    });
+};
+
+const removeTeamEventsForMember = async (globalId: string, tournamentId: string, eventKeys: string[]): Promise<void> => {
+    try {
+        await removeTeamEventsFromUserRegistration(globalId, tournamentId, eventKeys);
+    } catch (error) {
+        console.error(`Failed to remove team events from registration for ${globalId}:`, error);
+    }
+
+    try {
+        await removeTeamEventsFromUserHistory(globalId, tournamentId, eventKeys);
+    } catch (error) {
+        console.error(`Failed to remove team events from history for ${globalId}:`, error);
+    }
+};
+
+export async function deleteRegistrationById(
+    tournamentId: string,
+    registrationId: string,
+    options?: DeleteRegistrationOptions,
+): Promise<void> {
     try {
         let registrationRef = doc(db, "registrations", registrationId);
         let regSnap = await getDoc(registrationRef);
@@ -239,6 +457,8 @@ export async function deleteRegistrationById(tournamentId: string, registrationI
         const registrationData = regSnap.data() as Registration;
         const userId = registrationData.user_id;
 
+        const adminDelete = options?.adminDelete ?? false;
+
         // Delete associated teams
         const teamsRef = collection(db, "teams");
         const teamsSnapshot = await getDocs(query(teamsRef, where("tournament_id", "==", tournamentId)));
@@ -246,19 +466,41 @@ export async function deleteRegistrationById(tournamentId: string, registrationI
             const team = teamDoc.data() as Team;
             const memberIds = (team.members ?? []).map((member) => member.global_id);
             if (team.leader_id === registrationData.user_global_id) {
+                if (adminDelete) {
+                    const eventKeys = getTeamEventKeys(team);
+                    const verifiedMembers = (team.members ?? []).filter((member) => member.verified && member.global_id);
+                    for (const member of verifiedMembers) {
+                        await removeTeamEventsForMember(member.global_id, tournamentId, eventKeys);
+                    }
+                }
                 await deleteDoc(teamDoc.ref);
             } else if (memberIds.includes(registrationData.user_global_id)) {
-                // 如果用户是队员，则将其从队伍中移除
-                const updatedMembers = (team.members ?? []).filter(
-                    (member) => member.global_id !== registrationData.user_global_id,
-                );
-                await updateDoc(teamDoc.ref, {members: updatedMembers});
+                if (adminDelete) {
+                    const eventKeys = getTeamEventKeys(team);
+                    const targetMember = (team.members ?? []).find(
+                        (member) => member.global_id === registrationData.user_global_id,
+                    );
+                    if (targetMember?.verified) {
+                        await removeTeamEventsForMember(registrationData.user_global_id, tournamentId, eventKeys);
+                    }
+
+                    const updatedMembers = (team.members ?? []).map((member) =>
+                        member.global_id === registrationData.user_global_id ? {...member, verified: false} : member,
+                    );
+                    await updateDoc(teamDoc.ref, {members: updatedMembers});
+                } else {
+                    // 如果用户是队员，则将其从队伍中移除
+                    const updatedMembers = (team.members ?? []).filter(
+                        (member) => member.global_id !== registrationData.user_global_id,
+                    );
+                    await updateDoc(teamDoc.ref, {members: updatedMembers});
+                }
             }
         }
 
         // Delete associated individual recruitment records
         try {
-            const recruitments = await getIndividualRecruitmentsByParticipant(registrationData.user_id);
+            const recruitments = await getIndividualRecruitmentsByParticipant(registrationData.user_global_id);
             const tournamentRecruitments = recruitments.filter((recruitment) => recruitment.tournament_id === tournamentId);
             for (const recruitment of tournamentRecruitments) {
                 await deleteIndividualRecruitment(recruitment.id);
@@ -270,7 +512,7 @@ export async function deleteRegistrationById(tournamentId: string, registrationI
 
         // Delete associated team recruitment records
         try {
-            const teamRecruitments = await getTeamRecruitmentsByLeader(registrationData.user_id);
+            const teamRecruitments = await getTeamRecruitmentsByLeader(registrationData.user_global_id);
             const tournamentTeamRecruitments = teamRecruitments.filter(
                 (recruitment) => recruitment.tournament_id === tournamentId,
             );
@@ -284,6 +526,11 @@ export async function deleteRegistrationById(tournamentId: string, registrationI
 
         // Delete the registration document
         await deleteDoc(registrationRef);
+
+        if (registrationData.registration_status === "approved") {
+            const tournamentRef = doc(db, "tournaments", tournamentId);
+            await updateDoc(tournamentRef, {participants: increment(-1)});
+        }
 
         // Remove the registration record from the user's document
         if (userId) {

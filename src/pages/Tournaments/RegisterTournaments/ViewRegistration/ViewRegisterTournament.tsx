@@ -97,6 +97,7 @@ export default function ViewTournamentRegistrationPage() {
     };
 
     const canDeleteRegistration = useMemo(() => {
+        if (registration?.registration_status === "approved") return false;
         if (!tournament?.registration_start_date || !tournament?.registration_end_date) return true;
         if (tournament.status === "On Going" || tournament.status === "End") return false;
         const start = parseDate(tournament.registration_start_date);
@@ -105,7 +106,7 @@ export default function ViewTournamentRegistrationPage() {
 
         const now = dayjs();
         return (now.isAfter(start) || now.isSame(start)) && (now.isBefore(end) || now.isSame(end));
-    }, [tournament]);
+    }, [registration?.registration_status, tournament]);
 
     const handleDeleteRegistration = async (registrationId: string) => {
         if (!tournamentId) return;
