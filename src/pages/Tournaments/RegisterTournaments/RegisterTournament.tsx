@@ -687,8 +687,8 @@ export default function RegisterTournamentPage() {
                         >
                             <div className="flex flex-col gap-2">
                                 <Typography.Text type="secondary">
-                                    For Double, Parent & Child, and Team Relay, only the team leader selects the event here.
-                                    Members should wait for the leader's invitation.
+                                    For Double and Team Relay, only the team leader selects the event here. For Parent & Child, only
+                                    the child registers and enters the parent's Global ID; the system auto-verifies the parent.
                                 </Typography.Text>
                                 <Select
                                     placeholder="Select events"
@@ -823,10 +823,13 @@ export default function RegisterTournamentPage() {
                                         const requiredMemberCount =
                                             requiredTeamSize !== undefined ? Math.max(requiredTeamSize - 1, 0) : undefined;
                                         const isDoubleEvent = lowerEventType === "double";
-                                        const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
-                                        const teamLeaderLabel = isDoubleEvent
-                                            ? "Double Leader Global ID"
-                                            : "Team Leader Global ID";
+                                        const isPairEvent = isDoubleEvent || isParentChild;
+                                        const teamNameLabel = isPairEvent ? "Name" : "Team Name";
+                                        const teamLeaderLabel = isParentChild
+                                            ? "Child Global ID"
+                                            : isDoubleEvent
+                                              ? "Double Leader Global ID"
+                                              : "Team Leader Global ID";
                                         const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
@@ -920,7 +923,7 @@ export default function RegisterTournamentPage() {
                                                                                           requiredMemberCount === 1 ? "" : "s"
                                                                                       } (excluding the leader)`
                                                                                     : isParentChild
-                                                                                      ? "Enter Parent's Global ID. You (the child) are automatically the leader."
+                                                                                      ? "Enter parent's Global ID. The system will auto-verify the parent."
                                                                                       : "Must Enter Team Member Global ID. Not include Team Leader Global ID"
                                                                             }
                                                                         >
