@@ -579,7 +579,10 @@ export default function TournamentView() {
                                 !!tournament.registration_start_date && !!tournament.registration_end_date;
                             const tournamentFull = isTournamentFull(tournament);
                             const registrationOpen = isRegistrationOpen(tournament);
-                            const isDisabled = !id || !hasRegistrationDates || tournamentFull || !registrationOpen;
+                            const alreadyRegistered = Boolean(
+                                id && user?.registration_records?.some((record) => record.tournament_id === id),
+                            );
+                            const isDisabled = !id || !hasRegistrationDates || tournamentFull || !registrationOpen || alreadyRegistered;
                             let disabledMessage = "";
 
                             if (!hasRegistrationDates) {
@@ -588,6 +591,8 @@ export default function TournamentView() {
                                 disabledMessage = "Participant limit reached.";
                             } else if (!registrationOpen) {
                                 disabledMessage = "This tournament has ended registration.";
+                            } else if (alreadyRegistered) {
+                                disabledMessage = "You have already registered for this tournament.";
                             }
 
                             const button = (

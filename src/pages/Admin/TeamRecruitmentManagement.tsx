@@ -548,7 +548,7 @@ export default function TeamRecruitmentManagement() {
                                 <div className="mb-4 p-4 bg-gray-50 rounded">
                                     <Title heading={6}>Participant Information</Title>
                                     <Descriptions
-                                        column={isSmallScreen ? 1 : 2}
+                                        column={1}
                                         layout={isSmallScreen ? "vertical" : "horizontal"}
                                         data={[
                                             {label: "Name", value: assignmentData.individual.participant_name},
@@ -560,13 +560,15 @@ export default function TeamRecruitmentManagement() {
                                         labelStyle={{
                                             textAlign: isSmallScreen ? "left" : "right",
                                             paddingRight: isSmallScreen ? 0 : 24,
-                                            width: isSmallScreen ? "100%" : 140,
+                                            width: isSmallScreen ? "100%" : 180,
+                                            wordBreak: "break-word",
+                                            overflowWrap: "break-word",
                                         }}
                                         valueStyle={{
                                             textAlign: "left",
                                             width: "100%",
                                             wordBreak: "break-word",
-                                            overflowWrap: "anywhere",
+                                            overflowWrap: "break-word",
                                         }}
                                     />
                                     <div className="mt-2">
@@ -634,7 +636,7 @@ export default function TeamRecruitmentManagement() {
                                 <div className="mb-4 p-4 bg-gray-50 rounded">
                                     <Title heading={6}>Team Information</Title>
                                     <Descriptions
-                                        column={isSmallScreen ? 1 : 2}
+                                        column={1}
                                         layout={isSmallScreen ? "vertical" : "horizontal"}
                                         data={[
                                             {label: "Team", value: editingTeamRecruitment.team_name},
@@ -645,13 +647,15 @@ export default function TeamRecruitmentManagement() {
                                         labelStyle={{
                                             textAlign: isSmallScreen ? "left" : "right",
                                             paddingRight: isSmallScreen ? 0 : 24,
-                                            width: isSmallScreen ? "100%" : 140,
+                                            width: isSmallScreen ? "100%" : 180,
+                                            wordBreak: "break-word",
+                                            overflowWrap: "break-word",
                                         }}
                                         valueStyle={{
                                             textAlign: "left",
                                             width: "100%",
                                             wordBreak: "break-word",
-                                            overflowWrap: "anywhere",
+                                            overflowWrap: "break-word",
                                         }}
                                     />
                                 </div>

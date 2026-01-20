@@ -6,9 +6,10 @@ import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
 import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
+import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "@/services/firebase/individualRecruitmentService";
 import {fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
-import {createTeamRecruitment, getActiveTeamRecruitments} from "@/services/firebase/teamRecruitmentService";
+import {createTeamRecruitment, deleteTeamRecruitment, getActiveTeamRecruitments} from "@/services/firebase/teamRecruitmentService";
 import {
     createTeam,
     deleteTeam,
@@ -124,6 +125,7 @@ export default function EditTournamentRegistrationPage() {
 
     const [isMounted, setIsMounted] = useState<boolean>(false);
     const mountedRef = useRef(false);
+    const initialEventIdsRef = useRef<string[]>([]);
 
     const [recruitmentForm] = Form.useForm();
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
@@ -182,12 +184,25 @@ export default function EditTournamentRegistrationPage() {
             const registrationIds = [registration?.user_global_id, registration?.user_id].filter((value): value is string =>
                 Boolean(value),
             );
+            const removedEventIds = (initialEventIdsRef.current ?? []).filter(
+                (eventId) => !registrationData.events_registered.includes(eventId),
+            );
 
             if (removedTeams.length > 0 && registrationIds.length > 0) {
                 await Promise.all(
                     removedTeams.map(async (removedTeam) => {
                         if (registrationIds.includes(removedTeam.leader_id)) {
                             await deleteTeam(removedTeam.id);
+                            try {
+                                const teamRecruitment = teamRecruitments.find(
+                                    (recruitment) => recruitment.team_id === removedTeam.id,
+                                );
+                                if (teamRecruitment) {
+                                    await deleteTeamRecruitment(teamRecruitment.id);
+                                }
+                            } catch (error) {
+                                console.error("Failed to delete team recruitment:", error);
+                            }
                             return;
                         }
 
@@ -201,6 +216,20 @@ export default function EditTournamentRegistrationPage() {
                     }),
                 );
             }
+
+            if (removedEventIds.length > 0 && registration?.user_global_id) {
+                try {
+                    const recruitments = await getIndividualRecruitmentsByParticipant(registration.user_global_id);
+                    const removedRecruitments = recruitments.filter(
+                        (recruitment) =>
+                            recruitment.tournament_id === tournamentId && removedEventIds.includes(recruitment.event_id),
+                    );
+                    await Promise.all(removedRecruitments.map((recruitment) => deleteIndividualRecruitment(recruitment.id)));
+                } catch (error) {
+                    console.error("Failed to delete individual recruitments:", error);
+                }
+            }
+            initialEventIdsRef.current = registrationData.events_registered;
 
             for (const team of teams) {
                 const memberIds = team.members.map((m) => m.global_id);
@@ -366,6 +395,7 @@ export default function EditTournamentRegistrationPage() {
                 return;
             }
             setRegistration({...userReg, id: registrationId});
+            initialEventIdsRef.current = userReg.events_registered ?? [];
 
             const allTeamsData = await fetchTeamsByTournament(tournamentId);
             // Only show teams where the participant is leader or member (like ViewRegisterTournament)

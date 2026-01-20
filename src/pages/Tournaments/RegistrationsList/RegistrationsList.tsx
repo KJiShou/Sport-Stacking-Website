@@ -51,7 +51,7 @@ export default function RegistrationsListPage() {
         setLoading(true);
         try {
             // Here you would call your delete service function
-            await deleteRegistrationById(tournamentId, registrationId);
+            await deleteRegistrationById(tournamentId, registrationId, {adminDelete: true});
             Message.success("Registration deleted successfully.");
             await refreshRegistrationsList();
         } catch (error) {
