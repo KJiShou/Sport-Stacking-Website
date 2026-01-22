@@ -341,9 +341,7 @@ const removeTeamEventsFromUserRegistration = async (
     if (!registrationSnapshot.empty) {
         const registrationDoc = registrationSnapshot.docs[0];
         const registrationData = registrationDoc.data() as Registration;
-        const registrationEvents = Array.isArray(registrationData.events_registered)
-            ? registrationData.events_registered
-            : [];
+        const registrationEvents = Array.isArray(registrationData.events_registered) ? registrationData.events_registered : [];
         const filteredRegistrationEvents = filterEventList(registrationEvents, normalizedKeys);
         if (filteredRegistrationEvents.length !== registrationEvents.length) {
             await updateDoc(registrationDoc.ref, {
@@ -354,11 +352,7 @@ const removeTeamEventsFromUserRegistration = async (
     }
 };
 
-const removeTeamEventsFromUserHistory = async (
-    globalId: string,
-    tournamentId: string,
-    eventKeys: string[],
-): Promise<void> => {
+const removeTeamEventsFromUserHistory = async (globalId: string, tournamentId: string, eventKeys: string[]): Promise<void> => {
     if (!globalId || eventKeys.length === 0) {
         return;
     }

@@ -55,12 +55,14 @@ function getTournamentStatusStyles(status?: Tournament["status"]) {
         };
     }
 
-    return TOURNAMENT_STATUS_STYLES[status] ?? {
-        badgeBg: "var(--color-primary-light-1)",
-        badgeColor: "var(--color-primary-6)",
-        cardBg: "var(--color-bg-2)",
-        cardBorder: "var(--color-border-2)",
-    };
+    return (
+        TOURNAMENT_STATUS_STYLES[status] ?? {
+            badgeBg: "var(--color-primary-light-1)",
+            badgeColor: "var(--color-primary-6)",
+            cardBg: "var(--color-bg-2)",
+            cardBorder: "var(--color-border-2)",
+        }
+    );
 }
 
 /**
@@ -292,7 +294,9 @@ const Home: React.FC = () => {
                                                                     color: "var(--color-text-2)",
                                                                 }}
                                                             >
-                                                                <IconCalendar style={{flexShrink: 0, color: "var(--color-text-3)"}} />
+                                                                <IconCalendar
+                                                                    style={{flexShrink: 0, color: "var(--color-text-3)"}}
+                                                                />
                                                                 <Text>
                                                                     {formatDate(tournament.start_date)} -{" "}
                                                                     {formatDate(tournament.end_date)}

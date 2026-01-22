@@ -6,10 +6,17 @@ import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
 import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
-import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "@/services/firebase/individualRecruitmentService";
+import {
+    deleteIndividualRecruitment,
+    getIndividualRecruitmentsByParticipant,
+} from "@/services/firebase/individualRecruitmentService";
 import {fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
-import {createTeamRecruitment, deleteTeamRecruitment, getActiveTeamRecruitments} from "@/services/firebase/teamRecruitmentService";
+import {
+    createTeamRecruitment,
+    deleteTeamRecruitment,
+    getActiveTeamRecruitments,
+} from "@/services/firebase/teamRecruitmentService";
 import {
     createTeam,
     deleteTeam,
@@ -19,8 +26,8 @@ import {
     removeMemberFromTeam,
     updateTeam,
 } from "@/services/firebase/tournamentsService";
-import {getEventKey, getEventLabel, isTeamEvent, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
+import {getEventKey, getEventLabel, isTeamEvent, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Divider,
@@ -403,7 +410,10 @@ export default function EditTournamentRegistrationPage() {
             // Only show teams where the participant is leader or member (like ViewRegisterTournament)
             const membershipTeams = allTeamsData.filter((team) => {
                 const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                return leaderId === userReg.user_global_id || (team.members ?? []).some((m) => m.global_id === userReg.user_global_id);
+                return (
+                    leaderId === userReg.user_global_id ||
+                    (team.members ?? []).some((m) => m.global_id === userReg.user_global_id)
+                );
             });
             const normalizedTeams: LegacyTeam[] = membershipTeams.map((team) => {
                 const legacyTeam = team as LegacyTeam;
@@ -594,7 +604,7 @@ export default function EditTournamentRegistrationPage() {
                                             return {
                                                 id: nanoid(),
                                                 tournament_id: tournamentId ?? "",
-                                                name: isDoubleEvent || isParentChild ? registration?.user_name ?? "" : "",
+                                                name: isDoubleEvent || isParentChild ? (registration?.user_name ?? "") : "",
                                                 leader_id: registration?.user_global_id ?? registration?.user_id ?? "",
                                                 members: [],
                                                 event_id: eventKey,

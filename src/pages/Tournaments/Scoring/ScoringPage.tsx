@@ -13,6 +13,8 @@ import {
 } from "@/services/firebase/recordService";
 import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {
     getEventKey,
     getEventLabel,
@@ -23,8 +25,6 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
-import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch, IconUndo} from "@arco-design/web-react/icon";

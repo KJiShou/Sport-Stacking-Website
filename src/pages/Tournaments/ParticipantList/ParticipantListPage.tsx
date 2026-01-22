@@ -13,6 +13,8 @@ import {
     generateTeamStackingSheetPDF,
     getCurrentEventData,
 } from "@/utils/PDF/pdfExport";
+import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {
     getEventKey,
     getEventLabel,
@@ -24,8 +26,6 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
-import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {Button, Dropdown, Input, Menu, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconUndo} from "@arco-design/web-react/icon";

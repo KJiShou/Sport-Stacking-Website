@@ -12,9 +12,9 @@ import {
     updateTournamentStatus,
 } from "@/services/firebase/tournamentsService";
 import {exportAllPrelimResultsToPDF, exportCertificatesPDF} from "@/utils/PDF/pdfExport";
-import {getEventLabel, getEventTypeOrderIndex, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
 import {formatTeamLeaderId} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
+import {getEventLabel, getEventTypeOrderIndex, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
 import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconPrinter, IconUndo} from "@arco-design/web-react/icon";

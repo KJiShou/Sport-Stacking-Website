@@ -582,7 +582,8 @@ export default function TournamentView() {
                             const alreadyRegistered = Boolean(
                                 id && user?.registration_records?.some((record) => record.tournament_id === id),
                             );
-                            const isDisabled = !id || !hasRegistrationDates || tournamentFull || !registrationOpen || alreadyRegistered;
+                            const isDisabled =
+                                !id || !hasRegistrationDates || tournamentFull || !registrationOpen || alreadyRegistered;
                             let disabledMessage = "";
 
                             if (!hasRegistrationDates) {

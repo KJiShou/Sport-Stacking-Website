@@ -308,14 +308,14 @@ export default function CreateTournamentPage() {
                 <Form
                     form={form}
                     layout="vertical"
-                onSubmit={handleSubmit}
-                initialValues={{
-                    events: DEFAULT_EVENTS.map(cloneEvent),
-                    max_participants: 0,
-                    isDraft: false,
-                }}
-                requiredSymbol={false}
-            >
+                    onSubmit={handleSubmit}
+                    initialValues={{
+                        events: DEFAULT_EVENTS.map(cloneEvent),
+                        max_participants: 0,
+                        isDraft: false,
+                    }}
+                    requiredSymbol={false}
+                >
                     {/* Tournament Name */}
                     <Form.Item label="Tournament Name" field="name" rules={[{required: true, message: "Please input name"}]}>
                         <Input placeholder="Enter tournament name" />

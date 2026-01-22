@@ -15,14 +15,14 @@ import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {exportAllPrelimResultsToPDF, exportFinalistsNameListToPDF} from "@/utils/PDF/pdfExport";
+import {formatTeamLeaderId} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {
     getEventLabel,
     getEventTypeOrderIndex,
     isTeamEvent as isTournamentTeamEvent,
     sanitizeEventCodes,
 } from "@/utils/tournament/eventUtils";
-import {formatTeamLeaderId} from "@/utils/teamLeaderId";
-import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {Button, Message, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconPrinter, IconUndo} from "@arco-design/web-react/icon";

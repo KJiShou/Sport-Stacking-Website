@@ -14,6 +14,8 @@ import type {
     PrelimResult,
     PrelimResultData,
 } from "@/schema";
+import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {
     getEventKey,
     getEventLabel,
@@ -23,8 +25,6 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
-import {isTeamFullyVerified} from "@/utils/teamVerification";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {nanoid} from "nanoid";
@@ -234,11 +234,7 @@ const generateIndividualTableData = (
         ]);
 };
 
-const generateSingleTeamTableData = (
-    team: Team,
-    phoneMap: Record<string, string>,
-    eventType: string,
-): string[][] => {
+const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string>, eventType: string): string[][] => {
     const teamData: string[][] = [];
     const leaderId = stripTeamLeaderPrefix(team.leader_id);
 
@@ -330,8 +326,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         }
 
         // Generate table data
-        const teamEventType =
-            events?.find((evt) => matchesEventKey(eventKey, evt) || getEventKey(evt) === eventKey)?.type ?? "";
+        const teamEventType = events?.find((evt) => matchesEventKey(eventKey, evt) || getEventKey(evt) === eventKey)?.type ?? "";
         const nameMap = registrations.reduce(
             (acc, registration) => {
                 if (registration.user_global_id) {
@@ -1499,8 +1494,8 @@ const generateSingleStackingSheet = (
     tournament: Tournament,
     participant: Registration | Team,
     ageMap: Record<string, number>,
-    leftLogoDataUrl?: string,
-    rightLogoDataUrl?: string,
+    leftLogoDataUrl: string | undefined,
+    rightLogoDataUrl: string | undefined,
     division: string,
     sheetType = "",
     eventCodes: string[] = [],

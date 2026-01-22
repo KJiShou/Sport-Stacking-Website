@@ -45,12 +45,7 @@ export default function UserManagementPage() {
             const ic = entry.IC?.toLowerCase() ?? "";
             const name = entry.name?.toLowerCase() ?? "";
             const email = entry.email?.toLowerCase() ?? "";
-            return (
-                globalId.includes(query) ||
-                ic.includes(query) ||
-                name.includes(query) ||
-                email.includes(query)
-            );
+            return globalId.includes(query) || ic.includes(query) || name.includes(query) || email.includes(query);
         });
     }, [users, searchTerm]);
 
@@ -191,13 +186,15 @@ export default function UserManagementPage() {
                             <div>
                                 {selectedUser.birthdate instanceof Date
                                     ? selectedUser.birthdate.toLocaleDateString()
-                                    : selectedUser.birthdate ?? "-"}
+                                    : (selectedUser.birthdate ?? "-")}
                             </div>
                         </div>
                         <div>
                             <Text type="secondary">Country / State</Text>
                             <div>
-                                {Array.isArray(selectedUser.country) ? selectedUser.country.join(" / ") : selectedUser.country ?? "-"}
+                                {Array.isArray(selectedUser.country)
+                                    ? selectedUser.country.join(" / ")
+                                    : (selectedUser.country ?? "-")}
                             </div>
                         </div>
                         <div>
@@ -218,8 +215,9 @@ export default function UserManagementPage() {
                                 ) : (
                                     <Text>-</Text>
                                 )}
-                                {selectedUser.roles &&
-                                    Object.values(selectedUser.roles).every((value) => !value) && <Text>-</Text>}
+                                {selectedUser.roles && Object.values(selectedUser.roles).every((value) => !value) && (
+                                    <Text>-</Text>
+                                )}
                             </div>
                         </div>
                     </div>

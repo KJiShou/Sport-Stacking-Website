@@ -2,9 +2,9 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Team, Tournament} from "@/schema";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
-import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {Button, Dropdown, Message, Popconfirm, type TableColumnProps, Tag} from "@arco-design/web-react";
 import Table from "@arco-design/web-react/es/Table/table";
 import Title from "@arco-design/web-react/es/Typography/title";
@@ -133,18 +133,14 @@ export default function RegistrationsListPage() {
                 } else {
                     color = undefined;
                 }
-                const teamsForRegistration = record.id ? teamVerificationByRegistration[record.id] ?? [] : [];
+                const teamsForRegistration = record.id ? (teamVerificationByRegistration[record.id] ?? []) : [];
                 const teamVerified =
                     teamsForRegistration.length > 0 && teamsForRegistration.every((team) => isTeamFullyVerified(team));
                 return (
                     <div className="flex flex-wrap gap-2">
                         <Tag color={color}>{status}</Tag>
                         {teamsForRegistration.length > 0 &&
-                            (teamVerified ? (
-                                <Tag color="green">Team Verified</Tag>
-                            ) : (
-                                <Tag color="red">Team Not Verified</Tag>
-                            ))}
+                            (teamVerified ? <Tag color="green">Team Verified</Tag> : <Tag color="red">Team Not Verified</Tag>)}
                     </div>
                 );
             },
