@@ -225,6 +225,46 @@ export async function fetchAllUsers(): Promise<FirestoreUser[]> {
     });
 }
 
+export async function fetchUsersByIds(userIds: string[]): Promise<Record<string, FirestoreUser>> {
+    const ids = userIds.filter((id) => id && id.trim().length > 0);
+    if (ids.length === 0) {
+        return {};
+    }
+
+    const results: Record<string, FirestoreUser> = {};
+    const batchSize = 10;
+
+    for (let i = 0; i < ids.length; i += batchSize) {
+        const batch = ids.slice(i, i + batchSize);
+        const q = query(collection(db, "users"), where("id", "in", batch));
+        const snapshot = await getDocs(q);
+        snapshot.docs.forEach((docSnap) => {
+            const data = docSnap.data();
+            const user = {
+                id: docSnap.id,
+                global_id: data.global_id ?? null,
+                memberId: data.memberId ?? null,
+                name: data.name,
+                IC: data.IC,
+                email: data.email,
+                birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
+                gender: data.gender,
+                country: data.country,
+                image_url: data.image_url,
+                roles: data.roles ?? null,
+                school: data.school ?? null,
+                phone_number: data.phone_number ?? null,
+                registration_records: data.registration_records ?? [],
+                best_times: data.best_times ?? {},
+            } as FirestoreUser;
+
+            results[user.id] = user;
+        });
+    }
+
+    return results;
+}
+
 export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
     // Build a query on the "users" collection where the field "id" equals the passed-in id
     const q = query(collection(db, "users"), where("id", "==", id));
