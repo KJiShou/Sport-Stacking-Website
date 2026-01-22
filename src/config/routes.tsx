@@ -13,6 +13,7 @@ import type {AppRoute} from "@/schema";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import {CarouselManagement} from "../pages/Admin/CarouselManagement";
 import TeamRecruitmentManagement from "../pages/Admin/TeamRecruitmentManagement";
+import UserManagementPage from "../pages/Admin/UserManagement";
 import AthleteProfilePage from "../pages/Athletes/AthleteProfile";
 import Athletes from "../pages/Athletes/Athletes";
 import Home from "../pages/Home/Home";
@@ -83,6 +84,7 @@ const routes: AppRoute[] = [
     {path: "/admins", component: AdminPermissionsPage},
     {path: "/admin/team-recruitment", component: TeamRecruitmentManagement},
     {path: "/admin/carousel", component: CarouselManagement},
+    {path: "/admin/users", component: UserManagementPage},
     {path: "/forgot-password", component: ForgotPasswordPage},
 ];
 

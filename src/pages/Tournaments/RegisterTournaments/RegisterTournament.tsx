@@ -687,8 +687,9 @@ export default function RegisterTournamentPage() {
                         >
                             <div className="flex flex-col gap-2">
                                 <Typography.Text type="secondary">
-                                    For Double and Team Relay, only the team leader selects the event here. For Parent & Child, only
-                                    the child registers and enters the parent's Global ID; the system auto-verifies the parent.
+                                    For Double and Team Relay, only the team leader selects the event here. For Parent & Child,
+                                    only the child registers and enters the parent's Global ID; the system auto-verifies the
+                                    parent.
                                 </Typography.Text>
                                 <Select
                                     placeholder="Select events"

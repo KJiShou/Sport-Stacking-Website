@@ -109,6 +109,10 @@ const Navbar: React.FC = () => {
                             <IconUserGroup />
                             Team Recruitment
                         </MenuItem>
+                        <MenuItem key="/admin/users">
+                            <IconUserGroup />
+                            User Management
+                        </MenuItem>
                         <MenuItem key="/admin/carousel">
                             <IconUserGroup />
                             Carousel Management

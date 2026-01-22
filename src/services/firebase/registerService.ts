@@ -13,6 +13,7 @@ import {
     where,
 } from "firebase/firestore";
 import type {FirestoreUser, Registration, Team, Tournament, UserTournamentHistory} from "../../schema";
+import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {db} from "./config";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
 import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
@@ -340,9 +341,7 @@ const removeTeamEventsFromUserRegistration = async (
     if (!registrationSnapshot.empty) {
         const registrationDoc = registrationSnapshot.docs[0];
         const registrationData = registrationDoc.data() as Registration;
-        const registrationEvents = Array.isArray(registrationData.events_registered)
-            ? registrationData.events_registered
-            : [];
+        const registrationEvents = Array.isArray(registrationData.events_registered) ? registrationData.events_registered : [];
         const filteredRegistrationEvents = filterEventList(registrationEvents, normalizedKeys);
         if (filteredRegistrationEvents.length !== registrationEvents.length) {
             await updateDoc(registrationDoc.ref, {
@@ -353,11 +352,7 @@ const removeTeamEventsFromUserRegistration = async (
     }
 };
 
-const removeTeamEventsFromUserHistory = async (
-    globalId: string,
-    tournamentId: string,
-    eventKeys: string[],
-): Promise<void> => {
+const removeTeamEventsFromUserHistory = async (globalId: string, tournamentId: string, eventKeys: string[]): Promise<void> => {
     if (!globalId || eventKeys.length === 0) {
         return;
     }
@@ -465,7 +460,8 @@ export async function deleteRegistrationById(
         for (const teamDoc of teamsSnapshot.docs) {
             const team = teamDoc.data() as Team;
             const memberIds = (team.members ?? []).map((member) => member.global_id);
-            if (team.leader_id === registrationData.user_global_id) {
+            const leaderId = stripTeamLeaderPrefix(team.leader_id);
+            if (leaderId === registrationData.user_global_id) {
                 if (adminDelete) {
                     const eventKeys = getTeamEventKeys(team);
                     const verifiedMembers = (team.members ?? []).filter((member) => member.verified && member.global_id);

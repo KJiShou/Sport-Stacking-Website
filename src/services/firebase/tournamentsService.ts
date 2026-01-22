@@ -98,6 +98,7 @@ export async function createTournament(
         description: data.description ?? null,
         agenda: data.agenda ?? null,
         logo: data.logo ?? null,
+        isDraft: data.isDraft ?? false,
         editor: data.editor ?? "",
         recorder: data.recorder ?? "",
         participants: 0,

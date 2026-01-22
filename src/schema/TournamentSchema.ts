@@ -57,6 +57,7 @@ export const TournamentSchema = z.object({
     agenda: z.string().optional().nullable(),
     description: z.string().optional().nullable(),
     logo: z.string().optional().nullable(),
+    isDraft: z.boolean().optional().nullable(),
     status: z.enum(["Up Coming", "On Going", "Close Registration", "End"]).optional().nullable(),
     start_date: z
         .union([z.instanceof(Timestamp), z.instanceof(Date)])

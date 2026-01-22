@@ -218,6 +218,7 @@ export async function fetchAllUsers(): Promise<FirestoreUser[]> {
             image_url: data.image_url,
             roles: data.roles ?? null,
             school: data.school ?? null,
+            phone_number: data.phone_number ?? null,
             registration_records: data.registration_records ?? [],
             best_times: data.best_times ?? {},
         } as FirestoreUser;
@@ -503,6 +504,21 @@ export async function deleteAccount(userId: string): Promise<void> {
         }
     } catch (error) {
         console.error("Error deleting account:", error);
+        throw error;
+    }
+}
+
+export async function deleteUserProfileAdmin(userId: string): Promise<void> {
+    try {
+        await deleteDoc(doc(db, "users", userId));
+        const avatarRef = ref(storage, `avatars/${userId}`);
+        await deleteObject(avatarRef).catch((error) => {
+            if (error.code !== "storage/object-not-found") {
+                throw error;
+            }
+        });
+    } catch (error) {
+        console.error("Error deleting user profile:", error);
         throw error;
     }
 }

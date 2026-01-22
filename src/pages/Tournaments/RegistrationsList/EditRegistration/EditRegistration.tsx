@@ -6,10 +6,17 @@ import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
 import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
-import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "@/services/firebase/individualRecruitmentService";
+import {
+    deleteIndividualRecruitment,
+    getIndividualRecruitmentsByParticipant,
+} from "@/services/firebase/individualRecruitmentService";
 import {fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
-import {createTeamRecruitment, deleteTeamRecruitment, getActiveTeamRecruitments} from "@/services/firebase/teamRecruitmentService";
+import {
+    createTeamRecruitment,
+    deleteTeamRecruitment,
+    getActiveTeamRecruitments,
+} from "@/services/firebase/teamRecruitmentService";
 import {
     createTeam,
     deleteTeam,
@@ -19,6 +26,7 @@ import {
     removeMemberFromTeam,
     updateTeam,
 } from "@/services/firebase/tournamentsService";
+import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {getEventKey, getEventLabel, isTeamEvent, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
@@ -191,7 +199,8 @@ export default function EditTournamentRegistrationPage() {
             if (removedTeams.length > 0 && registrationIds.length > 0) {
                 await Promise.all(
                     removedTeams.map(async (removedTeam) => {
-                        if (registrationIds.includes(removedTeam.leader_id)) {
+                        const removedLeaderId = stripTeamLeaderPrefix(removedTeam.leader_id);
+                        if (registrationIds.includes(removedLeaderId)) {
                             await deleteTeam(removedTeam.id);
                             try {
                                 const teamRecruitment = teamRecruitments.find(
@@ -234,7 +243,7 @@ export default function EditTournamentRegistrationPage() {
             for (const team of teams) {
                 const memberIds = team.members.map((m) => m.global_id);
                 if (team.leader_id) {
-                    memberIds.push(team.leader_id);
+                    memberIds.push(stripTeamLeaderPrefix(team.leader_id));
                 }
 
                 const memberUsers = await Promise.all(memberIds.map((id) => getUserByGlobalId(id)));
@@ -399,16 +408,18 @@ export default function EditTournamentRegistrationPage() {
 
             const allTeamsData = await fetchTeamsByTournament(tournamentId);
             // Only show teams where the participant is leader or member (like ViewRegisterTournament)
-            const membershipTeams = allTeamsData.filter(
-                (team) =>
-                    team.leader_id === userReg.user_global_id ||
-                    (team.members ?? []).some((m) => m.global_id === userReg.user_global_id),
-            );
+            const membershipTeams = allTeamsData.filter((team) => {
+                const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                return (
+                    leaderId === userReg.user_global_id ||
+                    (team.members ?? []).some((m) => m.global_id === userReg.user_global_id)
+                );
+            });
             const normalizedTeams: LegacyTeam[] = membershipTeams.map((team) => {
                 const legacyTeam = team as LegacyTeam;
                 const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentData?.events ?? []);
                 const normalizedLeaderId =
-                    legacyTeam.leader_id === userReg.user_id && userReg.user_global_id
+                    stripTeamLeaderPrefix(legacyTeam.leader_id) === userReg.user_id && userReg.user_global_id
                         ? userReg.user_global_id
                         : legacyTeam.leader_id;
 
@@ -593,7 +604,7 @@ export default function EditTournamentRegistrationPage() {
                                             return {
                                                 id: nanoid(),
                                                 tournament_id: tournamentId ?? "",
-                                                name: isDoubleEvent || isParentChild ? registration?.user_name ?? "" : "",
+                                                name: isDoubleEvent || isParentChild ? (registration?.user_name ?? "") : "",
                                                 leader_id: registration?.user_global_id ?? registration?.user_id ?? "",
                                                 members: [],
                                                 event_id: eventKey,
@@ -616,7 +627,9 @@ export default function EditTournamentRegistrationPage() {
                                             registration?.user_id,
                                         ].filter((value): value is string => Boolean(value));
                                         const removedTeamIds = removedTeamEvents
-                                            .filter((team) => registrationLeaderIds.includes(team.leader_id))
+                                            .filter((team) =>
+                                                registrationLeaderIds.includes(stripTeamLeaderPrefix(team.leader_id)),
+                                            )
                                             .map((t) => t.id);
                                         setTeams((prev) => prev.filter((team) => !removedTeamIds.includes(team.id)));
                                     }
