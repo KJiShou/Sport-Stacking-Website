@@ -1,7 +1,7 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
-import {deleteUserProfileAdmin, fetchAllUsers} from "@/services/firebase/authService";
-import {Button, Input, Message, Modal, Spin, Table, Tag, Typography} from "@arco-design/web-react";
+import {deleteUserProfileAdmin, fetchAllUsers, updateUserProfile} from "@/services/firebase/authService";
+import {Button, Form, Input, Message, Modal, Select, Spin, Table, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch} from "@arco-design/web-react/icon";
 import {useEffect, useMemo, useState} from "react";
@@ -17,6 +17,8 @@ export default function UserManagementPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedUser, setSelectedUser] = useState<FirestoreUser | null>(null);
     const [detailModalVisible, setDetailModalVisible] = useState(false);
+    const [editMode, setEditMode] = useState(false);
+    const [editForm] = Form.useForm();
 
     const loadUsers = async () => {
         setLoading(true);
@@ -52,6 +54,13 @@ export default function UserManagementPage() {
     const handleViewDetail = (entry: FirestoreUser) => {
         setSelectedUser(entry);
         setDetailModalVisible(true);
+        setEditMode(false);
+        editForm.setFieldsValue({
+            name: entry.name ?? "",
+            phone_number: entry.phone_number ?? "",
+            school: entry.school ?? "",
+            gender: entry.gender ?? undefined,
+        });
     };
 
     const handleDelete = async () => {
@@ -78,6 +87,52 @@ export default function UserManagementPage() {
                 }
             },
         });
+    };
+
+    const handleSaveEdit = async () => {
+        if (!selectedUser?.id) return;
+        try {
+            const values = await editForm.validate();
+            setLoading(true);
+            await updateUserProfile(selectedUser.id, {
+                name: values.name,
+                phone_number: values.phone_number,
+                school: values.school,
+                gender: values.gender,
+            });
+            setUsers((prev) =>
+                prev.map((entry) =>
+                    entry.id === selectedUser.id
+                        ? {
+                              ...entry,
+                              name: values.name,
+                              phone_number: values.phone_number,
+                              school: values.school,
+                              gender: values.gender,
+                          }
+                        : entry,
+                ),
+            );
+            setSelectedUser((prev) =>
+                prev
+                    ? {
+                          ...prev,
+                          name: values.name,
+                          phone_number: values.phone_number,
+                          school: values.school,
+                          gender: values.gender,
+                      }
+                    : prev,
+            );
+            Message.success("User updated");
+            setEditMode(false);
+        } catch (error) {
+            if (error) {
+                Message.error("Failed to update user");
+            }
+        } finally {
+            setLoading(false);
+        }
     };
 
     if (!isAdmin) {
@@ -145,13 +200,25 @@ export default function UserManagementPage() {
                 onCancel={() => {
                     setDetailModalVisible(false);
                     setSelectedUser(null);
+                    setEditMode(false);
                 }}
                 footer={
                     <div className="flex justify-between items-center w-full">
                         <Button onClick={() => setDetailModalVisible(false)}>Close</Button>
-                        <Button status="danger" onClick={handleDelete}>
-                            Delete Account
-                        </Button>
+                        <div className="flex gap-2">
+                            {editMode ? (
+                                <Button type="primary" onClick={handleSaveEdit} loading={loading}>
+                                    Save
+                                </Button>
+                            ) : (
+                                <Button type="primary" onClick={() => setEditMode(true)}>
+                                    Edit
+                                </Button>
+                            )}
+                            <Button status="danger" onClick={handleDelete}>
+                                Delete Account
+                            </Button>
+                        </div>
                     </div>
                 }
             >
@@ -166,41 +233,63 @@ export default function UserManagementPage() {
                             <div>{selectedUser.IC ?? "-"}</div>
                         </div>
                         <div>
-                            <Text type="secondary">Name</Text>
-                            <div>{selectedUser.name ?? "-"}</div>
-                        </div>
-                        <div>
                             <Text type="secondary">Email</Text>
                             <div>{selectedUser.email ?? "-"}</div>
                         </div>
-                        <div>
-                            <Text type="secondary">Phone</Text>
-                            <div>{selectedUser.phone_number ?? "-"}</div>
-                        </div>
-                        <div>
-                            <Text type="secondary">Gender</Text>
-                            <div>{selectedUser.gender ?? "-"}</div>
-                        </div>
-                        <div>
-                            <Text type="secondary">Birthdate</Text>
-                            <div>
-                                {selectedUser.birthdate instanceof Date
-                                    ? selectedUser.birthdate.toLocaleDateString()
-                                    : (selectedUser.birthdate ?? "-")}
-                            </div>
-                        </div>
-                        <div>
-                            <Text type="secondary">Country / State</Text>
-                            <div>
-                                {Array.isArray(selectedUser.country)
-                                    ? selectedUser.country.join(" / ")
-                                    : (selectedUser.country ?? "-")}
-                            </div>
-                        </div>
-                        <div>
-                            <Text type="secondary">School</Text>
-                            <div>{selectedUser.school ?? "-"}</div>
-                        </div>
+                        {editMode ? (
+                            <Form form={editForm} layout="vertical">
+                                <Form.Item label="Name" field="name" rules={[{required: true, message: "Enter name"}]}>
+                                    <Input />
+                                </Form.Item>
+                                <Form.Item label="Phone" field="phone_number">
+                                    <Input />
+                                </Form.Item>
+                                <Form.Item label="Gender" field="gender">
+                                    <Select allowClear>
+                                        <Select.Option value="Male">Male</Select.Option>
+                                        <Select.Option value="Female">Female</Select.Option>
+                                    </Select>
+                                </Form.Item>
+                                <Form.Item label="School" field="school">
+                                    <Input />
+                                </Form.Item>
+                            </Form>
+                        ) : (
+                            <>
+                                <div>
+                                    <Text type="secondary">Name</Text>
+                                    <div>{selectedUser.name ?? "-"}</div>
+                                </div>
+                                <div>
+                                    <Text type="secondary">Phone</Text>
+                                    <div>{selectedUser.phone_number ?? "-"}</div>
+                                </div>
+                                <div>
+                                    <Text type="secondary">Gender</Text>
+                                    <div>{selectedUser.gender ?? "-"}</div>
+                                </div>
+                                <div>
+                                    <Text type="secondary">Birthdate</Text>
+                                    <div>
+                                        {selectedUser.birthdate instanceof Date
+                                            ? selectedUser.birthdate.toLocaleDateString()
+                                            : (selectedUser.birthdate ?? "-")}
+                                    </div>
+                                </div>
+                                <div>
+                                    <Text type="secondary">Country / State</Text>
+                                    <div>
+                                        {Array.isArray(selectedUser.country)
+                                            ? selectedUser.country.join(" / ")
+                                            : (selectedUser.country ?? "-")}
+                                    </div>
+                                </div>
+                                <div>
+                                    <Text type="secondary">School</Text>
+                                    <div>{selectedUser.school ?? "-"}</div>
+                                </div>
+                            </>
+                        )}
                         <div>
                             <Text type="secondary">Roles</Text>
                             <div className="flex flex-wrap gap-2">

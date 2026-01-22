@@ -1,11 +1,12 @@
 import {useAuthContext} from "@/context/AuthContext";
-import type {Registration, Team, Tournament} from "@/schema";
+import type {FirestoreUser, Registration, Team, Tournament} from "@/schema";
+import {fetchUsersByIds} from "@/services/firebase/authService";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
-import {Button, Dropdown, Message, Popconfirm, type TableColumnProps, Tag} from "@arco-design/web-react";
+import {Button, Dropdown, Input, Message, Popconfirm, type TableColumnProps, Tag} from "@arco-design/web-react";
 import Table from "@arco-design/web-react/es/Table/table";
 import Title from "@arco-design/web-react/es/Typography/title";
 import {IconDelete, IconEye, IconEyeInvisible, IconUndo} from "@arco-design/web-react/icon";
@@ -28,7 +29,9 @@ export default function RegistrationsListPage() {
     const mountedRef = useRef(false);
     const [registrations, setRegistrations] = useState<Registration[]>([]); // Replace 'any' with your actual registration type
     const [teams, setTeams] = useState<Team[]>([]);
+    const [userMap, setUserMap] = useState<Record<string, FirestoreUser>>({});
     const [tournamentTitle, setTournamentTitle] = useState<string>();
+    const [searchTerm, setSearchTerm] = useState<string>("");
 
     const teamVerificationByRegistration = useMemo(() => {
         return teams.reduce(
@@ -58,6 +61,9 @@ export default function RegistrationsListPage() {
             ]);
             setRegistrations(tempRegistrations);
             setTeams(fetchedTeams);
+            const userIds = tempRegistrations.map((registration) => registration.user_id).filter(Boolean);
+            const usersById = await fetchUsersByIds(userIds);
+            setUserMap(usersById);
 
             const tournament = await fetchTournamentById(tournamentId);
             setTournamentTitle(tournament?.name ?? "");
@@ -113,6 +119,11 @@ export default function RegistrationsListPage() {
             width: 300,
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
+            title: "IC",
+            width: 200,
+            render: (_: string, record: Registration) => <span>{userMap[record.user_id]?.IC ?? "-"}</span>,
+        },
+        deviceBreakpoint > DeviceBreakpoint.md && {
             title: "Created At",
             dataIndex: "created_at",
             width: 200,
@@ -148,7 +159,7 @@ export default function RegistrationsListPage() {
         {
             title: "Action",
             dataIndex: "action",
-            width: 200,
+            width: 120,
             render: (_: string, registration: Registration) => {
                 return (
                     <Popconfirm
@@ -186,16 +197,34 @@ export default function RegistrationsListPage() {
         },
     ];
 
+    const filteredRegistrations = registrations.filter((registration) => {
+        const query = searchTerm.trim().toLowerCase();
+        if (!query) return true;
+        const globalId = registration.user_global_id?.toLowerCase() ?? "";
+        const name = registration.user_name?.toLowerCase() ?? "";
+        const ic = userMap[registration.user_id]?.IC?.toLowerCase() ?? "";
+        return globalId.includes(query) || name.includes(query) || ic.includes(query);
+    });
+
     return (
         <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
             <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
                 <IconUndo /> Go Back
             </Button>
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
-                <Title heading={4}>{tournamentTitle}</Title>
+                <div className="w-full flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <Title heading={4}>{tournamentTitle}</Title>
+                    <Input
+                        placeholder="Search by name or ID"
+                        allowClear
+                        value={searchTerm}
+                        onChange={setSearchTerm}
+                        className="md:max-w-[320px]"
+                    />
+                </div>
                 <Table
                     columns={columns.filter((e): e is TableColumnProps<(typeof registrations)[number]> => !!e)}
-                    data={registrations}
+                    data={filteredRegistrations}
                     pagination={{pageSize: 10}}
                     className="my-4"
                     rowKey={(record) => record.id ?? ""}
