@@ -23,6 +23,8 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
+import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch, IconUndo} from "@arco-design/web-react/icon";
@@ -226,10 +228,17 @@ export default function ScoringPage() {
             ]);
             setTeamScoreList(
                 teams
-                    .filter((team) => regs.some((r) => r.user_global_id === team.leader_id))
+                    .filter((team) => {
+                        if (!isTeamFullyVerified(team)) {
+                            return false;
+                        }
+                        const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                        return regs.some((r) => r.user_global_id === leaderId || r.user_id === leaderId);
+                    })
                     .map((team) => {
                         const teamScores: Record<string, Score> = {};
                         const resolvedEvents = getTeamEvents(team, tournamentEvents);
+                        const leaderId = stripTeamLeaderPrefix(team.leader_id);
 
                         if (resolvedEvents.length > 0) {
                             for (const event of resolvedEvents) {
@@ -243,7 +252,7 @@ export default function ScoringPage() {
                                         const record = records.find(
                                             (rec) =>
                                                 isTeamTournamentRecord(rec) &&
-                                                rec.leader_id === team.leader_id &&
+                                                stripTeamLeaderPrefix(rec.leader_id) === leaderId &&
                                                 rec.event === eventType &&
                                                 rec.code === code &&
                                                 (eventId ? rec.event_id === eventId : true),
@@ -261,7 +270,7 @@ export default function ScoringPage() {
                                     const record = records.find(
                                         (rec) =>
                                             isTeamTournamentRecord(rec) &&
-                                            rec.leader_id === team.leader_id &&
+                                            stripTeamLeaderPrefix(rec.leader_id) === leaderId &&
                                             rec.event === eventKey &&
                                             (eventId ? rec.event_id === eventId : true),
                                     );
@@ -280,7 +289,7 @@ export default function ScoringPage() {
                                 const record = records.find(
                                     (rec) =>
                                         isTeamTournamentRecord(rec) &&
-                                        rec.leader_id === team.leader_id &&
+                                        stripTeamLeaderPrefix(rec.leader_id) === leaderId &&
                                         rec.event === fallbackKey,
                                 );
                                 teamScores[fallbackKey] = {
@@ -760,7 +769,7 @@ export default function ScoringPage() {
                 const updatedModalScores: Record<string, Score> = {...modalScores};
 
                 // Get team leader info
-                const leaderInfo = await getUserByGlobalId(selectedTeam.leader_id);
+                const leaderInfo = await getUserByGlobalId(stripTeamLeaderPrefix(selectedTeam.leader_id));
                 const country = leaderInfo?.country?.[0] || null;
                 const submittedAt = new Date().toISOString();
 
@@ -977,7 +986,7 @@ export default function ScoringPage() {
         return teams.filter(
             (t) =>
                 t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                t.leader_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                stripTeamLeaderPrefix(t.leader_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
                 t.members.some((m) => m.global_id.toLowerCase().includes(searchTerm.toLowerCase())),
         );
     };
@@ -1015,18 +1024,27 @@ export default function ScoringPage() {
 
     const getTeamExpandableColumns = (codes: string[], eventId: string, eventType: string): TableColumnProps<TeamScore>[] => [
         {title: "Team Name", dataIndex: "name", width: 200},
-        {title: "Leader ID", dataIndex: "leader_id", width: 150},
+        {
+            title: "Leader ID",
+            width: 150,
+            render: (_, record) => formatTeamLeaderId(record.leader_id, eventType),
+        },
         {
             title: "Members",
             dataIndex: "members",
             width: 200,
-            render: (members: TeamMember[]) => (
-                <div>
-                    {members.map((m) => (
-                        <div key={m.global_id}>{m.global_id}</div>
-                    ))}
-                </div>
-            ),
+            render: (members: TeamMember[], record) => {
+                const leaderId = stripTeamLeaderPrefix(record.leader_id);
+                const ids = [leaderId, ...members.map((m) => m.global_id)].filter(Boolean);
+                const uniqueIds = Array.from(new Set(ids));
+                return (
+                    <div>
+                        {uniqueIds.map((memberId) => (
+                            <div key={memberId}>{memberId}</div>
+                        ))}
+                    </div>
+                );
+            },
         },
         {
             title: "Event Codes",
@@ -1089,18 +1107,27 @@ export default function ScoringPage() {
 
     const getTeamColumns = (eventId: string, eventType: string): TableColumnProps<TeamScore>[] => [
         {title: "Team Name", dataIndex: "name", width: 200},
-        {title: "Leader ID", dataIndex: "leader_id", width: 150},
+        {
+            title: "Leader ID",
+            width: 150,
+            render: (_, record) => formatTeamLeaderId(record.leader_id, eventType),
+        },
         {
             title: "Members",
             dataIndex: "members",
             width: 200,
-            render: (members: TeamMember[]) => (
-                <div>
-                    {members.map((m) => (
-                        <div key={m.global_id}>{m.global_id}</div>
-                    ))}
-                </div>
-            ),
+            render: (members: TeamMember[], record) => {
+                const leaderId = stripTeamLeaderPrefix(record.leader_id);
+                const ids = [leaderId, ...members.map((m) => m.global_id)].filter(Boolean);
+                const uniqueIds = Array.from(new Set(ids));
+                return (
+                    <div>
+                        {uniqueIds.map((memberId) => (
+                            <div key={memberId}>{memberId}</div>
+                        ))}
+                    </div>
+                );
+            },
         },
         {
             title: "Status",
@@ -1129,6 +1156,8 @@ export default function ScoringPage() {
             ),
         },
     ];
+
+    const currentEvent = events?.find((evt) => evt.id === currentEventTab || evt.type === currentEventTab);
 
     return (
         <div className="flex flex-col h-full bg-ghostwhite p-6 gap-6">
@@ -1461,7 +1490,9 @@ export default function ScoringPage() {
                         {selectedTeam && (
                             <div>
                                 <h4 className="font-semibold mb-2">Team: {selectedTeam.name}</h4>
-                                <p className="text-sm text-gray-600 mb-2">Leader: {selectedTeam.leader_id}</p>
+                                <p className="text-sm text-gray-600 mb-2">
+                                    Leader: {formatTeamLeaderId(selectedTeam.leader_id, currentEvent?.type)}
+                                </p>
                             </div>
                         )}
 

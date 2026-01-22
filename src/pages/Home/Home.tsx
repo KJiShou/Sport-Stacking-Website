@@ -15,6 +15,54 @@ import {formatStackingTime} from "../../utils/time";
 const {Title, Paragraph, Text} = Typography;
 const {Row, Col} = Grid;
 
+const TOURNAMENT_STATUS_STYLES: Record<
+    NonNullable<Tournament["status"]>,
+    {badgeBg: string; badgeColor: string; cardBg: string; cardBorder: string}
+> = {
+    "Up Coming": {
+        badgeBg: "var(--color-primary-light-2)",
+        badgeColor: "var(--color-primary-6)",
+        cardBg: "var(--color-primary-light-1)",
+        cardBorder: "var(--color-primary-light-2)",
+    },
+    "On Going": {
+        badgeBg: "var(--color-success-light-2)",
+        badgeColor: "var(--color-success-6)",
+        cardBg: "var(--color-success-light-1)",
+        cardBorder: "var(--color-success-light-2)",
+    },
+    "Close Registration": {
+        badgeBg: "var(--color-warning-light-2)",
+        badgeColor: "var(--color-warning-6)",
+        cardBg: "var(--color-warning-light-1)",
+        cardBorder: "var(--color-warning-light-2)",
+    },
+    End: {
+        badgeBg: "var(--color-fill-3)",
+        badgeColor: "var(--color-text-3)",
+        cardBg: "var(--color-fill-2)",
+        cardBorder: "var(--color-border-2)",
+    },
+};
+
+function getTournamentStatusStyles(status?: Tournament["status"]) {
+    if (!status) {
+        return {
+            badgeBg: "var(--color-primary-light-1)",
+            badgeColor: "var(--color-primary-6)",
+            cardBg: "var(--color-bg-2)",
+            cardBorder: "var(--color-border-2)",
+        };
+    }
+
+    return TOURNAMENT_STATUS_STYLES[status] ?? {
+        badgeBg: "var(--color-primary-light-1)",
+        badgeColor: "var(--color-primary-6)",
+        cardBg: "var(--color-bg-2)",
+        cardBorder: "var(--color-border-2)",
+    };
+}
+
 /**
  * Format date for display
  */
@@ -192,63 +240,50 @@ const Home: React.FC = () => {
                                         <Empty description="No upcoming tournaments" />
                                     ) : (
                                         <div style={{display: "flex", flexDirection: "column", gap: "1rem"}}>
-                                            {upcomingTournaments.map((tournament) => (
-                                                <Link
-                                                    to={`/tournaments/${tournament.id}/view`}
-                                                    key={tournament.id}
-                                                    style={{
-                                                        display: "block",
-                                                        padding: "1rem",
-                                                        borderRadius: "8px",
-                                                        background: "var(--color-bg-2)",
-                                                        border: "1px solid var(--color-border-2)",
-                                                        transition: "all 0.2s",
-                                                        textDecoration: "none",
-                                                        color: "inherit",
-                                                    }}
-                                                >
-                                                    <div
+                                            {upcomingTournaments.map((tournament) => {
+                                                const statusStyles = getTournamentStatusStyles(tournament.status);
+                                                return (
+                                                    <Link
+                                                        to={`/tournaments/${tournament.id}/view`}
+                                                        key={tournament.id}
                                                         style={{
-                                                            display: "flex",
-                                                            justifyContent: "space-between",
-                                                            alignItems: "flex-start",
-                                                            marginBottom: "0.75rem",
-                                                            gap: "1rem",
+                                                            display: "block",
+                                                            padding: "1rem",
+                                                            borderRadius: "8px",
+                                                            background: statusStyles.cardBg,
+                                                            border: `1px solid ${statusStyles.cardBorder}`,
+                                                            transition: "all 0.2s",
+                                                            textDecoration: "none",
+                                                            color: "inherit",
                                                         }}
                                                     >
-                                                        <Title heading={5} style={{margin: 0, flex: 1}}>
-                                                            {tournament.name}
-                                                        </Title>
-                                                        <Text
-                                                            type="secondary"
-                                                            style={{
-                                                                flexShrink: 0,
-                                                                padding: "0.25rem 0.75rem",
-                                                                borderRadius: "12px",
-                                                                background: "var(--color-primary-light-1)",
-                                                                color: "var(--color-primary-6)",
-                                                                fontSize: "0.875rem",
-                                                            }}
-                                                        >
-                                                            {tournament.status}
-                                                        </Text>
-                                                    </div>
-                                                    <div style={{display: "flex", flexDirection: "column", gap: "0.5rem"}}>
                                                         <div
                                                             style={{
                                                                 display: "flex",
-                                                                alignItems: "center",
-                                                                gap: "0.5rem",
-                                                                color: "var(--color-text-2)",
+                                                                justifyContent: "space-between",
+                                                                alignItems: "flex-start",
+                                                                marginBottom: "0.75rem",
+                                                                gap: "1rem",
                                                             }}
                                                         >
-                                                            <IconCalendar style={{flexShrink: 0, color: "var(--color-text-3)"}} />
-                                                            <Text>
-                                                                {formatDate(tournament.start_date)} -{" "}
-                                                                {formatDate(tournament.end_date)}
+                                                            <Title heading={5} style={{margin: 0, flex: 1}}>
+                                                                {tournament.name}
+                                                            </Title>
+                                                            <Text
+                                                                type="secondary"
+                                                                style={{
+                                                                    flexShrink: 0,
+                                                                    padding: "0.25rem 0.75rem",
+                                                                    borderRadius: "12px",
+                                                                    background: statusStyles.badgeBg,
+                                                                    color: statusStyles.badgeColor,
+                                                                    fontSize: "0.875rem",
+                                                                }}
+                                                            >
+                                                                {tournament.status}
                                                             </Text>
                                                         </div>
-                                                        {tournament.venue && (
+                                                        <div style={{display: "flex", flexDirection: "column", gap: "0.5rem"}}>
                                                             <div
                                                                 style={{
                                                                     display: "flex",
@@ -257,15 +292,31 @@ const Home: React.FC = () => {
                                                                     color: "var(--color-text-2)",
                                                                 }}
                                                             >
-                                                                <IconLocation
-                                                                    style={{flexShrink: 0, color: "var(--color-text-3)"}}
-                                                                />
-                                                                <Text>{tournament.venue}</Text>
+                                                                <IconCalendar style={{flexShrink: 0, color: "var(--color-text-3)"}} />
+                                                                <Text>
+                                                                    {formatDate(tournament.start_date)} -{" "}
+                                                                    {formatDate(tournament.end_date)}
+                                                                </Text>
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                </Link>
-                                            ))}
+                                                            {tournament.venue && (
+                                                                <div
+                                                                    style={{
+                                                                        display: "flex",
+                                                                        alignItems: "center",
+                                                                        gap: "0.5rem",
+                                                                        color: "var(--color-text-2)",
+                                                                    }}
+                                                                >
+                                                                    <IconLocation
+                                                                        style={{flexShrink: 0, color: "var(--color-text-3)"}}
+                                                                    />
+                                                                    <Text>{tournament.venue}</Text>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </Link>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </Card>

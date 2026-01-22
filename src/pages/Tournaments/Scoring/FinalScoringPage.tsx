@@ -18,6 +18,8 @@ import {
 import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {getEventLabel, getEventTypeOrderIndex} from "@/utils/tournament/eventUtils";
+import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch, IconUndo} from "@arco-design/web-react/icon";
@@ -150,7 +152,15 @@ export default function FinalScoringPage() {
             setRegistrations(registrations);
 
             const teams = await fetchTeamsByTournament(tournamentId);
-            setTeams(teams.filter((t) => registrations.some((r) => r.user_global_id === t.leader_id)));
+            setTeams(
+                teams.filter((t) => {
+                    if (!isTeamFullyVerified(t)) {
+                        return false;
+                    }
+                    const leaderId = stripTeamLeaderPrefix(t.leader_id);
+                    return registrations.some((r) => r.user_global_id === leaderId || r.user_id === leaderId);
+                }),
+            );
 
             const finalists = await fetchTournamentFinalists(tournamentId);
             setFinalist(finalists);
@@ -222,7 +232,7 @@ export default function FinalScoringPage() {
         return teams.filter(
             (t) =>
                 t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                t.leader_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                stripTeamLeaderPrefix(t.leader_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
                 t.members.some((m) => m.global_id.toLowerCase().includes(searchTerm.toLowerCase())),
         );
     };
@@ -315,18 +325,27 @@ export default function FinalScoringPage() {
         eventType: string,
     ): TableColumnProps<Team>[] => [
         {title: "Team Name", dataIndex: "name", width: 200},
-        {title: "Leader ID", dataIndex: "leader_id", width: 150},
+        {
+            title: "Leader ID",
+            width: 150,
+            render: (_, record) => formatTeamLeaderId(record.leader_id, eventType),
+        },
         {
             title: "Members",
             dataIndex: "members",
             width: 200,
-            render: (members: TeamMember[]) => (
-                <div>
-                    {members.map((m) => (
-                        <div key={m.global_id}>{m.global_id}</div>
-                    ))}
-                </div>
-            ),
+            render: (members: TeamMember[], record) => {
+                const leaderId = stripTeamLeaderPrefix(record.leader_id);
+                const ids = [leaderId, ...members.map((m) => m.global_id)].filter(Boolean);
+                const uniqueIds = Array.from(new Set(ids));
+                return (
+                    <div>
+                        {uniqueIds.map((memberId) => (
+                            <div key={memberId}>{memberId}</div>
+                        ))}
+                    </div>
+                );
+            },
         },
         {
             title: "Event Codes",
@@ -626,7 +645,9 @@ export default function FinalScoringPage() {
                     ) as TournamentTeamRecord | undefined;
 
                     // Get leader's country from registrations
-                    const leaderRegistration = registrations.find((r) => r.user_global_id === selectedTeam.leader_id);
+                    const leaderRegistration = registrations.find(
+                        (r) => r.user_global_id === stripTeamLeaderPrefix(selectedTeam.leader_id),
+                    );
                     const teamCountry = leaderRegistration?.country ?? null;
 
                     const data: TournamentTeamRecord = {
@@ -915,7 +936,9 @@ export default function FinalScoringPage() {
                         {!isIndividual && (
                             <div>
                                 <h4 className="font-semibold mb-2">Team: {selectedTeam?.name}</h4>
-                                <p className="text-sm text-gray-600 mb-2">Leader: {selectedTeam?.leader_id}</p>
+                                <p className="text-sm text-gray-600 mb-2">
+                                    Leader: {formatTeamLeaderId(selectedTeam?.leader_id, currentEvent?.type)}
+                                </p>
                             </div>
                         )}
 

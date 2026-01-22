@@ -15,6 +15,7 @@ import {
 } from "@/services/firebase/teamRecruitmentService";
 import {addMemberToTeam, fetchTournamentsByType} from "@/services/firebase/tournamentsService";
 import {formatGenderLabel} from "@/utils/genderLabel";
+import {formatTeamLeaderId} from "@/utils/teamLeaderId";
 import {
     Button,
     Card,
@@ -328,6 +329,7 @@ export default function TeamRecruitmentManagement() {
             title: "Leader",
             dataIndex: "leader_id",
             width: 120,
+            render: (leaderId: string, record: TeamRecruitment) => formatTeamLeaderId(leaderId, record.event_name),
         },
         {
             title: "Events",

@@ -21,6 +21,8 @@ import {
     isTeamEvent as isTournamentTeamEvent,
     sanitizeEventCodes,
 } from "@/utils/tournament/eventUtils";
+import {formatTeamLeaderId} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {Button, Message, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
@@ -415,7 +417,7 @@ const buildTeamColumns = (event: TournamentEvent): TableColumnProps<AggregatedPr
         {
             title: "Leader ID",
             width: 160,
-            render: (_value, record) => record.team?.leader_id ?? record.id,
+            render: (_value, record) => formatTeamLeaderId(record.team?.leader_id ?? record.id, event.type),
         },
     ];
 
@@ -599,9 +601,18 @@ export default function PrelimResultsPage() {
                     fetchRegistrations(tournamentId),
                     fetchTeamsByTournament(tournamentId),
                 ]);
-                setAllRecords(fetchedRecords);
+                const verifiedTeams = fetchedTeams.filter((team) => isTeamFullyVerified(team));
+                const verifiedTeamIds = new Set(verifiedTeams.map((team) => team.id));
+                const filteredRecords = fetchedRecords.filter((record) => {
+                    if (!isTeamRecord(record)) {
+                        return true;
+                    }
+                    const teamId = getTeamId(record);
+                    return teamId ? verifiedTeamIds.has(teamId) : false;
+                });
+                setAllRecords(filteredRecords);
                 setRegistrations(fetchedRegistrations);
-                setTeams(fetchedTeams);
+                setTeams(verifiedTeams);
             } catch (error) {
                 console.error(error);
                 Message.error("Failed to fetch preliminary results.");

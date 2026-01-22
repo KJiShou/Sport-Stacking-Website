@@ -23,6 +23,8 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
+import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {nanoid} from "nanoid";
@@ -177,10 +179,16 @@ const generateTeamTableData = (
     bracket: AgeBracket,
     ageMap: Record<string, number>,
     phoneMap: Record<string, string>,
+    nameMap: Record<string, string>,
     tournamentEvents: TournamentEvent[],
 ): string[][] => {
+    const eventType =
+        tournamentEvents.find((event) => matchesEventKey(eventKey, event) || getEventKey(event) === eventKey)?.type ?? "";
     const filteredTeams = teams.filter((team) => {
         if (!teamMatchesEventKey(team, eventKey, tournamentEvents)) {
+            return false;
+        }
+        if (!isTeamFullyVerified(team)) {
             return false;
         }
 
@@ -193,17 +201,17 @@ const generateTeamTableData = (
     });
 
     return filteredTeams.map((team, index) => {
-        const leaderPhone = team.leader_id ? phoneMap[team.leader_id] || "N/A" : "N/A";
+        const leaderId = stripTeamLeaderPrefix(team.leader_id);
+        const memberIds = [leaderId, ...(team.members ?? []).map((member) => member.global_id)].filter(Boolean);
+        const memberNames = memberIds.map((memberId) => nameMap[memberId] ?? memberId);
+        const leaderPhone = leaderId ? phoneMap[leaderId] || "N/A" : "N/A";
         const maxAge = getTeamMaxAge(team, ageMap);
 
         return [
             (index + 1).toString(),
-            team.leader_id ?? "N/A",
-            team.name,
-            (team.members ?? [])
-                .map((member) => member.global_id)
-                .filter(Boolean)
-                .join(", "),
+            formatTeamLeaderId(team.leader_id ?? "N/A", eventType),
+            memberNames.join(", "),
+            memberIds.join(", "),
             leaderPhone,
             maxAge === null ? "N/A" : maxAge.toString(),
         ];
@@ -226,15 +234,20 @@ const generateIndividualTableData = (
         ]);
 };
 
-const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string>): string[][] => {
+const generateSingleTeamTableData = (
+    team: Team,
+    phoneMap: Record<string, string>,
+    eventType: string,
+): string[][] => {
     const teamData: string[][] = [];
+    const leaderId = stripTeamLeaderPrefix(team.leader_id);
 
     // Add leader
     teamData.push([
         "1",
-        team.leader_id,
+        leaderId || "N/A",
         "Leader", // Role
-        phoneMap[team.leader_id] || "N/A",
+        leaderId ? phoneMap[leaderId] || "N/A" : "N/A",
     ]);
 
     // Add members
@@ -317,16 +330,27 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         }
 
         // Generate table data
+        const teamEventType =
+            events?.find((evt) => matchesEventKey(eventKey, evt) || getEventKey(evt) === eventKey)?.type ?? "";
+        const nameMap = registrations.reduce(
+            (acc, registration) => {
+                if (registration.user_global_id) {
+                    acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
+                }
+                return acc;
+            },
+            {} as Record<string, string>,
+        );
         const tableData = team
-            ? generateSingleTeamTableData(team, phoneMap)
+            ? generateSingleTeamTableData(team, phoneMap, teamEventType)
             : isTeamEvent
-              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, events ?? [])
+              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, nameMap, events ?? [])
               : generateIndividualTableData(registrations, bracket, phoneMap);
 
         const headers = team
             ? [["No.", "Global ID", "Role", "Phone Number"]]
             : isTeamEvent
-              ? [["No.", "Team Leader", "Team Name", "Members", "Leader Phone", "Team Age"]]
+              ? [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]]
               : [["No.", "Global ID", "Name", "Age", "Phone Number"]];
 
         const columnStyles = team
@@ -335,8 +359,8 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
               ? {
                     0: {cellWidth: 10},
                     1: {cellWidth: 25},
-                    2: {cellWidth: 35},
-                    3: {cellWidth: 50},
+                    2: {cellWidth: 55},
+                    3: {cellWidth: 45},
                     4: {cellWidth: 30},
                     5: {cellWidth: 20},
                 }
@@ -949,8 +973,17 @@ export const exportAllBracketsListToPDF = async (
                 doc.text(`${bracket.name} (Ages ${bracket.min_age}-${bracket.max_age})`, 20, startY);
                 startY += 8;
 
+                const nameMap = registrations.reduce(
+                    (acc, registration) => {
+                        if (registration.user_global_id) {
+                            acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
+                        }
+                        return acc;
+                    },
+                    {} as Record<string, string>,
+                );
                 const tableData = isTeamEvent
-                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, events ?? [])
+                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, nameMap, events ?? [])
                     : registrations
                           .filter((r) => {
                               const matchesEvent =
@@ -967,15 +1000,15 @@ export const exportAllBracketsListToPDF = async (
 
                 if (tableData.length > 0) {
                     const headers = isTeamEvent
-                        ? [["No.", "Team Leader", "Team Name", "Members", "Leader Phone", "Team Age"]]
+                        ? [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]]
                         : [["No.", "Name", "Global ID", "Age", "Phone"]];
 
                     const columnStyles = isTeamEvent
                         ? {
                               0: {cellWidth: 10},
                               1: {cellWidth: 25},
-                              2: {cellWidth: 35},
-                              3: {cellWidth: 50},
+                              2: {cellWidth: 55},
+                              3: {cellWidth: 45},
                               4: {cellWidth: 30},
                               5: {cellWidth: 20},
                           }
@@ -1212,14 +1245,7 @@ export const generateStackingSheetPDF = async (
             throw new Error("No participants found to generate sheets for");
         }
 
-        let logoDataUrl: string | undefined;
-        if (tournament.logo) {
-            try {
-                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
-            } catch (error) {
-                console.error("Error loading logo:", error);
-            }
-        }
+        const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(tournament.logo)]);
 
         // Two time sheets per page
         targetParticipants.forEach((participant, index) => {
@@ -1232,7 +1258,8 @@ export const generateStackingSheetPDF = async (
                 tournament,
                 participant,
                 ageMap,
-                logoDataUrl,
+                leftLogoDataUrl,
+                rightLogoDataUrl,
                 division,
                 sheetType,
                 options.eventCodes ?? [],
@@ -1273,14 +1300,13 @@ export const exportCombinedTimeSheetsPDF = async (options: {
     tournament: Tournament;
     entries: TimeSheetEntry[];
     ageMap: Record<string, number>;
+    nameMap?: Record<string, string>;
     logoUrl?: string;
     filename?: string;
 }): Promise<void> => {
-    const {tournament, entries, ageMap, logoUrl, filename} = options;
+    const {tournament, entries, ageMap, nameMap, logoUrl, filename} = options;
     const doc = new jsPDF();
-    const userLogo = await loadUserLogo(logoUrl ?? tournament.logo);
-    const defaultLogo = await loadDefaultIcon();
-    const logoDataUrl = userLogo ?? defaultLogo ?? "";
+    const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(logoUrl ?? tournament.logo)]);
 
     entries.forEach((entry, index) => {
         if (index > 0 && index % 2 === 0) {
@@ -1291,11 +1317,13 @@ export const exportCombinedTimeSheetsPDF = async (options: {
             tournament,
             entry.participant,
             ageMap,
-            logoDataUrl,
+            leftLogoDataUrl,
+            rightLogoDataUrl,
             entry.division,
             entry.sheetType,
             entry.eventCodes,
             index % 2,
+            nameMap,
         );
     });
 
@@ -1418,23 +1446,25 @@ export const generateTeamStackingSheetPDF = async (
     team: Team,
     ageMap: Record<string, number>,
     division: string,
-    options: {logoUrl?: string; eventCodes?: string[]} = {},
+    options: {logoUrl?: string; eventCodes?: string[]; nameMap?: Record<string, string>} = {},
     sheetType = "Team",
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
-        const userLogo = await loadUserLogo(tournament.logo);
-        const defaultLogo = await loadDefaultIcon();
+        const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(tournament.logo)]);
 
         generateSingleStackingSheet(
             doc,
             tournament,
             team,
             ageMap,
-            userLogo ?? defaultLogo ?? "",
+            leftLogoDataUrl,
+            rightLogoDataUrl,
             division,
             sheetType,
             options.eventCodes ?? [],
+            0,
+            options.nameMap,
         );
 
         const filename = createPDFFilename([tournament.name, team.name, "timesheet.pdf"]);
@@ -1469,17 +1499,20 @@ const generateSingleStackingSheet = (
     tournament: Tournament,
     participant: Registration | Team,
     ageMap: Record<string, number>,
-    logoDataUrl: string,
+    leftLogoDataUrl?: string,
+    rightLogoDataUrl?: string,
     division: string,
     sheetType = "",
     eventCodes: string[] = [],
     position = 0,
+    nameMap: Record<string, string> = {},
 ): void => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginX = 5;
     const contentMaxHeight = 148; // Upper half of A4
     const startY = position === 0 ? 5 : contentMaxHeight + 5; // top or bottom half
     const sectionSpacing = 6;
+    let tableYOffset = 13;
 
     doc.setFont("times", "normal");
 
@@ -1488,12 +1521,41 @@ const generateSingleStackingSheet = (
     doc.setLineWidth(0.1);
     doc.rect(marginX, startY, pageWidth - 2 * marginX, titleHeight);
 
+    const logoBoxWidth = 40;
+    const logoBoxPadding = 2;
+    const logoBoxInnerSize = logoBoxWidth - logoBoxPadding * 2;
+
     // Logo placeholder (left box)
-    doc.rect(marginX, startY, 40, titleHeight);
+    doc.rect(marginX, startY, logoBoxWidth, titleHeight);
     // Add logo image if available
-    if (logoDataUrl) {
+    if (leftLogoDataUrl) {
         try {
-            doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), marginX + 2, startY + 2, 36, titleHeight - 4);
+            doc.addImage(
+                leftLogoDataUrl,
+                inferImageFormat(leftLogoDataUrl),
+                marginX + logoBoxPadding,
+                startY + logoBoxPadding,
+                logoBoxInnerSize,
+                titleHeight - logoBoxPadding * 2,
+            );
+        } catch (error) {
+            console.error("Error adding logo to PDF:", error);
+        }
+    }
+
+    // Logo placeholder (right box)
+    const rightLogoX = pageWidth - marginX - logoBoxWidth;
+    doc.rect(rightLogoX, startY, logoBoxWidth, titleHeight);
+    if (rightLogoDataUrl) {
+        try {
+            doc.addImage(
+                rightLogoDataUrl,
+                inferImageFormat(rightLogoDataUrl),
+                rightLogoX + logoBoxPadding,
+                startY + logoBoxPadding,
+                logoBoxInnerSize,
+                titleHeight - logoBoxPadding * 2,
+            );
         } catch (error) {
             console.error("Error adding logo to PDF:", error);
         }
@@ -1503,8 +1565,9 @@ const generateSingleStackingSheet = (
     doc.setFont("times", "bold");
     doc.setFontSize(16);
     const titleCenterY = startY + titleHeight / 2;
-    doc.text(`${tournament.venue}`, pageWidth / 2 + 20, titleCenterY - 4, {align: "center"});
-    doc.text(`${tournament.name}`, pageWidth / 2 + 20, titleCenterY + 4, {align: "center"});
+    const titleCenterX = marginX + logoBoxWidth + (pageWidth - 2 * marginX - logoBoxWidth * 2) / 2;
+    doc.text(`${tournament.venue}`, titleCenterX, titleCenterY - 4, {align: "center"});
+    doc.text(`${tournament.name}`, titleCenterX, titleCenterY + 4, {align: "center"});
 
     // === 2. Subtitle ===
     doc.setFontSize(11);
@@ -1522,18 +1585,21 @@ const generateSingleStackingSheet = (
         const team = participant as Team;
         doc.setFont("times", "normal");
         doc.setFontSize(10);
-        doc.text("Team Name: ", marginX, infoY);
-        const nameX = marginX + doc.getTextWidth("Team Name: ");
+        doc.text("Name: ", marginX, infoY);
+        const nameX = marginX + doc.getTextWidth("Name: ");
         doc.setFont("times", "bold");
         doc.setFontSize(14);
-        doc.text(team.name || "________________________", nameX, infoY);
+        const allMembers = [team.leader_id, ...(team.members || []).map((m) => m.global_id)].filter(Boolean);
+        const memberNames = allMembers.map((memberId) => nameMap[memberId] ?? memberId);
+        const memberNamesValue = memberNames.length > 0 ? memberNames.join(", ") : "________________________";
+        const memberNameLines = doc.splitTextToSize(memberNamesValue, pageWidth - marginX * 2 - nameX);
+        doc.text(memberNameLines, nameX, infoY);
 
-        const nameHeight = 8;
         doc.setFont("times", "normal");
         doc.setFontSize(10);
         doc.text(`Division: ${division || "___"}`, marginX, infoY + sectionSpacing);
-        const allMembers = [team.leader_id, ...(team.members || []).map((m) => m.global_id)];
         doc.text(`IDs: ${allMembers.join(", ")}`, marginX, infoY + sectionSpacing * 2);
+        tableYOffset += Math.max(0, memberNameLines.length - 1) * sectionSpacing;
 
         // ID box (right top)
         const idBoxW = 30;
@@ -1543,7 +1609,8 @@ const generateSingleStackingSheet = (
         doc.setFont("times", "bold");
         doc.setFontSize(14);
         doc.text("ID:", pageWidth - marginX - idBoxW + 3, startY + titleHeight + 9);
-        doc.text(team.leader_id || "____", pageWidth - marginX - idBoxW + 10, startY + titleHeight + 9);
+        const teamIdValue = team.leader_id ? formatTeamLeaderId(team.leader_id, sheetType) : "____";
+        doc.text(teamIdValue, pageWidth - marginX - idBoxW + 10, startY + titleHeight + 9);
     } else {
         const individual = participant as Registration;
         doc.setFont("times", "normal");
@@ -1556,14 +1623,28 @@ const generateSingleStackingSheet = (
         doc.text(`${individual.user_name || "________________________"}`, nameX, infoY);
 
         // Other information - normal size, positioned below the name
-        const nameHeight = 8; // Account for the larger name font
         doc.setFont("times", "normal");
         doc.setFontSize(10);
         doc.text(`Division: ${division || "___"}`, marginX, infoY + sectionSpacing);
         doc.text(`Age: ${(ageMap[individual.user_id] || "___").toString()}`, marginX + 80, infoY + sectionSpacing);
         const schoolOrCountry =
             individual.organizer && individual.organizer.trim().length > 0 ? individual.organizer : individual.country;
-        doc.text(`School/Organizer: ${schoolOrCountry ?? " - "}`, marginX + 140, infoY + sectionSpacing);
+        const schoolLabel = "School/Organizer: ";
+        const schoolValue = schoolOrCountry ?? " - ";
+        const schoolLabelWidth = doc.getTextWidth(schoolLabel);
+        const schoolMaxWidth = pageWidth - marginX * 2 - schoolLabelWidth;
+        const schoolLines = doc.splitTextToSize(schoolValue, schoolMaxWidth);
+        const schoolY = infoY + sectionSpacing * 2;
+        doc.text(schoolLabel, marginX, schoolY);
+        if (schoolLines.length > 0) {
+            doc.text(schoolLines[0], marginX + schoolLabelWidth, schoolY);
+        }
+        if (schoolLines.length > 1) {
+            schoolLines.slice(1).forEach((line, lineIndex) => {
+                doc.text(line, marginX + schoolLabelWidth, schoolY + sectionSpacing * (lineIndex + 1));
+            });
+        }
+        tableYOffset += Math.max(0, schoolLines.length - 1) * sectionSpacing;
 
         // ID box (right top)
         const idBoxW = 30;
@@ -1577,7 +1658,7 @@ const generateSingleStackingSheet = (
     }
 
     // === 4. Time Table ===
-    const tableY = infoY + 15;
+    const tableY = infoY + tableYOffset;
     const tableWidth = 47 + 37 + 37 + 37 + 5 + 37; // Total width of the table
     const colWidths = [47, 37, 37, 37, 5, 37];
     const tableX = (pageWidth - tableWidth) / 2;
@@ -1752,7 +1833,8 @@ const filterRegistrations = (
             }
 
             const matchesName = team.name ? team.name.toLowerCase().includes(normalizedSearch) : false;
-            const matchesLeader = team.leader_id ? team.leader_id.toLowerCase().includes(normalizedSearch) : false;
+            const leaderId = stripTeamLeaderPrefix(team.leader_id);
+            const matchesLeader = leaderId ? leaderId.toLowerCase().includes(normalizedSearch) : false;
             const matchesMembers =
                 team.members?.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch) ?? false) ?? false;
 
@@ -1760,7 +1842,10 @@ const filterRegistrations = (
         });
 
         const teamUserIds = new Set(
-            filteredTeams.flatMap((team) => [team.leader_id, ...(team.members?.map((member) => member.global_id) ?? [])]),
+            filteredTeams.flatMap((team) => [
+                stripTeamLeaderPrefix(team.leader_id),
+                ...(team.members?.map((member) => member.global_id) ?? []),
+            ]),
         );
 
         return registrationList.filter((registration) => {
@@ -1816,14 +1901,7 @@ export const generateAllTeamStackingSheetsPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
-        let logoDataUrl: string | undefined;
-        if (tournament.logo) {
-            try {
-                logoDataUrl = await fetchImageFixedOrientation(tournament.logo);
-            } catch (error) {
-                console.error("Error loading logo:", error);
-            }
-        }
+        const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(tournament.logo)]);
 
         teams.forEach((team, index) => {
             if (index > 0) doc.addPage();
@@ -1832,7 +1910,8 @@ export const generateAllTeamStackingSheetsPDF = async (
                 tournament,
                 team,
                 ageMap,
-                logoDataUrl,
+                leftLogoDataUrl,
+                rightLogoDataUrl,
                 division,
                 sheetType,
                 options.eventCodes ?? [],

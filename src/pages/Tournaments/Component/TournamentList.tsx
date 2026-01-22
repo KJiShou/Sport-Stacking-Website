@@ -30,6 +30,7 @@ import {
     Popconfirm,
     Popover,
     Select,
+    Switch,
     Spin,
     Table,
     type TableColumnProps,
@@ -179,6 +180,7 @@ export default function TournamentList() {
     // Search and filter states
     const [searchTerm, setSearchTerm] = useState("");
     const [dateFilter, setDateFilter] = useState<[dayjs.Dayjs, dayjs.Dayjs] | undefined>(undefined);
+    const isAdmin = user?.roles?.edit_tournament || user?.roles?.modify_admin;
 
     function hasRegistered(user: FirestoreUser, tournamentId: string): boolean {
         return (user.registration_records ?? []).some((record) => record.tournament_id === tournamentId);
@@ -213,6 +215,9 @@ export default function TournamentList() {
     // Filter tournaments based on search term and date range
     const filterTournaments = (tournaments: Tournament[]) => {
         return tournaments.filter((tournament) => {
+            if (!isAdmin && tournament.isDraft) {
+                return false;
+            }
             // Search filter
             const matchesSearch =
                 !searchTerm ||
@@ -301,6 +306,16 @@ export default function TournamentList() {
                 let rejectionReason: string | undefined;
                 let tooltipMessage = "";
                 const tournamentFull = isTournamentFull(tournament);
+
+                if (tournament.isDraft) {
+                    color = "gray";
+                    displayText = "Draft";
+                    return (
+                        <Tooltip content="Draft">
+                            <Tag color={color}>{displayText}</Tag>
+                        </Tooltip>
+                    );
+                }
 
                 if (status === "Up Coming") {
                     color = "gold";
@@ -938,6 +953,7 @@ export default function TournamentList() {
                 status: values.status,
                 editor: values.editor ?? null,
                 recorder: values.recorder ?? null,
+                isDraft: values.isDraft ?? false,
                 description: values.description ?? null,
                 registration_fee: values.registration_fee,
                 member_registration_fee: values.member_registration_fee,
@@ -1068,6 +1084,7 @@ export default function TournamentList() {
                 max_participants: selectedTournament.max_participants,
                 editor: selectedTournament.editor,
                 recorder: selectedTournament.recorder,
+                isDraft: selectedTournament.isDraft ?? false,
                 date_range: [
                     selectedTournament.start_date instanceof Timestamp
                         ? dayjs(selectedTournament.start_date.toDate())
@@ -1382,6 +1399,10 @@ export default function TournamentList() {
 
                                 <Form.Item label="Recorder ID" field="recorder">
                                     <Input placeholder="Enter recorder global ID" />
+                                </Form.Item>
+
+                                <Form.Item label="Draft" field="isDraft" triggerPropName="checked">
+                                    <Switch />
                                 </Form.Item>
 
                                 <Form.Item label="Events">

@@ -24,6 +24,8 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
+import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {Button, Dropdown, Input, Menu, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconUndo} from "@arco-design/web-react/icon";
@@ -70,6 +72,13 @@ export default function ParticipantListPage() {
         },
         {} as Record<string, string>,
     );
+    const nameMap: Record<string, string> = registrationList.reduce(
+        (acc, r) => {
+            acc[r.user_global_id] = r.user_name || r.user_global_id;
+            return acc;
+        },
+        {} as Record<string, string>,
+    );
 
     const refreshParticipantList = async () => {
         if (!tournamentId) return;
@@ -90,7 +99,15 @@ export default function ParticipantListPage() {
             const regs = await fetchApprovedRegistrations(tournamentId);
             const teams = await fetchTeamsByTournament(tournamentId);
             setRegistrationList(regs);
-            setTeamList(teams.filter((team) => regs.some((r) => r.user_global_id === team.leader_id)));
+            setTeamList(
+                teams.filter((team) => {
+                    if (!isTeamFullyVerified(team)) {
+                        return false;
+                    }
+                    const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                    return regs.some((r) => r.user_global_id === leaderId || r.user_id === leaderId);
+                }),
+            );
         } catch {
             Message.error("Unable to fetch participants");
         } finally {
@@ -137,7 +154,8 @@ export default function ParticipantListPage() {
                 }
 
                 const matchesName = team.name ? team.name.toLowerCase().includes(normalizedSearch) : false;
-                const matchesLeader = team.leader_id ? team.leader_id.toLowerCase().includes(normalizedSearch) : false;
+                const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                const matchesLeader = leaderId ? leaderId.toLowerCase().includes(normalizedSearch) : false;
                 const matchesMembers =
                     team.members?.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch) ?? false) ?? false;
 
@@ -145,7 +163,10 @@ export default function ParticipantListPage() {
             });
 
             const teamUserIds = new Set(
-                filteredTeams.flatMap((team) => [team.leader_id, ...(team.members?.map((m) => m.global_id) ?? [])]),
+                filteredTeams.flatMap((team) => [
+                    stripTeamLeaderPrefix(team.leader_id),
+                    ...(team.members?.map((m) => m.global_id) ?? []),
+                ]),
             );
 
             return registrationList.filter((r) => teamUserIds.has(r.user_id));
@@ -179,45 +200,6 @@ export default function ParticipantListPage() {
 
         const nextBracket = selectedEvent?.age_brackets?.[0]?.name ?? "";
         setCurrentBracketTab(nextBracket);
-    };
-
-    const handleExportToPDF = async () => {
-        const currentData = getCurrentEventData(
-            tournament,
-            events,
-            currentEventTab,
-            currentBracketTab,
-            registrationList,
-            searchTerm,
-            teamList,
-        );
-
-        if (!currentData || !tournament) {
-            Message.warning("Please select an event and age bracket to export");
-            return;
-        }
-
-        try {
-            setLoading(true);
-            await exportParticipantListToPDF({
-                tournament,
-                events: events ?? [],
-                eventKey: currentEventTab,
-                bracketName: currentBracketTab,
-                registrations: currentData.registrations,
-                ageMap,
-                phoneMap,
-                searchTerm,
-                isTeamEvent: currentData.isTeamEvent,
-                logoDataUrl: tournament.logo ?? "",
-                teams: teamList,
-            });
-            Message.success("PDF preview opened in new tab!");
-        } catch (error) {
-            Message.error("Failed to generate PDF");
-        } finally {
-            setLoading(false);
-        }
     };
 
     const handleExportNameListSticker = async () => {
@@ -297,6 +279,7 @@ export default function ParticipantListPage() {
                 tournament,
                 entries,
                 ageMap,
+                nameMap,
                 logoUrl: tournament.logo ?? "",
             });
             Message.success("Time sheets opened for all events");
@@ -454,14 +437,6 @@ export default function ParticipantListPage() {
                                         type="text"
                                         loading={loading}
                                         className={`text-left`}
-                                        onClick={handlePreviewAllBrackets}
-                                    >
-                                        All Event List
-                                    </Button>
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
                                         onClick={handleExportNameListSticker}
                                     >
                                         Name List Sticker
@@ -486,10 +461,10 @@ export default function ParticipantListPage() {
                             }
                             buttonProps={{
                                 loading: loading,
-                                onClick: () => handleExportToPDF(),
+                                onClick: () => handlePreviewAllBrackets(),
                             }}
                         >
-                            Current Name List
+                            All Event Name List
                         </Dropdown.Button>
                     </div>
                 </div>
@@ -516,7 +491,11 @@ export default function ParticipantListPage() {
                                                 .filter((team) => teamMatchesEventKey(team, tabKey, tournamentEvents))
                                                 .map((team) => ({
                                                     ...team,
-                                                    registrationId: regs.find((r) => r.user_id === team.leader_id)?.id ?? "",
+                                                    registrationId:
+                                                        regs.find((r) => {
+                                                            const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                                                            return r.user_id === leaderId || r.user_global_id === leaderId;
+                                                        })?.id ?? "",
                                                 }));
 
                                             const rowsForBracket = teamRows.filter((record) => {
@@ -530,14 +509,30 @@ export default function ParticipantListPage() {
                                                 {
                                                     title: "Team Leader",
                                                     width: 150,
-                                                    render: (_, record) => <Text>{record.leader_id ?? "N/A"}</Text>,
+                                                    render: (_, record) => (
+                                                        <Text>{formatTeamLeaderId(record.leader_id, evt.type)}</Text>
+                                                    ),
                                                 },
                                                 {title: "Team Name", dataIndex: "name", width: 200},
                                                 {
                                                     title: "Members",
                                                     width: 300,
                                                     render: (_, record) => (
-                                                        <Text>{record.members.map((m) => m.global_id ?? "-").join(", ")}</Text>
+                                                        <Text>
+                                                            {[
+                                                                {
+                                                                    id: stripTeamLeaderPrefix(record.leader_id),
+                                                                    name: nameMap[stripTeamLeaderPrefix(record.leader_id)],
+                                                                },
+                                                                ...record.members.map((member) => ({
+                                                                    id: member.global_id,
+                                                                    name: nameMap[member.global_id],
+                                                                })),
+                                                            ]
+                                                                .filter((entry) => entry.id)
+                                                                .map((entry) => `${entry.name ?? entry.id} (${entry.id})`)
+                                                                .join(", ")}
+                                                        </Text>
                                                     ),
                                                 },
                                                 {
@@ -545,7 +540,9 @@ export default function ParticipantListPage() {
                                                     width: 150,
                                                     render: (_, record) => (
                                                         <Text>
-                                                            {record.leader_id ? phoneMap[record.leader_id] || "N/A" : "N/A"}
+                                                            {record.leader_id
+                                                                ? phoneMap[stripTeamLeaderPrefix(record.leader_id)] || "N/A"
+                                                                : "N/A"}
                                                         </Text>
                                                     ),
                                                 },
@@ -611,6 +608,7 @@ export default function ParticipantListPage() {
                                                                             br.name,
                                                                             {
                                                                                 logoUrl: tournament.logo ?? "",
+                                                                                nameMap,
                                                                                 eventCodes: sanitizeEventCodes(evt.codes),
                                                                             },
                                                                             evt.type,

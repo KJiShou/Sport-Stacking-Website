@@ -1,7 +1,8 @@
 import {useAuthContext} from "@/context/AuthContext";
-import type {Registration, Tournament} from "@/schema";
+import type {Registration, Team, Tournament} from "@/schema";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {Button, Dropdown, Message, Popconfirm, type TableColumnProps, Tag} from "@arco-design/web-react";
@@ -10,7 +11,7 @@ import Title from "@arco-design/web-react/es/Typography/title";
 import {IconDelete, IconEye, IconEyeInvisible, IconUndo} from "@arco-design/web-react/icon";
 import type {Timestamp} from "firebase/firestore";
 import {ref} from "firebase/storage";
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import {Link, useLocation, useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 import {set} from "zod";
@@ -26,15 +27,37 @@ export default function RegistrationsListPage() {
     const [isMounted, setIsMounted] = useState<boolean>(false);
     const mountedRef = useRef(false);
     const [registrations, setRegistrations] = useState<Registration[]>([]); // Replace 'any' with your actual registration type
+    const [teams, setTeams] = useState<Team[]>([]);
     const [tournamentTitle, setTournamentTitle] = useState<string>();
+
+    const teamVerificationByRegistration = useMemo(() => {
+        return teams.reduce(
+            (acc, team) => {
+                const registrationId = team.registration_id ?? "";
+                if (!registrationId) {
+                    return acc;
+                }
+                if (!acc[registrationId]) {
+                    acc[registrationId] = [];
+                }
+                acc[registrationId].push(team);
+                return acc;
+            },
+            {} as Record<string, Team[]>,
+        );
+    }, [teams]);
 
     const refreshRegistrationsList = async () => {
         if (!tournamentId) return;
 
         setLoading(true);
         try {
-            const tempRegistrations = await fetchRegistrations(tournamentId);
+            const [tempRegistrations, fetchedTeams] = await Promise.all([
+                fetchRegistrations(tournamentId),
+                fetchTeamsByTournament(tournamentId),
+            ]);
             setRegistrations(tempRegistrations);
+            setTeams(fetchedTeams);
 
             const tournament = await fetchTournamentById(tournamentId);
             setTournamentTitle(tournament?.name ?? "");
@@ -99,7 +122,7 @@ export default function RegistrationsListPage() {
             title: "Status",
             dataIndex: "registration_status",
             width: 200,
-            render: (status: string) => {
+            render: (status: string, record: Registration) => {
                 let color: string | undefined;
                 if (status === "pending") {
                     color = "blue";
@@ -110,7 +133,20 @@ export default function RegistrationsListPage() {
                 } else {
                     color = undefined;
                 }
-                return <Tag color={color}>{status}</Tag>;
+                const teamsForRegistration = record.id ? teamVerificationByRegistration[record.id] ?? [] : [];
+                const teamVerified =
+                    teamsForRegistration.length > 0 && teamsForRegistration.every((team) => isTeamFullyVerified(team));
+                return (
+                    <div className="flex flex-wrap gap-2">
+                        <Tag color={color}>{status}</Tag>
+                        {teamsForRegistration.length > 0 &&
+                            (teamVerified ? (
+                                <Tag color="green">Team Verified</Tag>
+                            ) : (
+                                <Tag color="red">Team Not Verified</Tag>
+                            ))}
+                    </div>
+                );
             },
         },
         {

@@ -13,6 +13,8 @@ import {
 } from "@/services/firebase/tournamentsService";
 import {exportAllPrelimResultsToPDF, exportCertificatesPDF} from "@/utils/PDF/pdfExport";
 import {getEventLabel, getEventTypeOrderIndex, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
+import {formatTeamLeaderId} from "@/utils/teamLeaderId";
+import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconPrinter, IconUndo} from "@arco-design/web-react/icon";
@@ -406,7 +408,7 @@ const buildTeamColumns = (event: TournamentEvent): TableColumnProps<AggregatedFi
         {
             title: "Leader ID",
             width: 160,
-            render: (_value, record) => record.team?.leader_id ?? record.id,
+            render: (_value, record) => formatTeamLeaderId(record.team?.leader_id ?? record.id, event.type),
         },
     ];
 
@@ -594,9 +596,18 @@ export default function FinalResultsPage() {
                     fetchRegistrations(tournamentId),
                     fetchTeamsByTournament(tournamentId),
                 ]);
-                setAllRecords(fetchedRecords as TournamentRecord[]);
+                const verifiedTeams = fetchedTeams.filter((team) => isTeamFullyVerified(team));
+                const verifiedTeamIds = new Set(verifiedTeams.map((team) => team.id));
+                const filteredRecords = (fetchedRecords as TournamentRecord[]).filter((record) => {
+                    if (!isTeamRecord(record)) {
+                        return true;
+                    }
+                    const teamId = getTeamId(record);
+                    return teamId ? verifiedTeamIds.has(teamId) : false;
+                });
+                setAllRecords(filteredRecords as TournamentRecord[]);
                 setRegistrations(fetchedRegistrations);
-                setTeams(fetchedTeams);
+                setTeams(verifiedTeams);
             } catch (error) {
                 console.error(error);
                 Message.error("Failed to fetch final results.");

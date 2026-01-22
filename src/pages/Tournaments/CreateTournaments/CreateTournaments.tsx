@@ -15,6 +15,7 @@ import {
     Message,
     Modal,
     Select,
+    Switch,
     Tooltip,
     Typography,
     Upload,
@@ -241,6 +242,7 @@ export default function CreateTournamentPage() {
                     editor: values.editor ?? null,
                     recorder: values.recorder ?? null,
                     status: "Up Coming",
+                    isDraft: values.isDraft ?? false,
                     registration_fee: values.registration_fee,
                     member_registration_fee: values.member_registration_fee,
                 },
@@ -306,13 +308,14 @@ export default function CreateTournamentPage() {
                 <Form
                     form={form}
                     layout="vertical"
-                    onSubmit={handleSubmit}
-                    initialValues={{
-                        events: DEFAULT_EVENTS.map(cloneEvent),
-                        max_participants: 0,
-                    }}
-                    requiredSymbol={false}
-                >
+                onSubmit={handleSubmit}
+                initialValues={{
+                    events: DEFAULT_EVENTS.map(cloneEvent),
+                    max_participants: 0,
+                    isDraft: false,
+                }}
+                requiredSymbol={false}
+            >
                     {/* Tournament Name */}
                     <Form.Item label="Tournament Name" field="name" rules={[{required: true, message: "Please input name"}]}>
                         <Input placeholder="Enter tournament name" />
@@ -410,6 +413,10 @@ export default function CreateTournamentPage() {
 
                     <Form.Item label="Recorder ID" field="recorder">
                         <Input placeholder="Enter recorder global ID" />
+                    </Form.Item>
+
+                    <Form.Item label="Draft" field="isDraft" triggerPropName="checked">
+                        <Switch />
                     </Form.Item>
 
                     <Form.Item label="Max Participants" field="max_participants">
