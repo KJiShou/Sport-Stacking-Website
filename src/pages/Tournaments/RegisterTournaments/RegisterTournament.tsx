@@ -224,6 +224,7 @@ export default function RegisterTournamentPage() {
             };
 
             const registrationId = await createRegistration(user, registrationData);
+            let needsMemberVerification = false;
 
             for (const [eventId, teamData] of Object.entries(teamsRaw)) {
                 if (!teamData.name || !teamData.leader) {
@@ -335,6 +336,9 @@ export default function RegisterTournamentPage() {
                         toNotify.push(memberId);
                     }
                 }
+                if (toNotify.length > 0) {
+                    needsMemberVerification = true;
+                }
 
                 for (const globalId of toNotify) {
                     try {
@@ -387,8 +391,17 @@ export default function RegisterTournamentPage() {
 
             await addUserRegistrationRecord(user.id ?? "", registrationRecord);
 
-            Message.success("Registration successful!");
-            navigate("/tournaments");
+            if (needsMemberVerification) {
+                Modal.info({
+                    title: "Registration successful!",
+                    content: "Please inform your friend to verify from email.",
+                    okText: "OK",
+                    onOk: () => navigate("/tournaments"),
+                });
+            } else {
+                Message.success("Registration successful!");
+                navigate("/tournaments");
+            }
         } catch (error) {
             console.error(error);
             const errorMessage = error instanceof Error ? error.message : "Failed to register.";
