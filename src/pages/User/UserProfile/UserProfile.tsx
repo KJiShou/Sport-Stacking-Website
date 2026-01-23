@@ -49,6 +49,7 @@ const AvatarWithLoading = ({src}: {src: string}) => {
     );
 };
 import dayjs from "dayjs";
+import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
@@ -73,17 +74,20 @@ export default function RegisterPage() {
     const isMobile = deviceBreakpoint <= DeviceBreakpoint.md;
     const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
     const {id} = useParams<{id: string}>();
-    const {user: authUser} = useAuthContext();
+    const {user: authUser, firebaseUser} = useAuthContext();
     const navigate = useNavigate();
     const [form] = Form.useForm();
     const [secForm] = Form.useForm();
+    const [addPasswordForm] = Form.useForm();
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [loading, setLoading] = useState(true);
     const [isEditMode, setIsEditMode] = useState(false);
     const [isImageLoading, setIsImageLoading] = useState(true);
     const [secLoading, setSecLoading] = useState(false);
+    const [addPasswordLoading, setAddPasswordLoading] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
+    const hasPasswordProvider = Boolean(firebaseUser?.providerData?.some((provider) => provider.providerId === "password"));
 
     function confirm() {
         Modal.confirm({
@@ -235,7 +239,7 @@ export default function RegisterPage() {
             return;
         }
         try {
-            changeUserPassword(values.currentPassword, values.newPassword);
+            await changeUserPassword(values.currentPassword, values.newPassword);
             Message.success("Password changed successfully");
             secForm.resetFields();
         } catch (err: unknown) {
@@ -246,6 +250,32 @@ export default function RegisterPage() {
             }
         } finally {
             setSecLoading(false);
+        }
+    };
+
+    const handleAddPasswordSubmit = async (values: {newPassword: string; confirmPassword: string}) => {
+        setAddPasswordLoading(true);
+        if (values.newPassword !== values.confirmPassword) {
+            Message.error("Passwords do not match");
+            setAddPasswordLoading(false);
+            return;
+        }
+        try {
+            if (!firebaseUser?.email) {
+                throw new Error("Missing email for this account.");
+            }
+            const credential = EmailAuthProvider.credential(firebaseUser.email, values.newPassword);
+            await linkWithCredential(firebaseUser, credential);
+            Message.success("Password added successfully");
+            addPasswordForm.resetFields();
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                Message.error(err.message);
+            } else {
+                Message.error("Failed to add password");
+            }
+        } finally {
+            setAddPasswordLoading(false);
         }
     };
 
@@ -393,42 +423,74 @@ export default function RegisterPage() {
                                         </Form>
                                     </TabPane>
 
-                                    <TabPane title="Security Settings" key="security">
-                                        <Form
-                                            form={secForm}
-                                            layout="vertical"
-                                            onSubmit={handleSecuritySubmit}
-                                            autoComplete="off"
-                                            requiredSymbol={false}
-                                        >
-                                            <Form.Item
-                                                label="Current Password"
-                                                field="currentPassword"
-                                                rules={[{required: true, message: "Enter current password"}]}
+                                    {hasPasswordProvider ? (
+                                        <TabPane title="Security Settings" key="security">
+                                            <Form
+                                                form={secForm}
+                                                layout="vertical"
+                                                onSubmit={handleSecuritySubmit}
+                                                autoComplete="off"
+                                                requiredSymbol={false}
                                             >
-                                                <Input.Password placeholder="Current Password" />
-                                            </Form.Item>
-                                            <Form.Item
-                                                label="New Password"
-                                                field="newPassword"
-                                                rules={[{required: true, message: "Enter new password"}]}
+                                                <Form.Item
+                                                    label="Current Password"
+                                                    field="currentPassword"
+                                                    rules={[{required: true, message: "Enter current password"}]}
+                                                >
+                                                    <Input.Password placeholder="Current Password" />
+                                                </Form.Item>
+                                                <Form.Item
+                                                    label="New Password"
+                                                    field="newPassword"
+                                                    rules={[{required: true, message: "Enter new password"}]}
+                                                >
+                                                    <Input.Password placeholder="New Password" />
+                                                </Form.Item>
+                                                <Form.Item
+                                                    label="Confirm Password"
+                                                    field="confirmPassword"
+                                                    rules={[{required: true, message: "Confirm new password"}]}
+                                                >
+                                                    <Input.Password placeholder="Confirm Password" />
+                                                </Form.Item>
+                                                <div className="w-full mx-auto flex flex-col items-center">
+                                                    <Button type="primary" long htmlType="submit" loading={secLoading}>
+                                                        Change Password
+                                                    </Button>
+                                                </div>
+                                            </Form>
+                                        </TabPane>
+                                    ) : (
+                                        <TabPane title="Add Password" key="add-password">
+                                            <Form
+                                                form={addPasswordForm}
+                                                layout="vertical"
+                                                onSubmit={handleAddPasswordSubmit}
+                                                autoComplete="off"
+                                                requiredSymbol={false}
                                             >
-                                                <Input.Password placeholder="New Password" />
-                                            </Form.Item>
-                                            <Form.Item
-                                                label="Confirm Password"
-                                                field="confirmPassword"
-                                                rules={[{required: true, message: "Confirm new password"}]}
-                                            >
-                                                <Input.Password placeholder="Confirm Password" />
-                                            </Form.Item>
-                                            <div className="w-full mx-auto flex flex-col items-center">
-                                                <Button type="primary" long htmlType="submit" loading={secLoading}>
-                                                    Change Password
-                                                </Button>
-                                            </div>
-                                        </Form>
-                                    </TabPane>
+                                                <Form.Item
+                                                    label="New Password"
+                                                    field="newPassword"
+                                                    rules={[{required: true, message: "Enter a password"}]}
+                                                >
+                                                    <Input.Password placeholder="Create a password" />
+                                                </Form.Item>
+                                                <Form.Item
+                                                    label="Confirm Password"
+                                                    field="confirmPassword"
+                                                    rules={[{required: true, message: "Confirm your password"}]}
+                                                >
+                                                    <Input.Password placeholder="Repeat password" />
+                                                </Form.Item>
+                                                <div className="w-full mx-auto flex flex-col items-center">
+                                                    <Button type="primary" long htmlType="submit" loading={addPasswordLoading}>
+                                                        Add Password
+                                                    </Button>
+                                                </div>
+                                            </Form>
+                                        </TabPane>
+                                    )}
                                 </Tabs>
                             </div>
                         </div>

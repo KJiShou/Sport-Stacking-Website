@@ -78,11 +78,11 @@ const RegisterPage = () => {
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school, phone_number} = values;
         let avatarUrl = "";
-        if ((password && !confirmPassword) || (!password && confirmPassword)) {
-            Message.error("Please fill both password fields or leave both empty");
+        if (!password || !confirmPassword) {
+            Message.error("Please enter and confirm your password.");
             return;
         }
-        if (password && confirmPassword && password !== confirmPassword) {
+        if (password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
         }
@@ -124,9 +124,7 @@ const RegisterPage = () => {
                 },
                 avatarUrl,
             );
-            if (password && confirmPassword && password === confirmPassword) {
-                await linkEmailPassword(email, password, firebaseUser);
-            }
+            await linkEmailPassword(email, password, firebaseUser);
             const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
             if (userDoc.exists()) {
                 setUser(userDoc.data() as FirestoreUser);
@@ -422,12 +420,20 @@ const RegisterPage = () => {
                             <Input placeholder="Enter School/University/College name" />
                         </Form.Item>
 
-                        <Form.Item field="password" label="Password (optional)" rules={[]}>
-                            <Input.Password prefix={<IconLock />} placeholder="Create password (optional)" />
+                        <Form.Item
+                            field="password"
+                            label="Password"
+                            rules={[{required: true, message: "Please enter a password"}]}
+                        >
+                            <Input.Password prefix={<IconLock />} placeholder="Create password" />
                         </Form.Item>
 
-                        <Form.Item field="confirmPassword" label="Confirm Password (optional)" rules={[]}>
-                            <Input.Password prefix={<IconLock />} placeholder="Repeat password (optional)" />
+                        <Form.Item
+                            field="confirmPassword"
+                            label="Confirm Password"
+                            rules={[{required: true, message: "Please confirm your password"}]}
+                        >
+                            <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
                         </Form.Item>
 
                         <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
