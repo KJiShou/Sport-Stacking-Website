@@ -44,18 +44,15 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
         setLoading(true);
         try {
             await login(values.email, values.password);
-            Message.success("Login successful");
+            Message.success("Login successful. You are now signed in.");
             if (onClose) onClose();
             if (redirectTo && redirectTo !== location.pathname) {
                 navigate(redirectTo, {replace: true});
             }
         } catch (err: unknown) {
-            if (err instanceof Error) {
-                console.error("Error:", err.message);
-                Message.error(err.message);
-            } else {
-                console.error("Unknown error", err);
-            }
+            const message = getLoginErrorMessage(err);
+            console.error("Login error:", err);
+            Message.error(message);
         } finally {
             setLoading(false);
         }
@@ -72,13 +69,13 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
             const userSnap = await getDoc(userRef);
 
             if (userSnap.exists()) {
-                Message.success("Logged in with Google");
+                Message.success("Google sign-in successful. You are now signed in.");
                 if (redirectTo && redirectTo !== location.pathname) {
                     navigate(redirectTo, {replace: true});
                 }
                 if (onClose) onClose();
             } else {
-                Message.info("Please complete your registration");
+                Message.info("Sign-in complete. Please finish registration to continue.");
                 navigate("/register", {
                     state: {
                         email: result.user.email ?? "",
@@ -88,7 +85,9 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
                 if (onClose) onClose();
             }
         } catch (err: unknown) {
-            Message.error(err instanceof Error ? err.message : "Unexpected error.");
+            const message = getLoginErrorMessage(err);
+            console.error("Google sign-in error:", err);
+            Message.error(message);
         } finally {
             setLoading(false);
         }
@@ -138,6 +137,29 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
             </div>
         </Form>
     );
+};
+
+const getLoginErrorMessage = (error: unknown): string => {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    switch (code) {
+        case "auth/invalid-credential":
+        case "auth/wrong-password":
+            return "Incorrect email or password. Please try again.";
+        case "auth/user-not-found":
+            return "No account found with this email. Please register first.";
+        case "auth/too-many-requests":
+            return "Too many attempts. Please try again later.";
+        case "auth/network-request-failed":
+            return "Network error. Please check your connection and try again.";
+        case "auth/popup-closed-by-user":
+            return "Sign-in was canceled. Please try again.";
+        default: {
+            if (error instanceof Error && error.message) {
+                return error.message;
+            }
+            return "Sign-in failed. Please try again.";
+        }
+    }
 };
 
 export default LoginForm;

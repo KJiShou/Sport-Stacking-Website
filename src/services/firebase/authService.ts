@@ -128,7 +128,20 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
     const snapshot = await getDocs(q);
 
     if (!snapshot.empty) {
-        throw new Error("This IC is already registered.");
+        const matchingDocs = snapshot.docs.filter((docSnap) => (docSnap.data() as FirestoreUser).email === email);
+        if (matchingDocs.length === 0) {
+            throw new Error("This IC is already registered with another email.");
+        }
+
+        try {
+            const credential = await signInWithEmailAndPassword(auth, email, password);
+            await deleteUser(credential.user);
+        } catch (error) {
+            console.error("Failed to reset existing account:", error);
+            throw new Error("This account already exists. Please log in with the correct password.");
+        }
+
+        await Promise.all(matchingDocs.map((docSnap) => deleteDoc(docSnap.ref)));
     }
 
     // ✅ 2. Proceed with Firebase Auth user creation
@@ -170,14 +183,24 @@ export const registerWithGoogle = async (
     const snapshot = await getDocs(q);
 
     if (!snapshot.empty) {
-        throw new Error("This IC is already registered.");
+        const matchingDocs = snapshot.docs.filter(
+            (docSnap) => (docSnap.data() as FirestoreUser).email === firebaseUser.email,
+        );
+        if (matchingDocs.length === 0) {
+            throw new Error("This IC is already registered with another email.");
+        }
+        await Promise.all(matchingDocs.map((docSnap) => deleteDoc(docSnap.ref)));
     }
 
     // ✅ 2. Check if Firestore record already exists for this UID
     const userRef = doc(db, "users", uid);
     const existing = await getDoc(userRef);
     if (existing.exists()) {
-        throw new Error("This user is already registered.");
+        const existingData = existing.data() as FirestoreUser;
+        if (existingData.email && existingData.email !== firebaseUser.email) {
+            throw new Error("This user is already registered.");
+        }
+        await deleteDoc(userRef);
     }
 
     const imageUrl = imageFile ?? "";
