@@ -128,11 +128,41 @@ export default function RegistrationsListPage() {
             dataIndex: "created_at",
             width: 200,
             render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+            sorter: (a: Registration, b: Registration) => {
+                const aTime = a.created_at?.toDate?.()?.getTime?.() ?? 0;
+                const bTime = b.created_at?.toDate?.()?.getTime?.() ?? 0;
+                return aTime - bTime;
+            },
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
             title: "Status",
             dataIndex: "registration_status",
             width: 200,
+            sorter: (a: Registration, b: Registration) => {
+                const statusOrder = ["pending", "approved", "rejected"];
+                const getSortRank = (record: Registration) => {
+                    const teamsForRegistration = record.id ? (teamVerificationByRegistration[record.id] ?? []) : [];
+                    const hasTeams = teamsForRegistration.length > 0;
+                    const teamVerified = hasTeams && teamsForRegistration.every((team) => isTeamFullyVerified(team));
+                    const statusValue = record.registration_status?.toLowerCase?.() ?? "";
+                    const statusIndex = statusOrder.indexOf(statusValue);
+                    const normalizedStatusIndex = statusIndex === -1 ? statusOrder.length : statusIndex;
+                    const teamBucket = hasTeams ? (teamVerified ? 1 : 0) : 2;
+                    return normalizedStatusIndex * 10 + teamBucket;
+                };
+                const rankDiff = getSortRank(a) - getSortRank(b);
+                if (rankDiff !== 0) {
+                    return rankDiff;
+                }
+                const nameA = a.user_name?.toLowerCase?.() ?? "";
+                const nameB = b.user_name?.toLowerCase?.() ?? "";
+                if (nameA && nameB && nameA !== nameB) {
+                    return nameA.localeCompare(nameB);
+                }
+                const idA = a.user_global_id?.toLowerCase?.() ?? "";
+                const idB = b.user_global_id?.toLowerCase?.() ?? "";
+                return idA.localeCompare(idB);
+            },
             render: (status: string, record: Registration) => {
                 let color: string | undefined;
                 if (status === "pending") {
