@@ -26,6 +26,8 @@ export type {TeamRecruitment, AssignmentModalData} from "./TeamRecruitmentSchema
 
 export {IndividualRecruitmentSchema} from "./IndividualRecruitmentSchema";
 export type {IndividualRecruitment} from "./IndividualRecruitmentSchema";
+export {DoubleRecruitmentSchema} from "./DoubleRecruitmentSchema";
+export type {DoubleRecruitment} from "./DoubleRecruitmentSchema";
 
 export {HistorySchema} from "./HistorySchema";
 export type {History} from "./HistorySchema";

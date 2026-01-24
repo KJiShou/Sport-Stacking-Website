@@ -19,6 +19,7 @@ import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} fro
 import {EventSchema, TournamentSchema} from "../../schema";
 import {removeUserRegistrationRecordsByTournament} from "./authService";
 import {db} from "./config";
+import {deleteDoubleRecruitment, getDoubleRecruitmentsByTournament} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByTournament} from "./individualRecruitmentService";
 import {deleteTournamentStorage} from "./storageService";
 import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
@@ -439,7 +440,17 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
-    // 7. Delete team recruitment records
+    // 7. Delete double recruitment records
+    try {
+        const doubleRecruitments = await getDoubleRecruitmentsByTournament(tournamentId);
+        const doubleDeletePromises = doubleRecruitments.map((recruitment) => deleteDoubleRecruitment(recruitment.id));
+        await Promise.all(doubleDeletePromises);
+    } catch (error) {
+        console.error("Error deleting double recruitment records:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+
+    // 8. Delete team recruitment records
     try {
         const teamRecruitments = await getActiveTeamRecruitments(tournamentId);
         const teamDeletePromises = teamRecruitments.map((recruitment) => deleteTeamRecruitment(recruitment.id));
@@ -449,7 +460,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
-    // 8. Clean up user registration records
+    // 9. Clean up user registration records
     try {
         await removeUserRegistrationRecordsByTournament(tournamentId);
     } catch (error) {
@@ -457,7 +468,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
-    // 9. Delete tournament events stored in the shared events collection
+    // 10. Delete tournament events stored in the shared events collection
     try {
         const eventSnapshots = await getDocs(query(collection(db, "events"), where("tournament_id", "==", tournamentId)));
         const eventDeletePromises = eventSnapshots.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref));
@@ -467,7 +478,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         throw new Error("Failed to delete tournament events");
     }
 
-    // 10. Delete all tournament storage files (agenda, logo, payment proofs, etc.)
+    // 11. Delete all tournament storage files (agenda, logo, payment proofs, etc.)
     try {
         await deleteTournamentStorage(tournamentId);
     } catch (error) {
@@ -475,7 +486,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as storage deletion shouldn't block tournament deletion
     }
 
-    // 11. Finally, delete the tournament document itself
+    // 12. Finally, delete the tournament document itself
     try {
         const tournamentRef = doc(db, "tournaments", tournamentId);
         await deleteDoc(tournamentRef);

@@ -15,6 +15,7 @@ import {
 import type {FirestoreUser, Registration, Team, Tournament, UserTournamentHistory} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {db} from "./config";
+import {deleteDoubleRecruitment, getDoubleRecruitmentsByParticipant} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
 import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
 
@@ -503,6 +504,18 @@ export async function deleteRegistrationById(
             }
         } catch (recruitmentError) {
             console.error("Error deleting individual recruitment records:", recruitmentError);
+            // Don't throw error here to avoid breaking the main deletion flow
+        }
+
+        // Delete associated double recruitment records
+        try {
+            const recruitments = await getDoubleRecruitmentsByParticipant(registrationData.user_global_id);
+            const tournamentRecruitments = recruitments.filter((recruitment) => recruitment.tournament_id === tournamentId);
+            for (const recruitment of tournamentRecruitments) {
+                await deleteDoubleRecruitment(recruitment.id);
+            }
+        } catch (recruitmentError) {
+            console.error("Error deleting double recruitment records:", recruitmentError);
             // Don't throw error here to avoid breaking the main deletion flow
         }
 

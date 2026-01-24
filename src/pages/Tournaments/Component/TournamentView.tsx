@@ -151,12 +151,24 @@ export default function TournamentView() {
         );
     };
 
+    const getRegistrationWindow = (target: Tournament): {start: number; end: number} | null => {
+        if (!target.registration_start_date || !target.registration_end_date) return null;
+        const start =
+            target.registration_start_date instanceof Timestamp
+                ? target.registration_start_date.toMillis()
+                : target.registration_start_date.getTime();
+        const end =
+            target.registration_end_date instanceof Timestamp
+                ? target.registration_end_date.toMillis()
+                : target.registration_end_date.getTime();
+        return {start, end};
+    };
+
     const isRegistrationOpen = (target: Tournament): boolean => {
-        if (!target.registration_end_date) return false;
-        if (target.registration_end_date instanceof Timestamp) {
-            return target.registration_end_date.toMillis() > Timestamp.now().toMillis();
-        }
-        return target.registration_end_date.getTime() > Date.now();
+        const window = getRegistrationWindow(target);
+        if (!window) return false;
+        const now = Timestamp.now().toMillis();
+        return now >= window.start && now <= window.end;
     };
 
     const handleTimeClick = (videoUrl?: string | null, status?: string) => {
@@ -579,6 +591,7 @@ export default function TournamentView() {
                                 !!tournament.registration_start_date && !!tournament.registration_end_date;
                             const tournamentFull = isTournamentFull(tournament);
                             const registrationOpen = isRegistrationOpen(tournament);
+                            const registrationWindow = getRegistrationWindow(tournament);
                             const alreadyRegistered = Boolean(
                                 id && user?.registration_records?.some((record) => record.tournament_id === id),
                             );
@@ -591,7 +604,12 @@ export default function TournamentView() {
                             } else if (tournamentFull) {
                                 disabledMessage = "Participant limit reached.";
                             } else if (!registrationOpen) {
-                                disabledMessage = "This tournament has ended registration.";
+                                const now = Timestamp.now().toMillis();
+                                if (registrationWindow && now < registrationWindow.start) {
+                                    disabledMessage = "Registration has not started yet.";
+                                } else {
+                                    disabledMessage = "Registration has closed.";
+                                }
                             } else if (alreadyRegistered) {
                                 disabledMessage = "You have already registered for this tournament.";
                             }
