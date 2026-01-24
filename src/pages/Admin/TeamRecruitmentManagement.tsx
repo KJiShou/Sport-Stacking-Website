@@ -1,5 +1,10 @@
 import {useAuthContext} from "@/context/AuthContext";
-import type {AssignmentModalData, IndividualRecruitment, TeamRecruitment, Tournament} from "@/schema";
+import type {AssignmentModalData, DoubleRecruitment, IndividualRecruitment, TeamRecruitment, Tournament} from "@/schema";
+import {
+    getAllDoubleRecruitments,
+    getDoubleRecruitmentsByTournament,
+    updateDoubleRecruitmentStatus,
+} from "@/services/firebase/doubleRecruitmentService";
 import {
     deleteIndividualRecruitment,
     getAllIndividualRecruitments,
@@ -13,7 +18,7 @@ import {
     updateTeamRecruitmentDetails,
     updateTeamRecruitmentMembersNeeded,
 } from "@/services/firebase/teamRecruitmentService";
-import {addMemberToTeam, fetchTournamentsByType} from "@/services/firebase/tournamentsService";
+import {addMemberToTeam, createTeam, fetchTournamentsByType} from "@/services/firebase/tournamentsService";
 import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatTeamLeaderId} from "@/utils/teamLeaderId";
 import {
@@ -56,11 +61,17 @@ export default function TeamRecruitmentManagement() {
 
     // Data states
     const [individuals, setIndividuals] = useState<IndividualRecruitment[]>([]);
+    const [doubles, setDoubles] = useState<DoubleRecruitment[]>([]);
     const [teams, setTeams] = useState<TeamRecruitment[]>([]);
 
     // Modal states
     const [assignmentModalVisible, setAssignmentModalVisible] = useState(false);
     const [assignmentData, setAssignmentData] = useState<AssignmentModalData | null>(null);
+    const [doubleAssignmentModalVisible, setDoubleAssignmentModalVisible] = useState(false);
+    const [doubleAssignmentData, setDoubleAssignmentData] = useState<{
+        primary: DoubleRecruitment;
+        partners: DoubleRecruitment[];
+    } | null>(null);
     const [detailModalVisible, setDetailModalVisible] = useState(false);
     const [selectedIndividual, setSelectedIndividual] = useState<IndividualRecruitment | null>(null);
 
@@ -71,6 +82,7 @@ export default function TeamRecruitmentManagement() {
     const deviceBreakpoint = useDeviceBreakpoint();
     const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
     const [assignmentForm] = Form.useForm();
+    const [doubleAssignmentForm] = Form.useForm();
     const [teamRecruitmentForm] = Form.useForm();
 
     const [editTeamRecruitmentModalVisible, setEditTeamRecruitmentModalVisible] = useState(false);
@@ -105,16 +117,23 @@ export default function TeamRecruitmentManagement() {
 
             if (selectedTournament) {
                 // Load data for specific tournament
-                const [individualsData, teamsData] = await Promise.all([
+                const [individualsData, doublesData, teamsData] = await Promise.all([
                     getIndividualRecruitmentsByTournament(selectedTournament),
+                    getDoubleRecruitmentsByTournament(selectedTournament),
                     getActiveTeamRecruitments(selectedTournament),
                 ]);
                 setIndividuals(individualsData);
+                setDoubles(doublesData);
                 setTeams(teamsData);
             } else {
                 // Load all data
-                const [allIndividuals, allTeams] = await Promise.all([getAllIndividualRecruitments(), getAllTeamRecruitments()]);
+                const [allIndividuals, allDoubles, allTeams] = await Promise.all([
+                    getAllIndividualRecruitments(),
+                    getAllDoubleRecruitments(),
+                    getAllTeamRecruitments(),
+                ]);
                 setIndividuals(allIndividuals.filter((i) => i.status === "active"));
+                setDoubles(allDoubles.filter((d) => d.status === "active"));
                 setTeams(allTeams.filter((t) => t.status === "active"));
             }
         } catch (error) {
@@ -133,6 +152,18 @@ export default function TeamRecruitmentManagement() {
         );
         setAssignmentData({individual, availableTeams});
         setAssignmentModalVisible(true);
+    };
+
+    const handleAssignDouble = (recruitment: DoubleRecruitment) => {
+        const partners = doubles.filter(
+            (candidate) =>
+                candidate.id !== recruitment.id &&
+                candidate.status === "active" &&
+                candidate.tournament_id === recruitment.tournament_id &&
+                candidate.event_id === recruitment.event_id,
+        );
+        setDoubleAssignmentData({primary: recruitment, partners});
+        setDoubleAssignmentModalVisible(true);
     };
 
     // Execute assignment
@@ -191,6 +222,73 @@ export default function TeamRecruitmentManagement() {
         } catch (error) {
             console.error("Failed to assign participant:", error);
             const errorMessage = error instanceof Error ? error.message : "Failed to assign participant to team";
+            Message.error(errorMessage);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const executeDoubleAssignment = async (values: {partnerId: string; leaderId: string}) => {
+        if (!doubleAssignmentData) return;
+
+        try {
+            setLoading(true);
+            const {primary} = doubleAssignmentData;
+            const partner = doubles.find((candidate) => candidate.id === values.partnerId);
+            if (!partner) {
+                Message.error("Selected partner not found.");
+                return;
+            }
+
+            const ages = [primary.age, partner.age].filter((age) => typeof age === "number") as number[];
+            if (ages.length === 2) {
+                const minAge = Math.min(...ages);
+                const maxAge = Math.max(...ages);
+                if (maxAge - minAge > 10) {
+                    Message.error("Double event age range cannot exceed 10 years.");
+                    return;
+                }
+            }
+            const teamAge =
+                ages.length > 0 ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length) : 0;
+
+            const leaderId = values.leaderId;
+            const leaderIsPrimary = leaderId === primary.participant_id;
+            const teamName = `${primary.participant_name} & ${partner.participant_name}`;
+            const leaderRegistrationId = leaderIsPrimary ? primary.registration_id : partner.registration_id;
+            if (!leaderRegistrationId) {
+                Message.error("Leader registration ID is missing. Please check registration data.");
+                return;
+            }
+
+            const teamId = await createTeam(primary.tournament_id, {
+                name: teamName,
+                leader_id: leaderId,
+                members: [
+                    {
+                        global_id: leaderIsPrimary ? partner.participant_id : primary.participant_id,
+                        verified: true,
+                    },
+                ],
+                event_id: primary.event_id,
+                registration_id: leaderRegistrationId,
+                team_age: teamAge,
+                looking_for_member: false,
+            });
+
+            await Promise.all([
+                updateDoubleRecruitmentStatus(primary.id, "matched", partner.participant_id, teamId),
+                updateDoubleRecruitmentStatus(partner.id, "matched", primary.participant_id, teamId),
+            ]);
+
+            Message.success("Double team created and recruitments matched.");
+            setDoubleAssignmentModalVisible(false);
+            setDoubleAssignmentData(null);
+            doubleAssignmentForm.resetFields();
+            loadRecruitmentData();
+        } catch (error) {
+            console.error("Failed to match double recruitment:", error);
+            const errorMessage = error instanceof Error ? error.message : "Failed to match double recruitment.";
             Message.error(errorMessage);
         } finally {
             setLoading(false);
@@ -312,6 +410,78 @@ export default function TeamRecruitmentManagement() {
             ),
         },
     ].filter(Boolean) as TableColumnProps<IndividualRecruitment>[];
+
+    const doubleColumns: TableColumnProps<DoubleRecruitment>[] = [
+        {
+            title: "Participant",
+            dataIndex: "participant_name",
+            width: 150,
+            render: (name: string, record: DoubleRecruitment) => (
+                <div>
+                    <div className="font-medium">{name}</div>
+                    <div className="text-xs text-gray-500">{record.participant_id}</div>
+                </div>
+            ),
+        },
+        {
+            title: "Event",
+            dataIndex: "event_name",
+            width: 180,
+            render: (eventName: string) => <Tag>{eventName}</Tag>,
+        },
+        {
+            title: "Age/Gender",
+            width: 100,
+            render: (_: unknown, record: DoubleRecruitment) => (
+                <div className="text-center">
+                    <div>{record.age}</div>
+                    <Tag size="small" color={record.gender === "Male" ? "blue" : "pink"}>
+                        {formatGenderLabel(record.gender)}
+                    </Tag>
+                </div>
+            ),
+        },
+        {
+            title: "Country",
+            dataIndex: "country",
+            width: 100,
+        },
+        {
+            title: "Status",
+            dataIndex: "status",
+            width: 80,
+            render: (status: string) => (
+                <Tag color={status === "active" ? "blue" : status === "matched" ? "green" : "gray"}>{status}</Tag>
+            ),
+        },
+        isAdmin && {
+            title: "Actions",
+            key: "actions",
+            width: 120,
+            render: (_: unknown, record: DoubleRecruitment) => {
+                const hasPartner = doubles.some(
+                    (candidate) =>
+                        candidate.id !== record.id &&
+                        candidate.status === "active" &&
+                        candidate.tournament_id === record.tournament_id &&
+                        candidate.event_id === record.event_id,
+                );
+                return (
+                    <Button
+                        type="primary"
+                        icon={<IconUserAdd style={{marginRight: "4px"}} />}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleAssignDouble(record);
+                        }}
+                        disabled={record.status !== "active" || !hasPartner}
+                    >
+                        Match
+                    </Button>
+                );
+            },
+        },
+    ].filter(Boolean) as TableColumnProps<DoubleRecruitment>[];
 
     // Team recruitments table columns
     const teamColumns: TableColumnProps<TeamRecruitment>[] = [
@@ -476,6 +646,10 @@ export default function TeamRecruitmentManagement() {
                                     <div className="text-sm text-gray-600">Looking for Teams</div>
                                 </Card>
                                 <Card className="text-center">
+                                    <div className="text-2xl font-bold text-amber-600">{doubles.length}</div>
+                                    <div className="text-sm text-gray-600">Doubles Looking for Partner</div>
+                                </Card>
+                                <Card className="text-center">
                                     <div className="text-2xl font-bold text-green-600">{teams.length}</div>
                                     <div className="text-sm text-gray-600">Teams Need Members</div>
                                 </Card>
@@ -499,6 +673,28 @@ export default function TeamRecruitmentManagement() {
                                             onClick: () => {
                                                 navigate(
                                                     `/tournaments/${selectedTournament}/registrations/${individual.registration_id}/edit`,
+                                                );
+                                            },
+                                        })}
+                                        className="mt-4"
+                                        scroll={{x: 800}}
+                                    />
+                                )}
+                            </TabPane>
+
+                            <TabPane key="doubles" title={`Doubles Looking for Partner (${doubles.length})`}>
+                                {doubles.length === 0 ? (
+                                    <Empty description="No doubles looking for partners" />
+                                ) : (
+                                    <Table
+                                        rowKey="id"
+                                        columns={doubleColumns}
+                                        data={doubles}
+                                        pagination={{pageSize: 10}}
+                                        onRow={(recruitment) => ({
+                                            onClick: () => {
+                                                navigate(
+                                                    `/tournaments/${selectedTournament}/registrations/${recruitment.registration_id}/edit`,
                                                 );
                                             },
                                         })}
@@ -615,6 +811,101 @@ export default function TeamRecruitmentManagement() {
                                             );
                                         }
                                         return null;
+                                    }}
+                                </Form.Item>
+                            </Form>
+                        )}
+                    </Modal>
+
+                    <Modal
+                        title="Match Double Partners"
+                        visible={doubleAssignmentModalVisible}
+                        onCancel={() => {
+                            setDoubleAssignmentModalVisible(false);
+                            setDoubleAssignmentData(null);
+                            doubleAssignmentForm.resetFields();
+                        }}
+                        onOk={() => doubleAssignmentForm.submit()}
+                        okText="Create Team"
+                        className="w-full max-w-2xl"
+                    >
+                        {doubleAssignmentData && (
+                            <Form form={doubleAssignmentForm} layout="vertical" onSubmit={executeDoubleAssignment}>
+                                <div className="mb-4 p-4 bg-gray-50 rounded">
+                                    <Title heading={6}>Participant</Title>
+                                    <Descriptions
+                                        column={1}
+                                        layout={isSmallScreen ? "vertical" : "horizontal"}
+                                        data={[
+                                            {label: "Name", value: doubleAssignmentData.primary.participant_name},
+                                            {label: "Global ID", value: doubleAssignmentData.primary.participant_id},
+                                            {label: "Age", value: doubleAssignmentData.primary.age},
+                                            {
+                                                label: "Gender",
+                                                value: formatGenderLabel(doubleAssignmentData.primary.gender),
+                                            },
+                                            {label: "Country", value: doubleAssignmentData.primary.country},
+                                        ]}
+                                        style={{width: "100%"}}
+                                        labelStyle={{
+                                            textAlign: isSmallScreen ? "left" : "right",
+                                            paddingRight: isSmallScreen ? 0 : 24,
+                                            width: isSmallScreen ? "100%" : 180,
+                                            wordBreak: "break-word",
+                                            overflowWrap: "break-word",
+                                        }}
+                                        valueStyle={{
+                                            textAlign: "left",
+                                            width: "100%",
+                                            wordBreak: "break-word",
+                                            overflowWrap: "break-word",
+                                        }}
+                                    />
+                                    <div className="mt-2">
+                                        <strong>Event:</strong> {doubleAssignmentData.primary.event_name}
+                                    </div>
+                                </div>
+
+                                <Form.Item
+                                    label="Select Partner"
+                                    field="partnerId"
+                                    rules={[{required: true, message: "Please select a partner"}]}
+                                >
+                                    <Select placeholder="Select partner">
+                                        {doubleAssignmentData.partners.map((partner) => (
+                                            <Option key={partner.id} value={partner.id}>
+                                                <div>
+                                                    <div className="font-medium">{partner.participant_name}</div>
+                                                    <div className="text-xs text-gray-500">{partner.participant_id}</div>
+                                                </div>
+                                            </Option>
+                                        ))}
+                                    </Select>
+                                </Form.Item>
+
+                                <Form.Item shouldUpdate noStyle>
+                                    {(_, form) => {
+                                        const partnerId = form.getFieldValue("partnerId");
+                                        const partner = doubleAssignmentData.partners.find((p) => p.id === partnerId);
+                                        if (!partner) return null;
+
+                                        return (
+                                            <Form.Item
+                                                label="Select Team Leader"
+                                                field="leaderId"
+                                                rules={[{required: true, message: "Please select a leader"}]}
+                                            >
+                                                <Select placeholder="Select leader">
+                                                    <Option value={doubleAssignmentData.primary.participant_id}>
+                                                        {doubleAssignmentData.primary.participant_name} (
+                                                        {doubleAssignmentData.primary.participant_id})
+                                                    </Option>
+                                                    <Option value={partner.participant_id}>
+                                                        {partner.participant_name} ({partner.participant_id})
+                                                    </Option>
+                                                </Select>
+                                            </Form.Item>
+                                        );
                                     }}
                                 </Form.Item>
                             </Form>

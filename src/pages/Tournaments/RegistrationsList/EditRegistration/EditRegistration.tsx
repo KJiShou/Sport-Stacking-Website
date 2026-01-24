@@ -7,6 +7,10 @@ import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {
+    deleteDoubleRecruitment,
+    getDoubleRecruitmentsByParticipant,
+} from "@/services/firebase/doubleRecruitmentService";
+import {
     deleteIndividualRecruitment,
     getIndividualRecruitmentsByParticipant,
 } from "@/services/firebase/individualRecruitmentService";
@@ -236,6 +240,16 @@ export default function EditTournamentRegistrationPage() {
                     await Promise.all(removedRecruitments.map((recruitment) => deleteIndividualRecruitment(recruitment.id)));
                 } catch (error) {
                     console.error("Failed to delete individual recruitments:", error);
+                }
+                try {
+                    const recruitments = await getDoubleRecruitmentsByParticipant(registration.user_global_id);
+                    const removedRecruitments = recruitments.filter(
+                        (recruitment) =>
+                            recruitment.tournament_id === tournamentId && removedEventIds.includes(recruitment.event_id),
+                    );
+                    await Promise.all(removedRecruitments.map((recruitment) => deleteDoubleRecruitment(recruitment.id)));
+                } catch (error) {
+                    console.error("Failed to delete double recruitments:", error);
                 }
             }
             initialEventIdsRef.current = registrationData.events_registered;

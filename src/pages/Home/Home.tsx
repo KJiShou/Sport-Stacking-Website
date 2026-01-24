@@ -103,7 +103,7 @@ const Home: React.FC = () => {
             ]);
 
             setCarouselImages(images);
-            setUpcomingTournaments(tournaments);
+            setUpcomingTournaments(tournaments.filter((tournament) => !tournament.isDraft));
 
             // Get top individual record for each of the three events
             const topRecords: Array<GlobalResult | GlobalTeamResult> = [];
