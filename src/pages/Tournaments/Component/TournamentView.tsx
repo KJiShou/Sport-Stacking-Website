@@ -63,7 +63,14 @@ import {useNavigate, useParams} from "react-router-dom";
 
 const {Title, Text} = Typography;
 
-const EVENT_TYPE_ORDER = ["Individual", "Double", "Parent & Child", "Team Relay", "Special Need"] as const;
+const EVENT_TYPE_ORDER = [
+    "Individual",
+    "Stack Up Champion",
+    "Double",
+    "Parent & Child",
+    "Team Relay",
+    "Special Need",
+] as const;
 
 const getEventOrderIndex = (eventType?: string): number => {
     if (!eventType) return EVENT_TYPE_ORDER.length;

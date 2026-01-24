@@ -10,6 +10,7 @@ const EVENT_TYPES = {
     "Team Relay": ["3-6-3", "Cycle"],
     "Parent & Child": ["Cycle"],
     "Special Need": ["3-3-3", "3-6-3", "Cycle"],
+    "Stack Up Champion": ["Cycle"],
 };
 
 const TEAM_EVENT_TYPES: Array<keyof typeof EVENT_TYPES> = ["Double", "Team Relay", "Parent & Child"];
@@ -18,6 +19,7 @@ const DEFAULT_TEAM_SIZE: Partial<Record<keyof typeof EVENT_TYPES, number>> = {
     "Team Relay": 4,
     "Parent & Child": 2,
 };
+const STACK_UP_CHAMPION_TYPE = "Stack Up Champion";
 
 export default function EventFields({index, onEditAgeBrackets, onRemove}: EventFieldProps) {
     return (
@@ -43,6 +45,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                                 <Select.Option value="Team Relay">Team Relay</Select.Option>
                                 <Select.Option value="Parent & Child">Parent & Child</Select.Option>
                                 <Select.Option value="Special Need">Special Need</Select.Option>
+                                <Select.Option value="Stack Up Champion">Stack Up Champion</Select.Option>
                             </Select>
                         </Form.Item>
                     </div>
@@ -84,6 +87,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                         const prevEventType = form.getFieldValue(`events.${index}.__prevType`);
                         const availableCodes = eventType ? EVENT_TYPES[eventType as keyof typeof EVENT_TYPES] || [] : [];
                         const requiresTeamSize = eventType && TEAM_EVENT_TYPES.includes(eventType as keyof typeof EVENT_TYPES);
+                        const isStackUpChampion = eventType === STACK_UP_CHAMPION_TYPE;
                         const currentCodesRaw = form.getFieldValue(`events.${index}.codes`);
                         const currentCodes = Array.isArray(currentCodesRaw)
                             ? currentCodesRaw
@@ -103,6 +107,13 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                             if (currentTeamSize === undefined || currentTeamSize === null) {
                                 const defaultSize = DEFAULT_TEAM_SIZE[eventType as keyof typeof DEFAULT_TEAM_SIZE] ?? 2;
                                 form.setFieldValue(`events.${index}.teamSize`, defaultSize);
+                            }
+                        }
+
+                        if (!isStackUpChampion) {
+                            const currentMax = form.getFieldValue(`events.${index}.max_participants`);
+                            if (currentMax !== undefined) {
+                                form.setFieldValue(`events.${index}.max_participants`, undefined);
                             }
                         }
 
@@ -146,6 +157,17 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                                         </Select>
                                     </Form.Item>
                                 </div>
+
+                                {isStackUpChampion && (
+                                    <div className="mt-4">
+                                        <Title heading={6} className="mb-2">
+                                            Max Participants (Stack Up Champion)
+                                        </Title>
+                                        <Form.Item field={`events.${index}.max_participants`}>
+                                            <InputNumber min={0} placeholder="0 for no limit" className="w-full" />
+                                        </Form.Item>
+                                    </div>
+                                )}
 
                                 <div className="mt-4 p-4 bg-gray-50 rounded">
                                     <Title heading={6} className="mb-2">

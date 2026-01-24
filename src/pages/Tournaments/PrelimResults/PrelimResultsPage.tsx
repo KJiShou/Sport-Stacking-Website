@@ -20,6 +20,7 @@ import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {
     getEventLabel,
     getEventTypeOrderIndex,
+    isScoreTrackedEvent,
     isTeamEvent as isTournamentTeamEvent,
     sanitizeEventCodes,
 } from "@/utils/tournament/eventUtils";
@@ -577,9 +578,10 @@ export default function PrelimResultsPage() {
                 const fetchedTournament = await fetchTournamentById(tournamentId);
                 const events = await fetchTournamentEvents(tournamentId);
                 if (events) {
+                    const scoringEvents = events.filter((event) => isScoreTrackedEvent(event));
                     setTournament(fetchedTournament);
-                    setEvents(events);
-                    const sortedEventList = [...events].sort((a, b) => {
+                    setEvents(scoringEvents);
+                    const sortedEventList = [...scoringEvents].sort((a, b) => {
                         const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
                         if (orderDiff !== 0) return orderDiff;
                         return a.type.localeCompare(b.type);

@@ -1,6 +1,13 @@
 import {z} from "zod";
 
-export const EventCategorySchema = z.enum(["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"]);
+export const EventCategorySchema = z.enum([
+    "Individual",
+    "Double",
+    "Team Relay",
+    "Parent & Child",
+    "Special Need",
+    "Stack Up Champion",
+]);
 export type EventCategory = z.infer<typeof EventCategorySchema>;
 
 export const FinalistGroupPayloadSchema = z.object({

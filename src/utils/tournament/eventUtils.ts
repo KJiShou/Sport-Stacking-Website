@@ -72,7 +72,14 @@ const getAllTeamEventReferences = (team: TeamEventRefs | null | undefined): stri
 };
 
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
-export const EVENT_TYPE_ORDER = ["Individual", "Double", "Parent & Child", "Team Relay", "Special Need"] as const;
+export const EVENT_TYPE_ORDER = [
+    "Individual",
+    "Stack Up Champion",
+    "Double",
+    "Parent & Child",
+    "Team Relay",
+    "Special Need",
+] as const;
 
 export const getEventTypeOrderIndex = (eventType?: string): number => {
     if (!eventType) return EVENT_TYPE_ORDER.length;
@@ -103,6 +110,11 @@ export const getEventLabel = (event: TournamentEvent | null | undefined): string
 export const isTeamEvent = (event: TournamentEvent | null | undefined): boolean => {
     if (!event) return false;
     return TEAM_EVENT_TYPES.has(event.type);
+};
+
+export const isScoreTrackedEvent = (event: TournamentEvent | null | undefined): boolean => {
+    if (!event) return false;
+    return event.type !== "Stack Up Champion";
 };
 
 export const matchesEventKey = (value: string, event: TournamentEvent | null | undefined): boolean => {

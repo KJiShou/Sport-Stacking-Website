@@ -5,7 +5,7 @@ import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
 import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
-import {getEventKey, getEventLabel, matchesEventKey} from "@/utils/tournament/eventUtils";
+import {getEventKey, getEventLabel, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Divider,
@@ -68,6 +68,23 @@ const resolveTeamEvent = (
     }
 
     return {eventId, eventName};
+};
+
+const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): string[] => {
+    if (selected.length === 0 || events.length === 0) {
+        return selected;
+    }
+
+    const hasSpecificIndividual = events.some(
+        (event) => event.type === "Individual" && matchesAnyEventKey(selected, event),
+    );
+
+    return selected.filter((eventId) => {
+        if (eventId === "Individual" && hasSpecificIndividual) {
+            return false;
+        }
+        return true;
+    });
 };
 
 export default function ViewTournamentRegistrationPage() {
@@ -168,12 +185,17 @@ export default function ViewTournamentRegistrationPage() {
                 setTeams(normalizedTeams);
                 setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
+                const displayedEvents = filterDisplayedEvents(
+                    userReg.events_registered ?? [],
+                    tournamentEvents,
+                );
+
                 form.setFieldsValue({
                     user_name: userReg.user_name,
                     id: userReg.user_global_id,
                     age: userReg.age,
                     phone_number: userReg.phone_number,
-                    events_registered: userReg.events_registered ?? [],
+                    events_registered: displayedEvents,
                 });
             } catch (err) {
                 Message.error("Failed to load data.");
@@ -193,9 +215,9 @@ export default function ViewTournamentRegistrationPage() {
         return event ? getEventLabel(event) : eventId;
     };
 
-    const extraEventIds = (registration?.events_registered ?? []).filter(
+    const extraEventIds = (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
         (eventId) => !availableEventsState.some((event) => getEventKey(event) === eventId),
-    );
+    ) ?? [];
 
     return (
         <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">

@@ -19,7 +19,7 @@ import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebas
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
-import {getEventLabel, getEventTypeOrderIndex} from "@/utils/tournament/eventUtils";
+import {getEventLabel, getEventTypeOrderIndex, isScoreTrackedEvent} from "@/utils/tournament/eventUtils";
 import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch, IconUndo} from "@arco-design/web-react/icon";
@@ -146,7 +146,7 @@ export default function FinalScoringPage() {
             setTournament(tournament);
 
             const events = await fetchTournamentEvents(tournamentId);
-            setEvents(events);
+            setEvents(events.filter((event) => isScoreTrackedEvent(event)));
 
             const registrations = await fetchApprovedRegistrations(tournamentId);
             setRegistrations(registrations);

@@ -21,6 +21,7 @@ import {
     getEventTypeOrderIndex,
     getTeamEvents,
     getTeamMaxAge,
+    isScoreTrackedEvent,
     matchesAnyEventKey,
     sanitizeEventCodes,
     teamMatchesEventKey,
@@ -207,9 +208,10 @@ export default function ScoringPage() {
             const t = await fetchTournamentById(tournamentId);
             setTournament(t);
             const tournamentEvents = await fetchTournamentEvents(tournamentId);
-            setEvents(tournamentEvents);
-            if (tournamentEvents?.[0]) {
-                const sortedTournamentEvents = [...tournamentEvents].sort((a, b) => {
+            const scoringEvents = tournamentEvents.filter((event) => isScoreTrackedEvent(event));
+            setEvents(scoringEvents);
+            if (scoringEvents?.[0]) {
+                const sortedTournamentEvents = [...scoringEvents].sort((a, b) => {
                     const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
                     if (orderDiff !== 0) return orderDiff;
                     return a.type.localeCompare(b.type);
@@ -237,7 +239,7 @@ export default function ScoringPage() {
                     })
                     .map((team) => {
                         const teamScores: Record<string, Score> = {};
-                        const resolvedEvents = getTeamEvents(team, tournamentEvents);
+                        const resolvedEvents = getTeamEvents(team, scoringEvents);
                         const leaderId = stripTeamLeaderPrefix(team.leader_id);
 
                         if (resolvedEvents.length > 0) {
@@ -313,7 +315,7 @@ export default function ScoringPage() {
                 approvedRegs.map((r) => {
                     const participantScores: Record<string, Score> = {};
                     const augmentedEvents = new Set<string>(r.events_registered);
-                    for (const event of tournamentEvents ?? []) {
+                    for (const event of scoringEvents ?? []) {
                         if (!registrationMatchesEvent(r.events_registered, event, r.gender)) {
                             continue;
                         }

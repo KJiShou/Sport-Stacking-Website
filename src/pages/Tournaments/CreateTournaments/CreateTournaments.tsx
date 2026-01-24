@@ -59,7 +59,14 @@ const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
 
-const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = ["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"];
+const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = [
+    "Individual",
+    "Double",
+    "Team Relay",
+    "Parent & Child",
+    "Special Need",
+    "Stack Up Champion",
+];
 
 const isTournamentEventType = (value: unknown): value is TournamentEvent["type"] =>
     typeof value === "string" && EVENT_TYPE_OPTIONS.includes(value as TournamentEvent["type"]);
@@ -159,7 +166,7 @@ export default function CreateTournamentPage() {
 
             for (let i = 0; i < rawEvents.length; i++) {
                 const rawEvent = rawEvents[i];
-                const {age_brackets, id, type, codes, teamSize, gender} = rawEvent;
+                const {age_brackets, id, type, codes, teamSize, gender, max_participants} = rawEvent;
 
                 if (!isTournamentEventType(type)) {
                     invalidEvents.push(`Event ${i + 1}: Invalid event type "${type}"`);
@@ -203,6 +210,9 @@ export default function CreateTournamentPage() {
 
                 if (typeof teamSize === "number") {
                     sanitizedEvent.teamSize = teamSize;
+                }
+                if (typeof max_participants === "number") {
+                    sanitizedEvent.max_participants = max_participants;
                 }
 
                 sanitizedEvents.push(sanitizedEvent);
