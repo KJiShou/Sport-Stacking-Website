@@ -31,7 +31,13 @@ import {
     updateTeam,
 } from "@/services/firebase/tournamentsService";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
-import {getEventKey, getEventLabel, isTeamEvent, matchesEventKey} from "@/utils/tournament/eventUtils";
+import {
+    getEventKey,
+    getEventLabel,
+    isTeamEvent,
+    matchesAnyEventKey,
+    matchesEventKey,
+} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Divider,
@@ -115,6 +121,23 @@ const teamMatchesEvent = (
     const hasEventIdMatch = Boolean(eventId) && matchesEventKey(eventId, event);
     const hasEventNameMatch = Boolean(eventName) && matchesEventKey(eventName, event);
     return hasEventIdMatch || hasEventNameMatch;
+};
+
+const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): string[] => {
+    if (selected.length === 0 || events.length === 0) {
+        return selected;
+    }
+
+    const hasSpecificIndividual = events.some(
+        (event) => event.type === "Individual" && matchesAnyEventKey(selected, event),
+    );
+
+    return selected.filter((eventId) => {
+        if (eventId === "Individual" && hasSpecificIndividual) {
+            return false;
+        }
+        return true;
+    });
 };
 
 export default function EditTournamentRegistrationPage() {
@@ -452,6 +475,11 @@ export default function EditTournamentRegistrationPage() {
 
             setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
+            const displayedEvents = filterDisplayedEvents(
+                userReg.events_registered ?? [],
+                tournamentData?.events ?? events ?? [],
+            );
+
             form.setFieldsValue({
                 user_name: userReg.user_name,
                 user_global_id: userReg.user_global_id,
@@ -459,7 +487,7 @@ export default function EditTournamentRegistrationPage() {
                 gender: userReg.gender,
                 phone_number: userReg.phone_number,
                 organizer: userReg.organizer,
-                events_registered: userReg.events_registered ?? [],
+                events_registered: displayedEvents,
                 registration_status: userReg.registration_status,
                 rejection_reason: userReg.rejection_reason,
             });
@@ -509,9 +537,9 @@ export default function EditTournamentRegistrationPage() {
         }
     }, [events, registration?.user_name, teams]);
 
-    const extraEventIds = (registration?.events_registered ?? []).filter(
+    const extraEventIds = (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
         (eventId) => !events?.some((event) => getEventKey(event) === eventId),
-    );
+    ) ?? [];
 
     if (!isMounted && !loading && !registration) {
         return <Result status="404" title="Not Registered" subTitle="You haven't registered for this tournament." />;

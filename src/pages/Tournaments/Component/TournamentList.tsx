@@ -828,7 +828,7 @@ export default function TournamentList() {
 
             for (let i = 0; i < rawEvents.length; i++) {
                 const rawEvent = rawEvents[i];
-                const {__prevType: _ignored, age_brackets, id, type, codes, teamSize, gender} = rawEvent;
+                const {__prevType: _ignored, age_brackets, id, type, codes, teamSize, gender, max_participants} = rawEvent;
 
                 if (!isTournamentEventType(type)) {
                     invalidEvents.push(`Event ${i + 1}: Invalid event type "${type}"`);
@@ -857,6 +857,9 @@ export default function TournamentList() {
 
                 if (typeof teamSize === "number") {
                     sanitizedEvent.teamSize = teamSize;
+                }
+                if (typeof max_participants === "number") {
+                    sanitizedEvent.max_participants = max_participants;
                 }
 
                 sanitizedEvents.push(sanitizedEvent);

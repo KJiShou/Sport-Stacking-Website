@@ -30,6 +30,7 @@ export const EventSchema = z.object({
     type: z.enum(["Individual", "Double", "Team Relay", "Parent & Child", "Special Need", "Stack Up Champion"]),
     gender: EventGenderSchema,
     teamSize: z.number().optional(),
+    max_participants: z.number().optional().nullable(),
     age_brackets: z.array(AgeBracketSchema),
 });
 

@@ -8,7 +8,7 @@ import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {addUserRegistrationRecord, getUserByGlobalId, getUserEmailByGlobalId} from "@/services/firebase/authService";
 import {createDoubleRecruitment} from "@/services/firebase/doubleRecruitmentService";
 import {createIndividualRecruitment} from "@/services/firebase/individualRecruitmentService";
-import {createRegistration} from "@/services/firebase/registerService";
+import {createRegistration, fetchRegistrations} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService";
 import {createTeam, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
@@ -17,7 +17,13 @@ import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {getCountryFlag} from "@/utils/countryFlags";
-import {getEventKey, getEventLabel, isTeamEvent, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
+import {
+    getEventKey,
+    getEventLabel,
+    isTeamEvent,
+    matchesAnyEventKey,
+    sanitizeEventCodes,
+} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Checkbox,
@@ -60,6 +66,8 @@ const isTeamRelayEvent = (event?: ExpandedEvent) =>
     (event?.type ?? "").toLowerCase() === "team relay";
 const isDoubleEvent = (event?: ExpandedEvent) =>
     (event?.type ?? "").toLowerCase() === "double";
+const isStackUpChampionEvent = (event?: ExpandedEvent) =>
+    (event?.type ?? "").toLowerCase() === "stack up champion";
 
 export default function RegisterTournamentPage() {
     const {tournamentId} = useParams();
@@ -77,7 +85,7 @@ export default function RegisterTournamentPage() {
     const [availableEvents, setAvailableEvents] = useState<ExpandedEvent[]>([]);
     const [haveTeam, setHaveTeam] = useState<TeamEntry[]>([]);
     const [tournamentData, setTournamentData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
-    const [requiredKeys, setRequiredKeys] = useState<string[]>(["Individual"]);
+    const [requiredKeys, setRequiredKeys] = useState<string[]>([]);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
     const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
@@ -133,6 +141,15 @@ export default function RegisterTournamentPage() {
             form.setFieldsValue(updates);
         }
     }, [form, haveTeam]);
+
+    useEffect(() => {
+        if (requiredKeys.length === 0) return;
+        const currentEvents: string[] = form.getFieldValue("events_registered") || [];
+        const nextEvents = Array.from(new Set([...currentEvents, ...requiredKeys]));
+        if (nextEvents.length !== currentEvents.length) {
+            form.setFieldValue("events_registered", nextEvents);
+        }
+    }, [form, requiredKeys]);
 
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
@@ -236,6 +253,31 @@ export default function RegisterTournamentPage() {
                 }
             }
 
+            const sanitizedEventsRegistered = (values.events_registered ?? []).filter(
+                (eventId) => eventId !== "Individual",
+            );
+            const selectedEventIds = sanitizedEventsRegistered;
+            const stackUpEvents = availableEvents.filter(
+                (event) => isStackUpChampionEvent(event) && selectedEventIds.includes(getEventKey(event)),
+            );
+            if (stackUpEvents.length > 0) {
+                const registrations = await fetchRegistrations(tournamentId);
+                for (const event of stackUpEvents) {
+                    const maxParticipants = typeof event.max_participants === "number" ? event.max_participants : 0;
+                    if (!maxParticipants || maxParticipants <= 0) {
+                        continue;
+                    }
+                    const count = registrations.filter((registration) =>
+                        matchesAnyEventKey(registration.events_registered, event),
+                    ).length;
+                    if (count >= maxParticipants) {
+                        Message.error(`${getEventLabel(event)} has reached the maximum participants.`);
+                        setLoading(false);
+                        return;
+                    }
+                }
+            }
+
             const registrationData: Registration = {
                 tournament_id: tournamentId,
                 user_id: user?.id ?? "",
@@ -246,7 +288,7 @@ export default function RegisterTournamentPage() {
                 phone_number: values.phone_number,
                 gender: values.gender,
                 organizer: values.organizer ?? "",
-                events_registered: values.events_registered ?? [],
+                events_registered: sanitizedEventsRegistered,
                 payment_proof_url: paymentProofUrl,
                 registration_status: "pending",
                 rejection_reason: null,
@@ -474,6 +516,7 @@ export default function RegisterTournamentPage() {
             try {
                 const comp = await fetchTournamentById(tournamentId);
                 const fetchedEvents = comp?.events?.length ? comp.events : await fetchTournamentEvents(tournamentId);
+                const registrations = await fetchRegistrations(tournamentId);
                 const age = user?.birthdate && comp?.start_date ? getAgeAtTournament(user.birthdate, comp.start_date) : 0;
                 const normalizeGender = (value: unknown): "Male" | "Female" | "Mixed" => {
                     if (value === "Male" || value === "Female") {
@@ -505,14 +548,34 @@ export default function RegisterTournamentPage() {
                     }
                 }
 
+                const registrationCounts: Record<string, number> = {};
+                for (const event of availableGroupedEvents) {
+                    const eventKey = getEventKey(event);
+                    registrationCounts[eventKey] = registrations.filter((registration) =>
+                        matchesAnyEventKey(registration.events_registered, event),
+                    ).length;
+                }
+
+                const filteredEvents = availableGroupedEvents.filter((event) => {
+                    if (!isStackUpChampionEvent(event)) {
+                        return true;
+                    }
+                    const maxParticipants = typeof event.max_participants === "number" ? event.max_participants : 0;
+                    if (!maxParticipants || maxParticipants <= 0) {
+                        return true;
+                    }
+                    const count = registrationCounts[getEventKey(event)] ?? 0;
+                    return count < maxParticipants;
+                });
+
                 // 找出 required keys (individual events) - now using the grouped format
-                const requiredEventIds = availableGroupedEvents
-                    .filter((event) => event.type === "Individual")
+                const requiredEventIds = filteredEvents
+                    .filter((event) => getEventLabel(event).toLowerCase().includes("individual"))
                     .map((event) => getEventKey(event));
 
                 // 设置所有可用事件，而不是排除required的
-                setAvailableEvents(availableGroupedEvents);
-                setOptions(availableGroupedEvents);
+                setAvailableEvents(filteredEvents);
+                setOptions(filteredEvents);
 
                 if (comp) {
                     setTournament(comp);
@@ -765,7 +828,7 @@ export default function RegisterTournamentPage() {
                                     style={{width: eventSelectWidth}}
                                     mode="multiple"
                                     className="select-wrap"
-                                    defaultValue={requiredKeys}
+                                    value={form.getFieldValue("events_registered") || []}
                                     onChange={(value: string[]) => {
                                         if (!availableEvents) return;
                                         // 确保个人赛事项不能被取消选择
