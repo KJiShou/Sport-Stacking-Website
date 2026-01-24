@@ -14,7 +14,12 @@ import {
 import {exportAllPrelimResultsToPDF, exportCertificatesPDF} from "@/utils/PDF/pdfExport";
 import {formatTeamLeaderId} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
-import {getEventLabel, getEventTypeOrderIndex, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
+import {
+    getEventLabel,
+    getEventTypeOrderIndex,
+    isScoreTrackedEvent,
+    isTeamEvent as isTournamentTeamEvent,
+} from "@/utils/tournament/eventUtils";
 import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconPrinter, IconUndo} from "@arco-design/web-react/icon";
@@ -568,9 +573,10 @@ export default function FinalResultsPage() {
                 const fetchedTournament = await fetchTournamentById(tournamentId);
                 const fetchedEvents = await fetchTournamentEvents(tournamentId);
                 if (fetchedEvents) {
+                    const scoringEvents = fetchedEvents.filter((event) => isScoreTrackedEvent(event));
                     setTournament(fetchedTournament);
-                    setEvents(fetchedEvents);
-                    const sortedEventList = [...fetchedEvents].sort((a, b) => {
+                    setEvents(scoringEvents);
+                    const sortedEventList = [...scoringEvents].sort((a, b) => {
                         const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
                         if (orderDiff !== 0) return orderDiff;
                         return a.type.localeCompare(b.type);

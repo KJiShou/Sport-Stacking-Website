@@ -59,7 +59,14 @@ const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
 
-const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = ["Individual", "Double", "Team Relay", "Parent & Child", "Special Need"];
+const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = [
+    "Individual",
+    "Double",
+    "Team Relay",
+    "Parent & Child",
+    "Special Need",
+    "Stack Up Champion",
+];
 
 const isTournamentEventType = (value: unknown): value is TournamentEvent["type"] =>
     typeof value === "string" && EVENT_TYPE_OPTIONS.includes(value as TournamentEvent["type"]);

@@ -10,6 +10,7 @@ const EVENT_TYPES = {
     "Team Relay": ["3-6-3", "Cycle"],
     "Parent & Child": ["Cycle"],
     "Special Need": ["3-3-3", "3-6-3", "Cycle"],
+    "Stack Up Champion": ["Cycle"],
 };
 
 const TEAM_EVENT_TYPES: Array<keyof typeof EVENT_TYPES> = ["Double", "Team Relay", "Parent & Child"];
@@ -43,6 +44,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                                 <Select.Option value="Team Relay">Team Relay</Select.Option>
                                 <Select.Option value="Parent & Child">Parent & Child</Select.Option>
                                 <Select.Option value="Special Need">Special Need</Select.Option>
+                                <Select.Option value="Stack Up Champion">Stack Up Champion</Select.Option>
                             </Select>
                         </Form.Item>
                     </div>
