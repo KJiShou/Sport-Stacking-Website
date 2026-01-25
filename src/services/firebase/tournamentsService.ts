@@ -17,13 +17,13 @@ import {
 } from "firebase/firestore";
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import {EventSchema, TournamentSchema} from "../../schema";
+import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {removeUserRegistrationRecordsByTournament} from "./authService";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByTournament} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByTournament} from "./individualRecruitmentService";
 import {deleteTournamentStorage} from "./storageService";
 import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
-import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 
 // Utility function to check if a string is a UUID v4
 function isUUID(value: string): boolean {
