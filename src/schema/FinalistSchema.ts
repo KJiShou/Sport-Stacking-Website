@@ -7,6 +7,8 @@ export const EventCategorySchema = z.enum([
     "Parent & Child",
     "Special Need",
     "Stack Up Champion",
+    "StackOut Champion",
+    "Blindfolded Cycle",
 ]);
 export type EventCategory = z.infer<typeof EventCategorySchema>;
 

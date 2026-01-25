@@ -25,6 +25,8 @@ const ensureEventType = (value: unknown): FinalistGroupPayload["event_type"] => 
         "Parent & Child",
         "Special Need",
         "Stack Up Champion",
+        "StackOut Champion",
+        "Blindfolded Cycle",
     ];
 
     if (typeof value === "string") {

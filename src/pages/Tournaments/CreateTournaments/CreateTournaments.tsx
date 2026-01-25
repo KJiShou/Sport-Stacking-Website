@@ -53,8 +53,16 @@ const normalizeEventGender = (value: unknown): TournamentEvent["gender"] => {
     return "Mixed";
 };
 
+const normalizeEventType = (value: TournamentEvent["type"]): TournamentEvent["type"] => {
+    if (value === "Stack Up Champion") {
+        return "StackOut Champion";
+    }
+    return value;
+};
+
 const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     ...event,
+    type: normalizeEventType(event.type),
     gender: normalizeEventGender(event.gender),
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
@@ -65,7 +73,8 @@ const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = [
     "Team Relay",
     "Parent & Child",
     "Special Need",
-    "Stack Up Champion",
+    "StackOut Champion",
+    "Blindfolded Cycle",
 ];
 
 const isTournamentEventType = (value: unknown): value is TournamentEvent["type"] =>

@@ -265,7 +265,10 @@ const getEventCategoryFromType = (typeLabel: string): string => {
     if (normalized === "team relay") return "team_relay";
     if (normalized === "parent & child") return "parent_&_child";
     if (normalized === "special need") return "special_need";
-    if (normalized === "stack up champion") return "stack_up_champion";
+    if (normalized === "stack up champion") return "stack_out_champion";
+    if (normalized === "stackout champion") return "stack_out_champion";
+    if (normalized === "stack out champion") return "stack_out_champion";
+    if (normalized === "blindfolded cycle") return "blindfolded_cycle";
     return "individual";
 };
 
@@ -282,6 +285,12 @@ const parseEventKey = (eventKey: string): {eventName: string; eventCategory: str
     } else if (eventKey.includes("-Special Need")) {
         typeLabel = "Special Need";
         eventName = eventKey.replace("-Special Need", "");
+    } else if (eventKey.includes("-StackOut Champion")) {
+        typeLabel = "StackOut Champion";
+        eventName = eventKey.replace("-StackOut Champion", "");
+    } else if (eventKey.includes("-Blindfolded Cycle")) {
+        typeLabel = "Blindfolded Cycle";
+        eventName = eventKey.replace("-Blindfolded Cycle", "");
     } else if (eventKey.includes("-Stack Up Champion")) {
         typeLabel = "Stack Up Champion";
         eventName = eventKey.replace("-Stack Up Champion", "");

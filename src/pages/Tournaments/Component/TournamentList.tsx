@@ -69,6 +69,7 @@ import type {UploadItem} from "@arco-design/web-react/es/Upload";
 import MDEditor from "@uiw/react-md-editor";
 import {useNavigate} from "react-router-dom";
 import useMount from "react-use/lib/useMount";
+import remarkBreaks from "remark-breaks";
 import EventFields from "./EventField";
 import LocationPicker, {isValidCountryPath} from "./LocationPicker";
 import {useAgeBracketEditor} from "./useAgeBracketEditor";
@@ -95,8 +96,16 @@ const normalizeEventGender = (value: unknown): TournamentEvent["gender"] => {
     return "Mixed";
 };
 
+const normalizeEventType = (value: TournamentEvent["type"]): TournamentEvent["type"] => {
+    if (value === "Stack Up Champion") {
+        return "StackOut Champion";
+    }
+    return value;
+};
+
 const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     ...event,
+    type: normalizeEventType(event.type),
     gender: normalizeEventGender(event.gender),
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
@@ -107,7 +116,8 @@ const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = [
     "Team Relay",
     "Parent & Child",
     "Special Need",
-    "Stack Up Champion",
+    "StackOut Champion",
+    "Blindfolded Cycle",
 ];
 
 const isTournamentEventType = (value: unknown): value is TournamentEvent["type"] =>
@@ -1977,7 +1987,7 @@ export default function TournamentList() {
                         footer={null}
                         className={`m-10 w-1/2`}
                     >
-                        <MDEditor.Markdown source={selectedTournament?.description ?? ""} />
+                        <MDEditor.Markdown remarkPlugins={[remarkBreaks]} source={selectedTournament?.description ?? ""} />
                     </Modal>
                 </div>
             </Modal>
