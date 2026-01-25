@@ -286,26 +286,30 @@ const AthleteProfilePage = () => {
     const country = Array.isArray(user.country) && user.country.length > 0 ? user.country[0] : (user.country ?? "—");
 
     return (
-        <div className="flex flex-col bg-ghostwhite p-0 md:p-6 xl:p-10 gap-6">
-            <Button type="outline" onClick={() => window.history.back()} className="w-fit pt-2 pb-2">
+        <div className="flex flex-col bg-ghostwhite p-4 sm:p-6 xl:p-10 gap-6">
+            <Button
+                type="outline"
+                onClick={() => window.history.back()}
+                className="w-full sm:w-fit pt-2 pb-2 justify-center"
+            >
                 <IconUndo /> Go Back
             </Button>
 
-            <div className="bg-white flex flex-col w-full h-fit gap-6 items-start p-6 md:p-10 shadow-lg rounded-lg">
-                <div className="flex items-start gap-8 w-full">
-                    <Avatar size={120} shape="circle" className="flex-shrink-0">
+            <div className="bg-white flex flex-col w-full h-fit gap-6 items-start p-4 sm:p-6 md:p-10 shadow-lg rounded-lg">
+                <div className="flex flex-col md:flex-row md:items-start gap-6 md:gap-8 w-full">
+                    <Avatar size={120} shape="circle" className="flex-shrink-0 self-center md:self-start">
                         {user.image_url ? <img src={user.image_url} alt={user.name} /> : user.name.charAt(0)}
                     </Avatar>
                     <div className="flex flex-col gap-4 flex-1">
-                        <div className="flex items-center gap-3">
-                            <Title heading={2} className="flex items-center gap-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <Title heading={2} className="flex flex-wrap items-center gap-3">
                                 {user.name}
-                                <Tag color="arcoblue" className="">
+                                <Tag color="arcoblue" className="text-sm sm:text-base">
                                     ID: {user.global_id ?? user.id}
                                 </Tag>
                             </Title>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-base">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 text-base">
                             <div className="flex flex-col gap-1">
                                 <Text type="secondary" className="text-sm">
                                     Country
@@ -330,7 +334,7 @@ const AthleteProfilePage = () => {
                                 <Text type="secondary" className="text-sm">
                                     Email
                                 </Text>
-                                <Text className="font-semibold text-base">{user.email}</Text>
+                                <Text className="font-semibold text-base break-all">{user.email}</Text>
                             </div>
                         </div>
                     </div>

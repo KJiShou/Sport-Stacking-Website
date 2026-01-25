@@ -44,6 +44,40 @@ const CATEGORY_LABELS: Record<Category, string> = {
     special_need: "Special Need",
 };
 
+const PRELIM_RECORDS_COLLECTION = "prelim_records";
+const FINAL_RECORDS_COLLECTION = "records";
+
+const getRecordsCollectionByClassification = (classification?: string): string =>
+    classification === "prelim" ? PRELIM_RECORDS_COLLECTION : FINAL_RECORDS_COLLECTION;
+
+const resolveRecordDoc = async (recordId: string): Promise<ReturnType<typeof doc> | null> => {
+    const recordRef = doc(firestore, FINAL_RECORDS_COLLECTION, recordId);
+    const recordSnap = await getDoc(recordRef);
+    if (recordSnap.exists()) {
+        return recordRef;
+    }
+
+    const prelimRef = doc(firestore, PRELIM_RECORDS_COLLECTION, recordId);
+    const prelimSnap = await getDoc(prelimRef);
+    if (prelimSnap.exists()) {
+        return prelimRef;
+    }
+
+    return null;
+};
+
+const buildPrelimRecordKey = (record: Partial<TournamentRecord & TournamentTeamRecord>): string => {
+    const classification = record.classification ?? "prelim";
+    const event = record.event ?? "";
+    const eventId = record.event_id ?? "";
+    const code = record.code ?? "";
+    if ("team_id" in record && record.team_id) {
+        return `team:${record.team_id}|${event}|${eventId}|${code}|${classification}`;
+    }
+    const participantId = record.participant_global_id ?? record.participant_id ?? "";
+    return `participant:${participantId}|${event}|${eventId}|${code}|${classification}`;
+};
+
 const EVENT_NAME_TO_COMBOS: Record<string, Array<{category: Category; eventType: RecordEventType}>> = {
     "3-3-3": [{category: "individual", eventType: "3-3-3"}],
     "3-6-3": [{category: "individual", eventType: "3-6-3"}],
@@ -99,9 +133,25 @@ interface FetchRecordsOptions {
 export const saveRecord = async (data: TournamentRecord): Promise<string> => {
     const now = new Date().toISOString();
     const hasValidId = typeof data.id === "string" && data.id.trim().length > 0;
-    const recordRef = hasValidId ? doc(firestore, "records", data.id) : doc(collection(firestore, "records"));
-    const recordId = recordRef.id;
-    const isExistingRecord = hasValidId;
+    const targetCollection = getRecordsCollectionByClassification(data.classification);
+    let recordRef: ReturnType<typeof doc>;
+    let recordId: string;
+    let isExistingRecord = false;
+
+    if (hasValidId) {
+        const resolvedRef = await resolveRecordDoc(data.id);
+        if (resolvedRef) {
+            recordRef = resolvedRef;
+            recordId = resolvedRef.id;
+            isExistingRecord = true;
+        } else {
+            recordRef = doc(firestore, targetCollection, data.id);
+            recordId = recordRef.id;
+        }
+    } else {
+        recordRef = doc(collection(firestore, targetCollection));
+        recordId = recordRef.id;
+    }
 
     // Determine if this is a team event
     const isTeamEvent =
@@ -125,7 +175,7 @@ export const saveRecord = async (data: TournamentRecord): Promise<string> => {
     }
 
     // Update user's best time after saving the record
-    if (data.participant_global_id && data.best_time > 0 && data.code) {
+    if (data.participant_global_id && data.best_time > 0 && data.code && data.classification !== "prelim") {
         // Use the code field directly for best times tracking
         let eventType: "3-3-3" | "3-6-3" | "Cycle" | null = null;
 
@@ -152,9 +202,25 @@ export const saveRecord = async (data: TournamentRecord): Promise<string> => {
 
 export const saveTeamRecord = async (data: TournamentTeamRecord): Promise<string> => {
     const now = new Date().toISOString();
-    const recordRef = data.id ? doc(firestore, "records", data.id) : doc(collection(firestore, "records"));
-    const recordId = recordRef.id;
-    const isExistingRecord = Boolean(data.id);
+    const targetCollection = getRecordsCollectionByClassification(data.classification);
+    let recordRef: ReturnType<typeof doc>;
+    let recordId: string;
+    let isExistingRecord = false;
+
+    if (data.id) {
+        const resolvedRef = await resolveRecordDoc(data.id);
+        if (resolvedRef) {
+            recordRef = resolvedRef;
+            recordId = resolvedRef.id;
+            isExistingRecord = true;
+        } else {
+            recordRef = doc(firestore, targetCollection, data.id);
+            recordId = recordRef.id;
+        }
+    } else {
+        recordRef = doc(collection(firestore, targetCollection));
+        recordId = recordRef.id;
+    }
 
     // Save to tournament-specific records
     if (isExistingRecord) {
@@ -212,7 +278,7 @@ export const saveOverallRecord = async (data: TournamentOverallRecord): Promise<
         );
     }
 
-    if (data.participant_global_id) {
+    if (data.participant_global_id && data.classification !== "prelim") {
         try {
             // Update individual event best times
             if (data.three_three_three > 0) {
@@ -245,17 +311,34 @@ export const getTournamentPrelimRecords = async (tournamentId: string): Promise<
         return records;
     }
 
-    const prelimRecordsQuery = query(
-        collection(firestore, `records`),
-        where("tournament_id", "==", tournamentId),
-        where("classification", "==", "prelim"),
-    );
+    const [prelimSnapshot, legacySnapshot] = await Promise.all([
+        getDocs(
+            query(
+                collection(firestore, PRELIM_RECORDS_COLLECTION),
+                where("tournament_id", "==", tournamentId),
+                where("classification", "==", "prelim"),
+            ),
+        ),
+        getDocs(
+            query(
+                collection(firestore, FINAL_RECORDS_COLLECTION),
+                where("tournament_id", "==", tournamentId),
+                where("classification", "==", "prelim"),
+            ),
+        ),
+    ]);
 
-    const prelimRecordsSnapshot = await getDocs(prelimRecordsQuery);
-    for (const recordDoc of prelimRecordsSnapshot.docs) {
-        const data = {...recordDoc.data(), id: recordDoc.id};
-        records.push(data as TournamentRecord | TournamentTeamRecord);
+    const recordMap = new Map<string, TournamentRecord | TournamentTeamRecord>();
+    for (const recordDoc of legacySnapshot.docs) {
+        const data = {...recordDoc.data(), id: recordDoc.id} as TournamentRecord | TournamentTeamRecord;
+        recordMap.set(buildPrelimRecordKey(data), data);
     }
+    for (const recordDoc of prelimSnapshot.docs) {
+        const data = {...recordDoc.data(), id: recordDoc.id} as TournamentRecord | TournamentTeamRecord;
+        recordMap.set(buildPrelimRecordKey(data), data);
+    }
+
+    records.push(...recordMap.values());
     return records;
 };
 
@@ -317,7 +400,7 @@ export const getTournamentFinalRecords = async (tournamentId: string): Promise<(
 
     // Get records for all non-prelim classifications (advance, intermediate, beginner)
     const nonPrelimRecordsQuery = query(
-        collection(firestore, `records`),
+        collection(firestore, FINAL_RECORDS_COLLECTION),
         where("tournament_id", "==", tournamentId),
         where("classification", "!=", "prelim"),
     );
@@ -437,18 +520,38 @@ export const getPrelimRecords = async (
 
     try {
         // Gather prelim records stored in the consolidated "records" collection
-        const topLevelQuery = query(
-            collection(firestore, "records"),
-            where("tournament_id", "==", tournamentId),
-            where("classification", "==", "prelim"),
-            where("event", "==", eventType),
-            where("code", "==", code),
-        );
-        const topLevelSnapshot = await getDocs(topLevelQuery);
-        for (const recordDoc of topLevelSnapshot.docs) {
-            const data = recordDoc.data();
-            records.push(data as TournamentRecord | TournamentTeamRecord);
+        const [prelimSnapshot, legacySnapshot] = await Promise.all([
+            getDocs(
+                query(
+                    collection(firestore, PRELIM_RECORDS_COLLECTION),
+                    where("tournament_id", "==", tournamentId),
+                    where("classification", "==", "prelim"),
+                    where("event", "==", eventType),
+                    where("code", "==", code),
+                ),
+            ),
+            getDocs(
+                query(
+                    collection(firestore, FINAL_RECORDS_COLLECTION),
+                    where("tournament_id", "==", tournamentId),
+                    where("classification", "==", "prelim"),
+                    where("event", "==", eventType),
+                    where("code", "==", code),
+                ),
+            ),
+        ]);
+
+        const recordMap = new Map<string, TournamentRecord | TournamentTeamRecord>();
+        for (const recordDoc of legacySnapshot.docs) {
+            const data = {...recordDoc.data(), id: recordDoc.id} as TournamentRecord | TournamentTeamRecord;
+            recordMap.set(buildPrelimRecordKey(data), data);
         }
+        for (const recordDoc of prelimSnapshot.docs) {
+            const data = {...recordDoc.data(), id: recordDoc.id} as TournamentRecord | TournamentTeamRecord;
+            recordMap.set(buildPrelimRecordKey(data), data);
+        }
+
+        records.push(...recordMap.values());
     } catch (error) {
         console.error("Error fetching prelim records:", error);
         throw error;
@@ -487,7 +590,10 @@ const CATEGORY_DISPLAY_MAP: Record<Category, DisplayCategory> = {
 // Delete record service
 export const deleteRecord = async (recordId: string): Promise<void> => {
     try {
-        const recordRef = doc(firestore, "records", recordId);
+        const recordRef = await resolveRecordDoc(recordId);
+        if (!recordRef) {
+            throw new Error(`Record ${recordId} not found`);
+        }
         await deleteDoc(recordRef);
     } catch (error) {
         console.error(`Failed to delete record ${recordId}:`, error);
@@ -503,7 +609,10 @@ export const toggleRecordVerification = async (
 ): Promise<void> => {
     try {
         const now = new Date().toISOString();
-        const recordRef = doc(firestore, "records", recordId);
+        const recordRef = await resolveRecordDoc(recordId);
+        if (!recordRef) {
+            throw new Error(`Record ${recordId} not found`);
+        }
 
         // Default to "submitted" if status is undefined or invalid
         const status = currentStatus === "verified" ? "verified" : "submitted";
@@ -537,11 +646,23 @@ export const updateRecordVideoUrl = async (recordId: string, videoUrl: string): 
         const now = new Date().toISOString();
 
         // Try to update in 'records' collection first
-        const recordRef = doc(firestore, "records", recordId);
+        const recordRef = doc(firestore, FINAL_RECORDS_COLLECTION, recordId);
         const recordSnap = await getDoc(recordRef);
 
         if (recordSnap.exists()) {
             await updateDoc(recordRef, {
+                video_url: videoUrl,
+                updated_at: now,
+            });
+            return;
+        }
+
+        // Try prelim records collection next
+        const prelimRef = doc(firestore, PRELIM_RECORDS_COLLECTION, recordId);
+        const prelimSnap = await getDoc(prelimRef);
+
+        if (prelimSnap.exists()) {
+            await updateDoc(prelimRef, {
                 video_url: videoUrl,
                 updated_at: now,
             });
@@ -576,7 +697,7 @@ export const getParticipantEventRecords = async (
 ): Promise<TournamentRecord[]> => {
     try {
         const recordsQuery = query(
-            collection(firestore, "records"),
+            collection(firestore, getRecordsCollectionByClassification(classification)),
             where("tournament_id", "==", tournamentId),
             where("participant_global_id", "==", participantGlobalId),
             where("event_id", "==", eventId),
@@ -612,8 +733,9 @@ export const deleteOverallRecord = async (recordId: string): Promise<void> => {
         // Delete the three individual event records (3-3-3, 3-6-3, Cycle)
         const eventCodes = ["3-3-3", "3-6-3", "Cycle"];
         const deleteIndividualPromises = eventCodes.map(async (eventCode) => {
+            const targetCollection = getRecordsCollectionByClassification(overallRecord.classification);
             const individualRecordsQuery = query(
-                collection(firestore, "records"),
+                collection(firestore, targetCollection),
                 where("tournament_id", "==", overallRecord.tournament_id),
                 where("participant_global_id", "==", overallRecord.participant_global_id),
                 where("event_id", "==", overallRecord.event_id),
@@ -646,9 +768,10 @@ export const deleteParticipantRecords = async (
     classification: string,
 ): Promise<void> => {
     try {
+        const targetCollection = getRecordsCollectionByClassification(classification);
         // Delete individual event records (3-3-3, 3-6-3, Cycle)
         const recordsQuery = query(
-            collection(firestore, "records"),
+            collection(firestore, targetCollection),
             where("tournament_id", "==", tournamentId),
             where("participant_global_id", "==", participantGlobalId),
             where("event_id", "==", eventId),
@@ -691,12 +814,12 @@ export const updateTournamentRecord = async (
 ): Promise<void> => {
     try {
         const now = new Date().toISOString();
-        const recordRef = doc(firestore, "records", recordId);
+        const recordRef = await resolveRecordDoc(recordId);
+        if (!recordRef) {
+            throw new Error(`Record ${recordId} not found`);
+        }
 
-        await updateDoc(recordRef, {
-            ...updates,
-            updated_at: now,
-        });
+        await updateDoc(recordRef, {...updates, updated_at: now});
     } catch (error) {
         console.error(`Failed to update tournament record ${recordId}:`, error);
         throw error;
@@ -913,6 +1036,9 @@ export const getBestRecords = async (): Promise<BestRecordsShape> => {
             ...docSnap.data(),
             id: docSnap.id,
         } as Partial<TournamentRecord & TournamentTeamRecord> & {id: string};
+        if (data.classification === "prelim") {
+            continue;
+        }
         const isTeam = "team_id" in data && typeof (data as Partial<TournamentTeamRecord>).team_id === "string";
         const displayCategory = (data.event as DisplayCategory) ?? "Individual";
         const eventKey = (data.code as EventTypeKey) ?? "Cycle";
@@ -950,6 +1076,9 @@ export const getBestRecords = async (): Promise<BestRecordsShape> => {
     const overallSnap = await getDocs(collection(firestore, "overall_records"));
     for (const docSnap of overallSnap.docs) {
         const data = {...docSnap.data(), id: docSnap.id} as TournamentOverallRecord & {id: string};
+        if (data.classification === "prelim") {
+            continue;
+        }
         // Only show for Individual category
         const global = toGlobalFromOverall(data);
         if (global) {
@@ -1005,7 +1134,7 @@ export const updateParticipantRankingsAndResults = async (
 
         // Get all individual records for this tournament and classification
         const recordsQuery = query(
-            collection(firestore, "records"),
+            collection(firestore, getRecordsCollectionByClassification(classification)),
             where("tournament_id", "==", tournamentId),
             where("classification", "==", classification),
         );

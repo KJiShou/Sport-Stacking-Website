@@ -615,7 +615,9 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                             (r as {globalId?: string}).globalId ??
                             (r as {registration?: {user_global_id?: string}}).registration?.user_global_id ??
                             (typeof r.participantId === "string" ? r.participantId : "N/A");
-                        const identifier = isTeamEvent ? (leaderId ?? "N/A") : (participantGlobalId ?? "N/A");
+                        const identifier = isTeamEvent
+                            ? formatTeamLeaderId(leaderId ?? "N/A", event.type)
+                            : (participantGlobalId ?? "N/A");
                         const rowData: (string | number)[] = [r.rank, identifier, r.name];
                         if (isAggregate) {
                             for (const code of effectiveCodes) {
@@ -863,15 +865,12 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
                 if (records.length > 0) {
                     const isTeamEvent = isTeamEventType(event.type);
                     const head = [["Rank", "ID", "Name", "Try 1", "Try 2", "Try 3", "Best Time"]];
-                    const body = records.map((r) => [
-                        r.rank,
-                        isTeamEvent ? r.id : r.participant_global_id,
-                        r.name,
-                        "",
-                        "",
-                        "",
-                        "",
-                    ]);
+                    const body = records.map((r) => {
+                        const identifier = isTeamEvent
+                            ? formatTeamLeaderId(r.id ?? "N/A", event.type)
+                            : (r.participant_global_id ?? "N/A");
+                        return [r.rank, identifier, r.name, "", "", "", ""];
+                    });
 
                     autoTable(doc, {
                         startY: currentY,
