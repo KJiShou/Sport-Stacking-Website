@@ -50,6 +50,7 @@ import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import {Timestamp} from "firebase/firestore";
 import {type ReactNode, useEffect, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
+import remarkBreaks from "remark-breaks";
 dayjs.extend(isSameOrAfter);
 const {Title, Paragraph} = Typography;
 const Option = Select.Option;
@@ -66,8 +67,10 @@ const isTeamRelayEvent = (event?: ExpandedEvent) =>
     (event?.type ?? "").toLowerCase() === "team relay";
 const isDoubleEvent = (event?: ExpandedEvent) =>
     (event?.type ?? "").toLowerCase() === "double";
-const isStackUpChampionEvent = (event?: ExpandedEvent) =>
-    (event?.type ?? "").toLowerCase() === "stack up champion";
+const isNonScoringEvent = (event?: ExpandedEvent) => {
+    const normalized = (event?.type ?? "").toLowerCase();
+    return normalized === "stackout champion" || normalized === "stack out champion" || normalized === "stack up champion" || normalized === "blindfolded cycle";
+};
 
 export default function RegisterTournamentPage() {
     const {tournamentId} = useParams();
@@ -257,12 +260,12 @@ export default function RegisterTournamentPage() {
                 (eventId) => eventId !== "Individual",
             );
             const selectedEventIds = sanitizedEventsRegistered;
-            const stackUpEvents = availableEvents.filter(
-                (event) => isStackUpChampionEvent(event) && selectedEventIds.includes(getEventKey(event)),
+            const limitedEvents = availableEvents.filter(
+                (event) => isNonScoringEvent(event) && selectedEventIds.includes(getEventKey(event)),
             );
-            if (stackUpEvents.length > 0) {
+            if (limitedEvents.length > 0) {
                 const registrations = await fetchRegistrations(tournamentId);
-                for (const event of stackUpEvents) {
+                for (const event of limitedEvents) {
                     const maxParticipants = typeof event.max_participants === "number" ? event.max_participants : 0;
                     if (!maxParticipants || maxParticipants <= 0) {
                         continue;
@@ -557,7 +560,7 @@ export default function RegisterTournamentPage() {
                 }
 
                 const filteredEvents = availableGroupedEvents.filter((event) => {
-                    if (!isStackUpChampionEvent(event)) {
+                    if (!isNonScoringEvent(event)) {
                         return true;
                     }
                     const maxParticipants = typeof event.max_participants === "number" ? event.max_participants : 0;
@@ -764,7 +767,7 @@ export default function RegisterTournamentPage() {
                     footer={null}
                     className={`m-10 w-1/2`}
                 >
-                    <MDEditor.Markdown source={tournament?.description ?? ""} />
+                    <MDEditor.Markdown remarkPlugins={[remarkBreaks]} source={tournament?.description ?? ""} />
                 </Modal>
             </div>
 

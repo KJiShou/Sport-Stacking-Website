@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
-  "workspaces": ["functions"],
+  "workspaces": [
+    "functions"
+  ],
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
@@ -43,6 +45,7 @@
     "react-responsive": "^10.0.0",
     "react-router-dom": "^7.1.1",
     "react-use": "^17.6.0",
+    "remark-breaks": "^4.0.0",
     "scss": "^0.2.4",
     "starship": "^0.0.0",
     "zod": "^3.24.2"

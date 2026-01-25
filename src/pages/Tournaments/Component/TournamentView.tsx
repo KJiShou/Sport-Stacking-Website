@@ -1,5 +1,5 @@
 import {useAuthContext} from "@/context/AuthContext";
-import type {AgeBracket, Registration, Tournament, TournamentEvent} from "@/schema";
+import type {AgeBracket, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import type {TournamentOverallRecord, TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
 import {
     deleteOverallRecord,
@@ -17,12 +17,12 @@ import {
     updateTournamentRecord,
 } from "@/services/firebase/recordService";
 import {fetchApprovedRegistrations} from "@/services/firebase/registerService";
-import {fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {getCountryFlag} from "@/utils/countryFlags";
-import {getEventLabel} from "@/utils/tournament/eventUtils";
+import {getEventLabel, isTeamEvent, matchesAnyEventKey, teamMatchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Card,
@@ -60,16 +60,19 @@ import MDEditor from "@uiw/react-md-editor";
 import {Timestamp} from "firebase/firestore";
 import {type ReactNode, useEffect, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
+import remarkBreaks from "remark-breaks";
 
 const {Title, Text} = Typography;
 
 const EVENT_TYPE_ORDER = [
     "Individual",
-    "Stack Up Champion",
+    "StackOut Champion",
+    "Blindfolded Cycle",
     "Double",
     "Parent & Child",
     "Team Relay",
     "Special Need",
+    "Stack Up Champion",
 ] as const;
 
 const getEventOrderIndex = (eventType?: string): number => {
@@ -119,6 +122,7 @@ export default function TournamentView() {
     const [loading, setLoading] = useState(true);
     const [registrations, setRegistrations] = useState<Registration[]>([]);
     const [events, setEvents] = useState<TournamentEvent[]>([]);
+    const [teams, setTeams] = useState<Team[]>([]);
     const [prelimRecords, setPrelimRecords] = useState<(TournamentRecord | TournamentTeamRecord)[]>([]);
     const [finalRecords, setFinalRecords] = useState<(TournamentRecord | TournamentTeamRecord)[]>([]);
     const [prelimOverallRecords, setPrelimOverallRecords] = useState<TournamentOverallRecord[]>([]);
@@ -393,10 +397,15 @@ export default function TournamentView() {
                     const data = await fetchTournamentById(id);
                     setTournament(data);
 
-                    // Fetch registrations and events
-                    const [regs, evts] = await Promise.all([fetchApprovedRegistrations(id), fetchTournamentEvents(id)]);
+                    // Fetch registrations, events, and teams
+                    const [regs, evts, fetchedTeams] = await Promise.all([
+                        fetchApprovedRegistrations(id),
+                        fetchTournamentEvents(id),
+                        fetchTeamsByTournament(id),
+                    ]);
                     setRegistrations(regs);
                     setEvents(evts);
+                    setTeams(fetchedTeams);
 
                     // Fetch records if tournament is ongoing or ended
                     if (data && (data.status === "On Going" || data.status === "End")) {
@@ -657,7 +666,7 @@ export default function TournamentView() {
                         footer={null}
                         className={`m-10 w-1/2`}
                     >
-                        <MDEditor.Markdown source={tournament?.description ?? ""} />
+                        <MDEditor.Markdown remarkPlugins={[remarkBreaks]} source={tournament?.description ?? ""} />
                     </Modal>
                 </div>
 
@@ -673,12 +682,21 @@ export default function TournamentView() {
                                 <Card key={event.id} title={getEventLabel(event)} bordered className="score-card">
                                     <div className="space-y-2">
                                         {event.age_brackets.map((bracket) => {
-                                            const participantsInBracket = registrations.filter(
-                                                (reg) =>
-                                                    reg.age >= bracket.min_age &&
-                                                    reg.age <= bracket.max_age &&
-                                                    reg.events_registered?.includes(event.id ?? ""),
-                                            );
+                                            const isTeam = isTeamEvent(event);
+                                            const participantsInBracket = isTeam
+                                                ? teams.filter(
+                                                      (team) =>
+                                                          team.team_age >= bracket.min_age &&
+                                                          team.team_age <= bracket.max_age &&
+                                                          teamMatchesEventKey(team, event.id ?? event.type, events),
+                                                  )
+                                                : registrations.filter(
+                                                      (reg) =>
+                                                          reg.age >= bracket.min_age &&
+                                                          reg.age <= bracket.max_age &&
+                                                          (reg.events_registered?.includes(event.id ?? "") ||
+                                                              matchesAnyEventKey(reg.events_registered, event)),
+                                                  );
                                             return (
                                                 <div key={bracket.name} className="flex justify-between items-center">
                                                     <Text>

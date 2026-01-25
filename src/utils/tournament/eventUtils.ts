@@ -74,11 +74,13 @@ const getAllTeamEventReferences = (team: TeamEventRefs | null | undefined): stri
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
 export const EVENT_TYPE_ORDER = [
     "Individual",
-    "Stack Up Champion",
+    "StackOut Champion",
+    "Blindfolded Cycle",
     "Double",
     "Parent & Child",
     "Team Relay",
     "Special Need",
+    "Stack Up Champion",
 ] as const;
 
 export const getEventTypeOrderIndex = (eventType?: string): number => {
@@ -100,11 +102,12 @@ export const getEventKey = (event: TournamentEvent | null | undefined): string =
 
 export const getEventLabel = (event: TournamentEvent | null | undefined): string => {
     if (!event) return "";
+    const typeLabel = event.type === "Stack Up Champion" ? "StackOut Champion" : event.type;
     const codes = sanitizeEventCodes(event.codes);
     const codesLabel = codes.length > 0 ? ` (${codes.join(", ")})` : "";
     const gender = event.gender === "Male" || event.gender === "Female" ? event.gender : "Mixed";
     const genderLabel = gender === "Mixed" ? "Mixed Gender" : gender;
-    return `${event.type} - ${genderLabel}${codesLabel}`;
+    return `${typeLabel} - ${genderLabel}${codesLabel}`;
 };
 
 export const isTeamEvent = (event: TournamentEvent | null | undefined): boolean => {
@@ -114,7 +117,7 @@ export const isTeamEvent = (event: TournamentEvent | null | undefined): boolean 
 
 export const isScoreTrackedEvent = (event: TournamentEvent | null | undefined): boolean => {
     if (!event) return false;
-    return event.type !== "Stack Up Champion";
+    return event.type !== "StackOut Champion" && event.type !== "Blindfolded Cycle" && event.type !== "Stack Up Champion";
 };
 
 export const matchesEventKey = (value: string, event: TournamentEvent | null | undefined): boolean => {
