@@ -7,6 +7,7 @@ import {
     fetchTournamentEvents,
     fetchTournamentsByType,
     saveTournamentEvents,
+    updateTeamNamesForTournament,
     updateTournament,
     updateTournamentStatus,
 } from "@/services/firebase/tournamentsService";
@@ -571,6 +572,7 @@ export default function TournamentList() {
                                 if (user && tournament.id) {
                                     try {
                                         setLoading(true);
+                                        await updateTeamNamesForTournament(tournament.id);
                                         await updateTournamentStatus(user, tournament.id, "On Going");
                                         await fetchTournaments();
                                         Message.success("Tournament started successfully!");

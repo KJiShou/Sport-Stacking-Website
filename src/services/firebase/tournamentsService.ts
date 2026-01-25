@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import {EventSchema, TournamentSchema} from "../../schema";
+import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {removeUserRegistrationRecordsByTournament} from "./authService";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByTournament} from "./doubleRecruitmentService";
@@ -364,13 +365,15 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
 
     // 3. Delete tournament records stored in records collections
     try {
-        const [recordsSnapshot, overallRecordsSnapshot] = await Promise.all([
+        const [recordsSnapshot, prelimRecordsSnapshot, overallRecordsSnapshot] = await Promise.all([
             getDocs(query(collection(db, "records"), where("tournament_id", "==", tournamentId))),
+            getDocs(query(collection(db, "prelim_records"), where("tournament_id", "==", tournamentId))),
             getDocs(query(collection(db, "overall_records"), where("tournament_id", "==", tournamentId))),
         ]);
 
         const recordDeletePromises = [
             ...recordsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref)),
+            ...prelimRecordsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref)),
             ...overallRecordsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref)),
         ];
 
@@ -713,6 +716,48 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
         team_age: teamAge,
         tournament_id: tournamentId,
     });
+}
+
+export async function updateTeamNamesForTournament(tournamentId: string): Promise<number> {
+    const teamsCollectionRef = collection(db, "teams");
+    const registrationsCollectionRef = collection(db, "registrations");
+    const [teamsSnapshot, registrationsSnapshot] = await Promise.all([
+        getDocs(query(teamsCollectionRef, where("tournament_id", "==", tournamentId))),
+        getDocs(query(registrationsCollectionRef, where("tournament_id", "==", tournamentId))),
+    ]);
+
+    const nameMap = new Map<string, string>();
+    for (const docSnap of registrationsSnapshot.docs) {
+        const registration = docSnap.data() as Registration;
+        if (registration.user_global_id && registration.user_name) {
+            nameMap.set(registration.user_global_id, registration.user_name);
+        }
+    }
+
+    let updatedCount = 0;
+    for (const docSnap of teamsSnapshot.docs) {
+        const team = docSnap.data() as Team;
+        const leaderId = stripTeamLeaderPrefix(team.leader_id);
+        const leaderName = leaderId ? nameMap.get(leaderId) : undefined;
+        const memberNames = (team.members ?? [])
+            .map((member) => member.global_id)
+            .filter(Boolean)
+            .map((memberId) => nameMap.get(memberId))
+            .filter((name): name is string => Boolean(name));
+
+        const nameParts = [leaderName, ...memberNames].filter((name): name is string => Boolean(name));
+        if (nameParts.length === 0) {
+            continue;
+        }
+
+        const nextName = nameParts.join(" & ");
+        if (nextName !== team.name) {
+            await updateDoc(docSnap.ref, {name: nextName});
+            updatedCount += 1;
+        }
+    }
+
+    return updatedCount;
 }
 
 export async function updateTournamentStatus(
