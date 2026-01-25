@@ -612,21 +612,22 @@ export default function TournamentView() {
                                 id && user?.registration_records?.some((record) => record.tournament_id === id),
                             );
                             const isDisabled =
-                                !id || !hasRegistrationDates || tournamentFull || !registrationOpen || alreadyRegistered;
+                                !id ||
+                                (!isAdmin && (!hasRegistrationDates || tournamentFull || !registrationOpen || alreadyRegistered));
                             let disabledMessage = "";
 
-                            if (!hasRegistrationDates) {
+                            if (!isAdmin && !hasRegistrationDates) {
                                 disabledMessage = "Registration is not available for this tournament.";
-                            } else if (tournamentFull) {
+                            } else if (!isAdmin && tournamentFull) {
                                 disabledMessage = "Participant limit reached.";
-                            } else if (!registrationOpen) {
+                            } else if (!isAdmin && !registrationOpen) {
                                 const now = Timestamp.now().toMillis();
                                 if (registrationWindow && now < registrationWindow.start) {
                                     disabledMessage = "Registration has not started yet.";
                                 } else {
                                     disabledMessage = "Registration has closed.";
                                 }
-                            } else if (alreadyRegistered) {
+                            } else if (!isAdmin && alreadyRegistered) {
                                 disabledMessage = "You have already registered for this tournament.";
                             }
 

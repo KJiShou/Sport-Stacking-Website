@@ -1,11 +1,11 @@
 import type {Team} from "@/schema";
-import {getUserByGlobalId} from "@/services/firebase/authService";
 import {db} from "@/services/firebase/config";
+import {fetchProfileByGlobalId} from "@/services/firebase/profileService";
 import {fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {getTeamEventLabels} from "@/utils/tournament/eventUtils";
 import {Result, Spin, Typography} from "@arco-design/web-react";
 import {getAuth} from "firebase/auth";
-import {doc, getDoc} from "firebase/firestore";
+import {collection, doc, getDoc, getDocs, query, where} from "firebase/firestore";
 import {useEffect, useState} from "react";
 
 const {Paragraph} = Typography;
@@ -42,8 +42,8 @@ export default function VerifyPage() {
             const eventLabel = eventLabels.length > 0 ? eventLabels.join(", ") : fallbackEventLabel || fallbackEventId;
 
             const leaderId = teamData.leader_id ?? "";
-            const leaderUser = leaderId ? await getUserByGlobalId(leaderId) : undefined;
-            const leaderLabel = leaderUser?.name ? `${leaderUser.name} (${leaderId})` : leaderId;
+            const leaderProfile = leaderId ? await fetchProfileByGlobalId(leaderId) : undefined;
+            const leaderLabel = leaderProfile?.name ? `${leaderProfile.name} (${leaderId})` : leaderId;
 
             setVerificationDetails({
                 eventLabel: eventLabel || undefined,
@@ -103,19 +103,30 @@ export default function VerifyPage() {
                 return;
             }
 
-            const user = await getUserByGlobalId(memberId);
-
-            if (!user) {
+            const profile = await fetchProfileByGlobalId(memberId);
+            if (!profile) {
                 setStatus("error");
-                setErrorMessage("User not found.");
+                setErrorMessage("Profile not found.");
                 return;
             }
 
-            const registrationRecord = user.registration_records?.find((rec) => rec.tournament_id === tournamentId);
-
-            if (!registrationRecord) {
-                setStatus("not_registered");
-                return;
+            const registrationQuery = query(
+                collection(db, "registrations"),
+                where("tournament_id", "==", tournamentId),
+                where("profile_id", "==", profile.id ?? ""),
+            );
+            const registrationSnapshot = await getDocs(registrationQuery);
+            if (registrationSnapshot.empty) {
+                const legacyQuery = query(
+                    collection(db, "registrations"),
+                    where("tournament_id", "==", tournamentId),
+                    where("user_global_id", "==", memberId),
+                );
+                const legacySnapshot = await getDocs(legacyQuery);
+                if (legacySnapshot.empty) {
+                    setStatus("not_registered");
+                    return;
+                }
             }
 
             try {

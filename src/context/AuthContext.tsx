@@ -1,4 +1,5 @@
 import type {AuthContextValue, FirestoreUser} from "@/schema";
+import {ensureDefaultProfileFromUser} from "@/services/firebase/profileService";
 import {type User, onAuthStateChanged} from "firebase/auth";
 import {doc, getDoc} from "firebase/firestore";
 // src/context/AuthContext.tsx
@@ -29,7 +30,13 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
                 try {
                     const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
                     if (userDoc.exists()) {
-                        setUser(userDoc.data() as FirestoreUser);
+                        const fetchedUser = userDoc.data() as FirestoreUser;
+                        setUser(fetchedUser);
+                        try {
+                            await ensureDefaultProfileFromUser(fetchedUser);
+                        } catch (error) {
+                            console.warn("Failed to ensure default profile:", error);
+                        }
                     } else {
                         console.warn("No Firestore user found for:", firebaseUser.email);
                         setUser(null);
