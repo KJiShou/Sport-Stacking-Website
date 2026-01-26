@@ -2,8 +2,11 @@
 
 import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament, TournamentEvent} from "@/schema";
+import type {DoubleRecruitment, TeamRecruitment} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
+import {getDoubleRecruitmentsByParticipant} from "@/services/firebase/doubleRecruitmentService";
 import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
+import {getTeamRecruitmentsByLeader} from "@/services/firebase/teamRecruitmentService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {getEventKey, getEventLabel, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
@@ -18,6 +21,7 @@ import {
     Result,
     Select,
     Spin,
+    Tag,
     Typography,
 } from "@arco-design/web-react";
 import {IconDelete, IconExclamationCircle, IconUndo} from "@arco-design/web-react/icon";
@@ -94,6 +98,8 @@ export default function ViewTournamentRegistrationPage() {
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [registration, setRegistration] = useState<Registration | null>(null);
     const [teams, setTeams] = useState<LegacyTeam[]>([]);
+    const [teamRecruitments, setTeamRecruitments] = useState<TeamRecruitment[]>([]);
+    const [doubleRecruitments, setDoubleRecruitments] = useState<DoubleRecruitment[]>([]);
     const [loading, setLoading] = useState(true);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
     const [availableEventsState, setAvailableEventsState] = useState<TournamentEvent[]>([]);
@@ -181,6 +187,19 @@ export default function ViewTournamentRegistrationPage() {
                     };
                 });
                 setTeams(normalizedTeams);
+                const [leaderRecruitments, participantDoubleRecruitments] = await Promise.all([
+                    getTeamRecruitmentsByLeader(user.global_id),
+                    getDoubleRecruitmentsByParticipant(user.global_id),
+                ]);
+                setTeamRecruitments(
+                    leaderRecruitments.filter(
+                        (recruitment) =>
+                            recruitment.tournament_id === tournamentId && recruitment.status === "active",
+                    ),
+                );
+                setDoubleRecruitments(
+                    participantDoubleRecruitments.filter((recruitment) => recruitment.tournament_id === tournamentId),
+                );
                 setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
                 const displayedEvents = filterDisplayedEvents(userReg.events_registered ?? [], tournamentEvents);
@@ -269,10 +288,21 @@ export default function ViewTournamentRegistrationPage() {
                                         availableEventsState.find(
                                             (evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt),
                                         ) ?? null;
-                                    const isDoubleEvent = eventDefinition?.type === "Double";
+                                    const isDoubleEvent = (eventDefinition?.type ?? "").toLowerCase().includes("double");
                                     const teamNameLabel = isDoubleEvent ? "Double Partner Name" : "Team Name";
                                     const teamLeaderLabel = isDoubleEvent ? "Double Leader" : "Team Leader";
                                     const teamMemberLabel = isDoubleEvent ? "Double Partner Members" : "Team Members";
+                                    const activeTeamRecruitment = teamRecruitments.find(
+                                        (recruitment) => recruitment.team_id === team.id,
+                                    );
+                                    const activeDoubleRecruitment = isDoubleEvent
+                                        ? doubleRecruitments.find(
+                                              (recruitment) =>
+                                                  recruitment.event_id === eventId &&
+                                                  recruitment.participant_id === user?.global_id,
+                                          )
+                                        : undefined;
+                                    const activeRecruitment = activeDoubleRecruitment ?? activeTeamRecruitment;
                                     return (
                                         <div key={team.id}>
                                             <div className={`text-center font-semibold mb-2`}>{teamEventLabel}</div>
@@ -296,11 +326,37 @@ export default function ViewTournamentRegistrationPage() {
                                                     ))}
                                                 </div>
                                             </Form.Item>
+                                            <Form.Item label="Recruitment">
+                                                {activeRecruitment ? (
+                                                    <Tag color="blue">
+                                                        Recruitment {activeRecruitment.status}
+                                                    </Tag>
+                                                ) : (
+                                                    <Tag color="gray">No recruitment</Tag>
+                                                )}
+                                            </Form.Item>
                                         </div>
                                     );
                                 })}
                             </div>
                         </Form.Item>
+
+                        {(doubleRecruitments.length > 0 || teamRecruitments.length > 0) && (
+                            <Form.Item label="Recruitments">
+                                <div className="flex flex-col gap-2">
+                                    {doubleRecruitments.map((recruitment) => (
+                                        <Tag key={recruitment.id} color="arcoblue">
+                                            Double · {recruitment.event_name} · {recruitment.status}
+                                        </Tag>
+                                    ))}
+                                    {teamRecruitments.map((recruitment) => (
+                                        <Tag key={recruitment.id} color="green">
+                                            Team · {recruitment.team_name} · {recruitment.event_name} · {recruitment.status}
+                                        </Tag>
+                                    ))}
+                                </div>
+                            </Form.Item>
+                        )}
 
                         {requiresPaymentProof ? (
                             <Form.Item label="Payment Proof">

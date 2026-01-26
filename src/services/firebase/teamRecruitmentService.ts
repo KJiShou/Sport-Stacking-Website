@@ -20,11 +20,16 @@ const TEAM_RECRUITMENT_COLLECTION = "team_recruitment";
 
 export async function createTeamRecruitment(data: Omit<TeamRecruitment, "id" | "created_at" | "status">) {
     try {
-        const recruitmentData = {
+        const recruitmentData: Record<string, unknown> = {
             ...data,
             created_at: new Date(),
             status: "active",
         };
+        for (const [key, value] of Object.entries(recruitmentData)) {
+            if (value === undefined) {
+                delete recruitmentData[key];
+            }
+        }
 
         const docRef = await addDoc(collection(db, TEAM_RECRUITMENT_COLLECTION), recruitmentData);
         return docRef.id;
