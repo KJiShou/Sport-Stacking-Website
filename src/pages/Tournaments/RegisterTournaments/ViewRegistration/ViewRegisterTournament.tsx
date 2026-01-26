@@ -4,10 +4,10 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {DoubleRecruitment, TeamRecruitment} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
-import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
-import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {getDoubleRecruitmentsByParticipant} from "@/services/firebase/doubleRecruitmentService";
+import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
 import {getTeamRecruitmentsByLeader} from "@/services/firebase/teamRecruitmentService";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {getEventKey, getEventLabel, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
