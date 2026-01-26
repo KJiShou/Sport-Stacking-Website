@@ -1,10 +1,12 @@
 import {AvatarUploader} from "@/components/common/AvatarUploader";
 import {useAuthContext} from "@/context/AuthContext";
-import type {AllTimeStat, FirestoreUser, FirestoreUserSchema, OnlineBest, RecordItem} from "@/schema";
+import type {AllTimeStat, FirestoreUser, FirestoreUserSchema, OnlineBest, Profile, RecordItem} from "@/schema";
 import {countries} from "@/schema/Country";
 import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
+import {createProfile, fetchProfilesByOwner} from "@/services/firebase/profileService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
+import {parseIcToProfile} from "@/utils/icParser";
 import {Avatar, Spin} from "@arco-design/web-react";
 import {
     Button,
@@ -87,6 +89,10 @@ export default function RegisterPage() {
     const [addPasswordLoading, setAddPasswordLoading] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
+    const [profiles, setProfiles] = useState<Profile[]>([]);
+    const [profilesLoading, setProfilesLoading] = useState(false);
+    const [profileModalVisible, setProfileModalVisible] = useState(false);
+    const [profileForm] = Form.useForm();
     const hasPasswordProvider = Boolean(firebaseUser?.providerData?.some((provider) => provider.providerId === "password"));
 
     function confirm() {
@@ -197,6 +203,26 @@ export default function RegisterPage() {
         })();
     }, [id]);
 
+    const loadProfiles = async () => {
+        if (!authUser?.id) return;
+        setProfilesLoading(true);
+        try {
+            const data = await fetchProfilesByOwner(authUser.id);
+            setProfiles(data);
+        } catch (error) {
+            console.error("Failed to load profiles:", error);
+            Message.error("Failed to load profiles");
+        } finally {
+            setProfilesLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (authUser?.id) {
+            loadProfiles();
+        }
+    }, [authUser?.id]);
+
     // 构建统计数据示例
     const allTimeStats: AllTimeStat[] = [
         {event: "3-3-3", time: (user?.best_times?.["3-3-3"] as {time?: number} | undefined)?.time ?? 0, rank: "-"},
@@ -229,6 +255,53 @@ export default function RegisterPage() {
             setLoading(false);
             setIsEditMode(false);
         }
+    };
+
+    const handleCreateProfile = async () => {
+        if (!authUser?.id) {
+            Message.error("Please log in again.");
+            return;
+        }
+        try {
+            const values = await profileForm.validate();
+            const birthdateValue =
+                values.birthdate && typeof values.birthdate.toDate === "function" ? values.birthdate.toDate() : values.birthdate;
+            await createProfile({
+                owner_uid: authUser.id,
+                owner_email: authUser.email ?? null,
+                name: values.name,
+                IC: values.IC,
+                birthdate: birthdateValue,
+                gender: values.gender,
+                country: values.country ?? null,
+                phone_number: values.phone_number ?? null,
+                school: values.school ?? null,
+                contact_email: values.contact_email ?? authUser.email ?? null,
+                status: "claimed",
+                created_by_admin_id: null,
+            });
+            Message.success("Profile created");
+            setProfileModalVisible(false);
+            profileForm.resetFields();
+            loadProfiles();
+        } catch (error) {
+            if (error instanceof Error) {
+                Message.error(error.message);
+            } else {
+                Message.error("Failed to create profile");
+            }
+        }
+    };
+
+    const openProfileModal = () => {
+        profileForm.setFieldsValue({
+            birthdate: user?.birthdate ?? undefined,
+            gender: user?.gender ?? undefined,
+            country: user?.country ?? undefined,
+            phone_number: user?.phone_number ?? undefined,
+            contact_email: user?.email ?? authUser?.email ?? undefined,
+        });
+        setProfileModalVisible(true);
     };
 
     const handleSecuritySubmit = async (values: {currentPassword: string; newPassword: string; confirmPassword: string}) => {
@@ -291,7 +364,6 @@ export default function RegisterPage() {
                                 {user && <AvatarUploader user={user} setUser={setUser} />}
                                 <div>
                                     <Title heading={4}>{user?.name}</Title>
-                                    <Text type="secondary">Account ID: {user?.global_id}</Text>
                                 </div>
 
                                 <Tabs defaultActiveTab="basic" className="mt-6">
@@ -422,6 +494,112 @@ export default function RegisterPage() {
                                             </div>
                                         </Form>
                                     </TabPane>
+                                    <TabPane title="Profiles" key="profiles">
+                                        <div className="w-full flex justify-between items-center mb-4">
+                                            <Title heading={6}>Your Profiles</Title>
+                                            <Button type="primary" onClick={openProfileModal}>
+                                                Add Profile
+                                            </Button>
+                                        </div>
+                                        <Table
+                                            rowKey={(record) => record.id ?? record.global_id}
+                                            loading={profilesLoading}
+                                            columns={[
+                                                {title: "Global ID", dataIndex: "global_id", width: 120},
+                                                {title: "IC", dataIndex: "IC", width: 160},
+                                                {title: "Name", dataIndex: "name", width: 200},
+                                                {title: "Gender", dataIndex: "gender", width: 120},
+                                                {
+                                                    title: "Status",
+                                                    width: 120,
+                                                    render: (_, record) => (
+                                                        <span className="px-2 py-1 rounded bg-gray-100 text-gray-700">
+                                                            {record.status === "claimed" ? "Claimed" : "Unclaimed"}
+                                                        </span>
+                                                    ),
+                                                },
+                                            ]}
+                                            data={profiles}
+                                            pagination={{pageSize: 6}}
+                                            locale={{emptyText: <Empty description="No profiles yet" />}}
+                                        />
+                                        <Modal
+                                            title="Add Profile"
+                                            visible={profileModalVisible}
+                                            onCancel={() => {
+                                                setProfileModalVisible(false);
+                                                profileForm.resetFields();
+                                            }}
+                                            onOk={handleCreateProfile}
+                                        >
+                                            <Form form={profileForm} layout="vertical">
+                                                <Form.Item
+                                                    label="Name"
+                                                    field="name"
+                                                    rules={[{required: true, message: "Enter name"}]}
+                                                >
+                                                    <Input placeholder="Full name" />
+                                                </Form.Item>
+                                                <Form.Item
+                                                    label="IC"
+                                                    field="IC"
+                                                    rules={[
+                                                        {required: true, message: "Enter IC"},
+                                                        {match: /^\d{12}$/, message: "IC must be 12 digits"},
+                                                    ]}
+                                                >
+                                                    <Input
+                                                        placeholder="123456789012"
+                                                        onChange={(value) => {
+                                                            const derived = parseIcToProfile(value);
+                                                            if (derived.birthdate) {
+                                                                profileForm.setFieldValue("birthdate", derived.birthdate);
+                                                            }
+                                                            if (derived.gender) {
+                                                                profileForm.setFieldValue("gender", derived.gender);
+                                                            }
+                                                        }}
+                                                    />
+                                                </Form.Item>
+                                                <Form.Item
+                                                    label="Birthdate"
+                                                    field="birthdate"
+                                                    rules={[{required: true, message: "Select birthdate"}]}
+                                                >
+                                                    <DatePicker style={{width: "100%"}} />
+                                                </Form.Item>
+                                                <Form.Item
+                                                    label="Gender"
+                                                    field="gender"
+                                                    rules={[{required: true, message: "Select gender"}]}
+                                                >
+                                                    <Select placeholder="Select gender" options={["Male", "Female"]} />
+                                                </Form.Item>
+                                                <Form.Item label="Phone Number" field="phone_number">
+                                                    <Input placeholder="Phone number" />
+                                                </Form.Item>
+                                                <Form.Item label="School" field="school">
+                                                    <Input placeholder="School/University/College" />
+                                                </Form.Item>
+                                                <Form.Item label="Contact Email" field="contact_email">
+                                                    <Input placeholder="Optional contact email" />
+                                                </Form.Item>
+                                                <Form.Item label="Country / State" field="country">
+                                                    <Cascader
+                                                        showSearch
+                                                        changeOnSelect
+                                                        allowClear
+                                                        filterOption={(input, node) =>
+                                                            node.label.toLowerCase().includes(input.toLowerCase())
+                                                        }
+                                                        options={countries}
+                                                        placeholder="Please select location"
+                                                        expandTrigger="hover"
+                                                    />
+                                                </Form.Item>
+                                            </Form>
+                                        </Modal>
+                                    </TabPane>
 
                                     {hasPasswordProvider ? (
                                         <TabPane title="Security Settings" key="security">
@@ -513,9 +691,6 @@ export default function RegisterPage() {
                                 </div>
                             )}
                             <Text className="flex items-center justify-center gap-1 text-4xl font-bold mt-2">{user?.name}</Text>
-                            <Text className="flex items-center justify-center gap-1">
-                                <IconUser /> {user?.global_id}
-                            </Text>
                             <Descriptions
                                 className={"w-full h-full py-8 px-4"}
                                 border

@@ -17,6 +17,7 @@ import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByParticipant} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
+import {fetchProfileById} from "./profileService";
 import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
 
 async function getApprovedRegistrationCount(tournamentId: string): Promise<number> {
@@ -51,7 +52,11 @@ async function ensureTournamentHasCapacity(tournamentId: string, maxParticipants
     }
 }
 
-export async function createRegistration(user: FirestoreUser, data: Registration): Promise<string> {
+export async function createRegistration(
+    user: FirestoreUser,
+    data: Registration,
+    options?: {skipUserIdCheck?: boolean},
+): Promise<string> {
     if (!user?.id) {
         throw new Error("User global_id is missing.");
     }
@@ -60,14 +65,49 @@ export async function createRegistration(user: FirestoreUser, data: Registration
         throw new Error("User id is required in registration payload.");
     }
 
-    const existingByUserIdQuery = query(
-        collection(db, "registrations"),
-        where("tournament_id", "==", data.tournament_id),
-        where("user_id", "==", data.user_id),
-    );
-    const existingByUserIdSnapshot = await getDocs(existingByUserIdQuery);
-    if (!existingByUserIdSnapshot.empty) {
-        throw new Error("You have already registered for this tournament.");
+    if (data.profile_id) {
+        const profile = await fetchProfileById(data.profile_id);
+        if (profile) {
+            const existingByProfileIdQuery = query(
+                collection(db, "registrations"),
+                where("tournament_id", "==", data.tournament_id),
+                where("profile_id", "==", profile.id ?? data.profile_id),
+            );
+            const existingByProfileIdSnapshot = await getDocs(existingByProfileIdQuery);
+            if (!existingByProfileIdSnapshot.empty) {
+                throw new Error("This IC has already registered for this tournament.");
+            }
+
+            const existingByGlobalIdQuery = query(
+                collection(db, "registrations"),
+                where("tournament_id", "==", data.tournament_id),
+                where("user_global_id", "==", profile.global_id),
+            );
+            const existingByGlobalIdSnapshot = await getDocs(existingByGlobalIdQuery);
+            if (!existingByGlobalIdSnapshot.empty) {
+                throw new Error("This IC has already registered for this tournament.");
+            }
+        }
+
+        const existingByProfileQuery = query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", data.tournament_id),
+            where("profile_id", "==", data.profile_id),
+        );
+        const existingByProfileSnapshot = await getDocs(existingByProfileQuery);
+        if (!existingByProfileSnapshot.empty) {
+            throw new Error("This IC has already registered for this tournament.");
+        }
+    } else if (!options?.skipUserIdCheck) {
+        const existingByUserIdQuery = query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", data.tournament_id),
+            where("user_id", "==", data.user_id),
+        );
+        const existingByUserIdSnapshot = await getDocs(existingByUserIdQuery);
+        if (!existingByUserIdSnapshot.empty) {
+            throw new Error("You have already registered for this tournament.");
+        }
     }
 
     if (data.user_global_id) {

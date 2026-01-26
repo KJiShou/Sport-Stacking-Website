@@ -10,6 +10,9 @@ export type {AgeBracket, FinalCriterion, PaymentMethod, Tournament, TournamentEv
 export {FirestoreUserSchema} from "./UserSchema";
 export type {FirestoreUser} from "./UserSchema";
 
+export {ProfileSchema} from "./ProfileSchema";
+export type {Profile} from "./ProfileSchema";
+
 export type {AuthContextValue} from "./AuthSchema";
 
 export {RoleSchema} from "./RoleSchema";
