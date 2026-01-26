@@ -8,11 +8,16 @@ export async function createDoubleRecruitment(
     data: Omit<DoubleRecruitment, "id" | "created_at" | "status">,
 ): Promise<string> {
     try {
-        const recruitmentData = {
+        const recruitmentData: Record<string, unknown> = {
             ...data,
             created_at: new Date(),
             status: "active" as const,
         };
+        for (const [key, value] of Object.entries(recruitmentData)) {
+            if (value === undefined) {
+                delete recruitmentData[key];
+            }
+        }
 
         const docRef = await addDoc(collection(db, DOUBLE_RECRUITMENT_COLLECTION), recruitmentData);
         return docRef.id;
