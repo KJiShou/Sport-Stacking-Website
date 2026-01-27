@@ -4,7 +4,9 @@ import {db} from "./config";
 
 const DOUBLE_RECRUITMENT_COLLECTION = "double_recruitment";
 
-export async function createDoubleRecruitment(data: Omit<DoubleRecruitment, "id" | "created_at" | "status">): Promise<string> {
+export async function createDoubleRecruitment(
+    data: Omit<DoubleRecruitment, "id" | "created_at" | "status">,
+): Promise<string> {
     try {
         const recruitmentData: Record<string, unknown> = {
             ...data,

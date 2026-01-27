@@ -103,11 +103,15 @@ const Navbar: React.FC = () => {
                     >
                         <MenuItem key="/admins">
                             <IconUser />
-                            Admin Dashboard
+                            Permissions
                         </MenuItem>
                         <MenuItem key="/admin/team-recruitment">
                             <IconUserGroup />
                             Team Recruitment
+                        </MenuItem>
+                        <MenuItem key="/admin/users">
+                            <IconUserGroup />
+                            User Management
                         </MenuItem>
                         <MenuItem key="/admin/carousel">
                             <IconUserGroup />
