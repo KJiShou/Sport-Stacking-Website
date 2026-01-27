@@ -944,7 +944,8 @@ export default function EditTournamentRegistrationPage() {
                                                 {activeRecruitment ? (
                                                     <Tag color={activeRecruitment.status === "active" ? "blue" : "gray"}>
                                                         Recruitment {activeRecruitment.status}
-                                                        {typeof activeRecruitment.max_members_needed === "number"
+                                                        {"max_members_needed" in activeRecruitment &&
+                                                        typeof activeRecruitment.max_members_needed === "number"
                                                             ? ` · Need ${activeRecruitment.max_members_needed}`
                                                             : ""}
                                                     </Tag>
