@@ -2,18 +2,12 @@
 
 import LoginForm from "@/components/common/Login";
 import {useAuthContext} from "@/context/AuthContext";
-import type {ExpandedEvent, Profile, Registration, Tournament, TournamentEvent} from "@/schema";
+import type {ExpandedEvent, Registration, Tournament, TournamentEvent} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {addUserRegistrationRecord, getUserByGlobalId} from "@/services/firebase/authService";
+import {addUserRegistrationRecord, getUserByGlobalId, getUserEmailByGlobalId} from "@/services/firebase/authService";
 import {createDoubleRecruitment} from "@/services/firebase/doubleRecruitmentService";
 import {createIndividualRecruitment} from "@/services/firebase/individualRecruitmentService";
-import {
-    fetchAllProfiles,
-    fetchProfileByGlobalId,
-    fetchProfilesByOwner,
-    getProfileContactEmailByGlobalId,
-} from "@/services/firebase/profileService";
 import {createRegistration, fetchRegistrations} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService";
@@ -23,7 +17,13 @@ import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {getCountryFlag} from "@/utils/countryFlags";
-import {getEventKey, getEventLabel, isTeamEvent, matchesAnyEventKey, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
+import {
+    getEventKey,
+    getEventLabel,
+    isTeamEvent,
+    matchesAnyEventKey,
+    sanitizeEventCodes,
+} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Checkbox,
@@ -61,17 +61,15 @@ type TeamEntry = {
     event?: ExpandedEvent;
 };
 
-const isParentChildEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "parent & child";
-const isTeamRelayEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "team relay";
-const isDoubleEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "double";
+const isParentChildEvent = (event?: ExpandedEvent) =>
+    (event?.type ?? "").toLowerCase() === "parent & child";
+const isTeamRelayEvent = (event?: ExpandedEvent) =>
+    (event?.type ?? "").toLowerCase() === "team relay";
+const isDoubleEvent = (event?: ExpandedEvent) =>
+    (event?.type ?? "").toLowerCase() === "double";
 const isNonScoringEvent = (event?: ExpandedEvent) => {
     const normalized = (event?.type ?? "").toLowerCase();
-    return (
-        normalized === "stackout champion" ||
-        normalized === "stack out champion" ||
-        normalized === "stack up champion" ||
-        normalized === "blindfolded cycle"
-    );
+    return normalized === "stackout champion" || normalized === "stack out champion" || normalized === "stack up champion" || normalized === "blindfolded cycle";
 };
 
 export default function RegisterTournamentPage() {
@@ -97,15 +95,7 @@ export default function RegisterTournamentPage() {
     const [price, setPrice] = useState<number | null>(null);
     const [lookingForTeams, setLookingForTeams] = useState<string[]>([]); // Events user is looking for teams
     const [loginModalVisible, setLoginModalVisible] = useState(false);
-    const [profiles, setProfiles] = useState<Profile[]>([]);
-    const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-    const [registerAsAdmin, setRegisterAsAdmin] = useState(false);
-    const [autoVerifyTeams, setAutoVerifyTeams] = useState(true);
-    const isAdmin = user?.roles?.modify_admin || user?.roles?.edit_tournament || false;
     const requiresPaymentProof = (price ?? 0) > 0;
-    const shouldRequirePaymentProof = requiresPaymentProof && !(registerAsAdmin && isAdmin);
-    const showPaymentProofSection = requiresPaymentProof;
-    const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null;
 
     useEffect(() => {
         if (!firebaseUser) {
@@ -114,47 +104,6 @@ export default function RegisterTournamentPage() {
             setLoginModalVisible(false);
         }
     }, [firebaseUser]);
-
-    useEffect(() => {
-        if (!firebaseUser) {
-            setProfiles([]);
-            setSelectedProfileId(null);
-            return;
-        }
-
-        const loadProfiles = async () => {
-            try {
-                if (registerAsAdmin && isAdmin) {
-                    const allProfiles = await fetchAllProfiles();
-                    setProfiles(allProfiles);
-                    if (!selectedProfileId && allProfiles.length > 0) {
-                        setSelectedProfileId(allProfiles[0].id ?? null);
-                    }
-                    return;
-                }
-
-                const ownedProfiles = await fetchProfilesByOwner(firebaseUser.uid);
-                setProfiles(ownedProfiles);
-                if (!selectedProfileId && ownedProfiles.length > 0) {
-                    setSelectedProfileId(ownedProfiles[0].id ?? null);
-                }
-            } catch (error) {
-                console.error("Failed to load profiles:", error);
-            }
-        };
-
-        loadProfiles();
-    }, [firebaseUser, user, registerAsAdmin, isAdmin]);
-
-    useEffect(() => {
-        if (!profiles.length) {
-            return;
-        }
-        const exists = profiles.some((profile) => profile.id === selectedProfileId);
-        if (!exists) {
-            setSelectedProfileId(profiles[0].id ?? null);
-        }
-    }, [profiles, selectedProfileId]);
 
     const findEventByKey = (eventKey: string): ExpandedEvent | undefined =>
         availableEvents.find((event) => getEventKey(event) === eventKey || event.type === eventKey);
@@ -252,19 +201,6 @@ export default function RegisterTournamentPage() {
                 Message.error("You must be logged in to register.");
                 return;
             }
-            if (!selectedProfile) {
-                Message.error("Please select a profile before registering.");
-                setLoading(false);
-                return;
-            }
-            if (registerAsAdmin && !selectedProfile.id) {
-                Message.error("Selected profile is missing an ID. Please refresh and try again.");
-                setLoading(false);
-                return;
-            }
-
-            const registrantProfile = selectedProfile;
-            const registrantGlobalId = registrantProfile.global_id ?? "";
 
             type Team = NonNullable<RegistrationForm["teams"]>[number];
             const teamsRaw = (values.teams ?? {}) as Record<string, Team>;
@@ -283,7 +219,7 @@ export default function RegisterTournamentPage() {
                     throw new Error(`${eventLabel}: team leader cannot be included in team members.`);
                 }
 
-                const userInTeam = leaderId === registrantGlobalId || memberIds.includes(registrantGlobalId);
+                const userInTeam = leaderId === user.global_id || memberIds.includes(user.global_id ?? "");
                 if (!isLookingForMembers && !userInTeam) {
                     Message.error(`${eventLabel}: you must be either leader or one of the members.`);
                     setLoading(false);
@@ -320,7 +256,9 @@ export default function RegisterTournamentPage() {
                 }
             }
 
-            const sanitizedEventsRegistered = (values.events_registered ?? []).filter((eventId) => eventId !== "Individual");
+            const sanitizedEventsRegistered = (values.events_registered ?? []).filter(
+                (eventId) => eventId !== "Individual",
+            );
             const selectedEventIds = sanitizedEventsRegistered;
             const limitedEvents = availableEvents.filter(
                 (event) => isNonScoringEvent(event) && selectedEventIds.includes(getEventKey(event)),
@@ -343,38 +281,26 @@ export default function RegisterTournamentPage() {
                 }
             }
 
-            const registrantAge = tournament?.start_date
-                ? getAgeAtTournament(registrantProfile.birthdate, tournament.start_date)
-                : form.getFieldValue("age");
-            const registrationCountry =
-                registrantProfile.country?.[0] ?? user?.country?.[0] ?? registrantProfile.country?.[1] ?? "Malaysia";
-
             const registrationData: Registration = {
                 tournament_id: tournamentId,
-                user_id: registrantProfile.owner_uid ?? user?.id ?? "",
-                user_global_id: registrantGlobalId,
-                profile_id: registrantProfile.id ?? null,
-                user_name: registrantProfile.name,
-                age: registrantAge,
-                country: registrationCountry,
-                phone_number: registrantProfile.phone_number ?? values.phone_number,
-                gender: registrantProfile.gender,
-                organizer: registrantProfile.school ?? values.organizer ?? "",
+                user_id: user?.id ?? "",
+                user_global_id: user?.global_id ?? "",
+                user_name: values.user_name,
+                age: form.getFieldValue("age"),
+                country: user?.country?.[0] ?? "",
+                phone_number: values.phone_number,
+                gender: values.gender,
+                organizer: values.organizer ?? "",
                 events_registered: sanitizedEventsRegistered,
                 payment_proof_url: paymentProofUrl,
                 registration_status: "pending",
                 rejection_reason: null,
                 final_status: null,
-                registered_by_admin: registerAsAdmin && isAdmin,
-                registered_by_admin_id: registerAsAdmin && isAdmin ? user.id : null,
-                auto_verified_by_admin: registerAsAdmin && isAdmin && autoVerifyTeams,
                 created_at: Timestamp.now(),
                 updated_at: Timestamp.now(),
             };
 
-            const registrationId = await createRegistration(user, registrationData, {
-                skipUserIdCheck: registerAsAdmin && isAdmin,
-            });
+            const registrationId = await createRegistration(user, registrationData);
             let needsMemberVerification = false;
 
             for (const [eventId, teamData] of Object.entries(teamsRaw)) {
@@ -384,10 +310,10 @@ export default function RegisterTournamentPage() {
                 if (eventType.includes("double") && teamData.looking_for_team_members) {
                     try {
                         await createDoubleRecruitment({
-                            participant_id: registrantGlobalId,
+                            participant_id: user.global_id ?? "",
                             tournament_id: tournamentId,
-                            participant_name: registrantProfile.name ?? "",
-                            age: registrantAge,
+                            participant_name: user.name ?? "",
+                            age: getAgeAtTournament(user.birthdate ?? new Date(), tournament.start_date ?? new Date()),
                             gender: (registrationData.gender ?? "Male") as "Male" | "Female",
                             country: registrationData.country ?? "",
                             event_id: eventId,
@@ -408,12 +334,7 @@ export default function RegisterTournamentPage() {
                     continue; // Skip if team name or leader is missing
                 }
                 const members = (teamData.member ?? [])
-                    .map((id) => {
-                        if (!id) return null;
-                        const isParentChild = findEventByKey(eventId)?.type.includes("Parent");
-                        const shouldAutoVerify = registerAsAdmin && isAdmin && autoVerifyTeams;
-                        return {global_id: id, verified: Boolean(isParentChild || shouldAutoVerify)};
-                    })
+                    .map((id) => (id ? {global_id: id, verified: findEventByKey(eventId)?.type.includes("Parent")} : null))
                     .filter((m): m is {global_id: string; verified: boolean} => m !== null);
 
                 const memberIds = members.map((m) => m.global_id);
@@ -421,16 +342,7 @@ export default function RegisterTournamentPage() {
                     memberIds.push(teamData.leader);
                 }
 
-                const memberUsers = await Promise.all(
-                    memberIds.map(async (id) => {
-                        const profile = await fetchProfileByGlobalId(id);
-                        if (profile) {
-                            return {birthdate: profile.birthdate};
-                        }
-                        const fallbackUser = await getUserByGlobalId(id);
-                        return fallbackUser ? {birthdate: fallbackUser.birthdate} : null;
-                    }),
-                );
+                const memberUsers = await Promise.all(memberIds.map((id) => getUserByGlobalId(id)));
 
                 const ages = memberUsers
                     .map((memberUser) => {
@@ -466,6 +378,10 @@ export default function RegisterTournamentPage() {
                         team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
                     } else if (eventType.includes("parent") && eventType.includes("child")) {
                         // Parent & Child: use child's age (registrant's age)
+                        const registrantAge =
+                            user?.birthdate && tournament?.start_date
+                                ? getAgeAtTournament(user.birthdate, tournament.start_date)
+                                : 0;
                         team_age = registrantAge;
                     } else {
                         // Default: use largest age (for backward compatibility)
@@ -513,28 +429,27 @@ export default function RegisterTournamentPage() {
                 }
 
                 const toNotify: string[] = [];
-                if (teamData.leader && teamData.leader !== registrantGlobalId) {
+                if (teamData.leader && teamData.leader !== user.global_id) {
                     toNotify.push(teamData.leader);
                 }
                 for (const memberId of teamData.member ?? []) {
-                    if (memberId && memberId !== registrantGlobalId) {
+                    if (memberId && memberId !== user.global_id) {
                         toNotify.push(memberId);
                     }
                 }
-                if (toNotify.length > 0 && !(registerAsAdmin && isAdmin && autoVerifyTeams)) {
+                if (toNotify.length > 0) {
                     needsMemberVerification = true;
                 }
 
-                if (!(registerAsAdmin && isAdmin && autoVerifyTeams)) {
-                    for (const globalId of toNotify) {
-                        try {
-                            const email = await getProfileContactEmailByGlobalId(globalId);
-                            if (email) {
-                                await sendProtectedEmail(email, tournamentId, teamId, globalId, registrationId);
-                            }
-                        } catch (err) {
-                            console.error(`❌ Failed to send verification to ${globalId}`, err);
+                for (const globalId of toNotify) {
+                    try {
+                        const userSnap = await getUserEmailByGlobalId(globalId);
+                        const email = userSnap?.email;
+                        if (email) {
+                            await sendProtectedEmail(email, tournamentId, teamId, globalId, registrationId);
                         }
+                    } catch (err) {
+                        console.error(`❌ Failed to send verification to ${globalId}`, err);
                     }
                 }
             }
@@ -546,10 +461,10 @@ export default function RegisterTournamentPage() {
                     for (const eventId of lookingForTeams) {
                         const eventObj = findEventByKey(eventId);
                         await createIndividualRecruitment({
-                            participant_id: registrantGlobalId,
+                            participant_id: user.global_id ?? "",
                             tournament_id: tournamentId,
-                            participant_name: registrantProfile.name ?? "",
-                            age: registrantAge,
+                            participant_name: user.name ?? "",
+                            age: getAgeAtTournament(user.birthdate ?? new Date(), tournament.start_date ?? new Date()),
                             gender: (registrationData.gender ?? "Male") as "Male" | "Female",
                             country: registrationData.country ?? "",
                             event_id: eventId,
@@ -575,9 +490,7 @@ export default function RegisterTournamentPage() {
                 updated_at: Timestamp.now(),
             };
 
-            if (registrantProfile.owner_uid) {
-                await addUserRegistrationRecord(registrantProfile.owner_uid, registrationRecord);
-            }
+            await addUserRegistrationRecord(user.id ?? "", registrationRecord);
 
             if (needsMemberVerification) {
                 Modal.info({
@@ -600,41 +513,21 @@ export default function RegisterTournamentPage() {
     };
 
     useEffect(() => {
-        if (!tournamentId) return;
+        if (!tournamentId || !user) return;
         const fetch = async () => {
             setLoading(true);
             try {
-                const profileContext =
-                    selectedProfile ??
-                    (user
-                        ? {
-                              id: null,
-                              owner_uid: user.id,
-                              owner_email: user.email,
-                              global_id: user.global_id ?? "",
-                              name: user.name,
-                              IC: user.IC,
-                              birthdate: user.birthdate,
-                              gender: user.gender,
-                              country: user.country,
-                              phone_number: user.phone_number ?? null,
-                              school: user.school ?? null,
-                          }
-                        : null);
                 const comp = await fetchTournamentById(tournamentId);
                 const fetchedEvents = comp?.events?.length ? comp.events : await fetchTournamentEvents(tournamentId);
                 const registrations = await fetchRegistrations(tournamentId);
-                const age =
-                    profileContext?.birthdate && comp?.start_date
-                        ? getAgeAtTournament(profileContext.birthdate, comp.start_date)
-                        : 0;
+                const age = user?.birthdate && comp?.start_date ? getAgeAtTournament(user.birthdate, comp.start_date) : 0;
                 const normalizeGender = (value: unknown): "Male" | "Female" | "Mixed" => {
                     if (value === "Male" || value === "Female") {
                         return value;
                     }
                     return "Mixed";
                 };
-                const userGender = normalizeGender(profileContext?.gender);
+                const userGender = normalizeGender(user?.gender);
 
                 // Filter events by age brackets and keep them as grouped events
                 const availableGroupedEvents: ExpandedEvent[] = [];
@@ -776,13 +669,13 @@ export default function RegisterTournamentPage() {
                 }
 
                 form.setFieldsValue({
-                    user_name: profileContext?.name ?? user?.name,
-                    id: profileContext?.global_id ?? user?.global_id,
+                    user_name: user?.name,
+                    id: user?.global_id,
                     age: age,
-                    gender: profileContext?.gender ?? user?.gender,
+                    gender: user?.gender,
                     events_registered: requiredEventIds, // 一开始强制先选上 required events
-                    phone_number: profileContext?.phone_number ?? user?.phone_number,
-                    organizer: profileContext?.school ?? user?.school ?? "",
+                    phone_number: user?.phone_number,
+                    organizer: user?.school ?? "",
                 });
 
                 // 初始化团队状态
@@ -797,11 +690,10 @@ export default function RegisterTournamentPage() {
             }
         };
         fetch();
-    }, [tournamentId, user, selectedProfile]);
+    }, [tournamentId, user]);
 
     useEffect(() => {
-        const profileName = selectedProfile?.name ?? user?.name ?? "";
-        if (!profileName || haveTeam.length === 0) return;
+        if (!user?.name || haveTeam.length === 0) return;
         for (const entry of haveTeam) {
             const eventType = entry.event?.type ?? "";
             const isParentChild = eventType === "Parent & Child";
@@ -810,25 +702,11 @@ export default function RegisterTournamentPage() {
                 continue;
             }
             const teamNameField = `teams.${entry.eventId}.name`;
-            if (form.getFieldValue(teamNameField) !== profileName) {
-                form.setFieldValue(teamNameField, profileName);
+            if (form.getFieldValue(teamNameField) !== user.name) {
+                form.setFieldValue(teamNameField, user.name);
             }
         }
-    }, [form, haveTeam, user?.name, selectedProfile?.name]);
-
-    useEffect(() => {
-        const profileId = selectedProfile?.global_id ?? "";
-        if (!profileId || haveTeam.length === 0) return;
-        for (const entry of haveTeam) {
-            if (!entry.requiresTeam) {
-                continue;
-            }
-            const leaderField = `teams.${entry.eventId}.leader`;
-            if (form.getFieldValue(leaderField) !== profileId) {
-                form.setFieldValue(leaderField, profileId);
-            }
-        }
-    }, [form, haveTeam, selectedProfile?.global_id]);
+    }, [form, haveTeam, user?.name]);
 
     if (!firebaseUser) {
         return (
@@ -897,53 +775,6 @@ export default function RegisterTournamentPage() {
                 <div className="w-full">
                     <Title heading={5}>Register for Event</Title>
                     <Form requiredSymbol={false} form={form} layout="vertical" onSubmit={handleRegister}>
-                        {isAdmin && (
-                            <Form.Item label="Admin Registration">
-                                <div className="flex flex-col gap-2">
-                                    <Checkbox checked={registerAsAdmin} onChange={(checked) => setRegisterAsAdmin(checked)}>
-                                        Register on behalf of a profile
-                                    </Checkbox>
-                                    {registerAsAdmin && (
-                                        <Checkbox checked={autoVerifyTeams} onChange={(checked) => setAutoVerifyTeams(checked)}>
-                                            Auto-verify team members (skip email verification)
-                                        </Checkbox>
-                                    )}
-                                </div>
-                            </Form.Item>
-                        )}
-                        <Form.Item label="Profile" required>
-                            <Select
-                                placeholder={registerAsAdmin ? "Select profile to register" : "Select your profile"}
-                                value={selectedProfileId ?? undefined}
-                                allowClear={false}
-                                showSearch
-                                onChange={(value) => setSelectedProfileId(value)}
-                                filterOption={(inputValue, option) => {
-                                    const query = inputValue.toLowerCase();
-                                    const props = option?.props ?? {};
-                                    const labelText = String(props.label ?? "").toLowerCase();
-                                    const valueText = String(props.value ?? "").toLowerCase();
-                                    const childrenText = String(props.children ?? "").toLowerCase();
-                                    return labelText.includes(query) || valueText.includes(query) || childrenText.includes(query);
-                                }}
-                            >
-                                {profiles.map((profile) => {
-                                    const labelParts = [
-                                        profile.name,
-                                        profile.IC ? `IC: ${profile.IC}` : null,
-                                        profile.global_id ? `ID: ${profile.global_id}` : null,
-                                        profile.status === "unclaimed" ? "Unclaimed" : null,
-                                    ]
-                                        .filter(Boolean)
-                                        .join(" • ");
-                                    return (
-                                        <Option key={profile.id ?? profile.global_id} value={profile.id ?? ""} label={labelParts}>
-                                            {labelParts}
-                                        </Option>
-                                    );
-                                })}
-                            </Select>
-                        </Form.Item>
                         <Form.Item disabled label="ID" field="id" rules={[{required: true, message: "ID is required."}]}>
                             <Input disabled placeholder="Enter your ID" />
                         </Form.Item>
@@ -992,7 +823,7 @@ export default function RegisterTournamentPage() {
                             <div className="flex flex-col gap-2">
                                 <Typography.Text type="secondary">
                                     For Double and Team Relay, only the team leader selects the event here. For Parent & Child,
-                                    only the child registers and enters the parent's Profile ID; the system auto-verifies the
+                                    only the child registers and enters the parent's Global ID; the system auto-verifies the
                                     parent.
                                 </Typography.Text>
                                 <Select
@@ -1045,7 +876,9 @@ export default function RegisterTournamentPage() {
                                 const selectedEventIds: string[] = form.getFieldValue("events_registered") || [];
                                 const teamEvents = selectedEventIds
                                     .map((eventId) => findEventByKey(eventId))
-                                    .filter((event) => event && isTeamEvent(event) && isTeamRelayEvent(event)) as ExpandedEvent[];
+                                    .filter(
+                                        (event) => event && isTeamEvent(event) && isTeamRelayEvent(event),
+                                    ) as ExpandedEvent[];
 
                                 if (teamEvents.length === 0) return null;
 
@@ -1066,7 +899,7 @@ export default function RegisterTournamentPage() {
                                                 const lookingForTeamMembers = form.getFieldValue(
                                                     `teams.${eventId}.looking_for_team_members`,
                                                 );
-                                                return (
+                                                    return (
                                                     <Checkbox
                                                         key={`individual-looking-${eventId}`}
                                                         checked={lookingForTeams.includes(eventId)}
@@ -1131,10 +964,10 @@ export default function RegisterTournamentPage() {
                                         const isPairEvent = isDoubleEvent || isParentChild;
                                         const teamNameLabel = isPairEvent ? "Name" : "Team Name";
                                         const teamLeaderLabel = isParentChild
-                                            ? "Child Profile ID"
+                                            ? "Child Global ID"
                                             : isDoubleEvent
-                                              ? "Double Leader Profile ID"
-                                              : "Team Leader Profile ID";
+                                              ? "Double Leader Global ID"
+                                              : "Team Leader Global ID";
                                         const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
@@ -1157,10 +990,7 @@ export default function RegisterTournamentPage() {
                                                             form.getFieldValue(`teams.${eventId}.looking_for_team_members`) ===
                                                             true;
                                                         const isLockedTeamName =
-                                                            isLookingTopLevel ||
-                                                            isDoubleEvent ||
-                                                            isParentChild ||
-                                                            isLookingForMembers;
+                                                            isLookingTopLevel || isDoubleEvent || isParentChild || isLookingForMembers;
                                                         const shouldRequireTeamName = !(
                                                             isLookingTopLevel ||
                                                             (isDoubleEvent && isLookingForMembers)
@@ -1208,7 +1038,7 @@ export default function RegisterTournamentPage() {
                                                                         ? [{required: true, message: "Team leader is required."}]
                                                                         : []
                                                                 }
-                                                                initialValue={selectedProfile?.global_id ?? ""}
+                                                                initialValue={user?.global_id ?? ""}
                                                             >
                                                                 <Input
                                                                     disabled
@@ -1237,7 +1067,7 @@ export default function RegisterTournamentPage() {
                                                                 field={`teams.${eventId}.member`}
                                                                 label={
                                                                     <div>
-                                                                        {isParentChild ? "Parent Profile ID" : teamMemberLabel}
+                                                                        {isParentChild ? "Parent Global ID" : teamMemberLabel}
                                                                         <Tooltip
                                                                             content={
                                                                                 requiredMemberCount !== undefined
@@ -1245,8 +1075,8 @@ export default function RegisterTournamentPage() {
                                                                                           requiredMemberCount === 1 ? "" : "s"
                                                                                       } (excluding the leader)`
                                                                                     : isParentChild
-                                                                                      ? "Enter parent's Profile ID. The system will auto-verify the parent."
-                                                                                      : "Must Enter Team Member Profile ID. Not include Team Leader Profile ID"
+                                                                                      ? "Enter parent's Global ID. The system will auto-verify the parent."
+                                                                                      : "Must Enter Team Member Global ID. Not include Team Leader Global ID"
                                                                             }
                                                                         >
                                                                             <IconExclamationCircle
@@ -1269,8 +1099,8 @@ export default function RegisterTournamentPage() {
                                                                     }}
                                                                     placeholder={
                                                                         isParentChild
-                                                                            ? "Input Parent Profile ID"
-                                                                            : "Input Team Member Profile ID"
+                                                                            ? "Input Parent Global ID"
+                                                                            : "Input Team Member Global ID"
                                                                     }
                                                                     allowClear
                                                                     disabled={shouldDisableMembers}
@@ -1292,11 +1122,8 @@ export default function RegisterTournamentPage() {
                                                             onChange={(checked: boolean) => {
                                                                 if (checked && isDoubleEvent) {
                                                                     form.setFieldValue(`teams.${eventId}.member`, []);
-                                                                } else if (!checked && isDoubleEvent && selectedProfile?.name) {
-                                                                    form.setFieldValue(
-                                                                        `teams.${eventId}.name`,
-                                                                        selectedProfile.name,
-                                                                    );
+                                                                } else if (!checked && isDoubleEvent && user?.name) {
+                                                                    form.setFieldValue(`teams.${eventId}.name`, user.name);
                                                                 }
                                                                 // Uncheck 'Looking for Teammates' when checking this
                                                                 setLookingForTeams((prev) =>
@@ -1370,7 +1197,7 @@ export default function RegisterTournamentPage() {
                             </div>
                         )}
 
-                        {showPaymentProofSection && (
+                        {requiresPaymentProof && (
                             <Form.Item
                                 label={
                                     <div>
@@ -1386,12 +1213,7 @@ export default function RegisterTournamentPage() {
                                     </div>
                                 }
                                 field="payment_proof"
-                                rules={[
-                                    {
-                                        required: shouldRequirePaymentProof && !paymentProofUrl,
-                                        message: "Payment proof is required.",
-                                    },
-                                ]}
+                                rules={[{required: !paymentProofUrl, message: "Payment proof is required."}]}
                             >
                                 <Upload
                                     className={"w-full flex flex-col items-center justify-center mb-10"}
@@ -1421,8 +1243,8 @@ export default function RegisterTournamentPage() {
                                             return;
                                         }
 
-                                        if (!selectedProfile?.global_id) {
-                                            Message.error("Profile not selected");
+                                        if (!user?.global_id) {
+                                            Message.error("User not authenticated");
                                             onError?.(new Error("User not authenticated"));
                                             return;
                                         }
@@ -1431,7 +1253,7 @@ export default function RegisterTournamentPage() {
                                             const downloadURL = await uploadFile(
                                                 file as File,
                                                 `tournaments/${tournamentId}/registrations/payment_proof`,
-                                                selectedProfile.global_id,
+                                                user.global_id,
                                                 (progress) => {
                                                     onProgress?.(progress);
                                                 },
