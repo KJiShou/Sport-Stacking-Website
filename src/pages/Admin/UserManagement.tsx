@@ -8,6 +8,16 @@ import {useEffect, useMemo, useState} from "react";
 
 const {Title, Paragraph, Text} = Typography;
 
+const formatBirthdate = (birthdate: FirestoreUser["birthdate"]): string => {
+    if (birthdate instanceof Date) {
+        return birthdate.toLocaleDateString();
+    }
+    if (birthdate && typeof birthdate === "object" && "toDate" in birthdate && typeof birthdate.toDate === "function") {
+        return birthdate.toDate().toLocaleDateString();
+    }
+    return "-";
+};
+
 export default function UserManagementPage() {
     const {user} = useAuthContext();
     const isAdmin = user?.roles?.modify_admin || false;
@@ -270,11 +280,7 @@ export default function UserManagementPage() {
                                 </div>
                                 <div>
                                     <Text type="secondary">Birthdate</Text>
-                                    <div>
-                                        {selectedUser.birthdate instanceof Date
-                                            ? selectedUser.birthdate.toLocaleDateString()
-                                            : (selectedUser.birthdate ?? "-")}
-                                    </div>
+                                    <div>{formatBirthdate(selectedUser.birthdate)}</div>
                                 </div>
                                 <div>
                                     <Text type="secondary">Country / State</Text>
