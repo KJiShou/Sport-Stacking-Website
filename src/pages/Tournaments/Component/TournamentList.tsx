@@ -401,13 +401,6 @@ export default function TournamentList() {
             width: 220,
             render: (_: unknown, tournament: Tournament) => {
                 const tournamentFull = isTournamentFull(tournament);
-                if (tournament.status === "End") {
-                    return (
-                        <Button type="primary" loading={loading} onClick={async () => handleView(tournament)}>
-                            <IconEye /> View Tournament
-                        </Button>
-                    );
-                }
                 if (!user) {
                     if (tournamentFull) {
                         return renderFullAction(tournament);
@@ -463,16 +456,6 @@ export default function TournamentList() {
                                         >
                                             <IconEye /> View Tournament
                                         </Button>
-                                        {isAdmin && (
-                                            <Button
-                                                type="text"
-                                                loading={loading}
-                                                className={`text-left`}
-                                                onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                            >
-                                                <IconUser /> Admin Register
-                                            </Button>
-                                        )}
                                         <Button
                                             type="text"
                                             loading={loading}
@@ -549,16 +532,6 @@ export default function TournamentList() {
                                         >
                                             <IconEye /> View Tournament
                                         </Button>
-                                        {isAdmin && (
-                                            <Button
-                                                type="text"
-                                                loading={loading}
-                                                className={`text-left`}
-                                                onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                            >
-                                                <IconUser /> Admin Register
-                                            </Button>
-                                        )}
                                         <Button
                                             type="text"
                                             loading={loading}
@@ -632,16 +605,6 @@ export default function TournamentList() {
                                         >
                                             <IconEye /> View Tournament
                                         </Button>
-                                        {isAdmin && (
-                                            <Button
-                                                type="text"
-                                                loading={loading}
-                                                className={`text-left`}
-                                                onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                            >
-                                                <IconUser /> Admin Register
-                                            </Button>
-                                        )}
                                         <Button
                                             type="text"
                                             loading={loading}
@@ -719,16 +682,6 @@ export default function TournamentList() {
                                     >
                                         <IconEye /> View Tournament
                                     </Button>
-                                    {isAdmin && (
-                                        <Button
-                                            type="text"
-                                            loading={loading}
-                                            className={`text-left`}
-                                            onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                        >
-                                            <IconUser /> Admin Register
-                                        </Button>
-                                    )}
                                 </div>
                             }
                         >
@@ -763,16 +716,6 @@ export default function TournamentList() {
                                     >
                                         <IconEye /> View Tournament
                                     </Button>
-                                    {isAdmin && (
-                                        <Button
-                                            type="text"
-                                            loading={loading}
-                                            className={`text-left`}
-                                            onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                        >
-                                            <IconUser /> Admin Register
-                                        </Button>
-                                    )}
                                 </div>
                             }
                         >
@@ -796,16 +739,6 @@ export default function TournamentList() {
                                 >
                                     <IconEye /> View Tournament
                                 </Button>
-                                {isAdmin && (
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                    >
-                                        <IconUser /> Admin Register
-                                    </Button>
-                                )}
                             </div>
                         }
                     >
@@ -1119,14 +1052,6 @@ export default function TournamentList() {
             return;
         }
         navigate(`/tournaments/${tournamentId}/register`);
-    };
-
-    const handleAdminRegister = (tournamentId?: string) => {
-        if (!tournamentId) {
-            Message.error("Invalid tournament ID.");
-            return;
-        }
-        navigate(`/tournaments/${tournamentId}/register?admin=1`);
     };
 
     const handleCopyRegisterLink = async (tournamentId?: string) => {

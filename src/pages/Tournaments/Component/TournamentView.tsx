@@ -81,53 +81,6 @@ const getEventOrderIndex = (eventType?: string): number => {
     return index === -1 ? EVENT_TYPE_ORDER.length : index;
 };
 
-const CLASSIFICATION_ORDER = ["advance", "intermediate", "beginner", "prelim"] as const;
-const CLASSIFICATION_LABELS: Record<(typeof CLASSIFICATION_ORDER)[number], string> = {
-    advance: "Advance",
-    intermediate: "Intermediate",
-    beginner: "Beginner",
-    prelim: "Prelim",
-};
-const CLASSIFICATION_TEXT_COLORS: Record<(typeof CLASSIFICATION_ORDER)[number], string> = {
-    advance: "#f1c40f",
-    intermediate: "#7bd88f",
-    beginner: "#7db5ff",
-    prelim: "#bdbdbd",
-};
-
-const buildRankGroups = (bracket?: AgeBracket | null) => {
-    const criteria = bracket?.final_criteria ?? [];
-    if (criteria.length === 0) return [];
-
-    const sortedCriteria = [...criteria].sort(
-        (a, b) => CLASSIFICATION_ORDER.indexOf(a.classification) - CLASSIFICATION_ORDER.indexOf(b.classification),
-    );
-
-    const groups: {classification: (typeof CLASSIFICATION_ORDER)[number]; startRank: number; endRank: number}[] = [];
-    let currentRank = 0;
-    for (const criterion of sortedCriteria) {
-        const startRank = currentRank + 1;
-        const endRank = currentRank + criterion.number;
-        groups.push({
-            classification: criterion.classification,
-            startRank,
-            endRank,
-        });
-        currentRank = endRank;
-    }
-    return groups;
-};
-
-const resolvePrelimClassification = (rank: number, bracket?: AgeBracket | null) => {
-    const groups = buildRankGroups(bracket);
-    for (const group of groups) {
-        if (rank >= group.startRank && rank <= group.endRank) {
-            return group.classification;
-        }
-    }
-    return "prelim";
-};
-
 const formatTime = (time: number): string => {
     if (time === 0) return "DNF";
     const total = time;
@@ -659,22 +612,21 @@ export default function TournamentView() {
                                 id && user?.registration_records?.some((record) => record.tournament_id === id),
                             );
                             const isDisabled =
-                                !id ||
-                                (!isAdmin && (!hasRegistrationDates || tournamentFull || !registrationOpen || alreadyRegistered));
+                                !id || !hasRegistrationDates || tournamentFull || !registrationOpen || alreadyRegistered;
                             let disabledMessage = "";
 
-                            if (!isAdmin && !hasRegistrationDates) {
+                            if (!hasRegistrationDates) {
                                 disabledMessage = "Registration is not available for this tournament.";
-                            } else if (!isAdmin && tournamentFull) {
+                            } else if (tournamentFull) {
                                 disabledMessage = "Participant limit reached.";
-                            } else if (!isAdmin && !registrationOpen) {
+                            } else if (!registrationOpen) {
                                 const now = Timestamp.now().toMillis();
                                 if (registrationWindow && now < registrationWindow.start) {
                                     disabledMessage = "Registration has not started yet.";
                                 } else {
                                     disabledMessage = "Registration has closed.";
                                 }
-                            } else if (!isAdmin && alreadyRegistered) {
+                            } else if (alreadyRegistered) {
                                 disabledMessage = "You have already registered for this tournament.";
                             }
 
@@ -775,21 +727,6 @@ export default function TournamentView() {
                                 <Title heading={5} style={{marginBottom: 16}}>
                                     Preliminary Round
                                 </Title>
-                                <div className="flex flex-wrap items-center gap-6 text-base text-neutral-600 mb-4">
-                                    {CLASSIFICATION_ORDER.filter((classification) => classification !== "prelim").map(
-                                        (classification) => (
-                                        <div key={classification} className="flex items-center gap-2">
-                                            <span
-                                                className="font-semibold text-lg"
-                                                style={{color: CLASSIFICATION_TEXT_COLORS[classification]}}
-                                            >
-                                                #{CLASSIFICATION_LABELS[classification]}
-                                            </span>
-                                            <span className="text-lg">Finalist</span>
-                                        </div>
-                                    ),
-                                )}
-                                </div>
                                 <div className="space-y-6">
                                     {/* Overall Records Table for Individual Events */}
                                     {prelimOverallRecords.length > 0 && (
@@ -825,33 +762,12 @@ export default function TournamentView() {
                                                                     _: unknown,
                                                                     __: TournamentOverallRecord,
                                                                     index: number,
-                                                                ) => {
-                                                                    const rank = index + 1;
-                                                                    const classification = resolvePrelimClassification(
-                                                                        rank,
-                                                                        selectedBracket,
-                                                                    );
-                                                                    const rankColor = CLASSIFICATION_TEXT_COLORS[classification];
-                                                                    return (
-                                                                        <Text bold style={{color: rankColor}}>
-                                                                            {rank}
-                                                                        </Text>
-                                                                    );
-                                                                },
+                                                                ) => <Text bold>{index + 1}</Text>,
                                                             },
                                                             {
                                                                 title: "Athlete",
                                                                 dataIndex: "participant_name",
                                                                 width: 200,
-                                                                render: (name: string, _: TournamentOverallRecord, index: number) => {
-                                                                    const rank = index + 1;
-                                                                    const classification = resolvePrelimClassification(
-                                                                        rank,
-                                                                        selectedBracket,
-                                                                    );
-                                                                    const rankColor = CLASSIFICATION_TEXT_COLORS[classification];
-                                                                    return <Text style={{color: rankColor}}>{name}</Text>;
-                                                                },
                                                             },
                                                             ...(deviceBreakpoint > DeviceBreakpoint.md
                                                                 ? [
@@ -1059,28 +975,15 @@ export default function TournamentView() {
                                             const columns: TableColumnProps<TournamentTeamRecord>[] = [
                                                 {
                                                     title: "Rank",
-                                                    width: 80,
-                                                    render: (_: unknown, __: TournamentTeamRecord, index: number) => {
-                                                        const rank = index + 1;
-                                                        const classification = resolvePrelimClassification(rank, selectedBracket);
-                                                        const rankColor = CLASSIFICATION_TEXT_COLORS[classification];
-                                                        return (
-                                                            <Text bold style={{color: rankColor}}>
-                                                                {rank}
-                                                            </Text>
-                                                        );
-                                                    },
+                                                    width: 60,
+                                                    render: (_: unknown, __: TournamentTeamRecord, index: number) => (
+                                                        <Text bold>{index + 1}</Text>
+                                                    ),
                                                 },
                                                 {
                                                     title: "Team",
                                                     dataIndex: "team_name",
                                                     width: 200,
-                                                    render: (name: string, _: TournamentTeamRecord, index: number) => {
-                                                        const rank = index + 1;
-                                                        const classification = resolvePrelimClassification(rank, selectedBracket);
-                                                        const rankColor = CLASSIFICATION_TEXT_COLORS[classification];
-                                                        return <Text style={{color: rankColor}}>{name}</Text>;
-                                                    },
                                                 },
                                                 ...(deviceBreakpoint > DeviceBreakpoint.md
                                                     ? [

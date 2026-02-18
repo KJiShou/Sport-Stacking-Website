@@ -377,16 +377,9 @@ const RecordsIndex: React.FC = () => {
                     title: "Tournament",
                     dataIndex: "tournament_name",
                     width: 180,
-                    render: (_: unknown, record: RecordDisplay) => {
-                        if (record.tournamentId && record.tournament_name) {
-                            return (
-                                <Link href={`/tournaments/${record.tournamentId}/view`} hoverable={false}>
-                                    {record.tournament_name}
-                                </Link>
-                            );
-                        }
-                        return <Text style={{fontSize: "12px", color: "#666"}}>{record.tournament_name || "N/A"}</Text>;
-                    },
+                    render: (tournamentName: string | null | undefined) => (
+                        <Text style={{fontSize: "12px", color: "#666"}}>{tournamentName || "N/A"}</Text>
+                    ),
                 },
                 {
                     title: "Division",
@@ -551,7 +544,6 @@ const RecordsIndex: React.FC = () => {
                     teamName: isTeamResult ? (record as GlobalTeamResult).teamName : undefined,
                     members: isTeamResult ? (record as GlobalTeamResult).members : undefined,
                     leaderId: isTeamResult ? (record as GlobalTeamResult).leaderId : undefined,
-                    tournamentId: (record as GlobalResult | GlobalTeamResult).tournamentId,
                     tournament_name: record.tournament_name || null,
                 });
             }
@@ -728,9 +720,9 @@ const RecordsIndex: React.FC = () => {
                         data={filteredRecordsData}
                         pagination={{
                             ...tablePagination,
-                            showTotal: !isMobileView,
-                            showJumper: !isMobileView,
-                            sizeCanChange: !isMobileView,
+                            showTotal: true,
+                            showJumper: true,
+                            sizeCanChange: true,
                         }}
                         onChange={(pagination) =>
                             setTablePagination((prev) => ({

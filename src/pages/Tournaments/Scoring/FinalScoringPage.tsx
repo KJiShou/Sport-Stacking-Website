@@ -890,12 +890,6 @@ export default function FinalScoringPage() {
                                             </Tabs>
                                             <div className="flex justify-end mt-4">
                                                 <Button
-                                                    type="outline"
-                                                    onClick={() => navigate(`/tournaments/${tournamentId}/record/final`)}
-                                                >
-                                                    View Final Results
-                                                </Button>
-                                                <Button
                                                     type="primary"
                                                     status="success"
                                                     loading={loading}
