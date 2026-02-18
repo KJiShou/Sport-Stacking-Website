@@ -13,6 +13,9 @@ type RoleFields = {
     verify_record: boolean;
 };
 
+const hasAnyRole = (roles: FirestoreUser["roles"] | null | undefined): boolean =>
+    Boolean(roles?.edit_tournament || roles?.record_tournament || roles?.modify_admin || roles?.verify_record);
+
 export default function AdminPermissionsPage() {
     const [users, setUsers] = useState<FirestoreUser[]>([]);
     const [loading, setLoading] = useState(false);
@@ -51,11 +54,11 @@ export default function AdminPermissionsPage() {
             dataIndex: "is_admin",
             width: 100,
             render: (_: string, record: FirestoreUser) => (
-                <Tag color={record.roles ? "red" : "blue"}>{record.roles ? "Admin" : "User"}</Tag>
+                <Tag color={hasAnyRole(record.roles) ? "red" : "blue"}>{hasAnyRole(record.roles) ? "Admin" : "User"}</Tag>
             ),
             sorter: (a, b) => {
-                const aIsAdmin = !!a.roles;
-                const bIsAdmin = !!b.roles;
+                const aIsAdmin = hasAnyRole(a.roles);
+                const bIsAdmin = hasAnyRole(b.roles);
                 return Number(bIsAdmin) - Number(aIsAdmin);
             },
         },
@@ -123,7 +126,13 @@ export default function AdminPermissionsPage() {
         try {
             const values = await form.validate();
             if (!selected) return;
-            await updateUserRoles(selected.id, values as FirestoreUser["roles"]);
+            const rolesPayload: FirestoreUser["roles"] = {
+                edit_tournament: values.edit_tournament,
+                record_tournament: values.record_tournament,
+                modify_admin: values.modify_admin,
+                verify_record: values.verify_record,
+            };
+            await updateUserRoles(selected.id, rolesPayload);
             await updateUserProfile(selected.id, {memberId: values.memberId});
             Message.success("Permissions updated");
             setModalVisible(false);

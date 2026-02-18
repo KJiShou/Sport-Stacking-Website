@@ -30,6 +30,9 @@ jobs:
             - name: 📦 Install Dependencies
               run: yarn install --immutable
 
+            - name: 🧪 Validate Project
+              run: yarn validate
+
             - name: 🔑 Inject Firebase & API Keys to .env
               run: |
                   echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}" >> .env

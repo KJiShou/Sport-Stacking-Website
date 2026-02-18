@@ -287,11 +287,7 @@ const AthleteProfilePage = () => {
 
     return (
         <div className="flex flex-col bg-ghostwhite p-4 sm:p-6 xl:p-10 gap-6">
-            <Button
-                type="outline"
-                onClick={() => window.history.back()}
-                className="w-full sm:w-fit pt-2 pb-2 justify-center"
-            >
+            <Button type="outline" onClick={() => window.history.back()} className="w-full sm:w-fit pt-2 pb-2 justify-center">
                 <IconUndo /> Go Back
             </Button>
 
@@ -309,7 +305,7 @@ const AthleteProfilePage = () => {
                                 </Tag>
                             </Title>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 text-base">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 text-base">
                             <div className="flex flex-col gap-1">
                                 <Text type="secondary" className="text-sm">
                                     Country
@@ -329,12 +325,6 @@ const AthleteProfilePage = () => {
                                     Age
                                 </Text>
                                 <Text className="font-semibold text-lg">{age ?? "—"}</Text>
-                            </div>
-                            <div className="flex flex-col gap-1">
-                                <Text type="secondary" className="text-sm">
-                                    Email
-                                </Text>
-                                <Text className="font-semibold text-base break-all">{user.email}</Text>
                             </div>
                         </div>
                     </div>

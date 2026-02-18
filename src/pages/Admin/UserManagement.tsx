@@ -8,6 +8,16 @@ import {useEffect, useMemo, useState} from "react";
 
 const {Title, Paragraph, Text} = Typography;
 
+const formatBirthdate = (birthdate: FirestoreUser["birthdate"]): string => {
+    if (birthdate instanceof Date) {
+        return birthdate.toLocaleDateString();
+    }
+    if (birthdate && typeof birthdate === "object" && "toDate" in birthdate && typeof birthdate.toDate === "function") {
+        return birthdate.toDate().toLocaleDateString();
+    }
+    return "-";
+};
+
 export default function UserManagementPage() {
     const {user} = useAuthContext();
     const isAdmin = user?.roles?.modify_admin || false;
@@ -270,11 +280,7 @@ export default function UserManagementPage() {
                                 </div>
                                 <div>
                                     <Text type="secondary">Birthdate</Text>
-                                    <div>
-                                        {selectedUser.birthdate instanceof Date
-                                            ? selectedUser.birthdate.toLocaleDateString()
-                                            : (selectedUser.birthdate ?? "-")}
-                                    </div>
+                                    <div>{formatBirthdate(selectedUser.birthdate)}</div>
                                 </div>
                                 <div>
                                     <Text type="secondary">Country / State</Text>
@@ -293,20 +299,19 @@ export default function UserManagementPage() {
                         <div>
                             <Text type="secondary">Roles</Text>
                             <div className="flex flex-wrap gap-2">
-                                {selectedUser.roles ? (
+                                {selectedUser.roles &&
                                     Object.entries(selectedUser.roles)
                                         .filter(([, enabled]) => Boolean(enabled))
                                         .map(([role]) => (
                                             <Tag key={role} color="blue">
                                                 {role.replace(/_/g, " ")}
                                             </Tag>
-                                        ))
-                                ) : (
-                                    <Text>-</Text>
-                                )}
-                                {selectedUser.roles && Object.values(selectedUser.roles).every((value) => !value) && (
-                                    <Text>-</Text>
-                                )}
+                                        ))}
+                                {selectedUser.memberId && <Tag color="green">memberId: {selectedUser.memberId}</Tag>}
+                                {!selectedUser.memberId &&
+                                    (!selectedUser.roles || Object.values(selectedUser.roles).every((value) => !value)) && (
+                                        <Text>-</Text>
+                                    )}
                             </div>
                         </div>
                     </div>

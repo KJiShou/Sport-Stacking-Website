@@ -17,13 +17,7 @@ import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {getCountryFlag} from "@/utils/countryFlags";
-import {
-    getEventKey,
-    getEventLabel,
-    isTeamEvent,
-    matchesAnyEventKey,
-    sanitizeEventCodes,
-} from "@/utils/tournament/eventUtils";
+import {getEventKey, getEventLabel, isTeamEvent, matchesAnyEventKey, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Checkbox,
@@ -61,15 +55,17 @@ type TeamEntry = {
     event?: ExpandedEvent;
 };
 
-const isParentChildEvent = (event?: ExpandedEvent) =>
-    (event?.type ?? "").toLowerCase() === "parent & child";
-const isTeamRelayEvent = (event?: ExpandedEvent) =>
-    (event?.type ?? "").toLowerCase() === "team relay";
-const isDoubleEvent = (event?: ExpandedEvent) =>
-    (event?.type ?? "").toLowerCase() === "double";
+const isParentChildEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "parent & child";
+const isTeamRelayEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "team relay";
+const isDoubleEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "double";
 const isNonScoringEvent = (event?: ExpandedEvent) => {
     const normalized = (event?.type ?? "").toLowerCase();
-    return normalized === "stackout champion" || normalized === "stack out champion" || normalized === "stack up champion" || normalized === "blindfolded cycle";
+    return (
+        normalized === "stackout champion" ||
+        normalized === "stack out champion" ||
+        normalized === "stack up champion" ||
+        normalized === "blindfolded cycle"
+    );
 };
 
 export default function RegisterTournamentPage() {
@@ -256,9 +252,7 @@ export default function RegisterTournamentPage() {
                 }
             }
 
-            const sanitizedEventsRegistered = (values.events_registered ?? []).filter(
-                (eventId) => eventId !== "Individual",
-            );
+            const sanitizedEventsRegistered = (values.events_registered ?? []).filter((eventId) => eventId !== "Individual");
             const selectedEventIds = sanitizedEventsRegistered;
             const limitedEvents = availableEvents.filter(
                 (event) => isNonScoringEvent(event) && selectedEventIds.includes(getEventKey(event)),
@@ -876,9 +870,7 @@ export default function RegisterTournamentPage() {
                                 const selectedEventIds: string[] = form.getFieldValue("events_registered") || [];
                                 const teamEvents = selectedEventIds
                                     .map((eventId) => findEventByKey(eventId))
-                                    .filter(
-                                        (event) => event && isTeamEvent(event) && isTeamRelayEvent(event),
-                                    ) as ExpandedEvent[];
+                                    .filter((event) => event && isTeamEvent(event) && isTeamRelayEvent(event)) as ExpandedEvent[];
 
                                 if (teamEvents.length === 0) return null;
 
@@ -899,7 +891,7 @@ export default function RegisterTournamentPage() {
                                                 const lookingForTeamMembers = form.getFieldValue(
                                                     `teams.${eventId}.looking_for_team_members`,
                                                 );
-                                                    return (
+                                                return (
                                                     <Checkbox
                                                         key={`individual-looking-${eventId}`}
                                                         checked={lookingForTeams.includes(eventId)}
@@ -990,7 +982,10 @@ export default function RegisterTournamentPage() {
                                                             form.getFieldValue(`teams.${eventId}.looking_for_team_members`) ===
                                                             true;
                                                         const isLockedTeamName =
-                                                            isLookingTopLevel || isDoubleEvent || isParentChild || isLookingForMembers;
+                                                            isLookingTopLevel ||
+                                                            isDoubleEvent ||
+                                                            isParentChild ||
+                                                            isLookingForMembers;
                                                         const shouldRequireTeamName = !(
                                                             isLookingTopLevel ||
                                                             (isDoubleEvent && isLookingForMembers)

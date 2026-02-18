@@ -51,7 +51,7 @@ const {RangePicker} = DatePicker;
 
 type RecordCategory = "individual" | "team_relay" | "double" | "parent_&_child" | "special_need";
 type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Double" | "Team Relay" | "Parent & Child";
-type AgeGroup = "6U" | "8U" | "10U" | "12U" | "14U" | "17U" | "Open" | "Overall";
+type AgeGroup = string;
 
 // Match the service types
 type Category = "Individual" | "Double" | "Parent & Child" | "Team Relay" | "Special Need";
@@ -114,16 +114,99 @@ const formatDate = (dateString: string): string => {
     });
 };
 
-const AGE_GROUPS: AgeGroup[] = ["Overall", "6U", "8U", "10U", "12U", "14U", "17U", "Open"];
+const INDIVIDUAL_AGE_GROUPS: AgeGroup[] = [
+    "Overall",
+    "Age 5 & Under",
+    "Age 6",
+    "Age 7",
+    "Age 8",
+    "Age 9",
+    "Age 10",
+    "Age 11",
+    "Age 12",
+    "Age 13",
+    "Age 14 & 15",
+    "Age 16-20",
+    "Age 21-30",
+    "Age 31-40",
+    "Age 41-49",
+    "Age 50-59",
+    "Age 60-69",
+    "Age 70++",
+];
 
-const getAgeGroup = (age: number): AgeGroup => {
-    if (age <= 6) return "6U";
-    if (age <= 8) return "8U";
-    if (age <= 10) return "10U";
-    if (age <= 12) return "12U";
-    if (age <= 14) return "14U";
-    if (age <= 17) return "17U";
-    return "Open";
+const DOUBLE_AGE_GROUPS: AgeGroup[] = [
+    "Overall",
+    "Age 8 & Under",
+    "Age 10 & Under",
+    "Age 13 & Under",
+    "Age 14-19",
+    "Age 20-29",
+    "Age 30-39",
+    "Age 40-49",
+    "Age 50++",
+];
+
+const TEAM_RELAY_AGE_GROUPS: AgeGroup[] = [
+    "Overall",
+    "Age 9U",
+    "Age 10-14",
+    "Age 15-20",
+    "Age 21-29",
+    "Age 30-39",
+    "Age 40-49",
+    "Age 50++",
+];
+
+const getAgeGroupOptions = (category: Category): AgeGroup[] => {
+    switch (category) {
+        case "Double":
+            return DOUBLE_AGE_GROUPS;
+        case "Team Relay":
+            return TEAM_RELAY_AGE_GROUPS;
+        default:
+            return INDIVIDUAL_AGE_GROUPS;
+    }
+};
+
+const getAgeGroupByCategory = (age: number, category: Category): AgeGroup => {
+    switch (category) {
+        case "Double":
+            if (age <= 8) return "Age 8 & Under";
+            if (age <= 10) return "Age 10 & Under";
+            if (age <= 13) return "Age 13 & Under";
+            if (age <= 19) return "Age 14-19";
+            if (age <= 29) return "Age 20-29";
+            if (age <= 39) return "Age 30-39";
+            if (age <= 49) return "Age 40-49";
+            return "Age 50++";
+        case "Team Relay":
+            if (age <= 9) return "Age 9U";
+            if (age <= 14) return "Age 10-14";
+            if (age <= 20) return "Age 15-20";
+            if (age <= 29) return "Age 21-29";
+            if (age <= 39) return "Age 30-39";
+            if (age <= 49) return "Age 40-49";
+            return "Age 50++";
+        default:
+            if (age <= 5) return "Age 5 & Under";
+            if (age === 6) return "Age 6";
+            if (age === 7) return "Age 7";
+            if (age === 8) return "Age 8";
+            if (age === 9) return "Age 9";
+            if (age === 10) return "Age 10";
+            if (age === 11) return "Age 11";
+            if (age === 12) return "Age 12";
+            if (age === 13) return "Age 13";
+            if (age <= 15) return "Age 14 & 15";
+            if (age <= 20) return "Age 16-20";
+            if (age <= 30) return "Age 21-30";
+            if (age <= 40) return "Age 31-40";
+            if (age <= 49) return "Age 41-49";
+            if (age <= 59) return "Age 50-59";
+            if (age <= 69) return "Age 60-69";
+            return "Age 70++";
+    }
 };
 
 const RecordsIndex: React.FC = () => {
@@ -464,6 +547,14 @@ const RecordsIndex: React.FC = () => {
         selectedSpecialNeedEvent,
     ]);
 
+    useEffect(() => {
+        const currentCategory = CATEGORY_MAP[activeCategory];
+        const allowedAgeGroups = getAgeGroupOptions(currentCategory);
+        if (!allowedAgeGroups.includes(selectedAgeGroup)) {
+            setSelectedAgeGroup("Overall");
+        }
+    }, [activeCategory, selectedAgeGroup]);
+
     const getSelectedEventForCategory = (category: RecordCategory): EventTypeKey => {
         switch (category) {
             case "individual":
@@ -501,6 +592,7 @@ const RecordsIndex: React.FC = () => {
 
     const renderCategoryContent = (category: RecordCategory) => {
         const backendCategory = CATEGORY_MAP[category];
+        const ageGroupOptions = getAgeGroupOptions(backendCategory);
         const availableEvents = EVENTS_FOR_CATEGORY[backendCategory];
         const selectedEvent = getSelectedEventForCategory(category);
 
@@ -510,7 +602,7 @@ const RecordsIndex: React.FC = () => {
         let eventRank = 1;
 
         eventRecords.forEach((record, index) => {
-            const recordAgeGroup = getAgeGroup(record.age);
+            const recordAgeGroup = getAgeGroupByCategory(record.age, backendCategory);
             if (selectedAgeGroup !== "Overall" && recordAgeGroup !== selectedAgeGroup) {
                 return;
             }
@@ -692,7 +784,7 @@ const RecordsIndex: React.FC = () => {
                                     style={{width: isMobileView ? "100%" : 140}}
                                     size={isMobileView ? "default" : "small"}
                                 >
-                                    {AGE_GROUPS.map((ageGroup) => (
+                                    {ageGroupOptions.map((ageGroup) => (
                                         <Option key={ageGroup} value={ageGroup}>
                                             {ageGroup}
                                         </Option>

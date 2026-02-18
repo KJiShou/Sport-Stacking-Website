@@ -117,6 +117,12 @@ const Navbar: React.FC = () => {
                             <IconUserGroup />
                             Carousel Management
                         </MenuItem>
+                        {user?.global_id === "00001" && (
+                            <MenuItem key="/admin/developer-setting">
+                                <IconUserGroup />
+                                Developer Setting
+                            </MenuItem>
+                        )}
                     </SubMenu>
                 )}
             </Menu>

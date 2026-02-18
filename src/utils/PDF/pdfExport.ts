@@ -1586,8 +1586,15 @@ const generateSingleStackingSheet = (
         const allMembers = [team.leader_id, ...(team.members || []).map((m) => m.global_id)].filter(Boolean);
         const memberNames = allMembers.map((memberId) => nameMap[memberId] ?? memberId);
         const normalizedSheetType = sheetType.toLowerCase();
-        const nameSeparator =
-            normalizedSheetType === "double" || normalizedSheetType === "parent & child" ? " & " : ", ";
+        const nameSeparator = (() => {
+            switch (normalizedSheetType) {
+                case "double":
+                case "parent & child":
+                    return " & ";
+                default:
+                    return ", ";
+            }
+        })();
         const memberNamesValue = memberNames.length > 0 ? memberNames.join(nameSeparator) : "________________________";
         const memberNameLines = doc.splitTextToSize(memberNamesValue, pageWidth - marginX * 2 - nameX);
         doc.text(memberNameLines, nameX, infoY);

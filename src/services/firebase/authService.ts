@@ -11,18 +11,22 @@ import {
     signOut,
     updatePassword,
 } from "firebase/auth";
-import {type DocumentData, type QueryDocumentSnapshot, type QuerySnapshot, getFirestore} from "firebase/firestore";
+import {type DocumentData, type Query, type QueryDocumentSnapshot, type QuerySnapshot, getFirestore} from "firebase/firestore";
 import {
     Timestamp,
     collection,
+    documentId,
     deleteDoc,
     doc,
     getDoc,
     getDocs,
     increment,
+    limit,
+    orderBy,
     query,
     runTransaction,
     setDoc,
+    startAfter,
     updateDoc,
     where,
 } from "firebase/firestore";
@@ -30,6 +34,7 @@ import {httpsCallable} from "firebase/functions";
 import {deleteObject, ref} from "firebase/storage";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
+import type {UserTournamentHistory} from "../../schema/UserHistorySchema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
 
@@ -87,8 +92,9 @@ function extractActiveRoles(roles: FirestoreUser["roles"] | null | undefined): P
 
     const definedRoles = roles as UserRoles;
     const activeRoles: Partial<UserRoles> = {};
+    const roleKeys: Array<keyof UserRoles> = ["edit_tournament", "record_tournament", "modify_admin", "verify_record"];
 
-    for (const key of Object.keys(definedRoles) as Array<keyof UserRoles>) {
+    for (const key of roleKeys) {
         if (definedRoles[key]) {
             activeRoles[key] = true;
         }
@@ -183,9 +189,7 @@ export const registerWithGoogle = async (
     const snapshot = await getDocs(q);
 
     if (!snapshot.empty) {
-        const matchingDocs = snapshot.docs.filter(
-            (docSnap) => (docSnap.data() as FirestoreUser).email === firebaseUser.email,
-        );
+        const matchingDocs = snapshot.docs.filter((docSnap) => (docSnap.data() as FirestoreUser).email === firebaseUser.email);
         if (matchingDocs.length === 0) {
             throw new Error("This IC is already registered with another email.");
         }
@@ -261,7 +265,7 @@ export async function fetchUsersByIds(userIds: string[]): Promise<Record<string,
         const batch = ids.slice(i, i + batchSize);
         const q = query(collection(db, "users"), where("id", "in", batch));
         const snapshot = await getDocs(q);
-        snapshot.docs.forEach((docSnap) => {
+        for (const docSnap of snapshot.docs) {
             const data = docSnap.data();
             const user = {
                 id: docSnap.id,
@@ -282,7 +286,7 @@ export async function fetchUsersByIds(userIds: string[]): Promise<Record<string,
             } as FirestoreUser;
 
             results[user.id] = user;
-        });
+        }
     }
 
     return results;
@@ -539,6 +543,74 @@ export async function removeUserRegistrationRecordsByTournament(tournamentId: st
         await Promise.all(updatePromises);
     } catch (error) {
         console.error("Error cleaning up user registration records:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+}
+
+/**
+ * Remove cached tournament history entries for a specific tournament
+ * from user_tournament_history documents.
+ */
+export async function removeUserTournamentHistoryByTournament(tournamentId: string): Promise<void> {
+    try {
+        const pageSize = 200;
+        const writeConcurrency = 20;
+        let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+
+        while (true) {
+            const pageQuery: Query<DocumentData> = lastDoc
+                ? query(
+                      collection(db, "user_tournament_history"),
+                      orderBy(documentId()),
+                      startAfter(lastDoc),
+                      limit(pageSize),
+                  )
+                : query(collection(db, "user_tournament_history"), orderBy(documentId()), limit(pageSize));
+
+            const historySnapshot: QuerySnapshot<DocumentData> = await getDocs(pageQuery);
+            if (historySnapshot.empty) {
+                break;
+            }
+
+            const docsToUpdate: QueryDocumentSnapshot<DocumentData>[] = [];
+            for (const historyDoc of historySnapshot.docs) {
+                const historyData = historyDoc.data() as UserTournamentHistory;
+                const tournaments = Array.isArray(historyData.tournaments) ? historyData.tournaments : [];
+                const filteredTournaments = tournaments.filter((summary) => summary.tournamentId !== tournamentId);
+                if (filteredTournaments.length !== tournaments.length) {
+                    docsToUpdate.push(historyDoc);
+                }
+            }
+
+            for (let i = 0; i < docsToUpdate.length; i += writeConcurrency) {
+                const chunk = docsToUpdate.slice(i, i + writeConcurrency);
+                await Promise.all(
+                    chunk.map(async (historyDoc) => {
+                        const historyData = historyDoc.data() as UserTournamentHistory;
+                        const tournaments = Array.isArray(historyData.tournaments) ? historyData.tournaments : [];
+                        const filteredTournaments = tournaments.filter((summary) => summary.tournamentId !== tournamentId);
+                        const recordCount = filteredTournaments.reduce((total, summary) => {
+                            const results = Array.isArray(summary.results) ? summary.results : [];
+                            return total + results.length;
+                        }, 0);
+
+                        await updateDoc(historyDoc.ref, {
+                            tournaments: filteredTournaments,
+                            tournamentCount: filteredTournaments.length,
+                            recordCount,
+                            updatedAt: Timestamp.now(),
+                        });
+                    }),
+                );
+            }
+
+            lastDoc = historySnapshot.docs[historySnapshot.docs.length - 1];
+            if (historySnapshot.docs.length < pageSize) {
+                break;
+            }
+        }
+    } catch (error) {
+        console.error("Error cleaning up user tournament history:", error);
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 }
