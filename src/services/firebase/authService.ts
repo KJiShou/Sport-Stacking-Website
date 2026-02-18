@@ -31,6 +31,7 @@ import {deleteObject, ref} from "firebase/storage";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
+import {updateProfilesForUser} from "./profileService";
 import {auth, db, functions, storage} from "./config";
 
 const ensureAuthReady = (uid: string): Promise<void> =>
@@ -350,6 +351,39 @@ export async function updateUserProfile(id: string, data: Partial<Omit<Firestore
     // 3. 更新数据库
     const userRef = doc(db, "users", id);
     await updateDoc(userRef, payload);
+
+    const profileUpdates: Partial<FirestoreUser> = {};
+    if (typeof validated.name !== "undefined") profileUpdates.name = validated.name;
+    if (typeof validated.birthdate !== "undefined") profileUpdates.birthdate = validated.birthdate;
+    if (typeof validated.gender !== "undefined") profileUpdates.gender = validated.gender;
+    if (typeof validated.country !== "undefined") profileUpdates.country = validated.country;
+    if (typeof validated.phone_number !== "undefined") profileUpdates.phone_number = validated.phone_number;
+    if (typeof validated.school !== "undefined") profileUpdates.school = validated.school;
+    if (typeof validated.image_url !== "undefined") profileUpdates.image_url = validated.image_url;
+    if (typeof validated.roles !== "undefined") profileUpdates.roles = validated.roles;
+    if (typeof validated.best_times !== "undefined") profileUpdates.best_times = validated.best_times;
+
+    const hasProfileUpdates = Object.keys(profileUpdates).length > 0;
+    if (hasProfileUpdates) {
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+            const userData = userSnap.data() as FirestoreUser;
+            await updateProfilesForUser(
+                {id, global_id: userData.global_id, IC: userData.IC},
+                {
+                    name: profileUpdates.name,
+                    birthdate: profileUpdates.birthdate,
+                    gender: profileUpdates.gender,
+                    country: profileUpdates.country,
+                    phone_number: profileUpdates.phone_number,
+                    school: profileUpdates.school,
+                    image_url: profileUpdates.image_url,
+                    roles: profileUpdates.roles,
+                    best_times: profileUpdates.best_times,
+                },
+            );
+        }
+    }
 }
 
 export async function updateUserRoles(userId: string, roles: FirestoreUser["roles"]): Promise<void> {
@@ -359,12 +393,21 @@ export async function updateUserRoles(userId: string, roles: FirestoreUser["role
         roles: temp_roles,
         updated_at: Timestamp.now(),
     });
+
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+        const userData = userSnap.data() as FirestoreUser;
+        await updateProfilesForUser({id: userId, global_id: userData.global_id, IC: userData.IC}, {roles: temp_roles});
+    }
 }
 
 /**
  * 增加单条 registration_records（常用）
  */
-export async function addUserRegistrationRecord(userId: string, newRecord: UserRegistrationRecord): Promise<void> {
+export async function addProfileRegistrationRecordWithCapacityCheck(
+    profileId: string,
+    newRecord: UserRegistrationRecord,
+): Promise<void> {
     if (!newRecord.tournament_id) {
         throw new Error("Tournament id is required.");
     }
@@ -386,15 +429,15 @@ export async function addUserRegistrationRecord(userId: string, newRecord: UserR
         throw new Error("Tournament registration is full.");
     }
 
-    const userRef = doc(db, "users", userId);
-    const userSnap = await getDoc(userRef);
+    const profileRef = doc(db, "profiles", profileId);
+    const profileSnap = await getDoc(profileRef);
 
-    if (!userSnap.exists()) {
-        throw new Error("User not found");
+    if (!profileSnap.exists()) {
+        throw new Error("Profile not found");
     }
 
-    const userData = userSnap.data();
-    const existingRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
+    const profileData = profileSnap.data();
+    const existingRecords: UserRegistrationRecord[] = profileData.registration_records ?? [];
 
     const validatedRecord: UserRegistrationRecord = {
         ...newRecord,
@@ -412,26 +455,26 @@ export async function addUserRegistrationRecord(userId: string, newRecord: UserR
 
     const updatedRecords = [...existingRecords, validatedRecord];
 
-    await updateDoc(userRef, {
+    await updateDoc(profileRef, {
         registration_records: updatedRecords,
         updated_at: Timestamp.now(),
     });
 }
 
-export async function updateUserRegistrationRecord(
-    userId: string,
+export async function updateProfileRegistrationRecordEntry(
+    profileId: string,
     recordId: string,
     updatedFields: Partial<UserRegistrationRecord>,
 ): Promise<void> {
-    const userRef = doc(db, "users", userId);
-    const userSnap = await getDoc(userRef);
+    const profileRef = doc(db, "profiles", profileId);
+    const profileSnap = await getDoc(profileRef);
 
-    if (!userSnap.exists()) {
-        throw new Error("User not found");
+    if (!profileSnap.exists()) {
+        throw new Error("Profile not found");
     }
 
-    const userData = userSnap.data();
-    const existingRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
+    const profileData = profileSnap.data();
+    const existingRecords: UserRegistrationRecord[] = profileData.registration_records ?? [];
 
     // Find the record to update
     const recordIndex = existingRecords.findIndex((record) => record.tournament_id === recordId);
@@ -477,7 +520,7 @@ export async function updateUserRegistrationRecord(
     updatedRecords[recordIndex] = updatedRecord;
 
     // Update the document
-    await updateDoc(userRef, {
+    await updateDoc(profileRef, {
         registration_records: updatedRecords,
         updated_at: Timestamp.now(),
     });
@@ -543,6 +586,21 @@ export async function removeUserRegistrationRecordsByTournament(tournamentId: st
 
 export async function deleteAccount(userId: string): Promise<void> {
     try {
+        const profilesQuery = query(collection(db, "profiles"), where("owner_uid", "==", userId));
+        const profilesSnapshot = await getDocs(profilesQuery);
+        if (!profilesSnapshot.empty) {
+            await Promise.all(
+                profilesSnapshot.docs.map((profileDoc) =>
+                    updateDoc(profileDoc.ref, {
+                        owner_uid: null,
+                        owner_email: null,
+                        status: "unclaimed",
+                        updated_at: Timestamp.now(),
+                    }),
+                ),
+            );
+        }
+
         // 1. 删除 Firestore 里的用户资料
         await deleteDoc(doc(db, "users", userId));
 
@@ -571,6 +629,21 @@ export async function deleteAccount(userId: string): Promise<void> {
 
 export async function deleteUserProfileAdmin(userId: string): Promise<void> {
     try {
+        const profilesQuery = query(collection(db, "profiles"), where("owner_uid", "==", userId));
+        const profilesSnapshot = await getDocs(profilesQuery);
+        if (!profilesSnapshot.empty) {
+            await Promise.all(
+                profilesSnapshot.docs.map((profileDoc) =>
+                    updateDoc(profileDoc.ref, {
+                        owner_uid: null,
+                        owner_email: null,
+                        status: "unclaimed",
+                        updated_at: Timestamp.now(),
+                    }),
+                ),
+            );
+        }
+
         await deleteDoc(doc(db, "users", userId));
         const avatarRef = ref(storage, `avatars/${userId}`);
         await deleteObject(avatarRef).catch((error) => {

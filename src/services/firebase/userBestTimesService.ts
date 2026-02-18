@@ -1,5 +1,6 @@
 import {collection, getDocs, limit, query, updateDoc, where} from "firebase/firestore";
 import {db} from "./config";
+import {updateProfilesByGlobalId} from "./profileService";
 
 export type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
@@ -29,18 +30,18 @@ export const updateUserBestTime = async (globalId: string, eventType: EventType,
         // Normalize to three decimal places (thousandths)
         const normalizedTime = Math.round(newTime * 1000) / 1000;
 
-        // Find user by global_id
-        const user = query(collection(db, "users"), where("global_id", "==", globalId), limit(1));
-        const userSnap = await getDocs(user);
+        // Find profile by global_id
+        const profileQuery = query(collection(db, "profiles"), where("global_id", "==", globalId), limit(1));
+        const profileSnap = await getDocs(profileQuery);
 
-        if (userSnap.empty) {
-            console.warn(`User not found with global_id: ${globalId}`);
+        if (profileSnap.empty) {
+            console.warn(`Profile not found with global_id: ${globalId}`);
             return false;
         }
 
-        const userData = userSnap.docs[0].data();
-        const usersRef = userSnap.docs[0].ref;
-        const currentBestTimes: BestTimes = (userData?.best_times as BestTimes) || {};
+        const profileData = profileSnap.docs[0].data();
+        const profileRef = profileSnap.docs[0].ref;
+        const currentBestTimes: BestTimes = (profileData?.best_times as BestTimes) || {};
         const currentEntry = currentBestTimes[eventType];
         let currentBestTime: number | null = null;
         if (typeof currentEntry === "number") {
@@ -61,9 +62,12 @@ export const updateUserBestTime = async (globalId: string, eventType: EventType,
                 [eventType]: {time: normalizedTime, updated_at: now, season},
             };
 
-            await updateDoc(usersRef, {
+            await updateDoc(profileRef, {
                 best_times: updatedBestTimes,
                 updated_at: now,
+            });
+            await updateProfilesByGlobalId(globalId, {
+                best_times: updatedBestTimes,
             });
 
             return true;

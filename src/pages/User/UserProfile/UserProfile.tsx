@@ -3,31 +3,39 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {AllTimeStat, FirestoreUser, FirestoreUserSchema, OnlineBest, Profile, RecordItem} from "@/schema";
 import {countries} from "@/schema/Country";
 import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
-import {createProfile, fetchProfilesByOwner} from "@/services/firebase/profileService";
+import {createProfile, fetchProfileById, fetchProfilesByOwner, updateProfile} from "@/services/firebase/profileService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {parseIcToProfile} from "@/utils/icParser";
-import {Avatar, Spin} from "@arco-design/web-react";
+import {Avatar, Empty, Switch} from "@arco-design/web-react";
 import {
     Button,
     Cascader,
     DatePicker,
     Descriptions,
-    Empty,
+    Divider,
     Form,
     Grid,
+    Image,
     Input,
     Message,
     Modal,
     Select,
-    Statistic,
-    Switch,
+    Space,
+    Spin,
     Table,
     Tabs,
     Typography,
 } from "@arco-design/web-react";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
+
 import {IconPhone, IconUser} from "@arco-design/web-react/icon";
+import dayjs from "dayjs";
+import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
+import {Timestamp} from "firebase/firestore";
+import React, {useEffect, useMemo, useState} from "react";
+import {useNavigate, useParams, useSearchParams} from "react-router-dom";
+import type {z} from "zod";
 // AvatarWithLoading copied from Navbar for consistent avatar UX
 const AvatarWithLoading = ({src}: {src: string}) => {
     const [loading, setLoading] = useState(true);
@@ -50,12 +58,6 @@ const AvatarWithLoading = ({src}: {src: string}) => {
         </div>
     );
 };
-import dayjs from "dayjs";
-import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
-import {Timestamp} from "firebase/firestore";
-import {useEffect, useState} from "react";
-import {useNavigate, useParams, useSearchParams} from "react-router-dom";
-import type {z} from "zod";
 
 const {Title, Text} = Typography;
 
@@ -76,12 +78,21 @@ export default function RegisterPage() {
     const isMobile = deviceBreakpoint <= DeviceBreakpoint.md;
     const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
     const {id} = useParams<{id: string}>();
-    const {user: authUser, firebaseUser} = useAuthContext();
+    const {user: authUser, currentProfile, firebaseUser, setUser, refreshProfiles} = useAuthContext();
+    // If ID is provided in URL, use it (admin viewing user).
+    // If not, use the current selected profile ID.
+    // Fallback to user.id if for some reason profile is not loaded (though it should be).
+    const profileId = id || currentProfile?.id || authUser?.id;
+
     const navigate = useNavigate();
     const [form] = Form.useForm();
     const [secForm] = Form.useForm();
     const [addPasswordForm] = Form.useForm();
-    const [user, setUser] = useState<FirestoreUser | null>(null);
+    const [profile, setProfile] = useState<Profile | null>(null);
+    const [firestoreUser, setFirestoreUser] = useState<FirestoreUser | null>(null); // Renamed from 'user' to avoid conflict_
+    // Helper to keep 'user' as the variable name for the rest of this file's logic to minimize diffs, pointing to firestoreUser local state
+    const user = firestoreUser;
+    const setUserState = setFirestoreUser; // Alias for updating local state
     const [loading, setLoading] = useState(true);
     const [isEditMode, setIsEditMode] = useState(false);
     const [isImageLoading, setIsImageLoading] = useState(true);
@@ -147,12 +158,22 @@ export default function RegisterPage() {
         {key: "verify_record", label: "Verify Record"},
     ];
 
+    // Check if the current ID belongs to a known profile of the user
+    const isProfileView = useMemo(() => {
+        return profiles.some((p) => p.id === id) || (currentProfile?.id === id && id !== authUser?.id);
+    }, [id, profiles, currentProfile, authUser]);
+
     useEffect(() => {
-        if (authUser?.id !== id) {
-            navigate("/");
+        // Updated security check: Allow if it is the user's ID OR one of their profile IDs
+        if (authUser?.id !== id && !profiles.some((p) => p.id === id) && id !== currentProfile?.id) {
+            // Wait for profiles to load before kicking out, or check if loading
+            if (!profilesLoading && profiles.length > 0) {
+                // Double check specific case: if profiles are loaded and id is not found
+                navigate("/");
+            }
         }
         setIsEditMode(searchParams.get("isEditMode") === "true");
-    }, []);
+    }, [id, authUser, profiles, profilesLoading, currentProfile]);
 
     useEffect(() => {
         if (!id) {
@@ -164,44 +185,114 @@ export default function RegisterPage() {
 
         (async () => {
             try {
-                const data = await fetchUserByID(id);
-                setUser(data ?? null);
-                form.setFieldsValue({
-                    email: data?.email,
-                    IC: data?.IC,
-                    name: data?.name,
-                    country: data?.country,
-                    school: data?.school ?? "",
-                    gender: data?.gender,
-                    birthdate: data?.birthdate,
-                    phone_number: data?.phone_number ?? "-",
-                    memberId: data?.memberId,
-                });
-                descData = [
-                    {label: "Email", value: data?.email ?? "-"},
-                    {label: "Member ID", value: data?.memberId ?? "-"},
-                    {label: "IC", value: data?.IC ?? "-"},
-                    {label: "Country / State", value: `${data?.country[0]} / ${data?.country[1]}`},
-                    {label: "Phone Number", value: data?.phone_number ?? "-"},
-                    {label: "School/University/College", value: data?.school ?? "-"},
-                    {
-                        label: "Birthdate",
-                        value: data?.birthdate
-                            ? dayjs(data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate).format(
-                                  "YYYY-MM-DD",
-                              )
-                            : "-",
-                        span: 2,
-                    },
-                ];
+                // Try to determine if we should fetch a user or a profile
+                // If the ID matches the authUser ID, fetch User
+                if (id === authUser?.id) {
+                    const data = await fetchUserByID(id);
+                    setUserState(data ?? null);
+                    // ... (existing form mapping for User) ...
+                    form.setFieldsValue({
+                        email: data?.email,
+                        IC: data?.IC,
+                        name: data?.name,
+                        country: data?.country,
+                        school: data?.school ?? "",
+                        gender: data?.gender,
+                        birthdate: data?.birthdate,
+                        phone_number: data?.phone_number ?? "-",
+                        memberId: data?.memberId,
+                    });
+                    // ... (existing descData mapping) ...
+                    descData = [
+                        {label: "Email", value: data?.email ?? "-"},
+                        {label: "Member ID", value: data?.memberId ?? "-"},
+                        {label: "IC", value: data?.IC ?? "-"},
+                        {label: "Country / State", value: `${data?.country[0]} / ${data?.country[1]}`},
+                        {label: "Phone Number", value: data?.phone_number ?? "-"},
+                        {label: "School/University/College", value: data?.school ?? "-"},
+                        {
+                            label: "Birthdate",
+                            value: data?.birthdate
+                                ? dayjs(data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate).format(
+                                      "YYYY-MM-DD",
+                                  )
+                                : "-",
+                            span: 2,
+                        },
+                    ];
+                } else {
+                    // Otherwise assume it is a Profile (since we are creating profiles with IDs)
+                    const profileData = await fetchProfileById(id);
+                    if (profileData) {
+                        // Adapt Profile to FirestoreUser-like shape for local state to reuse UI where possible
+                        // or just map it directly.
+                        // For now, mapping key fields to 'user' state to reuse the UI components
+                        // effectively treating 'user' state as 'displayed entity state'
+                        const adaptedUser: FirestoreUser = {
+                            ...({} as FirestoreUser), // Base
+                            id: profileData.id as string,
+                            name: profileData.name,
+                            email: profileData.contact_email ?? "",
+                            IC: profileData.IC,
+                            global_id: profileData.global_id ?? null,
+                            gender: profileData.gender,
+                            birthdate: profileData.birthdate,
+                            country: profileData.country as [string, string],
+                            phone_number: profileData.phone_number,
+                            school: profileData.school,
+                            image_url: profileData.image_url ?? "",
+                            // Extras that might be missing in Profile but needed for UI safety
+                            memberId: "N/A",
+                            roles: profileData.roles ?? null,
+                        };
+                        setUserState(adaptedUser);
+
+                        form.setFieldsValue({
+                            email: profileData.contact_email,
+                            IC: profileData.IC,
+                            name: profileData.name,
+                            country: profileData.country,
+                            school: profileData.school ?? "",
+                            gender: profileData.gender,
+                            birthdate: profileData.birthdate,
+                            phone_number: profileData.phone_number ?? "-",
+                            memberId: "N/A",
+                        });
+
+                        descData = [
+                            {label: "Contact Email", value: profileData.contact_email ?? "-"},
+                            {label: "IC", value: profileData.IC ?? "-"},
+                            {
+                                label: "Country / State",
+                                value: profileData.country ? `${profileData.country[0]} / ${profileData.country[1]}` : "-",
+                            },
+                            {label: "Phone Number", value: profileData.phone_number ?? "-"},
+                            {label: "School", value: profileData.school ?? "-"},
+                            {
+                                label: "Birthdate",
+                                value: profileData.birthdate
+                                    ? dayjs(
+                                          profileData.birthdate instanceof Timestamp
+                                              ? profileData.birthdate.toDate()
+                                              : profileData.birthdate,
+                                      ).format("YYYY-MM-DD")
+                                    : "-",
+                                span: 2,
+                            },
+                        ];
+                    } else {
+                        // Fallback or error
+                        setUserState(null);
+                    }
+                }
             } catch (err) {
                 console.error(err);
-                setUser(null);
+                setUserState(null);
             } finally {
                 setLoading(false);
             }
         })();
-    }, [id]);
+    }, [id, authUser]);
 
     const loadProfiles = async () => {
         if (!authUser?.id) return;
@@ -223,14 +314,7 @@ export default function RegisterPage() {
         }
     }, [authUser?.id]);
 
-    // 构建统计数据示例
-    const allTimeStats: AllTimeStat[] = [
-        {event: "3-3-3", time: (user?.best_times?.["3-3-3"] as {time?: number} | undefined)?.time ?? 0, rank: "-"},
-        {event: "3-6-3", time: (user?.best_times?.["3-6-3"] as {time?: number} | undefined)?.time ?? 0, rank: "-"},
-        {event: "Cycle", time: (user?.best_times?.Cycle as {time?: number} | undefined)?.time ?? 0, rank: "-"},
-    ];
-    const onlineBest: OnlineBest[] = [];
-    const records: RecordItem[] = [];
+    // ... stats ...
 
     const handleSubmit = async (values: {
         name: string;
@@ -241,12 +325,25 @@ export default function RegisterPage() {
         setLoading(true);
         try {
             if (!id) return;
-            await updateUserProfile(id, {
-                name: values.name,
-                country: values.country,
-                school: values.school,
-                phone_number: values.phone_number,
-            });
+
+            if (id === authUser?.id) {
+                await updateUserProfile(id, {
+                    name: values.name,
+                    country: values.country,
+                    school: values.school,
+                    phone_number: values.phone_number,
+                });
+            } else {
+                // Update Profile
+                await updateProfile(id, {
+                    name: values.name,
+                    country: values.country,
+                    school: values.school,
+                    phone_number: values.phone_number,
+                });
+                refreshProfiles(); // Refresh context
+            }
+
             Message.success("Profile updated successfully");
         } catch (err) {
             console.error(err);
@@ -277,6 +374,7 @@ export default function RegisterPage() {
                 phone_number: values.phone_number ?? null,
                 school: values.school ?? null,
                 contact_email: values.contact_email ?? authUser.email ?? null,
+                image_url: authUser.image_url ?? null,
                 status: "claimed",
                 created_by_admin_id: null,
             });
@@ -284,6 +382,7 @@ export default function RegisterPage() {
             setProfileModalVisible(false);
             profileForm.resetFields();
             loadProfiles();
+            refreshProfiles(); // Refresh global context so Navbar updates immediately
         } catch (error) {
             if (error instanceof Error) {
                 Message.error(error.message);
@@ -361,7 +460,20 @@ export default function RegisterPage() {
                             className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}
                         >
                             <div className={`w-full `}>
-                                {user && <AvatarUploader user={user} setUser={setUser} />}
+                                {user && (
+                                    <AvatarUploader
+                                        user={user}
+                                        setUser={setUserState}
+                                        updateFunction={async (id, data) => {
+                                            if (user.id === authUser?.id) {
+                                                await updateUserProfile(id, data);
+                                            } else {
+                                                await updateProfile(id, data);
+                                                refreshProfiles(); // Refresh context to update navbar image
+                                            }
+                                        }}
+                                    />
+                                )}
                                 <div>
                                     <Title heading={4}>{user?.name}</Title>
                                 </div>
@@ -469,7 +581,7 @@ export default function RegisterPage() {
                                                         try {
                                                             setLoading(true);
                                                             const data = await fetchUserByID(id ?? "");
-                                                            setUser(data ?? null);
+                                                            setUserState(data ?? null);
                                                             form.setFieldsValue({
                                                                 email: data?.email,
                                                                 IC: data?.IC,
@@ -483,7 +595,7 @@ export default function RegisterPage() {
                                                             });
                                                         } catch (err) {
                                                             console.error(err);
-                                                            setUser(null);
+                                                            setUserState(null);
                                                         } finally {
                                                             setLoading(false);
                                                         }
@@ -521,7 +633,7 @@ export default function RegisterPage() {
                                             ]}
                                             data={profiles}
                                             pagination={{pageSize: 6}}
-                                            locale={{emptyText: <Empty description="No profiles yet" />}}
+                                            noDataElement={<Empty description="No profiles yet" />}
                                         />
                                         <Modal
                                             title="Add Profile"
@@ -690,7 +802,11 @@ export default function RegisterPage() {
                                     </Avatar>
                                 </div>
                             )}
+
                             <Text className="flex items-center justify-center gap-1 text-4xl font-bold mt-2">{user?.name}</Text>
+                            <Text className="flex items-center justify-center gap-1">
+                                <IconUser /> {user?.global_id ?? "-"}
+                            </Text>
                             <Descriptions
                                 className={"w-full h-full py-8 px-4"}
                                 border
@@ -699,8 +815,10 @@ export default function RegisterPage() {
                                 data={descData}
                                 labelStyle={{
                                     textAlign: isSmallScreen ? "left" : "right",
-                                    paddingRight: isSmallScreen ? 0 : 24,
-                                    width: isSmallScreen ? "100%" : 140,
+                                    paddingRight: isSmallScreen ? 0 : 12,
+                                    width: isSmallScreen ? "100%" : "40%",
+                                    wordBreak: "break-word",
+                                    whiteSpace: "normal",
                                 }}
                                 valueStyle={{
                                     textAlign: "left",

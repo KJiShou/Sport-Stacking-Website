@@ -4,11 +4,12 @@ import {countries} from "@/schema/Country";
 import {fetchAllUsers} from "@/services/firebase/authService";
 import {
     createProfile,
-    createProfilesForUsersWithoutProfile,
     deleteProfile,
     fetchAllProfiles,
+    syncProfilesWithUsers,
     updateProfile,
 } from "@/services/firebase/profileService";
+import {updateParticipantRankingsAndResults, updateProfileBestTimesFromFinalRecords} from "@/services/firebase/recordService";
 import {parseIcToProfile} from "@/utils/icParser";
 import {
     Button,
@@ -67,7 +68,7 @@ const parseDate = (value?: string): Date | null => {
 };
 
 export default function ProfileManagementPage() {
-    const {user} = useAuthContext();
+    const {user, refreshProfiles} = useAuthContext();
     const isAdmin = user?.roles?.modify_admin || false;
 
     const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -82,6 +83,8 @@ export default function ProfileManagementPage() {
     const [createForm] = Form.useForm();
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [editForm] = Form.useForm();
+    const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+    const [syncingTournament, setSyncingTournament] = useState(false);
     const importInputRef = useRef<HTMLInputElement | null>(null);
 
     const loadProfiles = async () => {
@@ -114,15 +117,55 @@ export default function ProfileManagementPage() {
 
     const filteredProfiles = useMemo(() => {
         const query = searchTerm.trim().toLowerCase();
-        if (!query) return profiles;
-        return profiles.filter((profile) => {
-            const values = [profile.global_id, profile.IC, profile.name, profile.contact_email, profile.owner_email]
-                .filter(Boolean)
-                .join(" ")
-                .toLowerCase();
-            return values.includes(query);
+        const filtered = !query
+            ? [...profiles]
+            : profiles.filter((profile) => {
+                  const values = [profile.global_id, profile.IC, profile.name, profile.contact_email, profile.owner_email]
+                      .filter(Boolean)
+                      .join(" ")
+                      .toLowerCase();
+                  return values.includes(query);
+              });
+
+        return filtered.sort((a, b) => {
+            const aId = a.global_id ?? "";
+            const bId = b.global_id ?? "";
+            if (!aId && !bId) return 0;
+            if (!aId) return 1;
+            if (!bId) return -1;
+            const comparison = aId.localeCompare(bId, undefined, {numeric: true, sensitivity: "base"});
+            if (comparison !== 0) return comparison;
+            return (a.name ?? "").localeCompare(b.name ?? "", undefined, {sensitivity: "base"});
         });
     }, [profiles, searchTerm]);
+
+    const handleSyncProfilesFromTournament = async () => {
+        setSyncingTournament(true);
+        try {
+            const tournamentId = window.prompt("Enter tournament ID to update classification (leave blank to skip):", "");
+            for (const profile of profiles) {
+                if (profile.global_id) {
+                    await updateProfileBestTimesFromFinalRecords(profile.global_id);
+                }
+            }
+
+            if (tournamentId) {
+                const classifications = ["prelim", "advance", "intermediate", "beginner"] as const;
+                for (const classification of classifications) {
+                    await updateParticipantRankingsAndResults(tournamentId, classification);
+                }
+            }
+
+            await loadProfiles();
+            refreshProfiles();
+            Message.success("Profiles updated from final records.");
+        } catch (error) {
+            console.error("Failed to update profiles from final records:", error);
+            Message.error("Failed to update profiles from final records.");
+        } finally {
+            setSyncingTournament(false);
+        }
+    };
 
     const handleCsvImport = async (file: File) => {
         setImporting(true);
@@ -159,6 +202,7 @@ export default function ProfileManagementPage() {
                         phone_number: phone,
                         school: row.school ?? null,
                         contact_email: contactEmail,
+                        image_url: null, // CSV import doesn't support image URL yet
                         status: "unclaimed",
                         created_by_admin_id: user?.id ?? null,
                     });
@@ -169,6 +213,7 @@ export default function ProfileManagementPage() {
 
             Message.success("Profiles imported");
             await loadProfiles();
+            refreshProfiles(); // Refresh global context profiles for current user if applicable
         } catch (error) {
             console.error("Failed to import profiles:", error);
             Message.error("Failed to import profiles");
@@ -233,6 +278,7 @@ export default function ProfileManagementPage() {
             Message.success("Profile updated");
             setEditModalVisible(false);
             await loadProfiles();
+            refreshProfiles();
         } catch (error) {
             if (error instanceof Error) {
                 Message.error(error.message);
@@ -258,6 +304,7 @@ export default function ProfileManagementPage() {
                 phone_number: values.phone_number ?? null,
                 school: values.school ?? null,
                 contact_email: values.contact_email ?? null,
+                image_url: null,
                 status: "unclaimed",
                 created_by_admin_id: user?.id ?? null,
             });
@@ -265,6 +312,7 @@ export default function ProfileManagementPage() {
             setCreateModalVisible(false);
             createForm.resetFields();
             await loadProfiles();
+            refreshProfiles();
         } catch (error) {
             if (error instanceof Error) {
                 Message.error(error.message);
@@ -321,6 +369,7 @@ export default function ProfileManagementPage() {
         {
             title: "Status",
             width: 120,
+            sorter: (a, b) => (a.status ?? "unclaimed").localeCompare(b.status ?? "unclaimed"),
             render: (_, record) => (
                 <Tag color={record.status === "claimed" ? "green" : "orange"}>
                     {record.status === "claimed" ? "Claimed" : "Unclaimed"}
@@ -344,26 +393,16 @@ export default function ProfileManagementPage() {
                                 <Menu.Item key="invite" onClick={() => handleCopyInvite(record)}>
                                     <IconCopy /> Invite
                                 </Menu.Item>
-                                <Menu.Item key="delete">
-                                    <Popconfirm
-                                        title="Delete profile?"
-                                        content="This will remove the profile permanently."
-                                        onOk={async () => {
-                                            if (!record.id) return;
-                                            try {
-                                                await deleteProfile(record.id);
-                                                Message.success("Profile deleted");
-                                                loadProfiles();
-                                            } catch (error) {
-                                                console.error("Failed to delete profile:", error);
-                                                Message.error("Failed to delete profile");
-                                            }
-                                        }}
-                                    >
-                                        <span className="text-red-600">
-                                            <IconDelete /> Delete
-                                        </span>
-                                    </Popconfirm>
+                                <Menu.Item
+                                    key="delete"
+                                    onClick={() => {
+                                        setSelectedProfile(record);
+                                        setDeleteModalVisible(true);
+                                    }}
+                                >
+                                    <span className="text-red-600">
+                                        <IconDelete /> Delete
+                                    </span>
                                 </Menu.Item>
                             </Menu>
                         }
@@ -389,6 +428,14 @@ export default function ProfileManagementPage() {
                                 <Button type="primary" icon={<IconRefresh />} onClick={loadProfiles} loading={loading}>
                                     Refresh
                                 </Button>
+                                <Button
+                                    type="outline"
+                                    icon={<IconUserGroup />}
+                                    onClick={handleSyncProfilesFromTournament}
+                                    loading={syncingTournament}
+                                >
+                                    Update Best Performances (Final Only)
+                                </Button>
                                 <Dropdown
                                     droplist={
                                         <Menu>
@@ -400,9 +447,9 @@ export default function ProfileManagementPage() {
                                                 onClick={async () => {
                                                     try {
                                                         setLoading(true);
-                                                        const result = await createProfilesForUsersWithoutProfile();
+                                                        const result = await syncProfilesWithUsers();
                                                         Message.success(
-                                                            `Profiles updated. Created ${result.created}, skipped ${result.skipped}.`,
+                                                            `Profiles synced. Created ${result.created}, updated ${result.updated}, skipped ${result.skipped}.`,
                                                         );
                                                         await loadProfiles();
                                                     } catch (error) {
@@ -601,15 +648,14 @@ export default function ProfileManagementPage() {
                             }}
                             filterOption={(inputValue, option) => {
                                 const query = inputValue.toLowerCase();
-                                const label = String(option?.props?.label ?? "").toLowerCase();
                                 const children = String(option?.props?.children ?? "").toLowerCase();
-                                return label.includes(query) || children.includes(query);
+                                return children.includes(query);
                             }}
                         >
                             {users.map((entry) => {
                                 const label = `${entry.email ?? "-"} • ${entry.name ?? ""}`;
                                 return (
-                                    <Select.Option key={entry.id} value={entry.id} label={label}>
+                                    <Select.Option key={entry.id} value={entry.id}>
                                         {label}
                                     </Select.Option>
                                 );
@@ -620,6 +666,30 @@ export default function ProfileManagementPage() {
                         <Input disabled placeholder="Auto-filled from Gmail selection" />
                     </Form.Item>
                 </Form>
+            </Modal>
+
+            <Modal
+                title="Confirm Deletion"
+                visible={deleteModalVisible}
+                onCancel={() => setDeleteModalVisible(false)}
+                onOk={async () => {
+                    if (!selectedProfile?.id) return;
+                    try {
+                        await deleteProfile(selectedProfile.id);
+                        Message.success("Profile deleted");
+                        setDeleteModalVisible(false);
+                        await loadProfiles();
+                    } catch (error) {
+                        console.error("Failed to delete profile:", error);
+                        Message.error("Failed to delete profile");
+                    }
+                }}
+                okButtonProps={{status: "danger"}}
+            >
+                <Paragraph>
+                    Are you sure you want to delete profile <b>{selectedProfile?.name}</b> ({selectedProfile?.global_id})?
+                </Paragraph>
+                <Paragraph type="secondary">This action cannot be undone.</Paragraph>
             </Modal>
         </div>
     );

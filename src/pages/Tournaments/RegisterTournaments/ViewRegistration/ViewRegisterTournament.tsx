@@ -193,8 +193,7 @@ export default function ViewTournamentRegistrationPage() {
                 ]);
                 setTeamRecruitments(
                     leaderRecruitments.filter(
-                        (recruitment) =>
-                            recruitment.tournament_id === tournamentId && recruitment.status === "active",
+                        (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
                     ),
                 );
                 setDoubleRecruitments(
@@ -328,9 +327,7 @@ export default function ViewTournamentRegistrationPage() {
                                             </Form.Item>
                                             <Form.Item label="Recruitment">
                                                 {activeRecruitment ? (
-                                                    <Tag color="blue">
-                                                        Recruitment {activeRecruitment.status}
-                                                    </Tag>
+                                                    <Tag color="blue">Recruitment {activeRecruitment.status}</Tag>
                                                 ) : (
                                                     <Tag color="gray">No recruitment</Tag>
                                                 )}

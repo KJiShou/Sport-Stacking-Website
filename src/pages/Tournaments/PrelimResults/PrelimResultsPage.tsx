@@ -626,41 +626,44 @@ export default function PrelimResultsPage() {
         fetchData();
     }, [tournamentId]);
 
-    const nameMap = useMemo(
-        () =>
-            registrations.reduce(
-                (acc, reg) => {
-                    acc[reg.user_id] = reg.user_name;
-                    return acc;
-                },
-                {} as Record<string, string>,
-            ),
-        [registrations],
-    );
+    const nameMap = useMemo(() => {
+        const acc: Record<string, string> = {};
+        for (const reg of registrations) {
+            const keys = [reg.user_id, reg.profile_id ?? undefined, reg.user_global_id ?? undefined].filter(
+                (value): value is string => Boolean(value),
+            );
+            for (const key of keys) {
+                acc[key] = reg.user_name;
+            }
+        }
+        return acc;
+    }, [registrations]);
 
-    const ageMap = useMemo(
-        () =>
-            registrations.reduce(
-                (acc, reg) => {
-                    acc[reg.user_id] = reg.age;
-                    return acc;
-                },
-                {} as Record<string, number>,
-            ),
-        [registrations],
-    );
+    const ageMap = useMemo(() => {
+        const acc: Record<string, number> = {};
+        for (const reg of registrations) {
+            const keys = [reg.user_id, reg.profile_id ?? undefined, reg.user_global_id ?? undefined].filter(
+                (value): value is string => Boolean(value),
+            );
+            for (const key of keys) {
+                acc[key] = reg.age;
+            }
+        }
+        return acc;
+    }, [registrations]);
 
-    const registrationMap = useMemo(
-        () =>
-            registrations.reduce(
-                (acc, reg) => {
-                    acc[reg.user_id] = reg;
-                    return acc;
-                },
-                {} as Record<string, Registration>,
-            ),
-        [registrations],
-    );
+    const registrationMap = useMemo(() => {
+        const acc: Record<string, Registration> = {};
+        for (const reg of registrations) {
+            const keys = [reg.user_id, reg.profile_id ?? undefined, reg.user_global_id ?? undefined].filter(
+                (value): value is string => Boolean(value),
+            );
+            for (const key of keys) {
+                acc[key] = reg;
+            }
+        }
+        return acc;
+    }, [registrations]);
 
     const teamNameMap = useMemo(
         () =>

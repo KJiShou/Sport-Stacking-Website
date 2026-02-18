@@ -5,7 +5,11 @@ import type {AvatarUploaderProps} from "../../schema";
 import {updateUserProfile} from "../../services/firebase/authService";
 import {uploadAvatar} from "../../services/firebase/storageService";
 
-export function AvatarUploader({user, setUser}: Readonly<AvatarUploaderProps>) {
+export interface AvatarUploaderComponentProps extends AvatarUploaderProps {
+    updateFunction?: (id: string, data: {image_url: string}) => Promise<void>;
+}
+
+export function AvatarUploader({user, setUser, updateFunction}: Readonly<AvatarUploaderComponentProps>) {
     const [uploading, setUploading] = useState(false);
 
     return (
@@ -18,7 +22,11 @@ export function AvatarUploader({user, setUser}: Readonly<AvatarUploaderProps>) {
                     // 1. 上传到 Storage，返回下载 URL
                     const url = await uploadAvatar(file, user.id);
                     // 2. 更新 Firestore
-                    await updateUserProfile(user.id, {image_url: url});
+                    if (updateFunction) {
+                        await updateFunction(user.id, {image_url: url});
+                    } else {
+                        await updateUserProfile(user.id, {image_url: url});
+                    }
                     // 3. 更新本地状态
                     setUser({...user, image_url: url});
                     onSuccess?.({});

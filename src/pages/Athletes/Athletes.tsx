@@ -19,7 +19,7 @@ import {
 } from "@arco-design/web-react";
 import {IconRefresh} from "@arco-design/web-react/icon";
 
-import type {FirestoreUser} from "@/schema/UserSchema";
+import type {Profile} from "@/schema/ProfileSchema";
 // import type {GlobalResult, GlobalTeamResult} from "@/schema/RecordSchema";
 import {type EventType as RankingEventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
@@ -366,7 +366,7 @@ function extractCountry(value: unknown): string {
 }
 
 async function loadRankingData(): Promise<AthleteRankingEntry[]> {
-    // Build rankings from users' best_times via athleteRankingsService for individual events only
+    // Build rankings from profiles' best_times via athleteRankingsService for individual events only
     const map = new Map<string, AthleteRankingEntry>();
 
     // Events we care about for individual rankings
@@ -379,16 +379,16 @@ async function loadRankingData(): Promise<AthleteRankingEntry[]> {
                 const users = await getTopAthletesByEvent(evt, 500);
                 const eventKey = `individual:${evt}`;
 
-                for (const user of users as FirestoreUser[]) {
-                    const participantId = (user.global_id as string | undefined) ?? (user.id as string);
+                for (const user of users as Profile[]) {
+                    const participantId = user.global_id ?? user.id ?? "";
                     const key = `individual:${participantId}`;
-                    const name = (user.name as string) ?? "Unknown";
+                    const name = user.name ?? "Unknown";
                     const gender = (user.gender as GenderOption | undefined) ?? "Mixed";
 
                     // Derive country (handle array or string)
                     const country = extractCountry((user as unknown as {country?: unknown})?.country);
 
-                    const bestObj = user.best_times?.[evt as keyof NonNullable<FirestoreUser["best_times"]>] as
+                    const bestObj = user.best_times?.[evt as keyof NonNullable<Profile["best_times"]>] as
                         | {time?: number; updated_at?: Date | {toDate?: () => Date} | null; season?: string | null}
                         | undefined;
                     const time = bestObj?.time;
@@ -459,7 +459,7 @@ const Athletes: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [ageFilter, setAgeFilter] = useState<AgeFilter>("All");
     const [genderFilter, setGenderFilter] = useState<GenderFilter>("All");
-    const [locationFilter, setLocationFilter] = useState<string>("All");
+    const [locationFilter, setLocationFilter] = useState<string>("Malaysia");
     const [seasonFilter, setSeasonFilter] = useState<SeasonFilter>("All");
     const [locationOptions, setLocationOptions] = useState<string[]>([]);
     const [seasonOptions, setSeasonOptions] = useState<SeasonValue[]>([]);
@@ -488,6 +488,7 @@ const Athletes: React.FC = () => {
                     ),
                 ).sort((a, b) => a.localeCompare(b));
                 setLocationOptions(countries);
+                setLocationFilter(countries.includes("Malaysia") ? "Malaysia" : "All");
 
                 const seasonStartYears = new Set<number>();
                 for (const entry of data) {
@@ -651,7 +652,7 @@ const Athletes: React.FC = () => {
         setSearchTerm("");
         setAgeFilter("All");
         setGenderFilter("All");
-        setLocationFilter("All");
+        setLocationFilter(locationOptions.includes("Malaysia") ? "Malaysia" : "All");
         setSeasonFilter("All");
         setSelectedEventKey(DEFAULT_EVENT.key);
     };

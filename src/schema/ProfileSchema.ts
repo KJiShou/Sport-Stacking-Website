@@ -1,3 +1,4 @@
+import {BestTimesSchema, UserRegistrationRecordSchema, UserRoleSchema} from "./UserSchema.js";
 import {Timestamp} from "firebase/firestore";
 import {z} from "zod";
 
@@ -12,14 +13,18 @@ export const ProfileSchema = z.object({
     }),
     birthdate: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     gender: z.enum(["Male", "Female"]),
-    country: z.array(z.string(), z.string()).optional().nullable(),
+    country: z.array(z.string()).optional().nullable(),
     phone_number: z.string().optional().nullable(),
     school: z.string().optional().nullable(),
     contact_email: z.string().email().optional().nullable(),
+    image_url: z.string().optional().nullable(),
     status: z.enum(["claimed", "unclaimed"]).default("unclaimed"),
     created_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
     created_by_admin_id: z.string().optional().nullable(),
+    roles: UserRoleSchema.optional().nullable(), // Roles for admin access
+    best_times: BestTimesSchema.optional().nullable(),
+    registration_records: z.array(UserRegistrationRecordSchema).optional().nullable(),
 });
 
 export type Profile = z.infer<typeof ProfileSchema>;

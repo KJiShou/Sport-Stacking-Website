@@ -5,7 +5,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {ExpandedEvent, Profile, Registration, Tournament, TournamentEvent} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {addUserRegistrationRecord, getUserByGlobalId} from "@/services/firebase/authService";
+import {addProfileRegistrationRecordWithCapacityCheck, getUserByGlobalId} from "@/services/firebase/authService";
 import {createDoubleRecruitment} from "@/services/firebase/doubleRecruitmentService";
 import {createIndividualRecruitment} from "@/services/firebase/individualRecruitmentService";
 import {
@@ -14,7 +14,7 @@ import {
     fetchProfilesByOwner,
     getProfileContactEmailByGlobalId,
 } from "@/services/firebase/profileService";
-import {createRegistration, fetchRegistrations} from "@/services/firebase/registerService";
+import {createRegistration, deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService";
 import {createTeam, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
@@ -77,7 +77,7 @@ const isNonScoringEvent = (event?: ExpandedEvent) => {
 export default function RegisterTournamentPage() {
     const {tournamentId} = useParams();
     const [form] = Form.useForm();
-    const {firebaseUser, user} = useAuthContext();
+    const {firebaseUser, user, currentProfile} = useAuthContext();
     const navigate = useNavigate();
     const location = useLocation();
     const deviceBreakpoint = useDeviceBreakpoint();
@@ -98,6 +98,37 @@ export default function RegisterTournamentPage() {
     const [lookingForTeams, setLookingForTeams] = useState<string[]>([]); // Events user is looking for teams
     const [loginModalVisible, setLoginModalVisible] = useState(false);
     const [profiles, setProfiles] = useState<Profile[]>([]);
+
+    // Auto-fill form and refresh profile list when profile changes
+    useEffect(() => {
+        if (currentProfile) {
+            form.setFieldsValue({
+                global_id: currentProfile.global_id,
+                name: currentProfile.name,
+                gender: currentProfile.gender,
+                phone: currentProfile.phone_number,
+                ic: currentProfile.IC,
+                birthDate:
+                    currentProfile.birthdate instanceof Timestamp
+                        ? currentProfile.birthdate.toDate().toISOString()
+                        : dayjs(currentProfile.birthdate).toISOString(),
+            });
+        } else if (user) {
+            // Fallback to use User data if for some reason no profile is selected (e.g. creating first profile logic not triggered yet?)
+            // But ideally currentProfile is always set if user exists and has profiles.
+            form.setFieldsValue({
+                // global_id: user.global_id, // Might not exist on user if old schema
+                name: user.name,
+                gender: user.gender,
+                phone: user.phone_number,
+                ic: user.IC,
+                birthDate:
+                    user.birthdate instanceof Timestamp
+                        ? user.birthdate.toDate().toISOString()
+                        : dayjs(user.birthdate).toISOString(),
+            });
+        }
+    }, [currentProfile, user, form]);
     const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
     const [registerAsAdmin, setRegisterAsAdmin] = useState(false);
     const [autoVerifyTeams, setAutoVerifyTeams] = useState(true);
@@ -114,6 +145,17 @@ export default function RegisterTournamentPage() {
             setLoginModalVisible(false);
         }
     }, [firebaseUser]);
+
+    useEffect(() => {
+        if (!isAdmin) {
+            return;
+        }
+        const params = new URLSearchParams(location.search);
+        const adminParam = params.get("admin");
+        if (adminParam === "1" || adminParam === "true") {
+            setRegisterAsAdmin(true);
+        }
+    }, [isAdmin, location.search]);
 
     useEffect(() => {
         if (!firebaseUser) {
@@ -372,6 +414,88 @@ export default function RegisterTournamentPage() {
                 updated_at: Timestamp.now(),
             };
 
+            const eventTeamAges = new Map<string, number>();
+
+            for (const [eventId, teamData] of Object.entries(teamsRaw)) {
+                const eventDetails = findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === teamData.label);
+                const eventType = (eventDetails?.type ?? teamData.label ?? "").toLowerCase();
+
+                if (eventType.includes("double") && teamData.looking_for_team_members) {
+                    continue;
+                }
+
+                if (!teamData.name || !teamData.leader) {
+                    continue; // Skip if team name or leader is missing
+                }
+                const members = (teamData.member ?? [])
+                    .map((id) => {
+                        if (!id) return null;
+                        const isParentChild = findEventByKey(eventId)?.type.includes("Parent");
+                        const shouldAutoVerify = registerAsAdmin && isAdmin && autoVerifyTeams;
+                        return {global_id: id, verified: Boolean(isParentChild && !shouldAutoVerify)};
+                    })
+                    .filter((m): m is {global_id: string; verified: boolean} => m !== null);
+
+                const memberIds = members.map((m) => m.global_id);
+                if (teamData.leader) {
+                    memberIds.push(teamData.leader);
+                }
+
+                const memberUsers = await Promise.all(
+                    memberIds.map(async (id) => {
+                        const profile = await fetchProfileByGlobalId(id);
+                        if (profile) {
+                            return {birthdate: profile.birthdate};
+                        }
+                        const fallbackUser = await getUserByGlobalId(id);
+                        return fallbackUser ? {birthdate: fallbackUser.birthdate} : null;
+                    }),
+                );
+
+                const ages = memberUsers
+                    .map((memberUser) => {
+                        if (memberUser?.birthdate && tournament?.start_date) {
+                            return getAgeAtTournament(memberUser.birthdate, tournament.start_date);
+                        }
+                        return 0;
+                    })
+                    .filter((age) => age > 0);
+
+                let team_age = 0;
+
+                if (ages.length > 0) {
+                    if (eventType.includes("team relay")) {
+                        // Team relay: use average age
+                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                    } else if (eventType.includes("double")) {
+                        // Double: use average age but check 10-year range constraint
+                        const minAge = Math.min(...ages);
+                        const maxAge = Math.max(...ages);
+                        if (maxAge - minAge > 10) {
+                            throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
+                        }
+                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                    } else if (eventType.includes("parent") && eventType.includes("child")) {
+                        // Parent & Child: use child's age (registrant's age)
+                        team_age = registrantAge;
+                    } else {
+                        // Default: use largest age (for backward compatibility)
+                        team_age = Math.max(...ages);
+                    }
+                }
+
+                if (eventDetails?.age_brackets?.length && team_age > 0) {
+                    const isInRange = eventDetails.age_brackets.some(
+                        (bracket) => team_age >= bracket.min_age && team_age <= bracket.max_age,
+                    );
+                    if (!isInRange) {
+                        throw new Error(`${eventDetails.type} team age ${team_age} is outside the allowed range for this event.`);
+                    }
+                }
+
+                eventTeamAges.set(eventId, team_age);
+            }
+
             const registrationId = await createRegistration(user, registrationData, {
                 skipUserIdCheck: registerAsAdmin && isAdmin,
             });
@@ -412,7 +536,7 @@ export default function RegisterTournamentPage() {
                         if (!id) return null;
                         const isParentChild = findEventByKey(eventId)?.type.includes("Parent");
                         const shouldAutoVerify = registerAsAdmin && isAdmin && autoVerifyTeams;
-                        return {global_id: id, verified: Boolean(isParentChild || shouldAutoVerify)};
+                        return {global_id: id, verified: Boolean(isParentChild && !shouldAutoVerify)};
                     })
                     .filter((m): m is {global_id: string; verified: boolean} => m !== null);
 
@@ -421,57 +545,7 @@ export default function RegisterTournamentPage() {
                     memberIds.push(teamData.leader);
                 }
 
-                const memberUsers = await Promise.all(
-                    memberIds.map(async (id) => {
-                        const profile = await fetchProfileByGlobalId(id);
-                        if (profile) {
-                            return {birthdate: profile.birthdate};
-                        }
-                        const fallbackUser = await getUserByGlobalId(id);
-                        return fallbackUser ? {birthdate: fallbackUser.birthdate} : null;
-                    }),
-                );
-
-                const ages = memberUsers
-                    .map((memberUser) => {
-                        if (memberUser?.birthdate && tournament?.start_date) {
-                            return getAgeAtTournament(memberUser.birthdate, tournament.start_date);
-                        }
-                        return 0;
-                    })
-                    .filter((age) => age > 0);
-
-                // Calculate team age based on event type
-                const teamEventKeys = new Set<string>([eventId]);
-                if (eventDetails) {
-                    teamEventKeys.add(eventDetails.type);
-                    for (const code of sanitizeEventCodes(eventDetails.codes)) {
-                        teamEventKeys.add(code);
-                        teamEventKeys.add(`${code}-${eventDetails.type}`);
-                    }
-                }
-                let team_age = 0;
-
-                if (ages.length > 0) {
-                    if (eventType.includes("team relay")) {
-                        // Team relay: use average age
-                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
-                    } else if (eventType.includes("double")) {
-                        // Double: use average age but check 10-year range constraint
-                        const minAge = Math.min(...ages);
-                        const maxAge = Math.max(...ages);
-                        if (maxAge - minAge > 10) {
-                            throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
-                        }
-                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
-                    } else if (eventType.includes("parent") && eventType.includes("child")) {
-                        // Parent & Child: use child's age (registrant's age)
-                        team_age = registrantAge;
-                    } else {
-                        // Default: use largest age (for backward compatibility)
-                        team_age = Math.max(...ages);
-                    }
-                }
+                const team_age = eventTeamAges.get(eventId) ?? 0;
 
                 // Create the team first
                 const teamId = await createTeam(tournamentId, {
@@ -483,6 +557,43 @@ export default function RegisterTournamentPage() {
                     team_age,
                     looking_for_member: false,
                 });
+
+                const shouldAutoVerify = registerAsAdmin && isAdmin && autoVerifyTeams;
+                if (shouldAutoVerify && members.length > 0) {
+                    if (!firebaseUser) {
+                        await deleteRegistrationById(tournamentId, registrationId, {adminDelete: true});
+                        throw new Error("Please sign in before auto-verifying team members.");
+                    }
+                    const token = await firebaseUser.getIdToken();
+                    const verificationUrl =
+                        import.meta.env.VITE_UPDATE_VERIFICATION_PROFILE_URL ??
+                        import.meta.env.VITE_UPDATE_VERIFICATION_URL ??
+                        "https://updateverification-jzbhzqtcdq-uc.a.run.app";
+                    try {
+                        for (const member of members) {
+                            const res = await fetch(verificationUrl, {
+                                method: "POST",
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                    tournamentId,
+                                    teamId,
+                                    memberId: member.global_id,
+                                    registrationId,
+                                }),
+                            });
+                            if (!res.ok) {
+                                const data = (await res.json()) as {error?: string};
+                                throw new Error(data.error || "Failed to auto-verify team member.");
+                            }
+                        }
+                    } catch (error) {
+                        await deleteRegistrationById(tournamentId, registrationId, {adminDelete: true});
+                        throw error;
+                    }
+                }
 
                 // If looking for members, create a recruitment record
                 if (teamData.looking_for_team_members) {
@@ -575,8 +686,8 @@ export default function RegisterTournamentPage() {
                 updated_at: Timestamp.now(),
             };
 
-            if (registrantProfile.owner_uid) {
-                await addUserRegistrationRecord(registrantProfile.owner_uid, registrationRecord);
+            if (registrantProfile.id) {
+                await addProfileRegistrationRecordWithCapacityCheck(registrantProfile.id, registrationRecord);
             }
 
             if (needsMemberVerification) {
@@ -921,10 +1032,9 @@ export default function RegisterTournamentPage() {
                                 filterOption={(inputValue, option) => {
                                     const query = inputValue.toLowerCase();
                                     const props = option?.props ?? {};
-                                    const labelText = String(props.label ?? "").toLowerCase();
                                     const valueText = String(props.value ?? "").toLowerCase();
                                     const childrenText = String(props.children ?? "").toLowerCase();
-                                    return labelText.includes(query) || valueText.includes(query) || childrenText.includes(query);
+                                    return valueText.includes(query) || childrenText.includes(query);
                                 }}
                             >
                                 {profiles.map((profile) => {
@@ -937,7 +1047,7 @@ export default function RegisterTournamentPage() {
                                         .filter(Boolean)
                                         .join(" • ");
                                     return (
-                                        <Option key={profile.id ?? profile.global_id} value={profile.id ?? ""} label={labelParts}>
+                                        <Option key={profile.id ?? profile.global_id} value={profile.id ?? ""}>
                                             {labelParts}
                                         </Option>
                                     );

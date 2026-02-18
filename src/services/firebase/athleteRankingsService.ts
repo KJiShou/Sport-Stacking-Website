@@ -1,5 +1,5 @@
 import {collection, getDocs, limit, orderBy, query, where} from "firebase/firestore";
-import type {FirestoreUser} from "../../schema/UserSchema";
+import type {Profile} from "../../schema/ProfileSchema";
 import {db} from "./config";
 
 export type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
@@ -8,14 +8,14 @@ export type EventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
  * Get top athletes by best time for a specific event
  * @param eventType - The event type to rank by
  * @param maxResults - Maximum number of results to return
- * @returns Array of users sorted by best time (ascending)
+ * @returns Array of profiles sorted by best time (ascending)
  */
-export const getTopAthletesByEvent = async (eventType: EventType, maxResults = 100): Promise<FirestoreUser[]> => {
+export const getTopAthletesByEvent = async (eventType: EventType, maxResults = 100): Promise<Profile[]> => {
     try {
-        const usersRef = collection(db, "users");
+        const usersRef = collection(db, "profiles");
         const bestTimeField = `best_times.${eventType}.time`;
 
-        // Query users who have a best time for this event, ordered by best time
+        // Query profiles who have a best time for this event, ordered by best time
         const q = query(usersRef, where(bestTimeField, ">", 0), orderBy(bestTimeField, "asc"), limit(maxResults));
 
         const snapshot = await getDocs(q);
@@ -24,7 +24,7 @@ export const getTopAthletesByEvent = async (eventType: EventType, maxResults = 1
                 ({
                     ...doc.data(),
                     id: doc.id,
-                }) as FirestoreUser,
+                }) as Profile,
         );
     } catch (error) {
         console.error(`Failed to fetch top athletes for ${eventType}:`, error);
@@ -37,18 +37,18 @@ export const getTopAthletesByEvent = async (eventType: EventType, maxResults = 1
  * @param eventType - The event type to rank by
  * @param gender - Filter by gender ("Male" or "Female")
  * @param maxResults - Maximum number of results to return
- * @returns Array of users sorted by best time (ascending)
+ * @returns Array of profiles sorted by best time (ascending)
  */
 export const getTopAthletesByEventAndGender = async (
     eventType: EventType,
     gender: "Male" | "Female",
     maxResults = 100,
-): Promise<FirestoreUser[]> => {
+): Promise<Profile[]> => {
     try {
-        const usersRef = collection(db, "users");
+        const usersRef = collection(db, "profiles");
         const bestTimeField = `best_times.${eventType}.time`;
 
-        // First get all users with best times for this event
+        // First get all profiles with best times for this event
         const q = query(
             usersRef,
             where(bestTimeField, ">", 0),
@@ -63,7 +63,7 @@ export const getTopAthletesByEventAndGender = async (
                 ({
                     ...doc.data(),
                     id: doc.id,
-                }) as FirestoreUser,
+                }) as Profile,
         );
     } catch (error) {
         console.error(`Failed to fetch top athletes for ${eventType} (${gender}):`, error);
@@ -76,18 +76,18 @@ export const getTopAthletesByEventAndGender = async (
  * @param eventType - The event type to rank by
  * @param maxAge - Maximum age for the age group (e.g., 12 for "12 & Under")
  * @param maxResults - Maximum number of results to return
- * @returns Array of users sorted by best time (ascending)
+ * @returns Array of profiles sorted by best time (ascending)
  */
 export const getTopAthletesByEventAndAge = async (
     eventType: EventType,
     maxAge: number,
     maxResults = 100,
-): Promise<FirestoreUser[]> => {
+): Promise<Profile[]> => {
     try {
-        const usersRef = collection(db, "users");
+        const usersRef = collection(db, "profiles");
         const bestTimeField = `best_times.${eventType}.time`;
 
-        // Get all users with best times, then filter by age in memory
+        // Get all profiles with best times, then filter by age in memory
         const q = query(
             usersRef,
             where(bestTimeField, ">", 0),
@@ -104,7 +104,7 @@ export const getTopAthletesByEventAndAge = async (
                     ({
                         ...doc.data(),
                         id: doc.id,
-                    }) as FirestoreUser,
+                    }) as Profile,
             )
             .filter((user) => {
                 if (!user.birthdate) return false;
@@ -131,7 +131,7 @@ export const getTopAthletesByEventAndAge = async (
  */
 export const getAthleteRankingByEvent = async (globalId: string, eventType: EventType): Promise<number | null> => {
     try {
-        const usersRef = collection(db, "users");
+        const usersRef = collection(db, "profiles");
         const bestTimeField = `best_times.${eventType}.time`;
 
         // Get the athlete's best time first
@@ -142,7 +142,7 @@ export const getAthleteRankingByEvent = async (globalId: string, eventType: Even
             return null;
         }
 
-        const athleteData = athleteSnap.docs[0].data() as FirestoreUser;
+        const athleteData = athleteSnap.docs[0].data() as Profile;
         const athleteBestTime = (athleteData.best_times?.[eventType] as {time?: number} | undefined)?.time;
 
         if (!athleteBestTime || athleteBestTime <= 0) {
@@ -169,7 +169,7 @@ export const getAthleteRankingByEvent = async (globalId: string, eventType: Even
  */
 export const getAthleteBestTimes = async (globalId: string) => {
     try {
-        const usersRef = collection(db, "users");
+        const usersRef = collection(db, "profiles");
         const q = query(usersRef, where("global_id", "==", globalId), limit(1));
         const snapshot = await getDocs(q);
 
@@ -177,7 +177,7 @@ export const getAthleteBestTimes = async (globalId: string) => {
             return null;
         }
 
-        const userData = snapshot.docs[0].data() as FirestoreUser;
+        const userData = snapshot.docs[0].data() as Profile;
         return {
             "3-3-3": (userData.best_times?.["3-3-3"] as {time?: number} | undefined)?.time ?? null,
             "3-6-3": (userData.best_times?.["3-6-3"] as {time?: number} | undefined)?.time ?? null,
@@ -194,11 +194,11 @@ export const getAthleteBestTimes = async (globalId: string) => {
  * Get athletes with personal bests in multiple events
  * Useful for finding all-around athletes
  * @param maxResults - Maximum number of results
- * @returns Array of users who have best times in all component events
+ * @returns Array of profiles who have best times in all component events
  */
-export const getAllAroundAthletes = async (maxResults = 100): Promise<FirestoreUser[]> => {
+export const getAllAroundAthletes = async (maxResults = 100): Promise<Profile[]> => {
     try {
-        const usersRef = collection(db, "users");
+        const usersRef = collection(db, "profiles");
 
         // Strategy: order by 3-3-3 time, then filter in-memory for athletes who also have 3-6-3 and Cycle
         const baseField = "best_times.3-3-3.time";
@@ -210,7 +210,7 @@ export const getAllAroundAthletes = async (maxResults = 100): Promise<FirestoreU
                 ({
                     ...doc.data(),
                     id: doc.id,
-                }) as FirestoreUser,
+                }) as Profile,
         );
 
         const filtered = users.filter((u) => {
@@ -222,7 +222,7 @@ export const getAllAroundAthletes = async (maxResults = 100): Promise<FirestoreU
 
         // Sort by sum of times
         filtered.sort((a, b) => {
-            const sum = (u: FirestoreUser) =>
+            const sum = (u: Profile) =>
                 ((u.best_times?.["3-3-3"] as {time?: number})?.time ?? Number.POSITIVE_INFINITY) +
                 ((u.best_times?.["3-6-3"] as {time?: number})?.time ?? Number.POSITIVE_INFINITY) +
                 ((u.best_times?.Cycle as {time?: number})?.time ?? Number.POSITIVE_INFINITY);

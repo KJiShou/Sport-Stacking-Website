@@ -5,7 +5,11 @@ import type {DoubleRecruitment, Registration, Tournament, TournamentEvent} from 
 import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
 import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {addUserRegistrationRecord, getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
+import {
+    addProfileRegistrationRecordWithCapacityCheck,
+    getUserByGlobalId,
+    updateProfileRegistrationRecordEntry,
+} from "@/services/firebase/authService";
 import {
     createDoubleRecruitment,
     deleteDoubleRecruitment,
@@ -423,14 +427,14 @@ export default function EditTournamentRegistrationPage() {
                             });
                         }
 
-                        if (profile.owner_uid) {
+                        if (profile.id) {
                             try {
-                                await updateUserRegistrationRecord(profile.owner_uid, tournamentId ?? "", {
+                                await updateProfileRegistrationRecordEntry(profile.id, tournamentId ?? "", {
                                     events: updatedEvents,
                                 });
                             } catch (error) {
                                 try {
-                                    await addUserRegistrationRecord(profile.owner_uid, {
+                                    await addProfileRegistrationRecordWithCapacityCheck(profile.id, {
                                         tournament_id: tournamentId ?? "",
                                         events: updatedEvents,
                                         registration_date: Timestamp.now(),
@@ -459,18 +463,29 @@ export default function EditTournamentRegistrationPage() {
                 throw new Error("Missing registrationId or tournamentId for updating user registration record.");
             }
             try {
-                await updateUserRegistrationRecord(registration?.user_id ?? "", tournamentId, userRegistrationData);
+                const targetProfileId =
+                    registration?.profile_id ??
+                    (registration?.user_global_id ? (await fetchProfileByGlobalId(registration.user_global_id))?.id : null);
+                if (!targetProfileId) {
+                    throw new Error("Profile not found for registration.");
+                }
+                await updateProfileRegistrationRecordEntry(targetProfileId, tournamentId, userRegistrationData);
             } catch (error) {
-                if (error instanceof Error && error.message === "Registration record not found" && registration?.user_id) {
-                    const recordDate =
-                        registration.created_at ?? registration.updated_at ?? Timestamp.now();
-                    await addUserRegistrationRecord(registration.user_id, {
+                if (error instanceof Error && error.message === "Registration record not found") {
+                    const targetProfileId =
+                        registration?.profile_id ??
+                        (registration?.user_global_id ? (await fetchProfileByGlobalId(registration.user_global_id))?.id : null);
+                    if (!targetProfileId) {
+                        throw new Error("Profile not found for registration.");
+                    }
+                    const recordDate = registration?.created_at ?? registration?.updated_at ?? Timestamp.now();
+                    await addProfileRegistrationRecordWithCapacityCheck(targetProfileId, {
                         tournament_id: tournamentId ?? "",
                         events: userRegistrationData.events ?? [],
                         registration_date: recordDate,
                         status: userRegistrationData.status ?? "pending",
                         rejection_reason: userRegistrationData.rejection_reason ?? null,
-                        created_at: registration.created_at ?? Timestamp.now(),
+                        created_at: registration?.created_at ?? Timestamp.now(),
                         updated_at: Timestamp.now(),
                     });
                 } else {
@@ -492,8 +507,7 @@ export default function EditTournamentRegistrationPage() {
         if (!recruitmentTeam || !tournamentId || !registrationId) return;
         const {eventId, eventName, eventDefinition} = resolveTeamEvent(recruitmentTeam, events ?? []);
         const resolvedEventId = eventId || (eventDefinition ? getEventKey(eventDefinition) : "");
-        const resolvedEventName =
-            eventName || (eventDefinition ? getEventLabel(eventDefinition) : resolvedEventId) || "";
+        const resolvedEventName = eventName || (eventDefinition ? getEventLabel(eventDefinition) : resolvedEventId) || "";
 
         if (!resolvedEventId || !resolvedEventName) {
             Message.error("Unable to resolve event for this team.");
@@ -568,17 +582,14 @@ export default function EditTournamentRegistrationPage() {
             setRecruitmentTeam(null);
             recruitmentForm.resetFields();
             const [leaderRecruitments, participantDoubleRecruitments] = await Promise.all([
-                registration?.user_global_id
-                    ? getTeamRecruitmentsByLeader(registration.user_global_id)
-                    : Promise.resolve([]),
+                registration?.user_global_id ? getTeamRecruitmentsByLeader(registration.user_global_id) : Promise.resolve([]),
                 registration?.user_global_id
                     ? getDoubleRecruitmentsByParticipant(registration.user_global_id)
                     : Promise.resolve([]),
             ]);
             setTeamRecruitments(
                 leaderRecruitments.filter(
-                    (recruitment) =>
-                        recruitment.tournament_id === tournamentId && recruitment.status === "active",
+                    (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
                 ),
             );
             setDoubleRecruitments(
@@ -648,8 +659,7 @@ export default function EditTournamentRegistrationPage() {
             ]);
             setTeamRecruitments(
                 leaderRecruitments.filter(
-                    (recruitment) =>
-                        recruitment.tournament_id === tournamentId && recruitment.status === "active",
+                    (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
                 ),
             );
             setDoubleRecruitments(
@@ -873,9 +883,13 @@ export default function EditTournamentRegistrationPage() {
                                                             recruitment.tournament_id === tournamentId &&
                                                             removedEventIds.includes(recruitment.event_id),
                                                     );
-                                                    await Promise.all(toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)));
+                                                    await Promise.all(
+                                                        toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)),
+                                                    );
                                                     setDoubleRecruitments((prev) =>
-                                                        prev.filter((recruitment) => !removedEventIds.includes(recruitment.event_id)),
+                                                        prev.filter(
+                                                            (recruitment) => !removedEventIds.includes(recruitment.event_id),
+                                                        ),
                                                     );
                                                 } catch (error) {
                                                     console.error("Failed to delete double recruitments:", error);
@@ -1053,7 +1067,8 @@ export default function EditTournamentRegistrationPage() {
                                                 {activeRecruitment ? (
                                                     <Tag color={activeRecruitment.status === "active" ? "blue" : "gray"}>
                                                         Recruitment {activeRecruitment.status}
-                                                        {typeof activeRecruitment.max_members_needed === "number"
+                                                        {"max_members_needed" in activeRecruitment &&
+                                                        typeof activeRecruitment.max_members_needed === "number"
                                                             ? ` · Need ${activeRecruitment.max_members_needed}`
                                                             : ""}
                                                     </Tag>

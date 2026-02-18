@@ -7,6 +7,7 @@ export const UserRegistrationRecordSchema = z.object({
     registration_date: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     status: z.enum(["pending", "approved", "rejected"]),
     rejection_reason: z.string().optional().nullable(),
+    classification: z.enum(["advance", "intermediate", "beginner", "prelim"]).optional().nullable(),
     // Rankings in this tournament
     prelim_rank: z.number().optional().nullable(),
     final_rank: z.number().optional().nullable(),
@@ -18,7 +19,18 @@ export const UserRegistrationRecordSchema = z.object({
 });
 export type UserRegistrationRecord = z.infer<typeof UserRegistrationRecordSchema>;
 
-const BestTimeRecordSchema = z.object({
+export const UserRoleSchema = z
+    .object({
+        edit_tournament: z.boolean(),
+        record_tournament: z.boolean(),
+        modify_admin: z.boolean(),
+        verify_record: z.boolean(),
+    })
+    .partial();
+
+export type UserRole = z.infer<typeof UserRoleSchema>;
+
+export const BestTimeRecordSchema = z.object({
     time: z.number(),
     updated_at: z
         .union([z.instanceof(Timestamp), z.instanceof(Date)])
@@ -32,6 +44,16 @@ const BestTimeRecordSchema = z.object({
         .nullable(),
 });
 
+export const BestTimesSchema = z.object({
+    "3-3-3": BestTimeRecordSchema.optional().nullable(),
+    "3-6-3": BestTimeRecordSchema.optional().nullable(),
+    Cycle: BestTimeRecordSchema.optional().nullable(),
+    Overall: BestTimeRecordSchema.optional().nullable(),
+});
+
+export type BestTimeRecord = z.infer<typeof BestTimeRecordSchema>;
+export type BestTimes = z.infer<typeof BestTimesSchema>;
+
 export const FirestoreUserSchema = z.object({
     id: z.string(),
     memberId: z.string().optional().nullable(),
@@ -44,28 +66,13 @@ export const FirestoreUserSchema = z.object({
     phone_number: z.string().optional().nullable(),
     birthdate: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     gender: z.enum(["Male", "Female"]),
-    country: z.array(z.string(), z.string()),
+    country: z.array(z.string()),
     image_url: z.string().url(),
-    roles: z
-        .object({
-            edit_tournament: z.boolean(),
-            record_tournament: z.boolean(),
-            modify_admin: z.boolean(),
-            verify_record: z.boolean(),
-        })
-        .optional()
-        .nullable(),
+    roles: UserRoleSchema.optional().nullable(),
     school: z.string().optional().nullable(),
-    best_times: z
-        .object({
-            "3-3-3": BestTimeRecordSchema.optional().nullable(),
-            "3-6-3": BestTimeRecordSchema.optional().nullable(),
-            Cycle: BestTimeRecordSchema.optional().nullable(),
-            Overall: BestTimeRecordSchema.optional().nullable(),
-        })
-        .optional()
-        .nullable(),
+    best_times: BestTimesSchema.optional().nullable(),
     registration_records: z.array(UserRegistrationRecordSchema).optional().nullable(),
+    last_selected_profile_id: z.string().optional().nullable(),
     created_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
 });

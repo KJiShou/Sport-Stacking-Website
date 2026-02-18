@@ -130,7 +130,11 @@ export default function VerifyPage() {
             }
 
             try {
-                const res = await fetch("https://updateverification-jzbhzqtcdq-uc.a.run.app", {
+                const verificationUrl =
+                    import.meta.env.VITE_UPDATE_VERIFICATION_PROFILE_URL ??
+                    import.meta.env.VITE_UPDATE_VERIFICATION_URL ??
+                    "https://updateverification-jzbhzqtcdq-uc.a.run.app";
+                const res = await fetch(verificationUrl, {
                     method: "POST",
                     headers: {
                         Authorization: `Bearer ${token}`,
