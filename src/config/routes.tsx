@@ -8,12 +8,12 @@ import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/Registr
 import FinalScoringPage from "@/pages/Tournaments/Scoring/FinalScoringPage";
 import ScoringPage from "@/pages/Tournaments/Scoring/ScoringPage";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
-import ClaimProfilePage from "@/pages/User/ClaimProfile";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type {AppRoute} from "@/schema";
-import AdminDashboardPage from "../pages/Admin/AdminDashboard";
+import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import {CarouselManagement} from "../pages/Admin/CarouselManagement";
 import TeamRecruitmentManagement from "../pages/Admin/TeamRecruitmentManagement";
+import UserManagementPage from "../pages/Admin/UserManagement";
 import AthleteProfilePage from "../pages/Athletes/AthleteProfile";
 import Athletes from "../pages/Athletes/Athletes";
 import Home from "../pages/Home/Home";
@@ -81,13 +81,11 @@ const routes: AppRoute[] = [
     {path: "/records", component: RecordsIndex},
     {path: "/register", component: RegisterPage},
     {path: "/users/:id", component: UserProfile},
-    {path: "/admins", component: AdminDashboardPage},
+    {path: "/admins", component: AdminPermissionsPage},
     {path: "/admin/team-recruitment", component: TeamRecruitmentManagement},
     {path: "/admin/carousel", component: CarouselManagement},
-    {path: "/admin/users", component: AdminDashboardPage},
-    {path: "/admin/profiles", component: AdminDashboardPage},
+    {path: "/admin/users", component: UserManagementPage},
     {path: "/forgot-password", component: ForgotPasswordPage},
-    {path: "/profiles/claim/:profileId", component: ClaimProfilePage},
 ];
 
 export default routes;

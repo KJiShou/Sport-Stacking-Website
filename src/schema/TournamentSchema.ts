@@ -61,7 +61,7 @@ export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
 export const TournamentSchema = z.object({
     id: z.string().optional().nullable(),
     name: z.string().optional().nullable(),
-    country: z.array(z.string()).optional().nullable(),
+    country: z.array(z.string(), z.string()).optional().nullable(),
     address: z.string().optional().nullable(),
     venue: z.string().optional().nullable(),
     agenda: z.string().optional().nullable(),

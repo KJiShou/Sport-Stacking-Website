@@ -5,11 +5,7 @@ import type {DoubleRecruitment, Registration, Tournament, TournamentEvent} from 
 import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
 import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {
-    addProfileRegistrationRecordWithCapacityCheck,
-    getUserByGlobalId,
-    updateProfileRegistrationRecordEntry,
-} from "@/services/firebase/authService";
+import {getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {
     createDoubleRecruitment,
     deleteDoubleRecruitment,
@@ -17,12 +13,10 @@ import {
 } from "@/services/firebase/doubleRecruitmentService";
 
 import {db} from "@/services/firebase/config";
-
 import {
     deleteIndividualRecruitment,
     getIndividualRecruitmentsByParticipant,
 } from "@/services/firebase/individualRecruitmentService";
-import {fetchProfileByGlobalId} from "@/services/firebase/profileService";
 import {fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {
@@ -40,7 +34,13 @@ import {
     updateTeam,
 } from "@/services/firebase/tournamentsService";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
-import {getEventKey, getEventLabel, isTeamEvent, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
+import {
+    getEventKey,
+    getEventLabel,
+    isTeamEvent,
+    matchesAnyEventKey,
+    matchesEventKey,
+} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Divider,
@@ -60,7 +60,7 @@ import {
 import type {UploadItem} from "@arco-design/web-react/es/Upload";
 import {IconClose, IconPlus, IconUndo} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
-import {Timestamp, collection, doc, getDocs, query, updateDoc, where} from "firebase/firestore";
+import {Timestamp} from "firebase/firestore";
 import {nanoid} from "nanoid";
 import {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
@@ -131,7 +131,9 @@ const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): s
         return selected;
     }
 
-    const hasSpecificIndividual = events.some((event) => event.type === "Individual" && matchesAnyEventKey(selected, event));
+    const hasSpecificIndividual = events.some(
+        (event) => event.type === "Individual" && matchesAnyEventKey(selected, event),
+    );
 
     return selected.filter((eventId) => {
         if (eventId === "Individual" && hasSpecificIndividual) {
@@ -285,16 +287,7 @@ export default function EditTournamentRegistrationPage() {
                     memberIds.push(stripTeamLeaderPrefix(team.leader_id));
                 }
 
-                const memberUsers = await Promise.all(
-                    memberIds.map(async (id) => {
-                        const profile = await fetchProfileByGlobalId(id);
-                        if (profile) {
-                            return {birthdate: profile.birthdate};
-                        }
-                        const fallback = await getUserByGlobalId(id);
-                        return fallback ? {birthdate: fallback.birthdate} : null;
-                    }),
-                );
+                const memberUsers = await Promise.all(memberIds.map((id) => getUserByGlobalId(id)));
 
                 const ages = memberUsers
                     .map((memberUser) => {
@@ -365,93 +358,6 @@ export default function EditTournamentRegistrationPage() {
                 }
             }
 
-            // Ensure team members have the event in registration + user history
-            const uniqueMemberIds = new Set<string>();
-            for (const team of teams) {
-                const teamMemberIds = (team.members ?? []).map((m) => m.global_id).filter(Boolean);
-                const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                if (leaderId) {
-                    teamMemberIds.push(leaderId);
-                }
-                for (const id of teamMemberIds) {
-                    uniqueMemberIds.add(id);
-                }
-            }
-
-            for (const memberId of uniqueMemberIds) {
-                const profile = await fetchProfileByGlobalId(memberId);
-                if (!profile) {
-                    continue;
-                }
-
-                for (const team of teams) {
-                    const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                    const isMember =
-                        leaderId === memberId || (team.members ?? []).some((member) => member.global_id === memberId);
-                    if (!isMember) {
-                        continue;
-                    }
-                    const {eventId, eventName, eventDefinition} = resolveTeamEvent(team, events ?? []);
-                    const resolvedEventKey = eventDefinition ? getEventKey(eventDefinition) : eventId || eventName;
-                    if (resolvedEventKey) {
-                        const registrationQuery = query(
-                            collection(db, "registrations"),
-                            where("tournament_id", "==", tournamentId),
-                            where("profile_id", "==", profile.id ?? ""),
-                        );
-                        const regSnap = await getDocs(registrationQuery);
-                        let registrationDoc = regSnap.docs[0];
-                        if (!registrationDoc) {
-                            const legacyQuery = query(
-                                collection(db, "registrations"),
-                                where("tournament_id", "==", tournamentId),
-                                where("user_global_id", "==", memberId),
-                            );
-                            const legacySnap = await getDocs(legacyQuery);
-                            registrationDoc = legacySnap.docs[0];
-                        }
-
-                        if (!registrationDoc) {
-                            continue;
-                        }
-
-                        const registrationData = registrationDoc.data() as Registration;
-                        const memberEventIds = new Set(registrationData.events_registered ?? []);
-                        memberEventIds.add(resolvedEventKey);
-
-                        const updatedEvents = Array.from(memberEventIds);
-                        if (updatedEvents.length !== (registrationData.events_registered ?? []).length) {
-                            await updateDoc(doc(db, "registrations", registrationDoc.id), {
-                                events_registered: updatedEvents,
-                                updated_at: Timestamp.now(),
-                            });
-                        }
-
-                        if (profile.id) {
-                            try {
-                                await updateProfileRegistrationRecordEntry(profile.id, tournamentId ?? "", {
-                                    events: updatedEvents,
-                                });
-                            } catch (error) {
-                                try {
-                                    await addProfileRegistrationRecordWithCapacityCheck(profile.id, {
-                                        tournament_id: tournamentId ?? "",
-                                        events: updatedEvents,
-                                        registration_date: Timestamp.now(),
-                                        status: registrationData.registration_status ?? "pending",
-                                        rejection_reason: registrationData.rejection_reason ?? null,
-                                        created_at: Timestamp.now(),
-                                        updated_at: Timestamp.now(),
-                                    });
-                                } catch (innerError) {
-                                    console.warn("Failed to update user registration record for member:", innerError);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             const userRegistrationData: Partial<UserRegistrationRecord> = {
                 status: values?.registration_status ?? "pending",
                 tournament_id: tournamentId ?? "",
@@ -462,36 +368,7 @@ export default function EditTournamentRegistrationPage() {
             if (!registrationId || !tournamentId) {
                 throw new Error("Missing registrationId or tournamentId for updating user registration record.");
             }
-            try {
-                const targetProfileId =
-                    registration?.profile_id ??
-                    (registration?.user_global_id ? (await fetchProfileByGlobalId(registration.user_global_id))?.id : null);
-                if (!targetProfileId) {
-                    throw new Error("Profile not found for registration.");
-                }
-                await updateProfileRegistrationRecordEntry(targetProfileId, tournamentId, userRegistrationData);
-            } catch (error) {
-                if (error instanceof Error && error.message === "Registration record not found") {
-                    const targetProfileId =
-                        registration?.profile_id ??
-                        (registration?.user_global_id ? (await fetchProfileByGlobalId(registration.user_global_id))?.id : null);
-                    if (!targetProfileId) {
-                        throw new Error("Profile not found for registration.");
-                    }
-                    const recordDate = registration?.created_at ?? registration?.updated_at ?? Timestamp.now();
-                    await addProfileRegistrationRecordWithCapacityCheck(targetProfileId, {
-                        tournament_id: tournamentId ?? "",
-                        events: userRegistrationData.events ?? [],
-                        registration_date: recordDate,
-                        status: userRegistrationData.status ?? "pending",
-                        rejection_reason: userRegistrationData.rejection_reason ?? null,
-                        created_at: registration?.created_at ?? Timestamp.now(),
-                        updated_at: Timestamp.now(),
-                    });
-                } else {
-                    throw error;
-                }
-            }
+            await updateUserRegistrationRecord(registration?.user_id ?? "", tournamentId, userRegistrationData);
 
             Message.success("Completely save the changes!");
         } catch (err) {
@@ -507,7 +384,8 @@ export default function EditTournamentRegistrationPage() {
         if (!recruitmentTeam || !tournamentId || !registrationId) return;
         const {eventId, eventName, eventDefinition} = resolveTeamEvent(recruitmentTeam, events ?? []);
         const resolvedEventId = eventId || (eventDefinition ? getEventKey(eventDefinition) : "");
-        const resolvedEventName = eventName || (eventDefinition ? getEventLabel(eventDefinition) : resolvedEventId) || "";
+        const resolvedEventName =
+            eventName || (eventDefinition ? getEventLabel(eventDefinition) : resolvedEventId) || "";
 
         if (!resolvedEventId || !resolvedEventName) {
             Message.error("Unable to resolve event for this team.");
@@ -582,14 +460,17 @@ export default function EditTournamentRegistrationPage() {
             setRecruitmentTeam(null);
             recruitmentForm.resetFields();
             const [leaderRecruitments, participantDoubleRecruitments] = await Promise.all([
-                registration?.user_global_id ? getTeamRecruitmentsByLeader(registration.user_global_id) : Promise.resolve([]),
+                registration?.user_global_id
+                    ? getTeamRecruitmentsByLeader(registration.user_global_id)
+                    : Promise.resolve([]),
                 registration?.user_global_id
                     ? getDoubleRecruitmentsByParticipant(registration.user_global_id)
                     : Promise.resolve([]),
             ]);
             setTeamRecruitments(
                 leaderRecruitments.filter(
-                    (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
+                    (recruitment) =>
+                        recruitment.tournament_id === tournamentId && recruitment.status === "active",
                 ),
             );
             setDoubleRecruitments(
@@ -659,7 +540,8 @@ export default function EditTournamentRegistrationPage() {
             ]);
             setTeamRecruitments(
                 leaderRecruitments.filter(
-                    (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
+                    (recruitment) =>
+                        recruitment.tournament_id === tournamentId && recruitment.status === "active",
                 ),
             );
             setDoubleRecruitments(
@@ -730,10 +612,9 @@ export default function EditTournamentRegistrationPage() {
         }
     }, [events, registration?.user_name, teams]);
 
-    const extraEventIds =
-        (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
-            (eventId) => !events?.some((event) => getEventKey(event) === eventId),
-        ) ?? [];
+    const extraEventIds = (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
+        (eventId) => !events?.some((event) => getEventKey(event) === eventId),
+    ) ?? [];
 
     if (!isMounted && !loading && !registration) {
         return <Result status="404" title="Not Registered" subTitle="You haven't registered for this tournament." />;
@@ -883,13 +764,9 @@ export default function EditTournamentRegistrationPage() {
                                                             recruitment.tournament_id === tournamentId &&
                                                             removedEventIds.includes(recruitment.event_id),
                                                     );
-                                                    await Promise.all(
-                                                        toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)),
-                                                    );
+                                                    await Promise.all(toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)));
                                                     setDoubleRecruitments((prev) =>
-                                                        prev.filter(
-                                                            (recruitment) => !removedEventIds.includes(recruitment.event_id),
-                                                        ),
+                                                        prev.filter((recruitment) => !removedEventIds.includes(recruitment.event_id)),
                                                     );
                                                 } catch (error) {
                                                     console.error("Failed to delete double recruitments:", error);
@@ -1030,7 +907,7 @@ export default function EditTournamentRegistrationPage() {
                                                                 title: "Add New Member",
                                                                 content: (
                                                                     <Input
-                                                                        placeholder="Enter new member's profile ID"
+                                                                        placeholder="Enter new member's global ID"
                                                                         onChange={(v) => {
                                                                             newMemberId = v;
                                                                         }}

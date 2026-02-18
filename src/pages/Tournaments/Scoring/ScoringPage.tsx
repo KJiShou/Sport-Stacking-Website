@@ -1289,15 +1289,6 @@ export default function ScoringPage() {
                                             )}
                                             <div className="flex justify-end mt-4">
                                                 <Button
-                                                    type="outline"
-                                                    onClick={() => {
-                                                        if (!tournamentId) return;
-                                                        navigate(`/tournaments/${tournamentId}/record/prelim`);
-                                                    }}
-                                                >
-                                                    View Prelim Results
-                                                </Button>
-                                                <Button
                                                     type="primary"
                                                     status="success"
                                                     loading={loading}
