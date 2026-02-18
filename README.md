@@ -4,6 +4,8 @@ A comprehensive web application for managing sport stacking tournaments, athlete
 
 **[中文版 README](README.zh-TW.md)** | **[English Version](README.md)**
 
+For a maintenance-focused map of all implemented capabilities, see `FEATURE_INVENTORY.md`.
+
 <!-- Add main website screenshot here -->
 ![Website Preview](image.png)
 
