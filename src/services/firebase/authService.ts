@@ -30,6 +30,7 @@ import {httpsCallable} from "firebase/functions";
 import {deleteObject, ref} from "firebase/storage";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
+import type {UserTournamentHistory} from "../../schema/UserHistorySchema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
 
@@ -87,8 +88,9 @@ function extractActiveRoles(roles: FirestoreUser["roles"] | null | undefined): P
 
     const definedRoles = roles as UserRoles;
     const activeRoles: Partial<UserRoles> = {};
+    const roleKeys: Array<keyof UserRoles> = ["edit_tournament", "record_tournament", "modify_admin", "verify_record"];
 
-    for (const key of Object.keys(definedRoles) as Array<keyof UserRoles>) {
+    for (const key of roleKeys) {
         if (definedRoles[key]) {
             activeRoles[key] = true;
         }
@@ -539,6 +541,43 @@ export async function removeUserRegistrationRecordsByTournament(tournamentId: st
         await Promise.all(updatePromises);
     } catch (error) {
         console.error("Error cleaning up user registration records:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+}
+
+/**
+ * Remove cached tournament history entries for a specific tournament
+ * from user_tournament_history documents.
+ */
+export async function removeUserTournamentHistoryByTournament(tournamentId: string): Promise<void> {
+    try {
+        const historySnapshot = await getDocs(collection(db, "user_tournament_history"));
+
+        const updatePromises = historySnapshot.docs.map(async (historyDoc) => {
+            const historyData = historyDoc.data() as UserTournamentHistory;
+            const tournaments = Array.isArray(historyData.tournaments) ? historyData.tournaments : [];
+            const filteredTournaments = tournaments.filter((summary) => summary.tournamentId !== tournamentId);
+
+            if (filteredTournaments.length === tournaments.length) {
+                return;
+            }
+
+            const recordCount = filteredTournaments.reduce((total, summary) => {
+                const results = Array.isArray(summary.results) ? summary.results : [];
+                return total + results.length;
+            }, 0);
+
+            await updateDoc(historyDoc.ref, {
+                tournaments: filteredTournaments,
+                tournamentCount: filteredTournaments.length,
+                recordCount,
+                updatedAt: Timestamp.now(),
+            });
+        });
+
+        await Promise.all(updatePromises);
+    } catch (error) {
+        console.error("Error cleaning up user tournament history:", error);
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 }

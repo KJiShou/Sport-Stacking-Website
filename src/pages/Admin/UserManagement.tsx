@@ -293,18 +293,17 @@ export default function UserManagementPage() {
                         <div>
                             <Text type="secondary">Roles</Text>
                             <div className="flex flex-wrap gap-2">
-                                {selectedUser.roles ? (
+                                {selectedUser.roles &&
                                     Object.entries(selectedUser.roles)
                                         .filter(([, enabled]) => Boolean(enabled))
                                         .map(([role]) => (
                                             <Tag key={role} color="blue">
                                                 {role.replace(/_/g, " ")}
                                             </Tag>
-                                        ))
-                                ) : (
-                                    <Text>-</Text>
-                                )}
-                                {selectedUser.roles && Object.values(selectedUser.roles).every((value) => !value) && (
+                                        ))}
+                                {selectedUser.memberId && <Tag color="green">memberId: {selectedUser.memberId}</Tag>}
+                                {!selectedUser.memberId &&
+                                    (!selectedUser.roles || Object.values(selectedUser.roles).every((value) => !value)) && (
                                     <Text>-</Text>
                                 )}
                             </div>

@@ -47,7 +47,7 @@ const CATEGORY_LABELS: Record<Category, string> = {
 const PRELIM_RECORDS_COLLECTION = "prelim_records";
 const FINAL_RECORDS_COLLECTION = "records";
 
-const getRecordsCollectionByClassification = (classification?: string): string =>
+const getRecordsCollectionByClassification = (classification?: string | null): string =>
     classification === "prelim" ? PRELIM_RECORDS_COLLECTION : FINAL_RECORDS_COLLECTION;
 
 const resolveRecordDoc = async (recordId: string): Promise<ReturnType<typeof doc> | null> => {
@@ -289,9 +289,6 @@ export const saveOverallRecord = async (data: TournamentOverallRecord): Promise<
             }
             if (data.cycle > 0) {
                 await updateUserBestTime(data.participant_global_id, "Cycle", data.cycle);
-            }
-            if (data.overall_time > 0) {
-                await updateUserBestTime(data.participant_global_id, "Overall", data.overall_time);
             }
         } catch (error) {
             console.error("Failed to update user best times:", error);
@@ -849,8 +846,7 @@ export const updateOverallRecord = async (
         const shouldUpdateBestTimes =
             (updates.three_three_three ?? 0) > 0 ||
             (updates.three_six_three ?? 0) > 0 ||
-            (updates.cycle ?? 0) > 0 ||
-            (updates.overall_time ?? 0) > 0;
+            (updates.cycle ?? 0) > 0;
 
         if (shouldUpdateBestTimes) {
             const recordSnap = await getDoc(recordRef);
@@ -862,7 +858,6 @@ export const updateOverallRecord = async (
                     const threeThreeThree = updates.three_three_three;
                     const threeSixThree = updates.three_six_three;
                     const cycle = updates.cycle;
-                    const overallTime = updates.overall_time;
 
                     if (typeof threeThreeThree === "number" && threeThreeThree > 0) {
                         await updateUserBestTime(globalId, "3-3-3", threeThreeThree);
@@ -872,9 +867,6 @@ export const updateOverallRecord = async (
                     }
                     if (typeof cycle === "number" && cycle > 0) {
                         await updateUserBestTime(globalId, "Cycle", cycle);
-                    }
-                    if (typeof overallTime === "number" && overallTime > 0) {
-                        await updateUserBestTime(globalId, "Overall", overallTime);
                     }
                 }
             }

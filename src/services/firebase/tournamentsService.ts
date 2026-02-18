@@ -18,12 +18,13 @@ import {
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import {EventSchema, TournamentSchema} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
-import {removeUserRegistrationRecordsByTournament} from "./authService";
+import {removeUserRegistrationRecordsByTournament, removeUserTournamentHistoryByTournament} from "./authService";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByTournament} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByTournament} from "./individualRecruitmentService";
 import {deleteTournamentStorage} from "./storageService";
 import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
+import {recalculateUserBestTimesByGlobalIds} from "./userBestTimesService";
 
 // Utility function to check if a string is a UUID v4
 function isUUID(value: string): boolean {
@@ -337,6 +338,8 @@ export async function deleteTournamentById(user: FirestoreUser, tournamentId: st
 }
 
 async function deleteTournamentCascade(tournamentId: string): Promise<void> {
+    const affectedAthleteGlobalIds = new Set<string>();
+
     // 1. Delete all registrations
     try {
         const registrationsQuery = query(collection(db, "registrations"), where("tournament_id", "==", tournamentId));
@@ -370,6 +373,19 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
             getDocs(query(collection(db, "prelim_records"), where("tournament_id", "==", tournamentId))),
             getDocs(query(collection(db, "overall_records"), where("tournament_id", "==", tournamentId))),
         ]);
+
+        for (const docSnapshot of recordsSnapshot.docs) {
+            const globalId = docSnapshot.data()?.participant_global_id;
+            if (typeof globalId === "string" && globalId.trim().length > 0) {
+                affectedAthleteGlobalIds.add(globalId.trim());
+            }
+        }
+        for (const docSnapshot of overallRecordsSnapshot.docs) {
+            const globalId = docSnapshot.data()?.participant_global_id;
+            if (typeof globalId === "string" && globalId.trim().length > 0) {
+                affectedAthleteGlobalIds.add(globalId.trim());
+            }
+        }
 
         const recordDeletePromises = [
             ...recordsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref)),
@@ -411,6 +427,17 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
     } catch (error) {
         console.error("Error deleting global result records:", error);
         // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+
+    // 4.1 Recalculate best performance after record/global cleanup.
+    // Best performance is based on non-prelim results only.
+    try {
+        if (affectedAthleteGlobalIds.size > 0) {
+            await recalculateUserBestTimesByGlobalIds(affectedAthleteGlobalIds);
+        }
+    } catch (error) {
+        console.error("Error recalculating athlete best times after tournament deletion:", error);
+        // Don't throw here as recalculation is post-delete consistency work
     }
 
     // 5. Delete scoring/results data if they exist in subcollections
@@ -468,6 +495,14 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         await removeUserRegistrationRecordsByTournament(tournamentId);
     } catch (error) {
         console.error("Error cleaning up user registration records:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+
+    // 9.1 Clean up cached user tournament history
+    try {
+        await removeUserTournamentHistoryByTournament(tournamentId);
+    } catch (error) {
+        console.error("Error cleaning up user tournament history:", error);
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
