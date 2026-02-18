@@ -304,8 +304,8 @@ export default function UserManagementPage() {
                                 {selectedUser.memberId && <Tag color="green">memberId: {selectedUser.memberId}</Tag>}
                                 {!selectedUser.memberId &&
                                     (!selectedUser.roles || Object.values(selectedUser.roles).every((value) => !value)) && (
-                                    <Text>-</Text>
-                                )}
+                                        <Text>-</Text>
+                                    )}
                             </div>
                         </div>
                     </div>

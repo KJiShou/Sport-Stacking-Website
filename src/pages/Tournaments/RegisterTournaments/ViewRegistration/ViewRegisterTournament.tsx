@@ -79,9 +79,7 @@ const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): s
         return selected;
     }
 
-    const hasSpecificIndividual = events.some(
-        (event) => event.type === "Individual" && matchesAnyEventKey(selected, event),
-    );
+    const hasSpecificIndividual = events.some((event) => event.type === "Individual" && matchesAnyEventKey(selected, event));
 
     return selected.filter((eventId) => {
         if (eventId === "Individual" && hasSpecificIndividual) {
@@ -195,8 +193,7 @@ export default function ViewTournamentRegistrationPage() {
                 ]);
                 setTeamRecruitments(
                     leaderRecruitments.filter(
-                        (recruitment) =>
-                            recruitment.tournament_id === tournamentId && recruitment.status === "active",
+                        (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
                     ),
                 );
                 setDoubleRecruitments(
@@ -204,10 +201,7 @@ export default function ViewTournamentRegistrationPage() {
                 );
                 setPaymentProofUrl(userReg.payment_proof_url ?? null);
 
-                const displayedEvents = filterDisplayedEvents(
-                    userReg.events_registered ?? [],
-                    tournamentEvents,
-                );
+                const displayedEvents = filterDisplayedEvents(userReg.events_registered ?? [], tournamentEvents);
 
                 form.setFieldsValue({
                     user_name: userReg.user_name,
@@ -234,9 +228,10 @@ export default function ViewTournamentRegistrationPage() {
         return event ? getEventLabel(event) : eventId;
     };
 
-    const extraEventIds = (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
-        (eventId) => !availableEventsState.some((event) => getEventKey(event) === eventId),
-    ) ?? [];
+    const extraEventIds =
+        (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
+            (eventId) => !availableEventsState.some((event) => getEventKey(event) === eventId),
+        ) ?? [];
 
     return (
         <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
@@ -332,9 +327,7 @@ export default function ViewTournamentRegistrationPage() {
                                             </Form.Item>
                                             <Form.Item label="Recruitment">
                                                 {activeRecruitment ? (
-                                                    <Tag color="blue">
-                                                        Recruitment {activeRecruitment.status}
-                                                    </Tag>
+                                                    <Tag color="blue">Recruitment {activeRecruitment.status}</Tag>
                                                 ) : (
                                                     <Tag color="gray">No recruitment</Tag>
                                                 )}

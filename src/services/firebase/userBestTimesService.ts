@@ -12,7 +12,7 @@ type BestTimes = {
     Overall?: BestTimeRecord;
 };
 
-const INDIVIDUAL_EVENT_TYPES: Array<Exclude<EventType, "Overall">> = ["3-3-3", "3-6-3", "Cycle"];
+const INDIVIDUAL_EVENT_TYPES: Exclude<EventType, "Overall">[] = ["3-3-3", "3-6-3", "Cycle"];
 const EVENT_TYPES: EventType[] = [...INDIVIDUAL_EVENT_TYPES, "Overall"];
 
 const getBestTimeValue = (entry: BestTimeRecord): number | null => {
@@ -73,7 +73,7 @@ export const updateUserBestTime = async (globalId: string, eventType: EventType,
         const currentBestTimes: BestTimes = (userData?.best_times as BestTimes) || {};
         const now = new Date();
         const season = buildSeasonLabel(now);
-        const updatedBestTimes: BestTimes = {...currentBestTimes};
+        let updatedBestTimes: BestTimes = {...currentBestTimes};
         let didChange = false;
 
         // Ignore direct "Overall" updates and always derive Overall from the three individual PBs.
@@ -93,7 +93,8 @@ export const updateUserBestTime = async (globalId: string, eventType: EventType,
 
         if (derivedOverall == null) {
             if (currentBestTimes.Overall != null) {
-                delete updatedBestTimes.Overall;
+                const {Overall: _removedOverall, ...restBestTimes} = updatedBestTimes;
+                updatedBestTimes = restBestTimes;
                 didChange = true;
             }
         } else if (currentOverall === null || derivedOverall !== currentOverall) {
@@ -181,7 +182,7 @@ export const recalculateUserBestTimesByGlobalIds = async (globalIds: Iterable<st
 
         const recordSnap = await getDocs(query(collection(db, "records"), where("participant_global_id", "==", globalId)));
 
-        const bestByEvent: Partial<Record<EventType, number>> = {};
+        let bestByEvent: Partial<Record<EventType, number>> = {};
 
         for (const docSnap of recordSnap.docs) {
             const data = docSnap.data() as {classification?: string; code?: string; best_time?: unknown};
@@ -207,7 +208,8 @@ export const recalculateUserBestTimesByGlobalIds = async (globalIds: Iterable<st
                 : null;
 
         if (derivedOverall == null) {
-            delete bestByEvent.Overall;
+            const {Overall: _removedOverall, ...restBestByEvent} = bestByEvent;
+            bestByEvent = restBestByEvent as Partial<Record<EventType, number>>;
         } else {
             bestByEvent.Overall = derivedOverall;
         }

@@ -287,11 +287,7 @@ const AthleteProfilePage = () => {
 
     return (
         <div className="flex flex-col bg-ghostwhite p-4 sm:p-6 xl:p-10 gap-6">
-            <Button
-                type="outline"
-                onClick={() => window.history.back()}
-                className="w-full sm:w-fit pt-2 pb-2 justify-center"
-            >
+            <Button type="outline" onClick={() => window.history.back()} className="w-full sm:w-fit pt-2 pb-2 justify-center">
                 <IconUndo /> Go Back
             </Button>
 

@@ -147,7 +147,16 @@ const DOUBLE_AGE_GROUPS: AgeGroup[] = [
     "Age 50++",
 ];
 
-const TEAM_RELAY_AGE_GROUPS: AgeGroup[] = ["Overall", "Age 9U", "Age 10-14", "Age 15-20", "Age 21-29", "Age 30-39", "Age 40-49", "Age 50++"];
+const TEAM_RELAY_AGE_GROUPS: AgeGroup[] = [
+    "Overall",
+    "Age 9U",
+    "Age 10-14",
+    "Age 15-20",
+    "Age 21-29",
+    "Age 30-39",
+    "Age 40-49",
+    "Age 50++",
+];
 
 const getAgeGroupOptions = (category: Category): AgeGroup[] => {
     switch (category) {
@@ -155,9 +164,6 @@ const getAgeGroupOptions = (category: Category): AgeGroup[] => {
             return DOUBLE_AGE_GROUPS;
         case "Team Relay":
             return TEAM_RELAY_AGE_GROUPS;
-        case "Individual":
-        case "Parent & Child":
-        case "Special Need":
         default:
             return INDIVIDUAL_AGE_GROUPS;
     }
@@ -182,9 +188,6 @@ const getAgeGroupByCategory = (age: number, category: Category): AgeGroup => {
             if (age <= 39) return "Age 30-39";
             if (age <= 49) return "Age 40-49";
             return "Age 50++";
-        case "Individual":
-        case "Parent & Child":
-        case "Special Need":
         default:
             if (age <= 5) return "Age 5 & Under";
             if (age === 6) return "Age 6";

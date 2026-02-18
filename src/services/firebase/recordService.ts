@@ -844,9 +844,7 @@ export const updateOverallRecord = async (
         });
 
         const shouldUpdateBestTimes =
-            (updates.three_three_three ?? 0) > 0 ||
-            (updates.three_six_three ?? 0) > 0 ||
-            (updates.cycle ?? 0) > 0;
+            (updates.three_three_three ?? 0) > 0 || (updates.three_six_three ?? 0) > 0 || (updates.cycle ?? 0) > 0;
 
         if (shouldUpdateBestTimes) {
             const recordSnap = await getDoc(recordRef);

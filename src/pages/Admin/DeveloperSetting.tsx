@@ -54,9 +54,7 @@ export default function DeveloperSettingPage() {
             <div className="bg-white flex flex-col w-full h-fit gap-6 p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <div>
                     <Title heading={2}>Developer Setting</Title>
-                    <Paragraph type="secondary">
-                        Maintenance tools for global data consistency. Use with caution.
-                    </Paragraph>
+                    <Paragraph type="secondary">Maintenance tools for global data consistency. Use with caution.</Paragraph>
                 </div>
 
                 <Descriptions

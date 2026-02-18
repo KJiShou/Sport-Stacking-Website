@@ -185,9 +185,7 @@ export const registerWithGoogle = async (
     const snapshot = await getDocs(q);
 
     if (!snapshot.empty) {
-        const matchingDocs = snapshot.docs.filter(
-            (docSnap) => (docSnap.data() as FirestoreUser).email === firebaseUser.email,
-        );
+        const matchingDocs = snapshot.docs.filter((docSnap) => (docSnap.data() as FirestoreUser).email === firebaseUser.email);
         if (matchingDocs.length === 0) {
             throw new Error("This IC is already registered with another email.");
         }
@@ -263,7 +261,7 @@ export async function fetchUsersByIds(userIds: string[]): Promise<Record<string,
         const batch = ids.slice(i, i + batchSize);
         const q = query(collection(db, "users"), where("id", "in", batch));
         const snapshot = await getDocs(q);
-        snapshot.docs.forEach((docSnap) => {
+        for (const docSnap of snapshot.docs) {
             const data = docSnap.data();
             const user = {
                 id: docSnap.id,
@@ -284,7 +282,7 @@ export async function fetchUsersByIds(userIds: string[]): Promise<Record<string,
             } as FirestoreUser;
 
             results[user.id] = user;
-        });
+        }
     }
 
     return results;

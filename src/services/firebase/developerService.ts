@@ -1,6 +1,6 @@
 import {collection, getDocs} from "firebase/firestore";
-import {updateParticipantRankingsAndResults} from "./recordService";
 import {db} from "./config";
+import {updateParticipantRankingsAndResults} from "./recordService";
 import {recalculateUserBestTimesByGlobalIds} from "./userBestTimesService";
 
 type Classification = "prelim" | "advance" | "intermediate" | "beginner";

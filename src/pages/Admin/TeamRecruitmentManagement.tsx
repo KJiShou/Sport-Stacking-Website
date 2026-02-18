@@ -249,8 +249,7 @@ export default function TeamRecruitmentManagement() {
                     return;
                 }
             }
-            const teamAge =
-                ages.length > 0 ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length) : 0;
+            const teamAge = ages.length > 0 ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length) : 0;
 
             const leaderId = values.leaderId;
             const leaderIsPrimary = leaderId === primary.participant_id;

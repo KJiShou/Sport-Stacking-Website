@@ -34,13 +34,7 @@ import {
     updateTeam,
 } from "@/services/firebase/tournamentsService";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
-import {
-    getEventKey,
-    getEventLabel,
-    isTeamEvent,
-    matchesAnyEventKey,
-    matchesEventKey,
-} from "@/utils/tournament/eventUtils";
+import {getEventKey, getEventLabel, isTeamEvent, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Divider,
@@ -131,9 +125,7 @@ const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): s
         return selected;
     }
 
-    const hasSpecificIndividual = events.some(
-        (event) => event.type === "Individual" && matchesAnyEventKey(selected, event),
-    );
+    const hasSpecificIndividual = events.some((event) => event.type === "Individual" && matchesAnyEventKey(selected, event));
 
     return selected.filter((eventId) => {
         if (eventId === "Individual" && hasSpecificIndividual) {
@@ -384,8 +376,7 @@ export default function EditTournamentRegistrationPage() {
         if (!recruitmentTeam || !tournamentId || !registrationId) return;
         const {eventId, eventName, eventDefinition} = resolveTeamEvent(recruitmentTeam, events ?? []);
         const resolvedEventId = eventId || (eventDefinition ? getEventKey(eventDefinition) : "");
-        const resolvedEventName =
-            eventName || (eventDefinition ? getEventLabel(eventDefinition) : resolvedEventId) || "";
+        const resolvedEventName = eventName || (eventDefinition ? getEventLabel(eventDefinition) : resolvedEventId) || "";
 
         if (!resolvedEventId || !resolvedEventName) {
             Message.error("Unable to resolve event for this team.");
@@ -460,17 +451,14 @@ export default function EditTournamentRegistrationPage() {
             setRecruitmentTeam(null);
             recruitmentForm.resetFields();
             const [leaderRecruitments, participantDoubleRecruitments] = await Promise.all([
-                registration?.user_global_id
-                    ? getTeamRecruitmentsByLeader(registration.user_global_id)
-                    : Promise.resolve([]),
+                registration?.user_global_id ? getTeamRecruitmentsByLeader(registration.user_global_id) : Promise.resolve([]),
                 registration?.user_global_id
                     ? getDoubleRecruitmentsByParticipant(registration.user_global_id)
                     : Promise.resolve([]),
             ]);
             setTeamRecruitments(
                 leaderRecruitments.filter(
-                    (recruitment) =>
-                        recruitment.tournament_id === tournamentId && recruitment.status === "active",
+                    (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
                 ),
             );
             setDoubleRecruitments(
@@ -540,8 +528,7 @@ export default function EditTournamentRegistrationPage() {
             ]);
             setTeamRecruitments(
                 leaderRecruitments.filter(
-                    (recruitment) =>
-                        recruitment.tournament_id === tournamentId && recruitment.status === "active",
+                    (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
                 ),
             );
             setDoubleRecruitments(
@@ -612,9 +599,10 @@ export default function EditTournamentRegistrationPage() {
         }
     }, [events, registration?.user_name, teams]);
 
-    const extraEventIds = (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
-        (eventId) => !events?.some((event) => getEventKey(event) === eventId),
-    ) ?? [];
+    const extraEventIds =
+        (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
+            (eventId) => !events?.some((event) => getEventKey(event) === eventId),
+        ) ?? [];
 
     if (!isMounted && !loading && !registration) {
         return <Result status="404" title="Not Registered" subTitle="You haven't registered for this tournament." />;
@@ -764,9 +752,13 @@ export default function EditTournamentRegistrationPage() {
                                                             recruitment.tournament_id === tournamentId &&
                                                             removedEventIds.includes(recruitment.event_id),
                                                     );
-                                                    await Promise.all(toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)));
+                                                    await Promise.all(
+                                                        toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)),
+                                                    );
                                                     setDoubleRecruitments((prev) =>
-                                                        prev.filter((recruitment) => !removedEventIds.includes(recruitment.event_id)),
+                                                        prev.filter(
+                                                            (recruitment) => !removedEventIds.includes(recruitment.event_id),
+                                                        ),
                                                     );
                                                 } catch (error) {
                                                     console.error("Failed to delete double recruitments:", error);

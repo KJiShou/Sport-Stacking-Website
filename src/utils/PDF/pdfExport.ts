@@ -1591,8 +1591,6 @@ const generateSingleStackingSheet = (
                 case "double":
                 case "parent & child":
                     return " & ";
-                case "team relay":
-                case "team":
                 default:
                     return ", ";
             }
