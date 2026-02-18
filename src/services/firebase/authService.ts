@@ -11,18 +11,22 @@ import {
     signOut,
     updatePassword,
 } from "firebase/auth";
-import {type DocumentData, type QueryDocumentSnapshot, type QuerySnapshot, getFirestore} from "firebase/firestore";
+import {type DocumentData, type Query, type QueryDocumentSnapshot, type QuerySnapshot, getFirestore} from "firebase/firestore";
 import {
     Timestamp,
     collection,
+    documentId,
     deleteDoc,
     doc,
     getDoc,
     getDocs,
     increment,
+    limit,
+    orderBy,
     query,
     runTransaction,
     setDoc,
+    startAfter,
     updateDoc,
     where,
 } from "firebase/firestore";
@@ -549,31 +553,62 @@ export async function removeUserRegistrationRecordsByTournament(tournamentId: st
  */
 export async function removeUserTournamentHistoryByTournament(tournamentId: string): Promise<void> {
     try {
-        const historySnapshot = await getDocs(collection(db, "user_tournament_history"));
+        const pageSize = 200;
+        const writeConcurrency = 20;
+        let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
 
-        const updatePromises = historySnapshot.docs.map(async (historyDoc) => {
-            const historyData = historyDoc.data() as UserTournamentHistory;
-            const tournaments = Array.isArray(historyData.tournaments) ? historyData.tournaments : [];
-            const filteredTournaments = tournaments.filter((summary) => summary.tournamentId !== tournamentId);
+        while (true) {
+            const pageQuery: Query<DocumentData> = lastDoc
+                ? query(
+                      collection(db, "user_tournament_history"),
+                      orderBy(documentId()),
+                      startAfter(lastDoc),
+                      limit(pageSize),
+                  )
+                : query(collection(db, "user_tournament_history"), orderBy(documentId()), limit(pageSize));
 
-            if (filteredTournaments.length === tournaments.length) {
-                return;
+            const historySnapshot: QuerySnapshot<DocumentData> = await getDocs(pageQuery);
+            if (historySnapshot.empty) {
+                break;
             }
 
-            const recordCount = filteredTournaments.reduce((total, summary) => {
-                const results = Array.isArray(summary.results) ? summary.results : [];
-                return total + results.length;
-            }, 0);
+            const docsToUpdate: QueryDocumentSnapshot<DocumentData>[] = [];
+            for (const historyDoc of historySnapshot.docs) {
+                const historyData = historyDoc.data() as UserTournamentHistory;
+                const tournaments = Array.isArray(historyData.tournaments) ? historyData.tournaments : [];
+                const filteredTournaments = tournaments.filter((summary) => summary.tournamentId !== tournamentId);
+                if (filteredTournaments.length !== tournaments.length) {
+                    docsToUpdate.push(historyDoc);
+                }
+            }
 
-            await updateDoc(historyDoc.ref, {
-                tournaments: filteredTournaments,
-                tournamentCount: filteredTournaments.length,
-                recordCount,
-                updatedAt: Timestamp.now(),
-            });
-        });
+            for (let i = 0; i < docsToUpdate.length; i += writeConcurrency) {
+                const chunk = docsToUpdate.slice(i, i + writeConcurrency);
+                await Promise.all(
+                    chunk.map(async (historyDoc) => {
+                        const historyData = historyDoc.data() as UserTournamentHistory;
+                        const tournaments = Array.isArray(historyData.tournaments) ? historyData.tournaments : [];
+                        const filteredTournaments = tournaments.filter((summary) => summary.tournamentId !== tournamentId);
+                        const recordCount = filteredTournaments.reduce((total, summary) => {
+                            const results = Array.isArray(summary.results) ? summary.results : [];
+                            return total + results.length;
+                        }, 0);
 
-        await Promise.all(updatePromises);
+                        await updateDoc(historyDoc.ref, {
+                            tournaments: filteredTournaments,
+                            tournamentCount: filteredTournaments.length,
+                            recordCount,
+                            updatedAt: Timestamp.now(),
+                        });
+                    }),
+                );
+            }
+
+            lastDoc = historySnapshot.docs[historySnapshot.docs.length - 1];
+            if (historySnapshot.docs.length < pageSize) {
+                break;
+            }
+        }
     } catch (error) {
         console.error("Error cleaning up user tournament history:", error);
         // Don't throw here as this is cleanup - the main deletion should still succeed
