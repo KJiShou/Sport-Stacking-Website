@@ -66,6 +66,7 @@ const {Title, Text} = Typography;
 
 const EVENT_TYPE_ORDER = [
     "Individual",
+    "Open Age Individual",
     "StackOut Champion",
     "Blindfolded Cycle",
     "Double",
@@ -114,6 +115,11 @@ const getRecordAge = (record: Partial<TournamentRecord | TournamentTeamRecord | 
     return typeof age === "number" ? age : null;
 };
 
+const isTeamVerifiedForCounting = (team: Team): boolean => {
+    const members = Array.isArray(team.members) ? team.members : [];
+    return members.every((member) => member.verified);
+};
+
 export default function TournamentView() {
     const {id} = useParams<{id: string}>();
     const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -148,6 +154,11 @@ export default function TournamentView() {
         if (orderDiff !== 0) return orderDiff;
         return (a.type ?? "").localeCompare(b.type ?? "");
     });
+    const approvedRegistrationIds = new Set(
+        registrations
+            .map((registration) => registration.id)
+            .filter((registrationId): registrationId is string => !!registrationId),
+    );
 
     const getParticipantCount = (target: Tournament): number | undefined => (target as {participants?: number}).participants;
 
@@ -688,6 +699,8 @@ export default function TournamentView() {
                                                       (team) =>
                                                           team.team_age >= bracket.min_age &&
                                                           team.team_age <= bracket.max_age &&
+                                                          approvedRegistrationIds.has(team.registration_id) &&
+                                                          isTeamVerifiedForCounting(team) &&
                                                           teamMatchesEventKey(team, event.id ?? event.type, events),
                                                   )
                                                 : registrations.filter(

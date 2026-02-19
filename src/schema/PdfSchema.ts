@@ -61,6 +61,7 @@ export interface ExportPDFOptions {
     registrations: Registration[];
     ageMap: Record<string, number>;
     phoneMap: Record<string, string>;
+    nameMap?: Record<string, string>;
     searchTerm?: string;
     isTeamEvent: boolean;
     logoDataUrl?: string;

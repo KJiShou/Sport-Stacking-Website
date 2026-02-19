@@ -69,6 +69,7 @@ const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
 
 const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = [
     "Individual",
+    "Open Age Individual",
     "Double",
     "Team Relay",
     "Parent & Child",

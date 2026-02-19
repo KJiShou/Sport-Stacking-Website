@@ -41,7 +41,25 @@ const getCountryFlag = (country?: string): string => {
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
 type EventTypeUnion = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
 
-type AgeGroup = "Overall" | "6U" | "8U" | "10U" | "12U" | "14U" | "17U" | "Open";
+type AgeGroup =
+    | "Overall"
+    | "Age 5 & Under"
+    | "Age 6"
+    | "Age 7"
+    | "Age 8"
+    | "Age 9"
+    | "Age 10"
+    | "Age 11"
+    | "Age 12"
+    | "Age 13"
+    | "Age 14 & 15"
+    | "Age 16-20"
+    | "Age 21-30"
+    | "Age 31-40"
+    | "Age 41-49"
+    | "Age 50-59"
+    | "Age 60-69"
+    | "Age 70++";
 type AgeFilter = "All" | AgeGroup;
 
 type GenderOption = "Male" | "Female" | "Mixed";
@@ -105,14 +123,24 @@ const GENDER_FILTER_OPTIONS: {value: GenderFilter; label: string}[] = [
 ];
 
 const AGE_FILTER_OPTIONS: {value: AgeFilter; label: string}[] = [
-    {value: "All", label: "All Divisions"},
-    {value: "6U", label: "6 & Under"},
-    {value: "8U", label: "8 & Under"},
-    {value: "10U", label: "10 & Under"},
-    {value: "12U", label: "12 & Under"},
-    {value: "14U", label: "14 & Under"},
-    {value: "17U", label: "17 & Under"},
-    {value: "Open", label: "Open"},
+    {value: "All", label: "All Ages"},
+    {value: "Age 5 & Under", label: "Age 5 & Under"},
+    {value: "Age 6", label: "Age 6"},
+    {value: "Age 7", label: "Age 7"},
+    {value: "Age 8", label: "Age 8"},
+    {value: "Age 9", label: "Age 9"},
+    {value: "Age 10", label: "Age 10"},
+    {value: "Age 11", label: "Age 11"},
+    {value: "Age 12", label: "Age 12"},
+    {value: "Age 13", label: "Age 13"},
+    {value: "Age 14 & 15", label: "Age 14 & 15"},
+    {value: "Age 16-20", label: "Age 16-20"},
+    {value: "Age 21-30", label: "Age 21-30"},
+    {value: "Age 31-40", label: "Age 31-40"},
+    {value: "Age 41-49", label: "Age 41-49"},
+    {value: "Age 50-59", label: "Age 50-59"},
+    {value: "Age 60-69", label: "Age 60-69"},
+    {value: "Age 70++", label: "Age 70++"},
 ];
 
 const EVENT_OPTIONS: EventOption[] = [
@@ -279,15 +307,25 @@ function buildEventStats(record: {
 
 function getAgeGroup(age: number | null): AgeGroup {
     if (age === null || Number.isNaN(age)) {
-        return "Open";
+        return "Overall";
     }
-    if (age <= 6) return "6U";
-    if (age <= 8) return "8U";
-    if (age <= 10) return "10U";
-    if (age <= 12) return "12U";
-    if (age <= 14) return "14U";
-    if (age <= 17) return "17U";
-    return "Open";
+    if (age <= 5) return "Age 5 & Under";
+    if (age === 6) return "Age 6";
+    if (age === 7) return "Age 7";
+    if (age === 8) return "Age 8";
+    if (age === 9) return "Age 9";
+    if (age === 10) return "Age 10";
+    if (age === 11) return "Age 11";
+    if (age === 12) return "Age 12";
+    if (age === 13) return "Age 13";
+    if (age <= 15) return "Age 14 & 15";
+    if (age <= 20) return "Age 16-20";
+    if (age <= 30) return "Age 21-30";
+    if (age <= 40) return "Age 31-40";
+    if (age <= 49) return "Age 41-49";
+    if (age <= 59) return "Age 50-59";
+    if (age <= 69) return "Age 60-69";
+    return "Age 70++";
 }
 
 function ensureEntry(
@@ -306,7 +344,7 @@ function ensureEntry(
             name: base.name ?? "Unknown",
             gender: base.gender ?? "Mixed",
             age: base.age ?? null,
-            ageGroup: base.ageGroup ?? "Open",
+            ageGroup: base.ageGroup ?? "Overall",
             country: base.country ?? "Unknown",
             events: {},
             members: base.members ?? [],
@@ -616,17 +654,10 @@ const Athletes: React.FC = () => {
             },
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
-            title: "Division",
-            dataIndex: "ageGroup",
+            title: "Age",
+            dataIndex: "age",
             width: 120,
-            render: (ageGroup: AgeGroup, row) => (
-                <Space size={4} align="center">
-                    <Tag color="arcoblue">{ageGroup}</Tag>
-                    {!row.isTeam && typeof row.age === "number" ? (
-                        <span className="text-xs text-neutral-500">({row.age})</span>
-                    ) : null}
-                </Space>
-            ),
+            render: (_: unknown, row) => (!row.isTeam && typeof row.age === "number" ? row.age : "—"),
         },
         {
             title: "Gender",

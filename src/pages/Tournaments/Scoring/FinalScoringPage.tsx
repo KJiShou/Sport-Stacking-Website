@@ -29,6 +29,7 @@ import {useMount} from "react-use";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
+const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
 
 /**
  * Helper function to determine age group based on participant age
@@ -166,10 +167,10 @@ export default function FinalScoringPage() {
             setFinalist(finalists);
             const recordsData = await getTournamentFinalRecords(tournamentId);
             const parsedRecords: (TournamentRecord | TournamentTeamRecord)[] = recordsData.map((record) => {
-                if (record.event === "Individual") {
-                    return TournamentRecordSchema.parse(record);
+                if (TEAM_EVENT_TYPES.has(record.event)) {
+                    return TournamentTeamRecordSchema.parse(record);
                 }
-                return TournamentTeamRecordSchema.parse(record);
+                return TournamentRecordSchema.parse(record);
             });
             setRecords(parsedRecords);
 
@@ -444,7 +445,7 @@ export default function FinalScoringPage() {
         return Math.min(...vals).toFixed(3);
     };
 
-    const checkAllFinalistsAndNavigate = async () => {
+    const checkAllFinalistsAndNavigate = async (targetEvent: TournamentEvent) => {
         if (!tournamentId) return;
         setLoading(true);
         try {
@@ -457,7 +458,20 @@ export default function FinalScoringPage() {
                 return evtDef?.codes ?? [];
             };
 
-            for (const g of finalist) {
+            const currentEventFinalists = finalist.filter((g) => {
+                if (targetEvent.id && g.event_id) {
+                    return g.event_id === targetEvent.id;
+                }
+                return g.event_type === targetEvent.type;
+            });
+
+            if (currentEventFinalists.length === 0) {
+                Message.info(`No finalists found for ${getEventLabel(targetEvent)}.`);
+                setLoading(false);
+                return;
+            }
+
+            for (const g of currentEventFinalists) {
                 const isTeam = g.participant_type === "Team";
                 const codes = getCodesForGroup(g);
                 const eventType = g.event_type;
@@ -507,7 +521,7 @@ export default function FinalScoringPage() {
                             updateParticipantRankingsAndResults(tournamentId, classification),
                         ),
                     );
-                    Message.success("Participant rankings updated for all classifications! Redirecting to results…");
+                    Message.success(`${getEventLabel(targetEvent)} is complete. Redirecting to results…`);
                 } catch (updateError) {
                     console.error("Error updating rankings:", updateError);
                     Message.warning("Records complete but failed to update some rankings.");
@@ -893,7 +907,7 @@ export default function FinalScoringPage() {
                                                     type="primary"
                                                     status="success"
                                                     loading={loading}
-                                                    onClick={checkAllFinalistsAndNavigate}
+                                                    onClick={() => checkAllFinalistsAndNavigate(evt)}
                                                     style={{marginLeft: 8}}
                                                 >
                                                     Final Done

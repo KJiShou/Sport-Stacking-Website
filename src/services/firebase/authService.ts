@@ -11,13 +11,13 @@ import {
     signOut,
     updatePassword,
 } from "firebase/auth";
-import {type DocumentData, type Query, type QueryDocumentSnapshot, type QuerySnapshot, getFirestore} from "firebase/firestore";
+import type {DocumentData, Query, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
 import {
     Timestamp,
     collection,
-    documentId,
     deleteDoc,
     doc,
+    documentId,
     getDoc,
     getDocs,
     increment,
@@ -292,6 +292,48 @@ export async function fetchUsersByIds(userIds: string[]): Promise<Record<string,
     return results;
 }
 
+export async function fetchUsersByGlobalIds(globalIds: string[]): Promise<Record<string, FirestoreUser>> {
+    const ids = globalIds.filter((id) => id && id.trim().length > 0);
+    if (ids.length === 0) {
+        return {};
+    }
+
+    const results: Record<string, FirestoreUser> = {};
+    const batchSize = 10;
+
+    for (let i = 0; i < ids.length; i += batchSize) {
+        const batch = ids.slice(i, i + batchSize);
+        const q = query(collection(db, "users"), where("global_id", "in", batch));
+        const snapshot = await getDocs(q);
+        for (const docSnap of snapshot.docs) {
+            const data = docSnap.data();
+            const user = {
+                id: docSnap.id,
+                global_id: data.global_id ?? null,
+                memberId: data.memberId ?? null,
+                name: data.name,
+                IC: data.IC,
+                email: data.email,
+                birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
+                gender: data.gender,
+                country: data.country,
+                image_url: data.image_url,
+                roles: data.roles ?? null,
+                school: data.school ?? null,
+                phone_number: data.phone_number ?? null,
+                registration_records: data.registration_records ?? [],
+                best_times: data.best_times ?? {},
+            } as FirestoreUser;
+
+            if (user.global_id) {
+                results[user.global_id] = user;
+            }
+        }
+    }
+
+    return results;
+}
+
 export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
     // Build a query on the "users" collection where the field "id" equals the passed-in id
     const q = query(collection(db, "users"), where("id", "==", id));
@@ -329,14 +371,58 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
 }
 
 export async function getUserByGlobalId(globalId: string) {
-    const db = getFirestore();
     const q = query(collection(db, "users"), where("global_id", "==", globalId));
     const snap = await getDocs(q);
-    return snap.docs[0]?.data() as FirestoreUser | undefined;
+    if (snap.empty) {
+        return undefined;
+    }
+
+    const getTimestampMillis = (value: unknown): number => {
+        if (!value) return 0;
+        if (value instanceof Timestamp) return value.toMillis();
+        if (value instanceof Date) return value.getTime();
+        if (typeof value === "string" || typeof value === "number") {
+            const parsed = new Date(value);
+            return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+        }
+        return 0;
+    };
+
+    const getBestTimesCount = (value: unknown): number => {
+        if (!value || typeof value !== "object") {
+            return 0;
+        }
+        const bestTimes = value as Record<string, {time?: unknown} | null | undefined>;
+        const events = ["3-3-3", "3-6-3", "Cycle", "Overall"];
+        return events.reduce((count, event) => {
+            const time = bestTimes[event]?.time;
+            return typeof time === "number" && Number.isFinite(time) && time > 0 ? count + 1 : count;
+        }, 0);
+    };
+
+    const getRegistrationCount = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+
+    const bestDoc = [...snap.docs].sort((a, b) => {
+        const dataA = a.data() as Record<string, unknown>;
+        const dataB = b.data() as Record<string, unknown>;
+
+        const bestTimesDiff = getBestTimesCount(dataB.best_times) - getBestTimesCount(dataA.best_times);
+        if (bestTimesDiff !== 0) {
+            return bestTimesDiff;
+        }
+
+        const updatedDiff = getTimestampMillis(dataB.updated_at) - getTimestampMillis(dataA.updated_at);
+        if (updatedDiff !== 0) {
+            return updatedDiff;
+        }
+
+        return getRegistrationCount(dataB.registration_records) - getRegistrationCount(dataA.registration_records);
+    })[0];
+
+    return bestDoc.data() as FirestoreUser;
 }
 
 export async function getUserEmailByGlobalId(globalId: string) {
-    const db = getFirestore();
     const q = query(collection(db, "users"), where("global_id", "==", globalId));
     const snap = await getDocs(q);
     return snap.docs[0]?.data() as {email: string} | undefined;
@@ -559,12 +645,7 @@ export async function removeUserTournamentHistoryByTournament(tournamentId: stri
 
         while (true) {
             const pageQuery: Query<DocumentData> = lastDoc
-                ? query(
-                      collection(db, "user_tournament_history"),
-                      orderBy(documentId()),
-                      startAfter(lastDoc),
-                      limit(pageSize),
-                  )
+                ? query(collection(db, "user_tournament_history"), orderBy(documentId()), startAfter(lastDoc), limit(pageSize))
                 : query(collection(db, "user_tournament_history"), orderBy(documentId()), limit(pageSize));
 
             const historySnapshot: QuerySnapshot<DocumentData> = await getDocs(pageQuery);
