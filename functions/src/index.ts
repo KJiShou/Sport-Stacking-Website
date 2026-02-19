@@ -45,6 +45,53 @@ type FirestoreEventRecord = {
     codes?: string[];
 };
 
+type BestEventType = "3-3-3" | "3-6-3" | "Cycle";
+
+type HistoryResultType = "individual" | "team";
+type HistoryParticipantRole = "participant" | "leader" | "member";
+
+type HistoryResult = {
+    recordPath: string;
+    event: string | null;
+    eventKey: string | null;
+    eventCategory: string | null;
+    round: string | null;
+    bestTime: number | null;
+    try1: number | null;
+    try2: number | null;
+    try3: number | null;
+    status: string | null;
+    classification: string | null;
+    resultType: HistoryResultType;
+    participantRole: HistoryParticipantRole;
+    teamContext: {leaderId: string | null; memberIds: string[]} | null;
+    submittedAt: FirestoreTimestamp | null;
+    verifiedAt: FirestoreTimestamp | null;
+    createdAt: FirestoreTimestamp | null;
+    updatedAt: FirestoreTimestamp | null;
+    videoUrl: string | null;
+};
+
+type HistoryTournamentSummary = {
+    tournamentId: string;
+    tournamentName: string | null;
+    startDate: FirestoreTimestamp | null;
+    endDate: FirestoreTimestamp | null;
+    country: string | null;
+    venue: string | null;
+    lastActivityAt: FirestoreTimestamp | null;
+    results: HistoryResult[];
+};
+
+type UserTournamentHistoryPayload = {
+    globalId: string;
+    userId: string;
+    updatedAt: FirestoreTimestamp;
+    tournamentCount: number;
+    recordCount: number;
+    tournaments: HistoryTournamentSummary[];
+};
+
 const addEventReference = (target: Set<string>, value: unknown): void => {
     if (typeof value !== "string") {
         return;
@@ -260,6 +307,311 @@ const resolveLeaderName = async (leaderId: string): Promise<string | null> => {
 
     const leaderData = leaderSnap.docs[0]?.data();
     return typeof leaderData?.name === "string" ? leaderData.name : null;
+};
+
+const normalizeCode = (value: unknown): BestEventType | null => {
+    if (value === "3-3-3" || value === "3-6-3" || value === "Cycle") {
+        return value;
+    }
+    return null;
+};
+
+const getBestEventTypeFromRecord = (data: Record<string, unknown>): BestEventType | null => {
+    const fromCode = normalizeCode(data.code);
+    if (fromCode) {
+        return fromCode;
+    }
+
+    const eventName = typeof data.event === "string" ? data.event.toLowerCase() : "";
+    if (eventName.includes("3-3-3")) return "3-3-3";
+    if (eventName.includes("3-6-3")) return "3-6-3";
+    if (eventName.includes("cycle")) return "Cycle";
+    return null;
+};
+
+const toNumber = (value: unknown): number | null => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+        return null;
+    }
+    return value;
+};
+
+const toStringOrNull = (value: unknown): string | null => {
+    if (typeof value !== "string") {
+        return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+};
+
+const toTimestampOrNull = (value: unknown): FirestoreTimestamp | null => {
+    if (value instanceof FirestoreTimestamp) {
+        return value;
+    }
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return FirestoreTimestamp.fromDate(value);
+    }
+    if (typeof value === "string" || typeof value === "number") {
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) {
+            return FirestoreTimestamp.fromDate(parsed);
+        }
+    }
+    return null;
+};
+
+const extractMemberIds = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.map((item) => (typeof item === "string" ? item.trim() : "")).filter((item) => item.length > 0);
+};
+
+const deriveEventCategory = (eventType: string | null): string | null => {
+    if (!eventType) return null;
+    const normalized = eventType.toLowerCase();
+    if (normalized === "double") return "double";
+    if (normalized === "team relay") return "team_relay";
+    if (normalized === "parent & child") return "parent_&_child";
+    if (normalized === "special need") return "special_need";
+    if (normalized === "stack up champion") return "stack_out_champion";
+    if (normalized === "stackout champion") return "stack_out_champion";
+    if (normalized === "stack out champion") return "stack_out_champion";
+    if (normalized === "blindfolded cycle") return "blindfolded_cycle";
+    return "individual";
+};
+
+const buildEventKey = (eventType: string | null, code: string | null): string | null => {
+    if (code && eventType) {
+        return `${code}-${eventType}`;
+    }
+    return eventType ?? code ?? null;
+};
+
+const determineHistoryRole = (globalId: string, leaderId: string | null, memberIds: string[]): HistoryParticipantRole => {
+    if (leaderId && globalId === leaderId) {
+        return "leader";
+    }
+    if (memberIds.includes(globalId)) {
+        return "member";
+    }
+    return "participant";
+};
+
+const buildHistoryResult = (
+    globalId: string,
+    collectionName: string,
+    docId: string,
+    data: Record<string, unknown>,
+): HistoryResult | null => {
+    const tournamentId = toStringOrNull(data.tournament_id);
+    if (!tournamentId) {
+        return null;
+    }
+
+    const eventType = toStringOrNull(data.event);
+    const code = toStringOrNull(data.code);
+    const leaderId = toStringOrNull(data.leader_id);
+    const memberIds = extractMemberIds(data.member_global_ids);
+    const teamId = toStringOrNull(data.team_id);
+    const resultType: HistoryResultType = teamId ? "team" : "individual";
+    const participantRole =
+        resultType === "team" ? determineHistoryRole(globalId, leaderId, memberIds) : ("participant" as const);
+
+    const classification = toStringOrNull(data.classification);
+    const round = toStringOrNull(data.round) ?? (classification === "prelim" ? "prelim" : classification ? "final" : null);
+    const bestTime = toNumber(data.best_time) ?? toNumber(data.overall_time);
+    const recordPath = `${collectionName}/${docId}`;
+    const eventKey = buildEventKey(eventType, code);
+    const eventCategory = deriveEventCategory(eventType);
+    const submittedAt = toTimestampOrNull(data.submitted_at);
+    const verifiedAt = toTimestampOrNull(data.verified_at);
+    const createdAt = toTimestampOrNull(data.created_at);
+    const updatedAt = toTimestampOrNull(data.updated_at);
+    const videoUrl = toStringOrNull(data.video_url);
+    const try1 = toNumber(data.try1);
+    const try2 = toNumber(data.try2);
+    const try3 = toNumber(data.try3);
+
+    return {
+        recordPath,
+        event: eventType,
+        eventKey,
+        eventCategory,
+        round,
+        bestTime,
+        try1,
+        try2,
+        try3,
+        status: toStringOrNull(data.status),
+        classification,
+        resultType,
+        participantRole,
+        teamContext: resultType === "team" ? {leaderId, memberIds} : null,
+        submittedAt,
+        verifiedAt,
+        createdAt,
+        updatedAt,
+        videoUrl,
+    };
+};
+
+const getResultActivityTimestamp = (result: HistoryResult): FirestoreTimestamp | null =>
+    result.updatedAt ?? result.createdAt ?? result.submittedAt ?? result.verifiedAt ?? null;
+
+const getMaxTimestamp = (values: Array<FirestoreTimestamp | null>): FirestoreTimestamp | null => {
+    let maxValue: FirestoreTimestamp | null = null;
+    for (const value of values) {
+        if (!value) continue;
+        if (!maxValue || value.toMillis() > maxValue.toMillis()) {
+            maxValue = value;
+        }
+    }
+    return maxValue;
+};
+
+const syncUserTournamentHistoryByGlobalId = async (rawGlobalId: string): Promise<void> => {
+    const globalId = rawGlobalId.trim();
+    if (!globalId) {
+        return;
+    }
+
+    const usersSnap = await db.collection("users").where("global_id", "==", globalId).limit(1).get();
+    if (usersSnap.empty) {
+        return;
+    }
+
+    const userDoc = usersSnap.docs[0];
+    const userData = userDoc.data();
+    const userId = typeof userData.id === "string" && userData.id.length > 0 ? userData.id : userDoc.id;
+
+    const historyDocRef = db.collection("user_tournament_history").doc(globalId);
+    const deduped = new Map<string, {collectionName: string; docId: string; data: Record<string, unknown>}>();
+
+    const addSnapshotDocs = (collectionName: string, docs: Array<{id: string; data: () => Record<string, unknown>}>) => {
+        for (const docSnap of docs) {
+            const key = `${collectionName}/${docSnap.id}`;
+            deduped.set(key, {
+                collectionName,
+                docId: docSnap.id,
+                data: docSnap.data() as Record<string, unknown>,
+            });
+        }
+    };
+
+    const [
+        recordsByParticipant,
+        prelimByParticipant,
+        overallByParticipant,
+        recordsByLeader,
+        prelimByLeader,
+        recordsByMember,
+        prelimByMember,
+    ] = await Promise.all([
+        db.collection("records").where("participant_global_id", "==", globalId).get(),
+        db.collection("prelim_records").where("participant_global_id", "==", globalId).get(),
+        db.collection("overall_records").where("participant_global_id", "==", globalId).get(),
+        db.collection("records").where("leader_id", "==", globalId).get(),
+        db.collection("prelim_records").where("leader_id", "==", globalId).get(),
+        db.collection("records").where("member_global_ids", "array-contains", globalId).get(),
+        db.collection("prelim_records").where("member_global_ids", "array-contains", globalId).get(),
+    ]);
+
+    addSnapshotDocs("records", recordsByParticipant.docs);
+    addSnapshotDocs("prelim_records", prelimByParticipant.docs);
+    addSnapshotDocs("overall_records", overallByParticipant.docs);
+    addSnapshotDocs("records", recordsByLeader.docs);
+    addSnapshotDocs("prelim_records", prelimByLeader.docs);
+    addSnapshotDocs("records", recordsByMember.docs);
+    addSnapshotDocs("prelim_records", prelimByMember.docs);
+
+    const groupedByTournament = new Map<string, HistoryResult[]>();
+    for (const item of deduped.values()) {
+        const tournamentId = toStringOrNull(item.data.tournament_id);
+        if (!tournamentId) {
+            continue;
+        }
+        const result = buildHistoryResult(globalId, item.collectionName, item.docId, item.data);
+        if (!result) {
+            continue;
+        }
+        const existing = groupedByTournament.get(tournamentId) ?? [];
+        existing.push(result);
+        groupedByTournament.set(tournamentId, existing);
+    }
+
+    const tournamentCache = new Map<string, Record<string, unknown>>();
+    const tournamentSummaries: HistoryTournamentSummary[] = [];
+    for (const [tournamentId, results] of groupedByTournament.entries()) {
+        let tournamentRaw = tournamentCache.get(tournamentId);
+        if (!tournamentRaw) {
+            const tournamentSnap = await db.collection("tournaments").doc(tournamentId).get();
+            tournamentRaw = tournamentSnap.exists ? (tournamentSnap.data() as Record<string, unknown>) : {};
+            tournamentCache.set(tournamentId, tournamentRaw);
+        }
+
+        const normalizedResults = results.sort((a, b) => {
+            const aTime = getResultActivityTimestamp(a)?.toMillis() ?? 0;
+            const bTime = getResultActivityTimestamp(b)?.toMillis() ?? 0;
+            return bTime - aTime;
+        });
+
+        const lastActivityAt = getMaxTimestamp(normalizedResults.map((result) => getResultActivityTimestamp(result)));
+        const countryRaw = tournamentRaw?.country;
+        const country =
+            Array.isArray(countryRaw) && typeof countryRaw[0] === "string"
+                ? (countryRaw[0] as string)
+                : toStringOrNull(countryRaw);
+
+        tournamentSummaries.push({
+            tournamentId,
+            tournamentName: toStringOrNull(tournamentRaw?.name),
+            startDate: toTimestampOrNull(tournamentRaw?.start_date),
+            endDate: toTimestampOrNull(tournamentRaw?.end_date),
+            country,
+            venue: toStringOrNull(tournamentRaw?.venue),
+            lastActivityAt,
+            results: normalizedResults,
+        });
+    }
+
+    tournamentSummaries.sort((a, b) => {
+        const aTime = a.lastActivityAt?.toMillis() ?? 0;
+        const bTime = b.lastActivityAt?.toMillis() ?? 0;
+        return bTime - aTime;
+    });
+
+    const recordCount = tournamentSummaries.reduce((sum, summary) => sum + summary.results.length, 0);
+    const payload: UserTournamentHistoryPayload = {
+        globalId,
+        userId,
+        updatedAt: FirestoreTimestamp.now(),
+        tournamentCount: tournamentSummaries.length,
+        recordCount,
+        tournaments: tournamentSummaries,
+    };
+
+    await historyDocRef.set(payload, {merge: true});
+};
+
+const collectAffectedGlobalIds = (data: Record<string, unknown>): string[] => {
+    const ids = new Set<string>();
+
+    const participantGlobalId = toStringOrNull(data.participant_global_id);
+    if (participantGlobalId) {
+        ids.add(participantGlobalId);
+    }
+
+    const leaderId = toStringOrNull(data.leader_id);
+    if (leaderId) {
+        ids.add(leaderId);
+    }
+
+    for (const memberId of extractMemberIds(data.member_global_ids)) {
+        ids.add(memberId);
+    }
+
+    return Array.from(ids);
 };
 
 /**
@@ -764,16 +1116,7 @@ export const updateUserBestTimes = onDocumentWritten(
             return;
         }
 
-        const eventName = typeof afterData.event === "string" ? afterData.event.toLowerCase() : "";
-        let eventType: "3-3-3" | "3-6-3" | "Cycle" | null = null;
-
-        if (eventName.includes("3-3-3")) {
-            eventType = "3-3-3";
-        } else if (eventName.includes("3-6-3")) {
-            eventType = "3-6-3";
-        } else if (eventName.includes("cycle")) {
-            eventType = "Cycle";
-        }
+        const eventType = getBestEventTypeFromRecord(afterData as Record<string, unknown>);
 
         if (!eventType) {
             return;
@@ -823,6 +1166,69 @@ export const updateUserBestTimes = onDocumentWritten(
         } catch (error) {
             console.error(`Failed to update best time for user ${participantGlobalId}:`, error);
         }
+    },
+);
+
+export const syncUserTournamentHistoryFromRecords = onDocumentWritten(
+    {
+        document: "records/{recordId}",
+        region: process.env.FUNCTIONS_REGION ?? "asia-southeast1",
+        retry: false,
+    },
+    async (event) => {
+        const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
+        if (!afterData) {
+            return;
+        }
+
+        const affectedGlobalIds = collectAffectedGlobalIds(afterData);
+        if (affectedGlobalIds.length === 0) {
+            return;
+        }
+
+        await Promise.all(affectedGlobalIds.map((globalId) => syncUserTournamentHistoryByGlobalId(globalId)));
+    },
+);
+
+export const syncUserTournamentHistoryFromPrelimRecords = onDocumentWritten(
+    {
+        document: "prelim_records/{recordId}",
+        region: process.env.FUNCTIONS_REGION ?? "asia-southeast1",
+        retry: false,
+    },
+    async (event) => {
+        const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
+        if (!afterData) {
+            return;
+        }
+
+        const affectedGlobalIds = collectAffectedGlobalIds(afterData);
+        if (affectedGlobalIds.length === 0) {
+            return;
+        }
+
+        await Promise.all(affectedGlobalIds.map((globalId) => syncUserTournamentHistoryByGlobalId(globalId)));
+    },
+);
+
+export const syncUserTournamentHistoryFromOverallRecords = onDocumentWritten(
+    {
+        document: "overall_records/{recordId}",
+        region: process.env.FUNCTIONS_REGION ?? "asia-southeast1",
+        retry: false,
+    },
+    async (event) => {
+        const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
+        if (!afterData) {
+            return;
+        }
+
+        const participantGlobalId = toStringOrNull(afterData.participant_global_id);
+        if (!participantGlobalId) {
+            return;
+        }
+
+        await syncUserTournamentHistoryByGlobalId(participantGlobalId);
     },
 );
 

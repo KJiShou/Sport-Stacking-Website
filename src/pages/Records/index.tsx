@@ -460,20 +460,23 @@ const RecordsIndex: React.FC = () => {
                     title: "Tournament",
                     dataIndex: "tournament_name",
                     width: 180,
-                    render: (tournamentName: string | null | undefined) => (
-                        <Text style={{fontSize: "12px", color: "#666"}}>{tournamentName || "N/A"}</Text>
-                    ),
+                    render: (_: unknown, record: RecordDisplay) => {
+                        if (!record.tournamentId) {
+                            return <Text style={{fontSize: "12px", color: "#666"}}>{record.tournament_name || "N/A"}</Text>;
+                        }
+
+                        return (
+                            <Link href={`/tournaments/${record.tournamentId}/view`} hoverable={false}>
+                                {record.tournament_name || record.tournamentId}
+                            </Link>
+                        );
+                    },
                 },
                 {
-                    title: "Division",
-                    dataIndex: "ageGroup",
+                    title: "Age",
+                    dataIndex: "age",
                     width: 120,
-                    render: (_: unknown, record: RecordDisplay) => (
-                        <Space size={4} align="center">
-                            <Tag color="arcoblue">{record.ageGroup}</Tag>
-                            {record.age ? <span className="text-xs text-neutral-500">({record.age})</span> : null}
-                        </Space>
-                    ),
+                    render: (_: unknown, record: RecordDisplay) => (record.age ? record.age : "—"),
                 },
                 {
                     title: "Gender",
@@ -637,6 +640,7 @@ const RecordsIndex: React.FC = () => {
                     members: isTeamResult ? (record as GlobalTeamResult).members : undefined,
                     leaderId: isTeamResult ? (record as GlobalTeamResult).leaderId : undefined,
                     tournament_name: record.tournament_name || null,
+                    tournamentId: record.tournamentId || undefined,
                 });
             }
         });

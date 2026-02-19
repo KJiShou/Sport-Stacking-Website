@@ -20,6 +20,7 @@ const ensureClassification = (value: unknown): "beginner" | "intermediate" | "ad
 const ensureEventType = (value: unknown): FinalistGroupPayload["event_type"] => {
     const allowed: FinalistGroupPayload["event_type"][] = [
         "Individual",
+        "Open Age Individual",
         "Double",
         "Team Relay",
         "Parent & Child",

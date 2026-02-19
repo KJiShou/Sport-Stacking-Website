@@ -74,6 +74,7 @@ const getAllTeamEventReferences = (team: TeamEventRefs | null | undefined): stri
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
 export const EVENT_TYPE_ORDER = [
     "Individual",
+    "Open Age Individual",
     "StackOut Champion",
     "Blindfolded Cycle",
     "Double",

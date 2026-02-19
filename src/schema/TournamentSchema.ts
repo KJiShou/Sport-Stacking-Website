@@ -29,6 +29,7 @@ export const EventSchema = z.object({
     codes: z.array(z.enum(["3-3-3", "3-6-3", "Cycle"])),
     type: z.enum([
         "Individual",
+        "Open Age Individual",
         "Double",
         "Team Relay",
         "Parent & Child",

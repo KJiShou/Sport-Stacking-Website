@@ -1,4 +1,5 @@
 import type {Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/schema";
+import {fetchUsersByGlobalIds} from "@/services/firebase/authService";
 import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {
@@ -46,6 +47,7 @@ export default function ParticipantListPage() {
     const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [registrationList, setRegistrationList] = useState<Registration[]>([]);
     const [teamList, setTeamList] = useState<Team[]>([]);
+    const [supplementalNameMap, setSupplementalNameMap] = useState<Record<string, string>>({});
     const [searchTerm, setSearchTerm] = useState("");
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
@@ -79,6 +81,9 @@ export default function ParticipantListPage() {
         },
         {} as Record<string, string>,
     );
+    const combinedNameMap: Record<string, string> = {...nameMap, ...supplementalNameMap};
+    const isStackOutChampionEvent = (event: TournamentEvent): boolean =>
+        event.type.toLowerCase() === "stackout champion" || event.type.toLowerCase() === "stack up champion";
 
     const refreshParticipantList = async () => {
         if (!tournamentId) return;
@@ -98,16 +103,44 @@ export default function ParticipantListPage() {
             setCurrentBracketTab(firstBracket ? firstBracket.name : "");
             const regs = await fetchApprovedRegistrations(tournamentId);
             const teams = await fetchTeamsByTournament(tournamentId);
+            const verifiedTeams = teams.filter((team) => {
+                if (!isTeamFullyVerified(team)) {
+                    return false;
+                }
+                const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                return regs.some((r) => r.user_global_id === leaderId || r.user_id === leaderId);
+            });
             setRegistrationList(regs);
-            setTeamList(
-                teams.filter((team) => {
-                    if (!isTeamFullyVerified(team)) {
-                        return false;
+            setTeamList(verifiedTeams);
+
+            const approvedNameMap = regs.reduce(
+                (acc, registration) => {
+                    if (registration.user_global_id) {
+                        acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
                     }
-                    const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                    return regs.some((r) => r.user_global_id === leaderId || r.user_id === leaderId);
-                }),
+                    return acc;
+                },
+                {} as Record<string, string>,
             );
+            const missingGlobalIds = Array.from(
+                new Set(
+                    verifiedTeams.flatMap((team) => [
+                        stripTeamLeaderPrefix(team.leader_id),
+                        ...(team.members ?? []).map((member) => member.global_id),
+                    ]),
+                ),
+            ).filter((globalId) => globalId && !approvedNameMap[globalId]);
+
+            if (missingGlobalIds.length > 0) {
+                const usersByGlobalId = await fetchUsersByGlobalIds(missingGlobalIds);
+                const fetchedNameMap: Record<string, string> = {};
+                for (const [globalId, user] of Object.entries(usersByGlobalId)) {
+                    fetchedNameMap[globalId] = user.name || globalId;
+                }
+                setSupplementalNameMap(fetchedNameMap);
+            } else {
+                setSupplementalNameMap({});
+            }
         } catch {
             Message.error("Unable to fetch participants");
         } finally {
@@ -230,6 +263,9 @@ export default function ParticipantListPage() {
         try {
             const entries = [];
             for (const event of events) {
+                if (isStackOutChampionEvent(event)) {
+                    continue;
+                }
                 const eventCodes = sanitizeEventCodes(event.codes);
                 const eventKey = getEventKey(event);
                 const isTeam = isTeamEvent(event);
@@ -279,7 +315,7 @@ export default function ParticipantListPage() {
                 tournament,
                 entries,
                 ageMap,
-                nameMap,
+                nameMap: combinedNameMap,
                 logoUrl: tournament.logo ?? "",
             });
             Message.success("Time sheets opened for all events");
@@ -320,7 +356,15 @@ export default function ParticipantListPage() {
         }
         setLoading(true);
         try {
-            await exportAllBracketsListToPDF(tournament, events ?? [], registrationList, teamList, ageMap, phoneMap);
+            await exportAllBracketsListToPDF(
+                tournament,
+                events ?? [],
+                registrationList,
+                teamList,
+                ageMap,
+                phoneMap,
+                combinedNameMap,
+            );
             Message.success("All brackets list PDF opened");
         } catch (error) {
             Message.error("Failed to generate PDF");
@@ -365,7 +409,12 @@ export default function ParticipantListPage() {
                             type="text"
                             className={`text-left`}
                             loading={loading}
+                            disabled={isStackOutChampionEvent(event)}
                             onClick={async () => {
+                                if (isStackOutChampionEvent(event)) {
+                                    Message.info("StackOut Champion does not require a time sheet.");
+                                    return;
+                                }
                                 setLoading(true);
                                 await generateStackingSheetPDF(
                                     tournament,
@@ -381,7 +430,9 @@ export default function ParticipantListPage() {
                                 setLoading(false);
                             }}
                         >
-                            Print Time Sheet
+                            {event.type.toLowerCase() === "stackout champion" || event.type.toLowerCase() === "stack up champion"
+                                ? "Time Sheet Not Required"
+                                : "Print Time Sheet"}
                         </Button>
                     </div>
                 );
@@ -522,11 +573,13 @@ export default function ParticipantListPage() {
                                                             {[
                                                                 {
                                                                     id: stripTeamLeaderPrefix(record.leader_id),
-                                                                    name: nameMap[stripTeamLeaderPrefix(record.leader_id)],
+                                                                    name: combinedNameMap[
+                                                                        stripTeamLeaderPrefix(record.leader_id)
+                                                                    ],
                                                                 },
                                                                 ...record.members.map((member) => ({
                                                                     id: member.global_id,
-                                                                    name: nameMap[member.global_id],
+                                                                    name: combinedNameMap[member.global_id],
                                                                 })),
                                                             ]
                                                                 .filter((entry) => entry.id)
@@ -586,6 +639,7 @@ export default function ParticipantListPage() {
                                                                             registrations: registrationList,
                                                                             ageMap,
                                                                             phoneMap,
+                                                                            nameMap: combinedNameMap,
                                                                             isTeamEvent: true,
                                                                             team: rec,
                                                                             logoDataUrl: tournament.logo ?? "",
@@ -608,7 +662,7 @@ export default function ParticipantListPage() {
                                                                             br.name,
                                                                             {
                                                                                 logoUrl: tournament.logo ?? "",
-                                                                                nameMap,
+                                                                                nameMap: combinedNameMap,
                                                                                 eventCodes: sanitizeEventCodes(evt.codes),
                                                                             },
                                                                             evt.type,

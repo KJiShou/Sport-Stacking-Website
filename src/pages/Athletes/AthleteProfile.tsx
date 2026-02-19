@@ -19,7 +19,7 @@ import type {Timestamp} from "firebase/firestore";
 
 import type {FirestoreUser} from "@/schema/UserSchema";
 import {type EventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
-import {getUserByGlobalId} from "@/services/firebase/authService";
+import {fetchUserByID, getUserByGlobalId} from "@/services/firebase/authService";
 import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatDateSafe, formatStackingTime} from "@/utils/time";
 
@@ -63,6 +63,17 @@ const toDate = (value: Date | Timestamp | null | undefined): Date | null => {
     return null;
 };
 
+const getBestTimesCount = (user: FirestoreUser | null | undefined): number => {
+    if (!user?.best_times) {
+        return 0;
+    }
+    const events: EventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
+    return events.reduce((count, event) => {
+        const time = user.best_times?.[event]?.time;
+        return typeof time === "number" && Number.isFinite(time) && time > 0 ? count + 1 : count;
+    }, 0);
+};
+
 const AthleteProfilePage = () => {
     const {athleteId} = useParams<{athleteId: string}>();
     const [loading, setLoading] = useState(true);
@@ -86,8 +97,19 @@ const AthleteProfilePage = () => {
         setLoading(true);
         setError(null);
 
+        const loadAthlete = async (): Promise<FirestoreUser | null> => {
+            const byGlobalId = await getUserByGlobalId(athleteId);
+            if (byGlobalId) {
+                return byGlobalId;
+            }
+
+            // Fallback for routes that pass Firebase UID instead of global_id.
+            const byUid = await fetchUserByID(athleteId);
+            return byUid;
+        };
+
         Promise.all([
-            getUserByGlobalId(athleteId),
+            loadAthlete(),
             getTopAthletesByEvent("3-3-3", 1000),
             getTopAthletesByEvent("3-6-3", 1000),
             getTopAthletesByEvent("Cycle", 1000),
@@ -95,15 +117,36 @@ const AthleteProfilePage = () => {
         ])
             .then(([userData, rankings333, rankings363, rankingsCycle, rankingsOverall]) => {
                 if (!cancelled) {
-                    setUser(userData ?? null);
-                    if (!userData) {
+                    const rankingUsers = [...rankings333, ...rankings363, ...rankingsCycle, ...rankingsOverall];
+                    const fallbackFromRankings =
+                        userData && getBestTimesCount(userData) > 0
+                            ? userData
+                            : (rankingUsers.find(
+                                  (entry) =>
+                                      entry.global_id === athleteId ||
+                                      entry.id === athleteId ||
+                                      (userData?.global_id ? entry.global_id === userData.global_id : false) ||
+                                      (userData?.id ? entry.id === userData.id : false),
+                              ) ?? null);
+
+                    const resolvedUser = fallbackFromRankings ?? userData ?? null;
+                    setUser(resolvedUser);
+                    if (!resolvedUser) {
                         setError("No athlete data found.");
                     } else {
+                        const athleteGlobalId = resolvedUser.global_id ?? null;
+                        const athleteUid = resolvedUser.id ?? null;
+                        const isSameAthlete = (entry: FirestoreUser): boolean =>
+                            (athleteGlobalId ? entry.global_id === athleteGlobalId : false) ||
+                            (athleteUid ? entry.id === athleteUid : false) ||
+                            entry.global_id === athleteId ||
+                            entry.id === athleteId;
+
                         // Calculate rankings
-                        const rank333 = rankings333.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
-                        const rank363 = rankings363.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
-                        const rankCycle = rankingsCycle.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
-                        const rankOverall = rankingsOverall.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
+                        const rank333 = rankings333.findIndex(isSameAthlete);
+                        const rank363 = rankings363.findIndex(isSameAthlete);
+                        const rankCycle = rankingsCycle.findIndex(isSameAthlete);
+                        const rankOverall = rankingsOverall.findIndex(isSameAthlete);
 
                         setRankings({
                             "3-3-3": rank333 >= 0 ? rank333 + 1 : null,

@@ -54,6 +54,10 @@ const getPrimaryEventCode = (event: TournamentEvent): string => {
 };
 
 const isTeamEventType = (type: string): boolean => ["double", "team relay", "parent & child"].includes(type.toLowerCase());
+const isStackOutChampionType = (type: string): boolean => {
+    const normalized = type.trim().toLowerCase();
+    return normalized === "stackout champion" || normalized === "stack up champion";
+};
 
 const createPDFFilename = (parts: string[]): string =>
     parts
@@ -269,6 +273,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         registrations,
         ageMap,
         phoneMap,
+        nameMap: providedNameMap,
         searchTerm = "",
         isTeamEvent,
         team,
@@ -327,7 +332,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
 
         // Generate table data
         const teamEventType = events?.find((evt) => matchesEventKey(eventKey, evt) || getEventKey(evt) === eventKey)?.type ?? "";
-        const nameMap = registrations.reduce(
+        const registrationNameMap = registrations.reduce(
             (acc, registration) => {
                 if (registration.user_global_id) {
                     acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
@@ -336,10 +341,11 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
             },
             {} as Record<string, string>,
         );
+        const resolvedNameMap = {...registrationNameMap, ...(providedNameMap ?? {})};
         const tableData = team
             ? generateSingleTeamTableData(team, phoneMap, teamEventType)
             : isTeamEvent
-              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, nameMap, events ?? [])
+              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, resolvedNameMap, events ?? [])
               : generateIndividualTableData(registrations, bracket, phoneMap);
 
         const headers = team
@@ -917,6 +923,7 @@ export const exportAllBracketsListToPDF = async (
     teams: Team[],
     ageMap: Record<string, number>,
     phoneMap: Record<string, string>,
+    nameMap: Record<string, string> = {},
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
@@ -967,7 +974,7 @@ export const exportAllBracketsListToPDF = async (
                 doc.text(`${bracket.name} (Ages ${bracket.min_age}-${bracket.max_age})`, 20, startY);
                 startY += 8;
 
-                const nameMap = registrations.reduce(
+                const registrationNameMap = registrations.reduce(
                     (acc, registration) => {
                         if (registration.user_global_id) {
                             acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
@@ -976,8 +983,9 @@ export const exportAllBracketsListToPDF = async (
                     },
                     {} as Record<string, string>,
                 );
+                const resolvedNameMap = {...registrationNameMap, ...nameMap};
                 const tableData = isTeamEvent
-                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, nameMap, events ?? [])
+                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, resolvedNameMap, events ?? [])
                     : registrations
                           .filter((r) => {
                               const matchesEvent =
@@ -1231,6 +1239,9 @@ export const generateStackingSheetPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
+        if (isStackOutChampionType(sheetType)) {
+            throw new Error("StackOut Champion does not require a time sheet.");
+        }
         const targetParticipants = options.participantId
             ? participants.filter((p) => p.user_id === options.participantId)
             : participants;
@@ -1300,9 +1311,13 @@ export const exportCombinedTimeSheetsPDF = async (options: {
 }): Promise<void> => {
     const {tournament, entries, ageMap, nameMap, logoUrl, filename} = options;
     const doc = new jsPDF();
+    const filteredEntries = entries.filter((entry) => !isStackOutChampionType(entry.sheetType));
+    if (filteredEntries.length === 0) {
+        throw new Error("No eligible time sheets to generate.");
+    }
     const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(logoUrl ?? tournament.logo)]);
 
-    entries.forEach((entry, index) => {
+    filteredEntries.forEach((entry, index) => {
         if (index > 0 && index % 2 === 0) {
             doc.addPage();
         }
@@ -1445,6 +1460,9 @@ export const generateTeamStackingSheetPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
+        if (isStackOutChampionType(sheetType)) {
+            throw new Error("StackOut Champion does not require a time sheet.");
+        }
         const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(tournament.logo)]);
 
         generateSingleStackingSheet(
@@ -1555,13 +1573,49 @@ const generateSingleStackingSheet = (
         }
     }
 
+    const fitTextToWidth = (
+        value: string,
+        maxWidth: number,
+        preferredSize: number,
+        minSize = 9,
+    ): {text: string; fontSize: number} => {
+        const source = (value ?? "").trim();
+        if (source.length === 0) {
+            return {text: "-", fontSize: preferredSize};
+        }
+
+        let fontSize = preferredSize;
+        doc.setFont("times", "bold");
+        doc.setFontSize(fontSize);
+
+        while (fontSize > minSize && doc.getTextWidth(source) > maxWidth) {
+            fontSize -= 0.5;
+            doc.setFontSize(fontSize);
+        }
+
+        if (doc.getTextWidth(source) <= maxWidth) {
+            return {text: source, fontSize};
+        }
+
+        let truncated = source;
+        while (truncated.length > 0 && doc.getTextWidth(`${truncated}...`) > maxWidth) {
+            truncated = truncated.slice(0, -1);
+        }
+        const display = truncated.length > 0 ? `${truncated}...` : "...";
+        return {text: display, fontSize};
+    };
+
     // Title text (right side, centered vertically)
     doc.setFont("times", "bold");
-    doc.setFontSize(16);
     const titleCenterY = startY + titleHeight / 2;
     const titleCenterX = marginX + logoBoxWidth + (pageWidth - 2 * marginX - logoBoxWidth * 2) / 2;
-    doc.text(`${tournament.venue}`, titleCenterX, titleCenterY - 4, {align: "center"});
-    doc.text(`${tournament.name}`, titleCenterX, titleCenterY + 4, {align: "center"});
+    const titleMaxWidth = pageWidth - marginX * 2 - logoBoxWidth * 2 - 6;
+    const venueTitle = fitTextToWidth(tournament.venue ?? "-", titleMaxWidth, 14);
+    doc.setFontSize(venueTitle.fontSize);
+    doc.text(venueTitle.text, titleCenterX, titleCenterY - 4, {align: "center"});
+    const tournamentTitle = fitTextToWidth(tournament.name ?? "-", titleMaxWidth, 14);
+    doc.setFontSize(tournamentTitle.fontSize);
+    doc.text(tournamentTitle.text, titleCenterX, titleCenterY + 4, {align: "center"});
 
     // === 2. Subtitle ===
     doc.setFontSize(11);
@@ -1905,9 +1959,13 @@ export const generateAllTeamStackingSheetsPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
+        const filteredTeams = isStackOutChampionType(sheetType) ? [] : teams;
+        if (filteredTeams.length === 0) {
+            throw new Error("No eligible time sheets to generate.");
+        }
         const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(tournament.logo)]);
 
-        teams.forEach((team, index) => {
+        filteredTeams.forEach((team, index) => {
             if (index > 0) doc.addPage();
             generateSingleStackingSheet(
                 doc,
