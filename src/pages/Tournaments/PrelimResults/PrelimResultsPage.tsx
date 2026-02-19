@@ -1,4 +1,5 @@
 // @ts-nocheck
+import {useAuthContext} from "@/context/AuthContext";
 import type {
     AgeBracket,
     AggregationContext,
@@ -26,7 +27,7 @@ import {
 } from "@/utils/tournament/eventUtils";
 import {Button, Message, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
-import {IconCaretRight, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
+import {IconCaretRight, IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import type {TournamentRecord, TournamentTeamRecord} from "../../../schema/RecordSchema";
@@ -550,6 +551,7 @@ const buildExpandedRows = (
 export default function PrelimResultsPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
     const navigate = useNavigate();
+    const {user} = useAuthContext();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [events, setEvents] = useState<TournamentEvent[]>([]);
@@ -568,6 +570,7 @@ export default function PrelimResultsPage() {
             }),
         [events],
     );
+    const canShareLinks = Boolean(user?.roles?.edit_tournament || user?.roles?.verify_record);
 
     useEffect(() => {
         if (!tournamentId) return;
@@ -963,6 +966,19 @@ export default function PrelimResultsPage() {
             setLoading(false);
         }
     }, [aggregationContext, navigate, registrations, teams, tournament, tournamentId]);
+
+    const handleCopyShareLink = useCallback(async () => {
+        if (!tournamentId) return;
+        const shareUrl = `${window.location.origin}/score-sheet/${tournamentId}/prelim`;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            Message.success("Share link copied.");
+        } catch (error) {
+            console.error(error);
+            Message.error("Failed to copy share link.");
+        }
+    }, [tournamentId]);
+
     return (
         <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <Button
@@ -988,6 +1004,11 @@ export default function PrelimResultsPage() {
                         <Button type="primary" icon={<IconPrinter />} onClick={handlePrint} loading={loading}>
                             Print All Brackets
                         </Button>
+                        {canShareLinks && (
+                            <Button type="outline" icon={<IconCopy />} onClick={handleCopyShareLink}>
+                                Copy Share Link
+                            </Button>
+                        )}
                         <Button
                             type="primary"
                             status="warning"

@@ -5,6 +5,7 @@ import PrelimResultsPage from "@/pages/Tournaments/PrelimResults/PrelimResultsPa
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
 import EditTournamentRegistrationPage from "@/pages/Tournaments/RegistrationsList/EditRegistration/EditRegistration";
 import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/RegistrationsList";
+import ScoreSheetPage from "@/pages/Tournaments/ScoreSheet/ScoreSheetPage";
 import FinalScoringPage from "@/pages/Tournaments/Scoring/FinalScoringPage";
 import ScoringPage from "@/pages/Tournaments/Scoring/ScoringPage";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
@@ -35,6 +36,7 @@ const routes: AppRoute[] = [
         component: TournamentView,
     },
     {path: "/", component: Home},
+    {path: "/score-sheet/:tournamentId/:round", component: ScoreSheetPage},
     {path: "/athletes", component: Athletes},
     {path: "/athletes/:athleteId", component: AthleteProfilePage},
     {path: "/tournaments", component: Tournaments},
