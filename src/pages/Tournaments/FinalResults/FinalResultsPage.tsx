@@ -22,7 +22,7 @@ import {
 } from "@/utils/tournament/eventUtils";
 import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
-import {IconPrinter, IconUndo} from "@arco-design/web-react/icon";
+import {IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 
@@ -563,6 +563,7 @@ export default function FinalResultsPage() {
             }),
         [events],
     );
+    const canShareLinks = Boolean(user?.roles?.edit_tournament || user?.roles?.verify_record);
 
     useEffect(() => {
         if (!tournamentId) return;
@@ -869,6 +870,18 @@ export default function FinalResultsPage() {
         });
     };
 
+    const handleCopyShareLink = useCallback(async () => {
+        if (!tournamentId) return;
+        const shareUrl = `${window.location.origin}/score-sheet/${tournamentId}/final`;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            Message.success("Share link copied.");
+        } catch (error) {
+            console.error(error);
+            Message.error("Failed to copy share link.");
+        }
+    }, [tournamentId]);
+
     return (
         <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <Button
@@ -888,6 +901,11 @@ export default function FinalResultsPage() {
                         <Button type="primary" icon={<IconPrinter />} onClick={handlePrintCertificates} loading={loading}>
                             Print Certificates
                         </Button>
+                        {canShareLinks && (
+                            <Button type="outline" icon={<IconCopy />} onClick={handleCopyShareLink}>
+                                Copy Share Link
+                            </Button>
+                        )}
                         {user?.roles?.edit_tournament && tournament?.status !== "End" && (
                             <Button type="primary" status="success" onClick={handleEndCompetition} loading={loading}>
                                 End Competition

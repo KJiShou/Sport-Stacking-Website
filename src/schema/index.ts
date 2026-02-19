@@ -104,6 +104,13 @@ export type {
 } from "./PdfSchema";
 
 export type {AvatarUploaderProps, AllTimeStat, OnlineBest, RecordItem} from "./UserProfileSchema";
+export type {
+    ShareRound,
+    ShareResultRow,
+    ShareBracketSection,
+    ShareEventSection,
+    ShareScoreSheetPayload,
+} from "./ShareScoreSheetSchema";
 
 export type {
     AppRoute,

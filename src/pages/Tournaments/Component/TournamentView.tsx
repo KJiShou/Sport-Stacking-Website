@@ -49,6 +49,7 @@ import {
     IconCalendar,
     IconCheck,
     IconClose,
+    IconCopy,
     IconDelete,
     IconEdit,
     IconExclamationCircle,
@@ -196,6 +197,18 @@ export default function TournamentView() {
     const handleTimeClick = (videoUrl?: string | null, status?: string) => {
         if (videoUrl && (status === "verified" || isAdmin)) {
             window.open(videoUrl, "_blank", "noopener,noreferrer");
+        }
+    };
+
+    const handleCopyShareLink = async (round: "prelim" | "final") => {
+        if (!id) return;
+        const shareUrl = `${window.location.origin}/score-sheet/${id}/${round}`;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            Message.success(`${round === "prelim" ? "Preliminary" : "Final"} share link copied.`);
+        } catch (error) {
+            console.error(error);
+            Message.error("Failed to copy share link.");
         }
     };
 
@@ -670,6 +683,16 @@ export default function TournamentView() {
                             );
                         })()}
                     </div>
+                    {isAdmin && id && tournament && (tournament.status === "On Going" || tournament.status === "End") && (
+                        <div className="flex flex-wrap justify-center gap-2 mb-4">
+                            <Button type="outline" icon={<IconCopy />} onClick={() => handleCopyShareLink("prelim")}>
+                                Share Prelim Results
+                            </Button>
+                            <Button type="outline" icon={<IconCopy />} onClick={() => handleCopyShareLink("final")}>
+                                Share Final Results
+                            </Button>
+                        </div>
+                    )}
                     <Modal
                         title="Tournament Description"
                         visible={descriptionModalVisible}
