@@ -1026,14 +1026,6 @@ export default function RegisterTournamentPage() {
                                         );
                                     })}
                                 </Select>
-                                <div className="text-sm">
-                                    <strong>Total Registration Fee: RM{totalRegistrationFee}</strong>
-                                    {additionalEventFee > 0 && (
-                                        <span className="ml-2 text-gray-500">
-                                            (Base RM{baseRegistrationFee} + Additional RM{additionalEventFee})
-                                        </span>
-                                    )}
-                                </div>
                             </div>
                         </Form.Item>
 
@@ -1382,16 +1374,19 @@ export default function RegisterTournamentPage() {
                         {requiresPaymentProof && (
                             <Form.Item
                                 label={
-                                    <div>
-                                        Payment Proof
-                                        <Tooltip content="Please upload a picture of your payment proof.">
-                                            <IconExclamationCircle
-                                                style={{
-                                                    margin: "0 8px",
-                                                    color: "rgb(var(--arcoblue-6))",
-                                                }}
-                                            />
-                                        </Tooltip>
+                                    <div className="flex flex-col gap-1">
+                                        <div>
+                                            Payment Proof
+                                            <Tooltip content="Please upload a picture of your payment proof.">
+                                                <IconExclamationCircle
+                                                    style={{
+                                                        margin: "0 8px",
+                                                        color: "rgb(var(--arcoblue-6))",
+                                                    }}
+                                                />
+                                            </Tooltip>
+                                        </div>
+                                        <div className="text-2xl font-bold text-green-600">Total Payment: RM{totalRegistrationFee}</div>
                                     </div>
                                 }
                                 field="payment_proof"

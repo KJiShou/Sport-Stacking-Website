@@ -60,7 +60,7 @@ import {IconClose, IconPlus, IconUndo} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {nanoid} from "nanoid";
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 
@@ -139,6 +139,22 @@ const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): s
     });
 };
 
+const getAdditionalFeeForEvent = (event: TournamentEvent): number => {
+    if (event.additional_fee_enabled !== true) {
+        return 0;
+    }
+    const fee = typeof event.additional_fee === "number" ? event.additional_fee : 0;
+    return fee > 0 ? fee : 0;
+};
+
+const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds: string[]): number =>
+    events.reduce((total, event) => {
+        if (!matchesAnyEventKey(selectedEventIds, event)) {
+            return total;
+        }
+        return total + getAdditionalFeeForEvent(event);
+    }, 0);
+
 export default function EditTournamentRegistrationPage() {
     const {tournamentId, registrationId} = useParams();
     const {user} = useAuthContext();
@@ -164,6 +180,16 @@ export default function EditTournamentRegistrationPage() {
     const initialEventIdsRef = useRef<string[]>([]);
 
     const [recruitmentForm] = Form.useForm();
+    const baseRegistrationFee = useMemo(
+        () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee) ?? 0,
+        [tournament, user],
+    );
+    const additionalEventFee = useMemo(
+        () => calculateAdditionalEventFee(events, registration?.events_registered ?? []),
+        [events, registration?.events_registered],
+    );
+    const totalRegistrationFee = baseRegistrationFee + additionalEventFee;
+    const requiresPaymentProof = totalRegistrationFee > 0;
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
 
@@ -1070,7 +1096,24 @@ export default function EditTournamentRegistrationPage() {
                             </Form.Item>
                         )}
 
-                        <Form.Item label="Payment Proof" field={`payment_proof_url`}>
+                        <Form.Item
+                            label={
+                                <div className="flex flex-col gap-1">
+                                    <div>Payment Proof</div>
+                                    {requiresPaymentProof && (
+                                        <div className="text-2xl font-bold text-green-600">
+                                            Total Payment: RM{totalRegistrationFee}
+                                        </div>
+                                    )}
+                                    {requiresPaymentProof && additionalEventFee > 0 && (
+                                        <Typography.Text type="secondary">
+                                            Base RM{baseRegistrationFee} + Additional RM{additionalEventFee}
+                                        </Typography.Text>
+                                    )}
+                                </div>
+                            }
+                            field={`payment_proof_url`}
+                        >
                             <Upload
                                 listType="picture-card"
                                 imagePreview
