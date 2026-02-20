@@ -1,11 +1,12 @@
 import * as React from "react";
 
-import {Avatar, Button, Dropdown, Menu, Message, Modal, Spin} from "@arco-design/web-react";
-import {IconCalendar, IconExport, IconHome, IconUser, IconUserGroup} from "@arco-design/web-react/icon";
+import {Avatar, Badge, Button, Dropdown, Menu, Message, Modal, Spin} from "@arco-design/web-react";
+import {IconCalendar, IconExport, IconHome, IconNotification, IconUser, IconUserGroup} from "@arco-design/web-react/icon";
 import {useState} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
 import {logout} from "../../services/firebase/authService";
+import {subscribePendingVerificationCount} from "../../services/firebase/verificationRequestService";
 import LoginForm from "../common/Login";
 
 const AvatarWithLoading = ({src}: {src: string}) => {
@@ -43,6 +44,7 @@ const Navbar: React.FC = () => {
     const location = useLocation();
 
     const [visible, setVisible] = React.useState(false);
+    const [pendingVerificationCount, setPendingVerificationCount] = React.useState(0);
     const {firebaseUser, user} = useAuthContext();
     const isRegisterPage = location.pathname === "/register";
     const handleNavigation = (key: string): void => {
@@ -64,6 +66,16 @@ const Navbar: React.FC = () => {
             setVisible(false);
         }
     }, [firebaseUser]);
+
+    React.useEffect(() => {
+        if (!user?.global_id) {
+            setPendingVerificationCount(0);
+            return;
+        }
+
+        const unsubscribe = subscribePendingVerificationCount(user.global_id, setPendingVerificationCount);
+        return () => unsubscribe();
+    }, [user?.global_id]);
 
     return (
         <div className="fixed top-0 left-0 z-50 w-full h-24 flex items-center justify-between px-6 py-4 bg-[var(--color-bg-2)] border-b border-[var(--color-border)]">
@@ -133,6 +145,12 @@ const Navbar: React.FC = () => {
                             droplist={
                                 <Menu>
                                     {user && (
+                                        <Menu.Item key="verify-requests" onClick={() => navigate("/verify-requests")}>
+                                            <IconNotification className="mr-2" />
+                                            Verify Requests ({pendingVerificationCount})
+                                        </Menu.Item>
+                                    )}
+                                    {user && (
                                         <Menu.Item key="profile" onClick={() => navigate(`/users/${user.id}`)}>
                                             <IconUser className="mr-2" />
                                             Profile
@@ -158,16 +176,18 @@ const Navbar: React.FC = () => {
                             trigger="click"
                         >
                             <div className="cursor-pointer">
-                                {user?.image_url || firebaseUser?.photoURL ? (
-                                    <AvatarWithLoading
-                                        src={user?.image_url ?? firebaseUser?.photoURL ?? ""}
-                                        key={user?.image_url ?? firebaseUser?.photoURL ?? "avatar"}
-                                    />
-                                ) : (
-                                    <Avatar style={{backgroundColor: "#3370ff"}}>
-                                        <IconUser />
-                                    </Avatar>
-                                )}
+                                <Badge count={pendingVerificationCount} offset={[-2, 6]}>
+                                    {user?.image_url || firebaseUser?.photoURL ? (
+                                        <AvatarWithLoading
+                                            src={user?.image_url ?? firebaseUser?.photoURL ?? ""}
+                                            key={user?.image_url ?? firebaseUser?.photoURL ?? "avatar"}
+                                        />
+                                    ) : (
+                                        <Avatar style={{backgroundColor: "#3370ff"}}>
+                                            <IconUser />
+                                        </Avatar>
+                                    )}
+                                </Badge>
                             </div>
                         </Dropdown>
                     ) : (

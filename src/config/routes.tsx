@@ -9,6 +9,7 @@ import ScoreSheetPage from "@/pages/Tournaments/ScoreSheet/ScoreSheetPage";
 import FinalScoringPage from "@/pages/Tournaments/Scoring/FinalScoringPage";
 import ScoringPage from "@/pages/Tournaments/Scoring/ScoringPage";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
+import VerificationRequestsPage from "@/pages/Tournaments/VerifyMember/VerificationRequestsPage";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type {AppRoute} from "@/schema";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
@@ -80,6 +81,10 @@ const routes: AppRoute[] = [
     {
         path: "/verify",
         component: VerifyPage,
+    },
+    {
+        path: "/verify-requests",
+        component: VerificationRequestsPage,
     },
     {path: "/records", component: RecordsIndex},
     {path: "/register", component: RegisterPage},

@@ -2,9 +2,9 @@ import type {Team} from "@/schema";
 import {getUserByGlobalId} from "@/services/firebase/authService";
 import {db} from "@/services/firebase/config";
 import {fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {verifyTeamMembership} from "@/services/firebase/verificationService";
 import {getTeamEventLabels} from "@/utils/tournament/eventUtils";
 import {Result, Spin, Typography} from "@arco-design/web-react";
-import {getAuth} from "firebase/auth";
 import {doc, getDoc} from "firebase/firestore";
 import {useEffect, useState} from "react";
 
@@ -96,13 +96,6 @@ export default function VerifyPage() {
 
             void loadVerificationDetails(tournamentId, teamId);
 
-            const auth = getAuth();
-            const token = await auth.currentUser?.getIdToken();
-            if (!token) {
-                setStatus("unauthorized");
-                return;
-            }
-
             const user = await getUserByGlobalId(memberId);
 
             if (!user) {
@@ -119,31 +112,21 @@ export default function VerifyPage() {
             }
 
             try {
-                const res = await fetch("https://updateverification-jzbhzqtcdq-uc.a.run.app", {
-                    method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
+                await verifyTeamMembership({
                         tournamentId,
                         teamId,
                         memberId,
                         registrationId,
-                    }),
                 });
-
-                const data = await res.json();
-                if (res.ok) {
-                    setStatus("success");
-                } else {
-                    setErrorMessage(data.error || "Unknown error");
-                    setStatus("error");
-                }
+                setStatus("success");
             } catch (err) {
-                console.error(err);
+                console.error("Verification request failed:", err);
+                if (err instanceof Error && err.message.includes("signed in")) {
+                    setStatus("unauthorized");
+                    return;
+                }
                 setStatus("error");
-                setErrorMessage("Network or server error.");
+                setErrorMessage(err instanceof Error ? err.message : "Network or server error.");
             }
         };
 

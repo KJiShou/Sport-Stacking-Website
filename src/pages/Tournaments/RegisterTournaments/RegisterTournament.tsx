@@ -5,13 +5,23 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {ExpandedEvent, Registration, Tournament, TournamentEvent} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {addUserRegistrationRecord, getUserByGlobalId, getUserEmailByGlobalId} from "@/services/firebase/authService";
+import {
+    addUserRegistrationRecord,
+    getUserByGlobalId,
+    getUserEmailByGlobalId,
+    searchUsersByNameOrGlobalIdPrefix,
+} from "@/services/firebase/authService";
 import {createDoubleRecruitment} from "@/services/firebase/doubleRecruitmentService";
 import {createIndividualRecruitment} from "@/services/firebase/individualRecruitmentService";
 import {createRegistration, fetchRegistrations} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService";
-import {createTeam, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {
+    createTeam,
+    fetchOccupiedParticipantIdsByTournamentEvent,
+    fetchTournamentById,
+    fetchTournamentEvents,
+} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
@@ -42,7 +52,7 @@ import MDEditor from "@uiw/react-md-editor";
 import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import {Timestamp} from "firebase/firestore";
-import {type ReactNode, useEffect, useState} from "react";
+import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
 import remarkBreaks from "remark-breaks";
 dayjs.extend(isSameOrAfter);
@@ -53,6 +63,11 @@ type TeamEntry = {
     label: string;
     requiresTeam: boolean;
     event?: ExpandedEvent;
+};
+
+type MemberSearchOption = {
+    label: string;
+    value: string;
 };
 
 const isParentChildEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "parent & child";
@@ -67,6 +82,22 @@ const isNonScoringEvent = (event?: ExpandedEvent) => {
         normalized === "blindfolded cycle"
     );
 };
+
+const getAdditionalFeeForEvent = (event: ExpandedEvent): number => {
+    if (event.additional_fee_enabled !== true) {
+        return 0;
+    }
+    const fee = typeof event.additional_fee === "number" ? event.additional_fee : 0;
+    return fee > 0 ? fee : 0;
+};
+
+const calculateAdditionalEventFee = (events: ExpandedEvent[], selectedEventIds: string[]): number =>
+    events.reduce((total, event) => {
+        if (!matchesAnyEventKey(selectedEventIds, event)) {
+            return total;
+        }
+        return total + getAdditionalFeeForEvent(event);
+    }, 0);
 
 export default function RegisterTournamentPage() {
     const {tournamentId} = useParams();
@@ -88,10 +119,23 @@ export default function RegisterTournamentPage() {
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
     const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
-    const [price, setPrice] = useState<number | null>(null);
+    const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
     const [lookingForTeams, setLookingForTeams] = useState<string[]>([]); // Events user is looking for teams
     const [loginModalVisible, setLoginModalVisible] = useState(false);
-    const requiresPaymentProof = (price ?? 0) > 0;
+    const [occupiedIdsByEvent, setOccupiedIdsByEvent] = useState<Record<string, Set<string>>>({});
+    const [memberSearchLoadingByEvent, setMemberSearchLoadingByEvent] = useState<Record<string, boolean>>({});
+    const [memberSearchOptionsByEvent, setMemberSearchOptionsByEvent] = useState<Record<string, MemberSearchOption[]>>({});
+    const memberSearchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+    const baseRegistrationFee = useMemo(
+        () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee) ?? 0,
+        [tournament, user],
+    );
+    const additionalEventFee = useMemo(
+        () => calculateAdditionalEventFee(availableEvents, selectedEventIds),
+        [availableEvents, selectedEventIds],
+    );
+    const totalRegistrationFee = baseRegistrationFee + additionalEventFee;
+    const requiresPaymentProof = totalRegistrationFee > 0;
 
     useEffect(() => {
         if (!firebaseUser) {
@@ -116,6 +160,84 @@ export default function RegisterTournamentPage() {
                 requiresTeam: event ? isTeamEvent(event) : false,
             };
         });
+
+    const ensureOccupiedIdsForEvent = async (eventId: string): Promise<Set<string>> => {
+        const normalizedEventId = eventId.trim();
+        if (!normalizedEventId || !tournamentId) {
+            return new Set<string>();
+        }
+
+        const cached = occupiedIdsByEvent[normalizedEventId];
+        if (cached) {
+            return cached;
+        }
+
+        const occupiedIds = await fetchOccupiedParticipantIdsByTournamentEvent(tournamentId, normalizedEventId);
+        setOccupiedIdsByEvent((prev) => ({...prev, [normalizedEventId]: occupiedIds}));
+        return occupiedIds;
+    };
+
+    const handleTeamMemberSearch = (eventId: string, keyword: string, selectedMemberIds: string[]) => {
+        const normalizedEventId = eventId.trim();
+        if (!normalizedEventId) {
+            return;
+        }
+
+        const existingTimer = memberSearchDebounceRef.current[normalizedEventId];
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+        }
+
+        const trimmedKeyword = keyword.trim();
+        if (trimmedKeyword.length < 2) {
+            setMemberSearchOptionsByEvent((prev) => ({...prev, [normalizedEventId]: []}));
+            setMemberSearchLoadingByEvent((prev) => ({...prev, [normalizedEventId]: false}));
+            return;
+        }
+
+        memberSearchDebounceRef.current[normalizedEventId] = setTimeout(async () => {
+            setMemberSearchLoadingByEvent((prev) => ({...prev, [normalizedEventId]: true}));
+            try {
+                const [occupiedIds, users] = await Promise.all([
+                    ensureOccupiedIdsForEvent(normalizedEventId),
+                    searchUsersByNameOrGlobalIdPrefix(trimmedKeyword, 10),
+                ]);
+
+                const selectedIds = new Set(selectedMemberIds.map((id) => id.trim()).filter(Boolean));
+                const currentUserId = (user?.global_id ?? "").trim();
+
+                const options = users
+                    .map((candidate) => {
+                        const globalId = (candidate.global_id ?? "").trim();
+                        if (!globalId) {
+                            return null;
+                        }
+                        if (currentUserId && globalId === currentUserId) {
+                            return null;
+                        }
+                        if (occupiedIds.has(globalId)) {
+                            return null;
+                        }
+                        if (selectedIds.has(globalId)) {
+                            return null;
+                        }
+
+                        const candidateName = candidate.name?.trim() || "-";
+                        return {
+                            value: globalId,
+                            label: `${globalId} - ${candidateName}`,
+                        } as MemberSearchOption;
+                    })
+                    .filter((option): option is MemberSearchOption => Boolean(option));
+
+                setMemberSearchOptionsByEvent((prev) => ({...prev, [normalizedEventId]: options.slice(0, 10)}));
+            } catch (error) {
+                console.error("Failed to search team members:", error);
+            } finally {
+                setMemberSearchLoadingByEvent((prev) => ({...prev, [normalizedEventId]: false}));
+            }
+        }, 350);
+    };
 
     useEffect(() => {
         if (haveTeam.length === 0) return;
@@ -147,8 +269,32 @@ export default function RegisterTournamentPage() {
         const nextEvents = Array.from(new Set([...currentEvents, ...requiredKeys]));
         if (nextEvents.length !== currentEvents.length) {
             form.setFieldValue("events_registered", nextEvents);
+            setSelectedEventIds(nextEvents);
         }
     }, [form, requiredKeys]);
+
+    useEffect(() => {
+        const teamEventIds = haveTeam.filter((entry) => entry.requiresTeam).map((entry) => entry.eventId);
+        if (teamEventIds.length === 0) {
+            return;
+        }
+
+        void Promise.all(
+            teamEventIds.map(async (eventId) => {
+                if (!occupiedIdsByEvent[eventId]) {
+                    await ensureOccupiedIdsForEvent(eventId);
+                }
+            }),
+        );
+    }, [haveTeam]);
+
+    useEffect(() => {
+        return () => {
+            for (const timer of Object.values(memberSearchDebounceRef.current)) {
+                clearTimeout(timer);
+            }
+        };
+    }, []);
 
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
@@ -220,6 +366,25 @@ export default function RegisterTournamentPage() {
                     Message.error(`${eventLabel}: you must be either leader or one of the members.`);
                     setLoading(false);
                     throw new Error(`${eventLabel}: you must be either leader or one of the members.`);
+                }
+
+                if (!isLookingForTeammates) {
+                    const participantIds = [leaderId, ...memberIds].filter((id): id is string => Boolean(id));
+                    if (participantIds.length > 0) {
+                        const occupiedIds = await fetchOccupiedParticipantIdsByTournamentEvent(tournamentId, teamId);
+                        const conflictedParticipantId = participantIds.find((participantId) =>
+                            occupiedIds.has(participantId),
+                        );
+                        if (conflictedParticipantId) {
+                            Message.error(
+                                `${eventLabel}: participant ${conflictedParticipantId} is already in this event.`,
+                            );
+                            setLoading(false);
+                            throw new Error(
+                                `${eventLabel}: participant ${conflictedParticipantId} is already in this event.`,
+                            );
+                        }
+                    }
                 }
 
                 // Only check member count if NOT looking for members/teammates
@@ -567,7 +732,7 @@ export default function RegisterTournamentPage() {
 
                 // 找出 required keys (individual events) - now using the grouped format
                 const requiredEventIds = filteredEvents
-                    .filter((event) => getEventLabel(event).toLowerCase().includes("individual"))
+                    .filter((event) => event.type === "Individual")
                     .map((event) => getEventKey(event));
 
                 // 设置所有可用事件，而不是排除required的
@@ -576,12 +741,10 @@ export default function RegisterTournamentPage() {
 
                 if (comp) {
                     setTournament(comp);
-                    const registrationPrice = user?.memberId ? comp.member_registration_fee : comp.registration_fee;
-                    setPrice(registrationPrice ?? 0);
                     setTournamentData([
                         {
-                            label: "Registration Price",
-                            value: <div>RM{registrationPrice}</div>,
+                            label: "Base Registration Price",
+                            value: <div>RM{user?.memberId ? comp.member_registration_fee : comp.registration_fee}</div>,
                         },
                         {
                             label: "Location",
@@ -674,6 +837,7 @@ export default function RegisterTournamentPage() {
 
                 // 初始化团队状态
                 setHaveTeam(buildTeamEntries(requiredEventIds, availableGroupedEvents));
+                setSelectedEventIds(requiredEventIds);
 
                 setRequiredKeys(requiredEventIds); // 存起来供后续使用
             } catch (e) {
@@ -836,6 +1000,7 @@ export default function RegisterTournamentPage() {
 
                                         // 更新团队事件的状态
                                         setHaveTeam(buildTeamEntries(finalValue));
+                                        setSelectedEventIds(finalValue);
 
                                         // 清理已取消选择的"寻找队伍"记录
                                         setLookingForTeams((prev) => prev.filter((eventId) => finalValue.includes(eventId)));
@@ -861,6 +1026,14 @@ export default function RegisterTournamentPage() {
                                         );
                                     })}
                                 </Select>
+                                <div className="text-sm">
+                                    <strong>Total Registration Fee: RM{totalRegistrationFee}</strong>
+                                    {additionalEventFee > 0 && (
+                                        <span className="ml-2 text-gray-500">
+                                            (Base RM{baseRegistrationFee} + Additional RM{additionalEventFee})
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         </Form.Item>
 
@@ -1057,6 +1230,11 @@ export default function RegisterTournamentPage() {
                                                             true;
                                                         const shouldDisableMembers =
                                                             isLookingTopLevel || (isDoubleEvent && isLookingForMembers);
+                                                        const selectedMembers =
+                                                            (form.getFieldValue(`teams.${eventId}.member`) as string[] | undefined) ??
+                                                            [];
+                                                        const memberOptions = memberSearchOptionsByEvent[eventId] ?? [];
+                                                        const isSearchingMembers = memberSearchLoadingByEvent[eventId] ?? false;
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${eventId}.member`}
@@ -1086,12 +1264,6 @@ export default function RegisterTournamentPage() {
                                                             >
                                                                 <Select
                                                                     mode="multiple"
-                                                                    allowCreate={{
-                                                                        formatter: (inputValue: string, creating: boolean) => ({
-                                                                            value: inputValue,
-                                                                            label: `${creating ? "Enter to create: " : ""}${inputValue}`,
-                                                                        }),
-                                                                    }}
                                                                     placeholder={
                                                                         isParentChild
                                                                             ? "Input Parent Global ID"
@@ -1099,8 +1271,23 @@ export default function RegisterTournamentPage() {
                                                                     }
                                                                     allowClear
                                                                     disabled={shouldDisableMembers}
+                                                                    showSearch
+                                                                    filterOption={false}
+                                                                    loading={isSearchingMembers}
+                                                                    onFocus={() => {
+                                                                        void ensureOccupiedIdsForEvent(eventId);
+                                                                    }}
+                                                                    onSearch={(inputValue) => {
+                                                                        handleTeamMemberSearch(eventId, inputValue, selectedMembers);
+                                                                    }}
                                                                     style={{width: 345, flex: 1}}
-                                                                />
+                                                                >
+                                                                    {memberOptions.map((option) => (
+                                                                        <Option key={`${eventId}-${option.value}`} value={option.value}>
+                                                                            {option.label}
+                                                                        </Option>
+                                                                    ))}
+                                                                </Select>
                                                             </Form.Item>
                                                         );
                                                     }}
@@ -1144,7 +1331,7 @@ export default function RegisterTournamentPage() {
                                 </Title>
                                 <Paragraph type="secondary" className="mb-4 text-base">
                                     Please use one of the following payment methods to complete your registration fee of{" "}
-                                    <strong>RM{price}</strong>
+                                    <strong>RM{totalRegistrationFee}</strong>
                                 </Paragraph>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

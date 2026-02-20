@@ -18,6 +18,7 @@ import {
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import {EventSchema, TournamentSchema} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
+import {teamMatchesEventKey} from "../../utils/tournament/eventUtils";
 import {removeUserRegistrationRecordsByTournament, removeUserTournamentHistoryByTournament} from "./authService";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByTournament} from "./doubleRecruitmentService";
@@ -585,6 +586,57 @@ export async function fetchTeamsByTournament(tournamentId: string): Promise<Team
         const data = docSnap.data() as Team;
         return {...data, id: docSnap.id};
     });
+}
+
+export async function fetchOccupiedParticipantIdsByTournamentEvent(
+    tournamentId: string,
+    eventId: string,
+): Promise<Set<string>> {
+    const occupiedIds = new Set<string>();
+    const normalizedEventId = eventId.trim();
+    if (!normalizedEventId) {
+        return occupiedIds;
+    }
+
+    const teamsCollectionRef = collection(db, "teams");
+    const scopedQuery = query(
+        teamsCollectionRef,
+        where("tournament_id", "==", tournamentId),
+        where("event_id", "==", normalizedEventId),
+    );
+    const scopedSnapshot = await getDocs(scopedQuery);
+
+    const addTeamMembersToSet = (team: Team) => {
+        const leaderId = stripTeamLeaderPrefix(team.leader_id ?? "").trim();
+        if (leaderId) {
+            occupiedIds.add(leaderId);
+        }
+        for (const member of team.members ?? []) {
+            const memberId = (member.global_id ?? "").trim();
+            if (memberId) {
+                occupiedIds.add(memberId);
+            }
+        }
+    };
+
+    for (const docSnap of scopedSnapshot.docs) {
+        addTeamMembersToSet(docSnap.data() as Team);
+    }
+
+    if (occupiedIds.size > 0) {
+        return occupiedIds;
+    }
+
+    const fallbackSnapshot = await getDocs(query(teamsCollectionRef, where("tournament_id", "==", tournamentId)));
+    for (const docSnap of fallbackSnapshot.docs) {
+        const team = docSnap.data() as Team;
+        if (!teamMatchesEventKey(team, normalizedEventId, [])) {
+            continue;
+        }
+        addTeamMembersToSet(team);
+    }
+
+    return occupiedIds;
 }
 
 export async function fetchTeamsByRegistrationId(registrationId: string): Promise<Team[]> {

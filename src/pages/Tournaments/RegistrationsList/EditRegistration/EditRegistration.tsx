@@ -5,7 +5,7 @@ import type {DoubleRecruitment, Registration, Tournament, TournamentEvent} from 
 import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
 import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
+import {fetchUsersByGlobalIds, getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {
     createDoubleRecruitment,
     deleteDoubleRecruitment,
@@ -24,6 +24,10 @@ import {
     deleteTeamRecruitment,
     getTeamRecruitmentsByLeader,
 } from "@/services/firebase/teamRecruitmentService";
+import {
+    deleteVerificationRequestByTournamentTeamMember,
+    deleteVerificationRequestsByTeamId,
+} from "@/services/firebase/verificationRequestService";
 import {
     createTeam,
     deleteTeam,
@@ -153,6 +157,7 @@ export default function EditTournamentRegistrationPage() {
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | File | null>(null);
     const [recruitmentModalVisible, setRecruitmentModalVisible] = useState(false);
     const [recruitmentTeam, setRecruitmentTeam] = useState<LegacyTeam | null>(null);
+    const [participantNameMap, setParticipantNameMap] = useState<Record<string, string>>({});
 
     const [isMounted, setIsMounted] = useState<boolean>(false);
     const mountedRef = useRef(false);
@@ -218,6 +223,17 @@ export default function EditTournamentRegistrationPage() {
             const removedEventIds = (initialEventIdsRef.current ?? []).filter(
                 (eventId) => !registrationData.events_registered.includes(eventId),
             );
+            const removedMembersFromPersistedTeams = initialTeams.flatMap((initialTeam) => {
+                const currentTeam = teams.find((team) => team.id === initialTeam.id);
+                if (!currentTeam) {
+                    return [];
+                }
+
+                const initialMemberIds = new Set((initialTeam.members ?? []).map((member) => member.global_id).filter(Boolean));
+                const currentMemberIds = new Set((currentTeam.members ?? []).map((member) => member.global_id).filter(Boolean));
+                const removedMembers = Array.from(initialMemberIds).filter((memberId) => !currentMemberIds.has(memberId));
+                return removedMembers.map((memberId) => ({teamId: initialTeam.id, memberId}));
+            });
 
             if (removedTeams.length > 0 && registrationIds.length > 0) {
                 await Promise.all(
@@ -225,6 +241,11 @@ export default function EditTournamentRegistrationPage() {
                         const removedLeaderId = stripTeamLeaderPrefix(removedTeam.leader_id);
                         if (registrationIds.includes(removedLeaderId)) {
                             await deleteTeam(removedTeam.id);
+                            try {
+                                await deleteVerificationRequestsByTeamId(removedTeam.id);
+                            } catch (error) {
+                                console.error("Failed to delete verification requests for team:", error);
+                            }
                             try {
                                 const teamRecruitment = teamRecruitments.find(
                                     (recruitment) => recruitment.team_id === removedTeam.id,
@@ -244,6 +265,29 @@ export default function EditTournamentRegistrationPage() {
 
                         if (memberIdToRemove) {
                             await removeMemberFromTeam(removedTeam.id, memberIdToRemove);
+                            if (tournamentId) {
+                                try {
+                                    await deleteVerificationRequestByTournamentTeamMember(
+                                        tournamentId,
+                                        removedTeam.id,
+                                        memberIdToRemove,
+                                    );
+                                } catch (error) {
+                                    console.error("Failed to delete verification request for removed member:", error);
+                                }
+                            }
+                        }
+                    }),
+                );
+            }
+
+            if (removedMembersFromPersistedTeams.length > 0 && tournamentId) {
+                await Promise.all(
+                    removedMembersFromPersistedTeams.map(async ({teamId, memberId}) => {
+                        try {
+                            await deleteVerificationRequestByTournamentTeamMember(tournamentId, teamId, memberId);
+                        } catch (error) {
+                            console.error("Failed to delete verification request for changed members:", error);
                         }
                     }),
                 );
@@ -581,6 +625,15 @@ export default function EditTournamentRegistrationPage() {
         return event ? getEventLabel(event) : eventId;
     };
 
+    const getParticipantDisplay = (globalId?: string): string => {
+        const safeId = (globalId ?? "").trim();
+        if (!safeId) {
+            return "-";
+        }
+        const participantName = participantNameMap[safeId]?.trim() || "-";
+        return `${safeId} - ${participantName}`;
+    };
+
     useEffect(() => {
         if (!registration?.user_name || teams.length === 0) return;
         const updatedTeams = teams.map((team) => {
@@ -598,6 +651,39 @@ export default function EditTournamentRegistrationPage() {
             setTeams(updatedTeams);
         }
     }, [events, registration?.user_name, teams]);
+
+    useEffect(() => {
+        const loadParticipantNames = async () => {
+            const ids = [
+                registration?.user_global_id,
+                ...teams.map((team) => stripTeamLeaderPrefix(team.leader_id)),
+                ...teams.flatMap((team) => team.members.map((member) => member.global_id)),
+            ]
+                .map((id) => (id ?? "").trim())
+                .filter((id): id is string => Boolean(id));
+
+            const uniqueIds = Array.from(new Set(ids));
+            if (uniqueIds.length === 0) {
+                return;
+            }
+
+            try {
+                const usersByGlobalId = await fetchUsersByGlobalIds(uniqueIds);
+                const nextNameMap = uniqueIds.reduce(
+                    (acc, id) => {
+                        acc[id] = usersByGlobalId[id]?.name?.trim() || "-";
+                        return acc;
+                    },
+                    {} as Record<string, string>,
+                );
+                setParticipantNameMap(nextNameMap);
+            } catch (error) {
+                console.error("Failed to load participant names:", error);
+            }
+        };
+
+        void loadParticipantNames();
+    }, [registration?.user_global_id, teams]);
 
     const extraEventIds =
         (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
@@ -833,7 +919,7 @@ export default function EditTournamentRegistrationPage() {
                                                 />
                                             </Form.Item>
                                             <Form.Item label={teamLeaderLabel}>
-                                                <Input value={team.leader_id} disabled={!edit} />
+                                                <Input value={getParticipantDisplay(stripTeamLeaderPrefix(team.leader_id))} disabled />
                                             </Form.Item>
                                             <Form.Item label={teamMemberLabel}>
                                                 <div className="flex flex-col gap-2">
@@ -865,7 +951,7 @@ export default function EditTournamentRegistrationPage() {
                                                                     }
                                                                 }}
                                                             >
-                                                                {m.global_id || "N/A"}
+                                                                {getParticipantDisplay(m.global_id)}
                                                             </Tag>
                                                             <Button
                                                                 icon={<IconClose />}

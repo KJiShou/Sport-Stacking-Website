@@ -28,6 +28,7 @@ import {
     setDoc,
     startAfter,
     updateDoc,
+    writeBatch,
     where,
 } from "firebase/firestore";
 import {httpsCallable} from "firebase/functions";
@@ -103,6 +104,10 @@ function extractActiveRoles(roles: FirestoreUser["roles"] | null | undefined): P
     return Object.keys(activeRoles).length > 0 ? activeRoles : null;
 }
 
+export function normalizeNameSearch(value: string): string {
+    return value.trim().toLowerCase();
+}
+
 // Login user
 export const login = (email: string, password: string) => signInWithEmailAndPassword(auth, email, password);
 
@@ -163,6 +168,7 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
         id: uid,
         email,
         global_id,
+        name_search: normalizeNameSearch(rest.name ?? ""),
         IC,
         registration_records: [],
         created_at: Timestamp.now(),
@@ -216,6 +222,7 @@ export const registerWithGoogle = async (
     const userDoc = {
         id: firebaseUser.uid,
         global_id,
+        name_search: normalizeNameSearch(extraData.name ?? ""),
         email: firebaseUser.email,
         image_url: imageUrl,
         registration_records: [],
@@ -235,6 +242,7 @@ export async function fetchAllUsers(): Promise<FirestoreUser[]> {
         return {
             id: docSnap.id,
             global_id: data.global_id,
+            name_search: data.name_search ?? null,
             memberId: data.memberId ?? null,
             name: data.name,
             IC: data.IC,
@@ -270,6 +278,7 @@ export async function fetchUsersByIds(userIds: string[]): Promise<Record<string,
             const user = {
                 id: docSnap.id,
                 global_id: data.global_id ?? null,
+                name_search: data.name_search ?? null,
                 memberId: data.memberId ?? null,
                 name: data.name,
                 IC: data.IC,
@@ -310,6 +319,7 @@ export async function fetchUsersByGlobalIds(globalIds: string[]): Promise<Record
             const user = {
                 id: docSnap.id,
                 global_id: data.global_id ?? null,
+                name_search: data.name_search ?? null,
                 memberId: data.memberId ?? null,
                 name: data.name,
                 IC: data.IC,
@@ -354,6 +364,7 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
     return {
         id: docSnap.id,
         global_id: data.global_id ?? null,
+        name_search: data.name_search ?? null,
         memberId: data.memberId ?? null,
         name: data.name,
         IC: data.IC,
@@ -368,6 +379,102 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
         best_times: data.best_times,
         registration_records: data.registration_records ?? [],
     };
+}
+
+export async function searchUsersByNameOrGlobalIdPrefix(keyword: string, limitCount = 10): Promise<FirestoreUser[]> {
+    const trimmedKeyword = keyword.trim();
+    if (!trimmedKeyword) {
+        return [];
+    }
+
+    const normalizedKeyword = normalizeNameSearch(trimmedKeyword);
+    const maxResults = Math.max(1, Math.min(limitCount, 20));
+    const usersRef = collection(db, "users");
+
+    const [globalIdSnapshot, nameSnapshot] = await Promise.all([
+        getDocs(
+            query(
+                usersRef,
+                where("global_id", ">=", trimmedKeyword),
+                where("global_id", "<=", `${trimmedKeyword}\uf8ff`),
+                limit(maxResults),
+            ),
+        ),
+        getDocs(
+            query(
+                usersRef,
+                where("name_search", ">=", normalizedKeyword),
+                where("name_search", "<=", `${normalizedKeyword}\uf8ff`),
+                limit(maxResults),
+            ),
+        ),
+    ]);
+
+    const mergedUsers = new Map<string, FirestoreUser>();
+    for (const snapshot of [globalIdSnapshot, nameSnapshot]) {
+        for (const docSnap of snapshot.docs) {
+            const data = docSnap.data();
+            const user = {
+                id: docSnap.id,
+                global_id: data.global_id ?? null,
+                name_search: data.name_search ?? null,
+                memberId: data.memberId ?? null,
+                name: data.name,
+                IC: data.IC,
+                email: data.email,
+                birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
+                gender: data.gender,
+                country: data.country,
+                image_url: data.image_url,
+                roles: data.roles ?? null,
+                school: data.school ?? null,
+                phone_number: data.phone_number ?? null,
+                registration_records: data.registration_records ?? [],
+                best_times: data.best_times ?? {},
+            } as FirestoreUser;
+
+            const uniqueKey = user.global_id ?? user.id;
+            mergedUsers.set(uniqueKey, user);
+        }
+    }
+
+    return Array.from(mergedUsers.values()).slice(0, maxResults);
+}
+
+export async function backfillUserNameSearchField(): Promise<number> {
+    const usersSnapshot = await getDocs(collection(db, "users"));
+    let updatedCount = 0;
+    let batch = writeBatch(db);
+    let batchOperations = 0;
+
+    for (const docSnap of usersSnapshot.docs) {
+        const userData = docSnap.data() as {name?: unknown; name_search?: unknown};
+        if (typeof userData.name !== "string") {
+            continue;
+        }
+
+        const normalizedName = normalizeNameSearch(userData.name);
+        const currentNameSearch = typeof userData.name_search === "string" ? userData.name_search : "";
+        if (currentNameSearch === normalizedName) {
+            continue;
+        }
+
+        batch.update(docSnap.ref, {name_search: normalizedName, updated_at: Timestamp.now()});
+        updatedCount += 1;
+        batchOperations += 1;
+
+        if (batchOperations === 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            batchOperations = 0;
+        }
+    }
+
+    if (batchOperations > 0) {
+        await batch.commit();
+    }
+
+    return updatedCount;
 }
 
 export async function getUserByGlobalId(globalId: string) {
@@ -434,8 +541,9 @@ export async function updateUserProfile(id: string, data: Partial<Omit<Firestore
     const validated = UpdateSchema.parse(data);
 
     // 2. 附加 updated_at 字段
-    const payload = {
+    const payload: Partial<FirestoreUser> & {updated_at: Timestamp} = {
         ...validated,
+        ...(typeof validated.name === "string" ? {name_search: normalizeNameSearch(validated.name)} : {}),
         updated_at: Timestamp.now(),
     };
 
