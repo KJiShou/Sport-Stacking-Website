@@ -342,13 +342,6 @@ export default function ViewTournamentRegistrationPage() {
                                 ))}
                             </Select>
                         </Form.Item>
-                        <Form.Item label="Total Registration Fee">
-                            <Typography.Text>
-                                RM{registrationPrice}
-                                {additionalEventFee > 0 ? ` (Base RM${baseRegistrationFee} + Additional RM${additionalEventFee})` : ""}
-                            </Typography.Text>
-                        </Form.Item>
-
                         <Form.Item shouldUpdate noStyle>
                             <div className={`flex flex-row w-full gap-10`}>
                                 {teams.map((team) => {
@@ -427,7 +420,21 @@ export default function ViewTournamentRegistrationPage() {
                         )}
 
                         {requiresPaymentProof ? (
-                            <Form.Item label="Payment Proof">
+                            <Form.Item
+                                label={
+                                    <div className="flex flex-col gap-1">
+                                        <div>Payment Proof</div>
+                                        <div className="text-2xl font-bold text-green-600">
+                                            Total Payment: RM{registrationPrice}
+                                        </div>
+                                        {additionalEventFee > 0 && (
+                                            <Typography.Text type="secondary">
+                                                Base RM{baseRegistrationFee} + Additional RM{additionalEventFee}
+                                            </Typography.Text>
+                                        )}
+                                    </div>
+                                }
+                            >
                                 {paymentProofUrl ? (
                                     <Image width={200} src={paymentProofUrl} alt="Payment Proof" />
                                 ) : (
