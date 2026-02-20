@@ -107,11 +107,7 @@ const formatTime = (time: number): string => {
 const formatDate = (dateString: string): string => {
     if (!dateString) return "N/A";
     const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-    });
+    return date.toLocaleDateString("en-GB");
 };
 
 const INDIVIDUAL_AGE_GROUPS: AgeGroup[] = [
@@ -749,6 +745,7 @@ const RecordsIndex: React.FC = () => {
                             >
                                 <Text style={{fontSize: "14px", color: "#666"}}>Date:</Text>
                                 <RangePicker
+                                    format="DD/MM/YYYY"
                                     value={dateRange as [Date, Date]}
                                     onChange={(dates) => {
                                         if (!dates) {

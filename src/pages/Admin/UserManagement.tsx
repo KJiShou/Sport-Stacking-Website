@@ -10,10 +10,10 @@ const {Title, Paragraph, Text} = Typography;
 
 const formatBirthdate = (birthdate: FirestoreUser["birthdate"]): string => {
     if (birthdate instanceof Date) {
-        return birthdate.toLocaleDateString();
+        return birthdate.toLocaleDateString("en-GB");
     }
     if (birthdate && typeof birthdate === "object" && "toDate" in birthdate && typeof birthdate.toDate === "function") {
-        return birthdate.toDate().toLocaleDateString();
+        return birthdate.toDate().toLocaleDateString("en-GB");
     }
     return "-";
 };

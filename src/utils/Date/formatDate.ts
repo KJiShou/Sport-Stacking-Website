@@ -4,16 +4,16 @@ import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 export const formatDate = (date: Timestamp | Date | Dayjs | string | null | undefined): string => {
     if (!date) return "-";
     if (typeof (date as Timestamp).toDate === "function") {
-        return (date as Timestamp).toDate().toLocaleString();
+        return dayjs((date as Timestamp).toDate()).format("DD/MM/YYYY HH:mm");
     }
     if (dayjs.isDayjs(date)) {
-        return date.format("YYYY-MM-DD HH:mm");
+        return date.format("DD/MM/YYYY HH:mm");
     }
     if (date instanceof Date) {
-        return date.toLocaleString();
+        return dayjs(date).format("DD/MM/YYYY HH:mm");
     }
     if (typeof date === "string") {
-        return new Date(date).toLocaleString();
+        return dayjs(date).format("DD/MM/YYYY HH:mm");
     }
     return "-";
 };

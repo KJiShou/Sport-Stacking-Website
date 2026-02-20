@@ -702,7 +702,7 @@ export default function FinalScoringPage() {
             if (
                 isIndividual &&
                 selectedParticipant &&
-                currentEvent.type === "Individual" &&
+                (currentEvent.type === "Individual" || currentEvent.type === "Open Age Individual") &&
                 (["3-3-3", "3-6-3", "Cycle"] as const).every((c) => new Set(currentEvent.codes ?? []).has(c))
             ) {
                 // Ensure we have best times for all three codes from modal, otherwise try to derive from existing records
@@ -711,7 +711,7 @@ export default function FinalScoringPage() {
                     if (bestTimes[c] == null) {
                         const existing = records.find(
                             (r) =>
-                                r.event === "Individual" &&
+                                r.event === currentEvent.type &&
                                 r.code === c &&
                                 (r as TournamentRecord).participant_id === selectedParticipant.user_id,
                         ) as TournamentRecord | undefined;

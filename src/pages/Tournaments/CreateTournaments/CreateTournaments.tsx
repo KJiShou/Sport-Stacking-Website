@@ -176,7 +176,8 @@ export default function CreateTournamentPage() {
 
             for (let i = 0; i < rawEvents.length; i++) {
                 const rawEvent = rawEvents[i];
-                const {age_brackets, id, type, codes, teamSize, gender, max_participants} = rawEvent;
+                const {age_brackets, id, type, codes, teamSize, gender, max_participants, additional_fee_enabled, additional_fee} =
+                    rawEvent;
 
                 if (!isTournamentEventType(type)) {
                     invalidEvents.push(`Event ${i + 1}: Invalid event type "${type}"`);
@@ -223,6 +224,10 @@ export default function CreateTournamentPage() {
                 }
                 if (typeof max_participants === "number") {
                     sanitizedEvent.max_participants = max_participants;
+                }
+                sanitizedEvent.additional_fee_enabled = additional_fee_enabled === true;
+                if (additional_fee_enabled === true && typeof additional_fee === "number" && additional_fee >= 0) {
+                    sanitizedEvent.additional_fee = additional_fee;
                 }
 
                 sanitizedEvents.push(sanitizedEvent);
@@ -348,6 +353,7 @@ export default function CreateTournamentPage() {
                         rules={[{required: true, message: "Please select date range"}]}
                     >
                         <RangePicker
+                            format="DD/MM/YYYY HH:mm"
                             showTime={{
                                 defaultValue: ["08:00", "18:00"],
                                 format: "HH:mm",
@@ -409,6 +415,7 @@ export default function CreateTournamentPage() {
                         rules={[{required: true, message: "Please input registration date"}]}
                     >
                         <RangePicker
+                            format="DD/MM/YYYY HH:mm"
                             showTime={{
                                 defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                 format: "HH:mm",
