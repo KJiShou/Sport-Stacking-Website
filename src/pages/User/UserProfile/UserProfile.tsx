@@ -127,7 +127,7 @@ export default function RegisterPage() {
         {
             label: "Birthdate",
             value: user?.birthdate
-                ? dayjs(user.birthdate instanceof Timestamp ? user.birthdate.toDate() : user.birthdate).format("YYYY-MM-DD")
+                ? dayjs(user.birthdate instanceof Timestamp ? user.birthdate.toDate() : user.birthdate).format("DD/MM/YYYY")
                 : "-",
             span: 2,
         },
@@ -182,7 +182,7 @@ export default function RegisterPage() {
                         label: "Birthdate",
                         value: data?.birthdate
                             ? dayjs(data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate).format(
-                                  "YYYY-MM-DD",
+                                  "DD/MM/YYYY",
                               )
                             : "-",
                         span: 2,
@@ -331,6 +331,7 @@ export default function RegisterPage() {
                                                 rules={[{required: true, message: "Select your birthdate"}]}
                                             >
                                                 <DatePicker
+                                                    format="DD/MM/YYYY"
                                                     style={{width: "100%"}}
                                                     disabledDate={(current) => current.isAfter(dayjs())}
                                                 />
@@ -610,7 +611,7 @@ export default function RegisterPage() {
                                                                       dataIndex: "updatedAt",
                                                                       width: 150,
                                                                       render: (date: Date | null) =>
-                                                                          date ? dayjs(date).format("YYYY-MM-DD") : "—",
+                                                                          date ? dayjs(date).format("DD/MM/YYYY") : "—",
                                                                   },
                                                               ]),
                                                     ]}
@@ -663,7 +664,7 @@ export default function RegisterPage() {
                                                                 title: "Date",
                                                                 dataIndex: "registrationDate",
                                                                 width: 150,
-                                                                render: (date) => (date ? dayjs(date).format("YYYY-MM-DD") : "—"),
+                                                                render: (date) => (date ? dayjs(date).format("DD/MM/YYYY") : "—"),
                                                             },
                                                             {
                                                                 title: "Prelim Rank",

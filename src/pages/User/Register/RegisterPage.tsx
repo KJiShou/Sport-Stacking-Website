@@ -382,7 +382,11 @@ const RegisterPage = () => {
                             label="Participant Birthdate"
                             rules={[{required: true, message: "Select your birthdate"}]}
                         >
-                            <DatePicker style={{width: "100%"}} disabledDate={(current) => current.isAfter(dayjs())} />
+                            <DatePicker
+                                format="DD/MM/YYYY"
+                                style={{width: "100%"}}
+                                disabledDate={(current) => current.isAfter(dayjs())}
+                            />
                         </Form.Item>
 
                         <Form.Item field="gender" label="Participant Gender" rules={[{required: true, message: "Select gender"}]}>

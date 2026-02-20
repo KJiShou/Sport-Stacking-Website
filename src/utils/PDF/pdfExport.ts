@@ -137,7 +137,7 @@ const addPDFFooter = (doc: jsPDF): void => {
         doc.setPage(i);
         doc.setFontSize(8);
         doc.text(
-            `Generated on ${new Date().toLocaleString()} - Page ${i} of ${pageCount}`,
+            `Generated on ${new Date().toLocaleString("en-GB")} - Page ${i} of ${pageCount}`,
             14,
             doc.internal.pageSize.height - 10,
         );

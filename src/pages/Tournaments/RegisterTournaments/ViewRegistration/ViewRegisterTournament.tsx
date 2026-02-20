@@ -4,6 +4,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {DoubleRecruitment, TeamRecruitment} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
+import {fetchUsersByGlobalIds} from "@/services/firebase/authService";
 import {getDoubleRecruitmentsByParticipant} from "@/services/firebase/doubleRecruitmentService";
 import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
 import {getTeamRecruitmentsByLeader} from "@/services/firebase/teamRecruitmentService";
@@ -89,6 +90,22 @@ const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): s
     });
 };
 
+const getAdditionalFeeForEvent = (event: TournamentEvent): number => {
+    if (event.additional_fee_enabled !== true) {
+        return 0;
+    }
+    const fee = typeof event.additional_fee === "number" ? event.additional_fee : 0;
+    return fee > 0 ? fee : 0;
+};
+
+const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds: string[]): number =>
+    events.reduce((total, event) => {
+        if (!matchesAnyEventKey(selectedEventIds, event)) {
+            return total;
+        }
+        return total + getAdditionalFeeForEvent(event);
+    }, 0);
+
 export default function ViewTournamentRegistrationPage() {
     const {tournamentId} = useParams();
     const {user} = useAuthContext();
@@ -103,10 +120,16 @@ export default function ViewTournamentRegistrationPage() {
     const [loading, setLoading] = useState(true);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
     const [availableEventsState, setAvailableEventsState] = useState<TournamentEvent[]>([]);
-    const registrationPrice = useMemo(
-        () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee),
+    const [participantNameMap, setParticipantNameMap] = useState<Record<string, string>>({});
+    const baseRegistrationFee = useMemo(
+        () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee) ?? 0,
         [tournament, user],
     );
+    const additionalEventFee = useMemo(
+        () => calculateAdditionalEventFee(availableEventsState, registration?.events_registered ?? []),
+        [availableEventsState, registration?.events_registered],
+    );
+    const registrationPrice = baseRegistrationFee + additionalEventFee;
     const requiresPaymentProof = (registrationPrice ?? 0) > 0;
 
     const parseDate = (date: Tournament["registration_start_date"]): dayjs.Dayjs | null => {
@@ -219,6 +242,39 @@ export default function ViewTournamentRegistrationPage() {
         loadData();
     }, [tournamentId, user]);
 
+    useEffect(() => {
+        const loadParticipantNames = async () => {
+            const ids = [
+                registration?.user_global_id,
+                ...teams.map((team) => team.leader_id),
+                ...teams.flatMap((team) => team.members.map((member) => member.global_id)),
+            ]
+                .map((id) => (id ?? "").trim())
+                .filter((id): id is string => Boolean(id));
+
+            const uniqueIds = Array.from(new Set(ids));
+            if (uniqueIds.length === 0) {
+                return;
+            }
+
+            try {
+                const usersByGlobalId = await fetchUsersByGlobalIds(uniqueIds);
+                const nextNameMap = uniqueIds.reduce(
+                    (acc, id) => {
+                        acc[id] = usersByGlobalId[id]?.name?.trim() || "-";
+                        return acc;
+                    },
+                    {} as Record<string, string>,
+                );
+                setParticipantNameMap(nextNameMap);
+            } catch (error) {
+                console.error("Failed to load participant names:", error);
+            }
+        };
+
+        void loadParticipantNames();
+    }, [registration?.user_global_id, teams]);
+
     if (!loading && !registration) {
         return <Result status="404" title="Not Registered" subTitle="You haven't registered for this tournament." />;
     }
@@ -226,6 +282,15 @@ export default function ViewTournamentRegistrationPage() {
     const getEventDisplayLabel = (eventId: string): string => {
         const event = availableEventsState.find((evt) => getEventKey(evt) === eventId);
         return event ? getEventLabel(event) : eventId;
+    };
+
+    const getParticipantDisplay = (globalId?: string): string => {
+        const safeId = (globalId ?? "").trim();
+        if (!safeId) {
+            return "-";
+        }
+        const participantName = participantNameMap[safeId]?.trim() || "-";
+        return `${safeId} - ${participantName}`;
     };
 
     const extraEventIds =
@@ -277,6 +342,12 @@ export default function ViewTournamentRegistrationPage() {
                                 ))}
                             </Select>
                         </Form.Item>
+                        <Form.Item label="Total Registration Fee">
+                            <Typography.Text>
+                                RM{registrationPrice}
+                                {additionalEventFee > 0 ? ` (Base RM${baseRegistrationFee} + Additional RM${additionalEventFee})` : ""}
+                            </Typography.Text>
+                        </Form.Item>
 
                         <Form.Item shouldUpdate noStyle>
                             <div className={`flex flex-row w-full gap-10`}>
@@ -310,7 +381,7 @@ export default function ViewTournamentRegistrationPage() {
                                                 <Input value={team.name} disabled />
                                             </Form.Item>
                                             <Form.Item label={teamLeaderLabel}>
-                                                <Input value={team.leader_id} disabled />
+                                                <Input value={getParticipantDisplay(team.leader_id)} disabled />
                                             </Form.Item>
                                             <Form.Item label={teamMemberLabel}>
                                                 <div className="flex flex-col gap-2">
@@ -320,7 +391,7 @@ export default function ViewTournamentRegistrationPage() {
                                                             status={m.verified ? "success" : "danger"}
                                                             disabled
                                                         >
-                                                            {m.global_id ?? "N/A"}
+                                                            {getParticipantDisplay(m.global_id)}
                                                         </Button>
                                                     ))}
                                                 </div>

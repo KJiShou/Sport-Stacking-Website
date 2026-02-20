@@ -79,6 +79,16 @@ const buildPrelimRecordKey = (record: Partial<TournamentRecord & TournamentTeamR
 };
 
 const EVENT_NAME_TO_COMBOS: Record<string, Array<{category: Category; eventType: RecordEventType}>> = {
+    Individual: [
+        {category: "individual", eventType: "3-3-3"},
+        {category: "individual", eventType: "3-6-3"},
+        {category: "individual", eventType: "Cycle"},
+    ],
+    "Open Age Individual": [
+        {category: "individual", eventType: "3-3-3"},
+        {category: "individual", eventType: "3-6-3"},
+        {category: "individual", eventType: "Cycle"},
+    ],
     "3-3-3": [{category: "individual", eventType: "3-3-3"}],
     "3-6-3": [{category: "individual", eventType: "3-6-3"}],
     Cycle: [{category: "individual", eventType: "Cycle"}],
@@ -584,6 +594,31 @@ const CATEGORY_DISPLAY_MAP: Record<Category, DisplayCategory> = {
     special_need: "Special Need",
 };
 
+const normalizeDisplayCategory = (eventName?: string | null): DisplayCategory | null => {
+    if (!eventName) {
+        return null;
+    }
+    if (eventName === "Open Age Individual") {
+        return "Individual";
+    }
+    if (eventName === "Individual") {
+        return "Individual";
+    }
+    if (eventName === "Double") {
+        return "Double";
+    }
+    if (eventName === "Parent & Child") {
+        return "Parent & Child";
+    }
+    if (eventName === "Team Relay") {
+        return "Team Relay";
+    }
+    if (eventName === "Special Need") {
+        return "Special Need";
+    }
+    return null;
+};
+
 // Delete record service
 export const deleteRecord = async (recordId: string): Promise<void> => {
     try {
@@ -1030,7 +1065,7 @@ export const getBestRecords = async (): Promise<BestRecordsShape> => {
             continue;
         }
         const isTeam = "team_id" in data && typeof (data as Partial<TournamentTeamRecord>).team_id === "string";
-        const displayCategory = (data.event as DisplayCategory) ?? "Individual";
+        const displayCategory = normalizeDisplayCategory(data.event as string | undefined) ?? "Individual";
         const eventKey = (data.code as EventTypeKey) ?? "Cycle";
 
         if (displayCategory === "Individual" && (eventKey === "3-3-3" || eventKey === "3-6-3" || eventKey === "Cycle")) {
@@ -1176,7 +1211,7 @@ export const updateParticipantRankingsAndResults = async (
             const perParticipant = new Map<string, Map<string, number>>();
 
             for (const record of individualRecords) {
-                if (record.event !== "Individual") continue;
+                if (record.event !== "Individual" && record.event !== "Open Age Individual") continue;
                 const code = record.code ?? "";
                 if (!allowedCodes.has(code)) continue;
                 const globalId = record.participant_global_id ?? "";

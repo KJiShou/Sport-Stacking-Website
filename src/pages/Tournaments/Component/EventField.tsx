@@ -1,5 +1,5 @@
 import type {EventFieldProps} from "@/schema";
-import {Button, Card, Form, InputNumber, Select, Typography} from "@arco-design/web-react";
+import {Button, Card, Form, InputNumber, Select, Switch, Typography} from "@arco-design/web-react";
 import {IconDelete, IconEdit} from "@arco-design/web-react/icon";
 
 const {Title} = Typography;
@@ -82,11 +82,12 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
 
                 <Form.Item
                     shouldUpdate={(prev, next) => {
-                        // Check if event type changed
-                        if (prev.events?.[index]?.type !== next.events?.[index]?.type) {
-                            return true;
-                        }
-                        return false;
+                        const prevEvent = prev.events?.[index];
+                        const nextEvent = next.events?.[index];
+                        return (
+                            prevEvent?.type !== nextEvent?.type ||
+                            prevEvent?.additional_fee_enabled !== nextEvent?.additional_fee_enabled
+                        );
                     }}
                 >
                     {(_, form) => {
@@ -122,6 +123,14 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                             const currentMax = form.getFieldValue(`events.${index}.max_participants`);
                             if (currentMax !== undefined) {
                                 form.setFieldValue(`events.${index}.max_participants`, undefined);
+                            }
+                        }
+
+                        const additionalFeeEnabled = form.getFieldValue(`events.${index}.additional_fee_enabled`) === true;
+                        if (!additionalFeeEnabled) {
+                            const currentAdditionalFee = form.getFieldValue(`events.${index}.additional_fee`);
+                            if (currentAdditionalFee !== undefined) {
+                                form.setFieldValue(`events.${index}.additional_fee`, undefined);
                             }
                         }
 
@@ -201,6 +210,33 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                                         </Form.Item>
                                     </div>
                                 )}
+
+                                <div>
+                                    <Title heading={6} className="mb-2">
+                                        Additional Fee
+                                    </Title>
+                                    {eventType === "Open Age Individual" && (
+                                        <div className="mb-2 text-sm text-gray-500">
+                                            Optional event: enable this if Open Age Individual should have an extra charge.
+                                        </div>
+                                    )}
+                                    <Form.Item field={`events.${index}.additional_fee_enabled`} triggerPropName="checked">
+                                        <Switch />
+                                    </Form.Item>
+                                    {additionalFeeEnabled && (
+                                        <Form.Item
+                                            field={`events.${index}.additional_fee`}
+                                            rules={[
+                                                {
+                                                    required: true,
+                                                    message: "Please enter additional fee amount",
+                                                },
+                                            ]}
+                                        >
+                                            <InputNumber min={0} placeholder="Enter additional fee amount" className="w-full" />
+                                        </Form.Item>
+                                    )}
+                                </div>
                             </>
                         ) : null;
                     }}

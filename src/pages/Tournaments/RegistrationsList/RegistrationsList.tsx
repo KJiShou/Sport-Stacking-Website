@@ -127,7 +127,7 @@ export default function RegistrationsListPage() {
             title: "Created At",
             dataIndex: "created_at",
             width: 200,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
             sorter: (a: Registration, b: Registration) => {
                 const aTime = a.created_at?.toDate?.()?.getTime?.() ?? 0;
                 const bTime = b.created_at?.toDate?.()?.getTime?.() ?? 0;

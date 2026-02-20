@@ -18,6 +18,12 @@ import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByParticipant} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
 import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
+import {
+    deleteVerificationRequestByTournamentTeamMember,
+    deleteVerificationRequestsByRegistrationId,
+    deleteVerificationRequestsByTeamId,
+    deleteVerificationRequestsByTournamentAndMember,
+} from "./verificationRequestService";
 
 async function getApprovedRegistrationCount(tournamentId: string): Promise<number> {
     const registrationsRef = query(
@@ -470,6 +476,11 @@ export async function deleteRegistrationById(
                         await removeTeamEventsForMember(member.global_id, tournamentId, eventKeys);
                     }
                 }
+                try {
+                    await deleteVerificationRequestsByTeamId(team.id ?? teamDoc.id);
+                } catch (error) {
+                    console.error("Error deleting verification requests for removed team:", error);
+                }
                 await deleteDoc(teamDoc.ref);
             } else if (memberIds.includes(registrationData.user_global_id)) {
                 if (adminDelete) {
@@ -491,6 +502,15 @@ export async function deleteRegistrationById(
                         (member) => member.global_id !== registrationData.user_global_id,
                     );
                     await updateDoc(teamDoc.ref, {members: updatedMembers});
+                }
+                try {
+                    await deleteVerificationRequestByTournamentTeamMember(
+                        tournamentId,
+                        team.id ?? teamDoc.id,
+                        registrationData.user_global_id,
+                    );
+                } catch (error) {
+                    console.error("Error deleting verification request for removed member:", error);
                 }
             }
         }
@@ -535,6 +555,20 @@ export async function deleteRegistrationById(
 
         // Delete the registration document
         await deleteDoc(registrationRef);
+
+        try {
+            await deleteVerificationRequestsByRegistrationId(regSnap.id);
+        } catch (error) {
+            console.error("Error deleting verification requests by registration id:", error);
+        }
+
+        try {
+            if (registrationData.user_global_id) {
+                await deleteVerificationRequestsByTournamentAndMember(tournamentId, registrationData.user_global_id);
+            }
+        } catch (error) {
+            console.error("Error deleting verification requests by tournament/member:", error);
+        }
 
         if (registrationData.registration_status === "approved") {
             const tournamentRef = doc(db, "tournaments", tournamentId);

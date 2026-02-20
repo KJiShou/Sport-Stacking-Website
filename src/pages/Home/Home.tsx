@@ -71,11 +71,7 @@ function getTournamentStatusStyles(status?: Tournament["status"]) {
 function formatDate(dateValue: Date | {toDate: () => Date} | null | undefined): string {
     if (!dateValue) return "TBA";
     const date = dateValue instanceof Date ? dateValue : dateValue.toDate();
-    return date.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-    });
+    return date.toLocaleDateString("en-GB");
 }
 
 /**

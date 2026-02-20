@@ -12,8 +12,26 @@ import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
 
+const allowedOrigins = new Set<string>([
+    "https://rankingstack.com",
+    "https://www.rankingstack.com",
+    "https://sport-stacking-website.web.app",
+    "https://sport-stacking-website.firebaseapp.com",
+    "http://localhost:5000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]);
+
 const corsHandler = cors({
-    origin: ["https://rankingstack.com", "http://localhost:5000"],
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.has(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     methods: ["GET", "POST", "OPTIONS"],
 });
 
@@ -32,6 +50,9 @@ if (!getApps().length) {
 }
 
 const db = getFirestore();
+
+const buildVerificationRequestId = (tournamentId: string, teamId: string, memberId: string): string =>
+    `${tournamentId}_${teamId}_${memberId}`;
 
 type TeamEventRefs = Partial<Pick<Team, "event_id" | "event">> & {
     event_ids?: unknown;
@@ -705,6 +726,25 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
 
         const detailList = detailItems.length > 0 ? `<p>Verification details:</p><ul>${detailItems.join("")}</ul>` : "";
 
+        const verificationRequestId = buildVerificationRequestId(tournamentId, teamId, memberId);
+        const verificationRequestRef = db.collection("verification_requests").doc(verificationRequestId);
+        const verificationRequestSnapshot = await verificationRequestRef.get();
+        const now = new Date();
+        const verificationPayload = {
+            target_global_id: memberId,
+            member_id: memberId,
+            tournament_id: tournamentId,
+            team_id: teamId,
+            registration_id: registrationId,
+            status: "pending",
+            event_label: eventLabel || null,
+            team_name: teamName || null,
+            leader_label: leaderLabel || null,
+            updated_at: now,
+            ...(verificationRequestSnapshot.exists ? {} : {created_at: now}),
+        };
+        await verificationRequestRef.set(verificationPayload, {merge: true});
+
         // Step 3: 构造验证链接，包含 registrationId
         const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&teamId=${teamId}&memberId=${memberId}&registrationId=${registrationId}`;
         const safeVerifyUrl = verifyUrl.replace(/&/g, "&amp;");
@@ -885,6 +925,7 @@ export const cacheGoogleAvatarCallable = onCall(async (request) => {
 
 export const updateVerification = onRequest(async (req, res) => {
     corsHandler(req, res, async () => {
+        let requesterUid: string | null = null;
         const authHeader = req.headers.authorization;
         if (!authHeader?.startsWith("Bearer ")) {
             res.status(401).json({error: "Missing or invalid auth header"});
@@ -899,6 +940,7 @@ export const updateVerification = onRequest(async (req, res) => {
                 res.status(401).json({error: "Invalid token"});
                 return;
             }
+            requesterUid = decoded.uid;
         } catch (err) {
             console.error("❌ Token verification failed", err);
             res.status(401).json({error: "Invalid token"});
@@ -913,6 +955,18 @@ export const updateVerification = onRequest(async (req, res) => {
         }
 
         try {
+            if (!requesterUid) {
+                res.status(401).json({error: "Invalid token"});
+                return;
+            }
+
+            const requesterDoc = await db.collection("users").doc(requesterUid).get();
+            const requesterGlobalId = requesterDoc.exists ? (requesterDoc.data()?.global_id as string | undefined) : undefined;
+            if (!requesterGlobalId || requesterGlobalId !== memberId) {
+                res.status(403).json({error: "You can only verify your own invitation."});
+                return;
+            }
+
             const usersRef = db.collection("users");
             const userQuery = usersRef.where("global_id", "==", memberId);
             const userSnap = await userQuery.get();
@@ -1064,6 +1118,16 @@ export const updateVerification = onRequest(async (req, res) => {
                 transaction.update(userDocRef, {registration_records: newRegistrationRecords});
                 transaction.update(teamRef, {members: updatedMembers});
             });
+
+            const verificationRequestId = buildVerificationRequestId(tournamentId, teamId, memberId);
+            await db.collection("verification_requests").doc(verificationRequestId).set(
+                {
+                    status: "verified",
+                    verified_at: new Date(),
+                    updated_at: new Date(),
+                },
+                {merge: true},
+            );
 
             res.status(200).json({success: true});
         } catch (err: unknown) {

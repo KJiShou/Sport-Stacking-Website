@@ -761,7 +761,7 @@ export default function ScoringPage() {
                 setRegistrationList(nextRegistrationList);
 
                 // If individual event, try to calculate overall
-                if (event.type === "Individual") {
+                if (event.type === "Individual" || event.type === "Open Age Individual") {
                     await calculateAndSaveOverallResults(nextRegistrationList);
                 }
 
@@ -874,7 +874,10 @@ export default function ScoringPage() {
 
         const individualEvents = (events ?? []).filter(
             (e) =>
-                e.type === "Individual" && e.codes?.includes("3-3-3") && e.codes?.includes("3-6-3") && e.codes?.includes("Cycle"),
+                (e.type === "Individual" || e.type === "Open Age Individual") &&
+                e.codes?.includes("3-3-3") &&
+                e.codes?.includes("3-6-3") &&
+                e.codes?.includes("Cycle"),
         );
 
         if (individualEvents.length === 0) return;
@@ -887,25 +890,25 @@ export default function ScoringPage() {
                 const individualParticipants = participants.filter(
                     (p) =>
                         registrationMatchesEvent(p.events_registered, individualEvent, p.gender) &&
-                        p.scores["3-3-3-Individual"] &&
-                        p.scores["3-3-3-Individual"].try1 &&
-                        p.scores["3-3-3-Individual"].try2 &&
-                        p.scores["3-3-3-Individual"].try3 &&
-                        p.scores["3-6-3-Individual"] &&
-                        p.scores["3-6-3-Individual"].try1 &&
-                        p.scores["3-6-3-Individual"].try2 &&
-                        p.scores["3-6-3-Individual"].try3 &&
-                        p.scores["Cycle-Individual"] &&
-                        p.scores["Cycle-Individual"].try1 &&
-                        p.scores["Cycle-Individual"].try2 &&
-                        p.scores["Cycle-Individual"].try3,
+                        p.scores[`3-3-3-${individualEvent.type}`] &&
+                        p.scores[`3-3-3-${individualEvent.type}`].try1 &&
+                        p.scores[`3-3-3-${individualEvent.type}`].try2 &&
+                        p.scores[`3-3-3-${individualEvent.type}`].try3 &&
+                        p.scores[`3-6-3-${individualEvent.type}`] &&
+                        p.scores[`3-6-3-${individualEvent.type}`].try1 &&
+                        p.scores[`3-6-3-${individualEvent.type}`].try2 &&
+                        p.scores[`3-6-3-${individualEvent.type}`].try3 &&
+                        p.scores[`Cycle-${individualEvent.type}`] &&
+                        p.scores[`Cycle-${individualEvent.type}`].try1 &&
+                        p.scores[`Cycle-${individualEvent.type}`].try2 &&
+                        p.scores[`Cycle-${individualEvent.type}`].try3,
                 );
 
                 // Calculate overall results and save them
                 const overallPromises = individualParticipants.map(async (p) => {
-                    const threeScores = p.scores["3-3-3-Individual"];
-                    const threeSixThreeScores = p.scores["3-6-3-Individual"];
-                    const cycleScores = p.scores["Cycle-Individual"];
+                    const threeScores = p.scores[`3-3-3-${individualEvent.type}`];
+                    const threeSixThreeScores = p.scores[`3-6-3-${individualEvent.type}`];
+                    const cycleScores = p.scores[`Cycle-${individualEvent.type}`];
 
                     // Get best times for each event
                     const threeBest = Math.min(

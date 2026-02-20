@@ -41,6 +41,8 @@ export const EventSchema = z.object({
     gender: EventGenderSchema,
     teamSize: z.number().optional(),
     max_participants: z.number().optional().nullable(),
+    additional_fee_enabled: z.boolean().optional().nullable(),
+    additional_fee: z.number().optional().nullable(),
     age_brackets: z.array(AgeBracketSchema),
 });
 

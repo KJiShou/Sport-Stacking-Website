@@ -299,19 +299,19 @@ export default function TournamentList() {
             title: "Registration Start",
             dataIndex: "registration_start_date",
             width: 180,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
             title: "Registration End",
             dataIndex: "registration_end_date",
             width: 180,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
         },
         {
             title: "Tournament Start",
             dataIndex: "start_date",
             width: 180,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
             title: "Status",
@@ -841,7 +841,18 @@ export default function TournamentList() {
 
             for (let i = 0; i < rawEvents.length; i++) {
                 const rawEvent = rawEvents[i];
-                const {__prevType: _ignored, age_brackets, id, type, codes, teamSize, gender, max_participants} = rawEvent;
+                const {
+                    __prevType: _ignored,
+                    age_brackets,
+                    id,
+                    type,
+                    codes,
+                    teamSize,
+                    gender,
+                    max_participants,
+                    additional_fee_enabled,
+                    additional_fee,
+                } = rawEvent;
 
                 if (!isTournamentEventType(type)) {
                     invalidEvents.push(`Event ${i + 1}: Invalid event type "${type}"`);
@@ -873,6 +884,10 @@ export default function TournamentList() {
                 }
                 if (typeof max_participants === "number") {
                     sanitizedEvent.max_participants = max_participants;
+                }
+                sanitizedEvent.additional_fee_enabled = additional_fee_enabled === true;
+                if (additional_fee_enabled === true && typeof additional_fee === "number" && additional_fee >= 0) {
+                    sanitizedEvent.additional_fee = additional_fee;
                 }
 
                 sanitizedEvents.push(sanitizedEvent);
@@ -1164,6 +1179,7 @@ export default function TournamentList() {
                 />
                 <RangePicker
                     prefix={<IconCalendar />}
+                    format="DD/MM/YYYY"
                     placeholder={["Start Date", "End Date"]}
                     value={dateFilter ?? undefined}
                     onChange={(value) => {
@@ -1260,6 +1276,7 @@ export default function TournamentList() {
 
                                 <Form.Item label="Tournament Date Range" field="date_range" rules={[{required: true}]}>
                                     <RangePicker
+                                        format="DD/MM/YYYY HH:mm"
                                         showTime={{
                                             defaultValue: ["08:00", "18:00"],
                                             format: "HH:mm",
@@ -1365,6 +1382,7 @@ export default function TournamentList() {
                                     ]}
                                 >
                                     <RangePicker
+                                        format="DD/MM/YYYY HH:mm"
                                         showTime={{
                                             defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                             format: "HH:mm",
