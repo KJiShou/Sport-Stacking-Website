@@ -704,7 +704,14 @@ export default function RegisterTournamentPage() {
     };
 
     useEffect(() => {
-        if (!tournamentId || !user) return;
+        if (!tournamentId) return;
+
+        // If there is no user, stop page loading and surface an error instead of an infinite spinner.
+        if (!user) {
+            setPageLoading(false);
+            setError("You must be signed in with a valid player profile to register for this tournament.");
+            return;
+        }
         const fetch = async () => {
             setPageLoading(true);
             try {
