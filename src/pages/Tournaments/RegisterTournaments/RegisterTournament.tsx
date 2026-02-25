@@ -202,6 +202,7 @@ export default function RegisterTournamentPage() {
                     ensureOccupiedIdsForEvent(normalizedEventId),
                     searchUsersByNameOrGlobalIdPrefix(trimmedKeyword, 10),
                 ]);
+                const isParentChild = isParentChildEvent(findEventByKey(normalizedEventId));
 
                 const selectedIds = new Set(selectedMemberIds.map((id) => id.trim()).filter(Boolean));
                 const currentUserId = (user?.global_id ?? "").trim();
@@ -215,7 +216,7 @@ export default function RegisterTournamentPage() {
                         if (currentUserId && globalId === currentUserId) {
                             return null;
                         }
-                        if (occupiedIds.has(globalId)) {
+                        if (!isParentChild && occupiedIds.has(globalId)) {
                             return null;
                         }
                         if (selectedIds.has(globalId)) {
@@ -354,6 +355,7 @@ export default function RegisterTournamentPage() {
                 const memberIds = (team.member ?? []).map((m) => m).filter((id) => id != null) as string[];
                 const isLookingForMembers = team.looking_for_team_members === true;
                 const isLookingForTeammates = lookingForTeams.includes(teamId);
+                const shouldCheckOccupiedParticipants = !isLookingForTeammates && !isParentChildEvent(relatedEvent);
 
                 if (!isLookingForMembers && leaderId && memberIds.includes(leaderId)) {
                     Message.error(`${eventLabel}: team leader cannot be included in team members.`);
@@ -368,7 +370,7 @@ export default function RegisterTournamentPage() {
                     throw new Error(`${eventLabel}: you must be either leader or one of the members.`);
                 }
 
-                if (!isLookingForTeammates) {
+                if (shouldCheckOccupiedParticipants) {
                     const participantIds = [leaderId, ...memberIds].filter((id): id is string => Boolean(id));
                     if (participantIds.length > 0) {
                         const occupiedIds = await fetchOccupiedParticipantIdsByTournamentEvent(tournamentId, teamId);

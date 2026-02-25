@@ -4,7 +4,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {DoubleRecruitment, TeamRecruitment} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
-import {fetchUsersByGlobalIds} from "@/services/firebase/authService";
+import {fetchUsersByGlobalIds, getUserByGlobalId} from "@/services/firebase/authService";
 import {getDoubleRecruitmentsByParticipant} from "@/services/firebase/doubleRecruitmentService";
 import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
 import {getTeamRecruitmentsByLeader} from "@/services/firebase/teamRecruitmentService";
@@ -121,10 +121,19 @@ export default function ViewTournamentRegistrationPage() {
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
     const [availableEventsState, setAvailableEventsState] = useState<TournamentEvent[]>([]);
     const [participantNameMap, setParticipantNameMap] = useState<Record<string, string>>({});
-    const baseRegistrationFee = useMemo(
-        () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee) ?? 0,
-        [tournament, user],
-    );
+    const [registrationOwnerIsMember, setRegistrationOwnerIsMember] = useState<boolean | null>(null);
+    const baseRegistrationFee = useMemo(() => {
+        if (!tournament) {
+            return 0;
+        }
+        if (registrationOwnerIsMember === true) {
+            return tournament.member_registration_fee ?? 0;
+        }
+        if (registrationOwnerIsMember === false) {
+            return tournament.registration_fee ?? 0;
+        }
+        return (user?.memberId ? tournament.member_registration_fee : tournament.registration_fee) ?? 0;
+    }, [registrationOwnerIsMember, tournament, user?.memberId]);
     const additionalEventFee = useMemo(
         () => calculateAdditionalEventFee(availableEventsState, registration?.events_registered ?? []),
         [availableEventsState, registration?.events_registered],
@@ -192,6 +201,9 @@ export default function ViewTournamentRegistrationPage() {
                     return;
                 }
                 setRegistration(userReg);
+                const registrationOwner = userReg.user_global_id ? await getUserByGlobalId(userReg.user_global_id) : undefined;
+                const hasMemberId = typeof registrationOwner?.memberId === "string" && registrationOwner.memberId.trim().length > 0;
+                setRegistrationOwnerIsMember(hasMemberId);
 
                 const teamsData = await fetchTeamsByTournament(tournamentId);
 
