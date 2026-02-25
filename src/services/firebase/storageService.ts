@@ -1,6 +1,11 @@
 import {deleteObject, getDownloadURL, listAll, ref, uploadBytes, uploadBytesResumable} from "firebase/storage";
 import {storage} from "./config";
 
+type UploadFileOptions = {
+    onProgress?: (progress: number) => void;
+    timeoutMs?: number;
+};
+
 export const uploadAvatar = async (file: File, uid: string): Promise<string> => {
     const storageRef = ref(storage, `avatars/${uid}`);
 
@@ -24,27 +29,78 @@ export function uploadFile(
     file: File,
     path = "uploads",
     fileName?: string,
-    onProgress?: (progress: number) => void,
+    optionsOrProgress?: UploadFileOptions | ((progress: number) => void),
 ): Promise<string> {
     return new Promise((resolve, reject) => {
+        const options: UploadFileOptions =
+            typeof optionsOrProgress === "function" ? {onProgress: optionsOrProgress} : (optionsOrProgress ?? {});
+        const timeoutMs = typeof options.timeoutMs === "number" && options.timeoutMs > 0 ? options.timeoutMs : 120000;
         const storageRef = ref(storage, `${path}/${fileName}`);
         const uploadTask = uploadBytesResumable(storageRef, file);
+        let settled = false;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+        const settleWithReject = (error: Error) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+            reject(error);
+        };
+
+        const settleWithResolve = (downloadUrl: string) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+            resolve(downloadUrl);
+        };
+
+        timeoutId = setTimeout(() => {
+            uploadTask.cancel();
+            const timeoutError = new Error("UPLOAD_TIMEOUT");
+            console.error("Upload timed out", {
+                code: "UPLOAD_TIMEOUT",
+                path,
+                fileName: fileName ?? null,
+                fileSize: file.size,
+                timeoutMs,
+                timestamp: new Date().toISOString(),
+            });
+            settleWithReject(timeoutError);
+        }, timeoutMs);
 
         uploadTask.on(
             "state_changed",
             (snapshot) => {
                 const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                if (onProgress) {
-                    onProgress(progress); // ✅ 每次更新实时调用
+                if (options.onProgress) {
+                    options.onProgress(progress); // ✅ 每次更新实时调用
                 }
             },
             (error) => {
                 console.error("Upload failed:", error);
-                reject(error);
+                settleWithReject(error instanceof Error ? error : new Error("UPLOAD_FAILED"));
             },
             async () => {
-                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                resolve(downloadURL);
+                try {
+                    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                    settleWithResolve(downloadURL);
+                } catch (error) {
+                    console.error("Failed to fetch uploaded file URL:", {
+                        error,
+                        path,
+                        fileName: fileName ?? null,
+                        timestamp: new Date().toISOString(),
+                    });
+                    settleWithReject(error instanceof Error ? error : new Error("DOWNLOAD_URL_FAILED"));
+                }
             },
         );
     });
