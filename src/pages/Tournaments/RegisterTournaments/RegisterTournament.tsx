@@ -51,6 +51,7 @@ import {IconCalendar, IconExclamationCircle, IconLaunch} from "@arco-design/web-
 import MDEditor from "@uiw/react-md-editor";
 import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import {FirebaseError} from "firebase/app";
 import {Timestamp} from "firebase/firestore";
 import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
@@ -109,7 +110,9 @@ export default function RegisterTournamentPage() {
     const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
     const eventSelectWidth = isSmallScreen ? 200 : 345;
     const [tournament, setTournament] = useState<Tournament | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [pageLoading, setPageLoading] = useState(true);
+    const [submitLoading, setSubmitLoading] = useState(false);
+    const [paymentUploadLoading, setPaymentUploadLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [options, setOptions] = useState<ExpandedEvent[]>([]);
     const [availableEvents, setAvailableEvents] = useState<ExpandedEvent[]>([]);
@@ -313,6 +316,33 @@ export default function RegisterTournamentPage() {
         return age;
     };
 
+    const resolveUploadErrorMessage = (error: unknown): string => {
+        if (error instanceof Error && error.message === "UPLOAD_TIMEOUT") {
+            return "Upload timed out. Please retry with a stable network.";
+        }
+
+        if (error instanceof FirebaseError) {
+            switch (error.code) {
+                case "storage/unauthorized":
+                    return "Upload was blocked by Firebase permissions. Please sign in again and retry.";
+                case "storage/retry-limit-exceeded":
+                    return "Upload failed after several retries. Please check network and try again.";
+                case "storage/canceled":
+                    return "Upload canceled. Please retry.";
+                case "storage/quota-exceeded":
+                    return "Storage quota reached. Please contact admin.";
+                case "storage/invalid-checksum":
+                    return "Upload failed due to file integrity check. Please retry.";
+                case "storage/unknown":
+                    return "Upload failed due to an unknown Firebase error. Please retry.";
+                default:
+                    return `Upload failed (${error.code}). Please retry.`;
+            }
+        }
+
+        return "Failed to upload file. Please retry.";
+    };
+
     const handleRegister = async (values: RegistrationForm) => {
         if (!tournamentId || !tournament) return;
 
@@ -337,7 +367,7 @@ export default function RegisterTournamentPage() {
             return;
         }
 
-        setLoading(true);
+        setSubmitLoading(true);
 
         try {
             if (!user) {
@@ -359,14 +389,12 @@ export default function RegisterTournamentPage() {
 
                 if (!isLookingForMembers && leaderId && memberIds.includes(leaderId)) {
                     Message.error(`${eventLabel}: team leader cannot be included in team members.`);
-                    setLoading(false);
                     throw new Error(`${eventLabel}: team leader cannot be included in team members.`);
                 }
 
                 const userInTeam = leaderId === user.global_id || memberIds.includes(user.global_id ?? "");
                 if (!isLookingForMembers && !userInTeam) {
                     Message.error(`${eventLabel}: you must be either leader or one of the members.`);
-                    setLoading(false);
                     throw new Error(`${eventLabel}: you must be either leader or one of the members.`);
                 }
 
@@ -381,7 +409,6 @@ export default function RegisterTournamentPage() {
                             Message.error(
                                 `${eventLabel}: participant ${conflictedParticipantId} is already in this event.`,
                             );
-                            setLoading(false);
                             throw new Error(
                                 `${eventLabel}: participant ${conflictedParticipantId} is already in this event.`,
                             );
@@ -410,7 +437,6 @@ export default function RegisterTournamentPage() {
                             const additionalMessage = expectedMembers > 0 ? `` : "No additional members should be listed.";
 
                             Message.error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
-                            setLoading(false);
                             throw new Error(
                                 `${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`,
                             );
@@ -436,7 +462,6 @@ export default function RegisterTournamentPage() {
                     ).length;
                     if (count >= maxParticipants) {
                         Message.error(`${getEventLabel(event)} has reached the maximum participants.`);
-                        setLoading(false);
                         return;
                     }
                 }
@@ -665,18 +690,30 @@ export default function RegisterTournamentPage() {
                 navigate("/tournaments");
             }
         } catch (error) {
-            console.error(error);
+            console.error("Tournament registration failed", {
+                error,
+                tournamentId: tournamentId ?? null,
+                userGlobalId: user?.global_id ?? null,
+                timestamp: new Date().toISOString(),
+            });
             const errorMessage = error instanceof Error ? error.message : "Failed to register.";
             Message.error(errorMessage);
         } finally {
-            setLoading(false);
+            setSubmitLoading(false);
         }
     };
 
     useEffect(() => {
-        if (!tournamentId || !user) return;
+        if (!tournamentId) return;
+
+        // If there is no user, stop page loading and surface an error instead of an infinite spinner.
+        if (!user) {
+            setPageLoading(false);
+            setError("You must be signed in with a valid player profile to register for this tournament.");
+            return;
+        }
         const fetch = async () => {
-            setLoading(true);
+            setPageLoading(true);
             try {
                 const comp = await fetchTournamentById(tournamentId);
                 const fetchedEvents = comp?.events?.length ? comp.events : await fetchTournamentEvents(tournamentId);
@@ -846,7 +883,7 @@ export default function RegisterTournamentPage() {
                 setError("Failed to load tournament.");
                 console.error(e);
             } finally {
-                setLoading(false);
+                setPageLoading(false);
             }
         };
         fetch();
@@ -893,6 +930,13 @@ export default function RegisterTournamentPage() {
         );
     }
 
+    if (pageLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-[40vh] text-gray-500">
+                Loading tournament registration details...
+            </div>
+        );
+    }
     if (error) return <Result status="error" title="Error" subTitle={error} />;
     return (
         <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
@@ -1400,6 +1444,7 @@ export default function RegisterTournamentPage() {
                                     multiple={false}
                                     limit={1}
                                     accept="image/jpeg,image/png,image/gif"
+                                    disabled={paymentUploadLoading}
                                     customRequest={async (option: {
                                         file: File;
                                         onSuccess?: (file: File) => void;
@@ -1428,21 +1473,34 @@ export default function RegisterTournamentPage() {
                                             return;
                                         }
                                         try {
-                                            setLoading(true);
+                                            setPaymentUploadLoading(true);
                                             const downloadURL = await uploadFile(
                                                 file as File,
                                                 `tournaments/${tournamentId}/registrations/payment_proof`,
                                                 user.global_id,
-                                                (progress) => {
-                                                    onProgress?.(progress);
+                                                {
+                                                    timeoutMs: 120000,
+                                                    onProgress: (progress) => {
+                                                        onProgress?.(progress);
+                                                    },
                                                 },
                                             );
                                             setPaymentProofUrl(downloadURL);
-                                            setLoading(false);
                                             onSuccess?.(file);
                                         } catch (err) {
-                                            Message.error("Failed to upload file.");
+                                            const errorMessage = resolveUploadErrorMessage(err);
+                                            console.error("Payment proof upload failed", {
+                                                error: err,
+                                                firebaseCode: err instanceof FirebaseError ? err.code : null,
+                                                fileSize: file.size,
+                                                tournamentId: tournamentId ?? null,
+                                                userGlobalId: user?.global_id ?? null,
+                                                timestamp: new Date().toISOString(),
+                                            });
+                                            Message.error(errorMessage);
                                             onError?.(err as Error);
+                                        } finally {
+                                            setPaymentUploadLoading(false);
                                         }
                                     }}
                                     tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
@@ -1451,7 +1509,13 @@ export default function RegisterTournamentPage() {
                         )}
 
                         <Form.Item>
-                            <Button type="primary" htmlType="submit" long loading={loading} disabled={loading}>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                long
+                                loading={submitLoading}
+                                disabled={submitLoading || paymentUploadLoading || pageLoading}
+                            >
                                 Register
                             </Button>
                         </Form.Item>
