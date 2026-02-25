@@ -174,16 +174,25 @@ export default function EditTournamentRegistrationPage() {
     const [recruitmentModalVisible, setRecruitmentModalVisible] = useState(false);
     const [recruitmentTeam, setRecruitmentTeam] = useState<LegacyTeam | null>(null);
     const [participantNameMap, setParticipantNameMap] = useState<Record<string, string>>({});
+    const [registrationOwnerIsMember, setRegistrationOwnerIsMember] = useState<boolean | null>(null);
 
     const [isMounted, setIsMounted] = useState<boolean>(false);
     const mountedRef = useRef(false);
     const initialEventIdsRef = useRef<string[]>([]);
 
     const [recruitmentForm] = Form.useForm();
-    const baseRegistrationFee = useMemo(
-        () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee) ?? 0,
-        [tournament, user],
-    );
+    const baseRegistrationFee = useMemo(() => {
+        if (!tournament) {
+            return 0;
+        }
+        if (registrationOwnerIsMember === true) {
+            return tournament.member_registration_fee ?? 0;
+        }
+        if (registrationOwnerIsMember === false) {
+            return tournament.registration_fee ?? 0;
+        }
+        return (user?.memberId ? tournament.member_registration_fee : tournament.registration_fee) ?? 0;
+    }, [registrationOwnerIsMember, tournament, user?.memberId]);
     const additionalEventFee = useMemo(
         () => calculateAdditionalEventFee(events, registration?.events_registered ?? []),
         [events, registration?.events_registered],
@@ -563,6 +572,9 @@ export default function EditTournamentRegistrationPage() {
                 return;
             }
             setRegistration({...userReg, id: registrationId});
+            const registrationOwner = userReg.user_global_id ? await getUserByGlobalId(userReg.user_global_id) : undefined;
+            const hasMemberId = typeof registrationOwner?.memberId === "string" && registrationOwner.memberId.trim().length > 0;
+            setRegistrationOwnerIsMember(hasMemberId);
             initialEventIdsRef.current = userReg.events_registered ?? [];
 
             const allTeamsData = await fetchTeamsByTournament(tournamentId);

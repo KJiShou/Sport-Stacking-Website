@@ -4,7 +4,11 @@ import {
     deleteVerificationRequestForUser,
     fetchPendingVerificationRequests,
 } from "@/services/firebase/verificationRequestService";
-import {verifyTeamMembership} from "@/services/firebase/verificationService";
+import {
+    MEMBER_NOT_REGISTERED_CODE,
+    VerificationError,
+    verifyTeamMembership,
+} from "@/services/firebase/verificationService";
 import {Button, Card, Message, Result, Spin, Typography} from "@arco-design/web-react";
 import dayjs from "dayjs";
 import {useEffect, useState} from "react";
@@ -47,7 +51,14 @@ export default function VerificationRequestsPage() {
         return <Result status="403" title="Sign In Required" subTitle="Please sign in to see your verification requests." />;
     }
 
-    const handleVerify = async (request: VerificationRequest) => {
+    const registeredTournamentIds = new Set((user?.registration_records ?? []).map((record) => record.tournament_id));
+
+    const handleVerify = async (request: VerificationRequest, isRegisteredForTournament: boolean) => {
+        if (!isRegisteredForTournament) {
+            Message.error("Register this tournament first before verification.");
+            return;
+        }
+
         setVerifyingRequestId(request.id);
         try {
             await verifyTeamMembership({
@@ -60,7 +71,11 @@ export default function VerificationRequestsPage() {
             setRequests((prev) => prev.filter((item) => item.id !== request.id));
         } catch (error) {
             console.error("Failed to verify request:", error);
-            Message.error(error instanceof Error ? error.message : "Failed to verify request.");
+            if (error instanceof VerificationError && error.code === MEMBER_NOT_REGISTERED_CODE) {
+                Message.error("Register this tournament first before verification.");
+            } else {
+                Message.error(error instanceof Error ? error.message : "Failed to verify request.");
+            }
         } finally {
             setVerifyingRequestId(null);
         }
@@ -107,6 +122,7 @@ export default function VerificationRequestsPage() {
                                     request.created_at instanceof Date
                                         ? request.created_at
                                         : request.created_at?.toDate?.() ?? null;
+                                const isRegisteredForTournament = registeredTournamentIds.has(request.tournament_id);
                                 return (
                                     <Card key={request.id} title={request.event_label || "Team Verification"}>
                                         <div className="flex flex-col gap-2">
@@ -122,16 +138,31 @@ export default function VerificationRequestsPage() {
                                             <Text type="secondary">
                                                 Requested: {createdAt ? dayjs(createdAt).format("YYYY-MM-DD HH:mm") : "-"}
                                             </Text>
+                                            {!isRegisteredForTournament ? (
+                                                <Text type="warning">
+                                                    Register this tournament first before verification.
+                                                </Text>
+                                            ) : null}
                                             <div className="mt-2">
                                                 <Button
                                                     type="primary"
+                                                    disabled={!isRegisteredForTournament}
                                                     loading={verifyingRequestId === request.id}
                                                     onClick={() => {
-                                                        void handleVerify(request);
+                                                        void handleVerify(request, isRegisteredForTournament);
                                                     }}
                                                 >
                                                     Verify Now
                                                 </Button>
+                                                {!isRegisteredForTournament ? (
+                                                    <Button
+                                                        className="ml-2"
+                                                        type="outline"
+                                                        onClick={() => navigate(`/tournaments/${request.tournament_id}/register`)}
+                                                    >
+                                                        Register
+                                                    </Button>
+                                                ) : null}
                                                 <Button
                                                     className="ml-2"
                                                     type="outline"

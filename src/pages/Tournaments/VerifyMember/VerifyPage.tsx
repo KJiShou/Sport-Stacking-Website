@@ -2,11 +2,16 @@ import type {Team} from "@/schema";
 import {getUserByGlobalId} from "@/services/firebase/authService";
 import {db} from "@/services/firebase/config";
 import {fetchTournamentEvents} from "@/services/firebase/tournamentsService";
-import {verifyTeamMembership} from "@/services/firebase/verificationService";
+import {
+    MEMBER_NOT_REGISTERED_CODE,
+    VerificationError,
+    verifyTeamMembership,
+} from "@/services/firebase/verificationService";
 import {getTeamEventLabels} from "@/utils/tournament/eventUtils";
-import {Result, Spin, Typography} from "@arco-design/web-react";
+import {Button, Result, Spin, Typography} from "@arco-design/web-react";
 import {doc, getDoc} from "firebase/firestore";
 import {useEffect, useState} from "react";
+import {useNavigate} from "react-router-dom";
 
 const {Paragraph} = Typography;
 
@@ -17,11 +22,13 @@ type VerificationDetails = {
 };
 
 export default function VerifyPage() {
+    const navigate = useNavigate();
     const [status, setStatus] = useState<"loading" | "success" | "error" | "unauthorized" | "missing" | "not_registered">(
         "loading",
     );
     const [errorMessage, setErrorMessage] = useState<string>("");
     const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
+    const [registerTournamentId, setRegisterTournamentId] = useState<string | null>(null);
 
     const loadVerificationDetails = async (tournamentId: string, teamId: string) => {
         try {
@@ -93,6 +100,7 @@ export default function VerifyPage() {
                 setStatus("missing");
                 return;
             }
+            setRegisterTournamentId(tournamentId);
 
             void loadVerificationDetails(tournamentId, teamId);
 
@@ -121,6 +129,14 @@ export default function VerifyPage() {
                 setStatus("success");
             } catch (err) {
                 console.error("Verification request failed:", err);
+                if (err instanceof VerificationError && err.code === MEMBER_NOT_REGISTERED_CODE) {
+                    setStatus("not_registered");
+                    return;
+                }
+                if (err instanceof VerificationError && err.status === 401) {
+                    setStatus("unauthorized");
+                    return;
+                }
                 if (err instanceof Error && err.message.includes("signed in")) {
                     setStatus("unauthorized");
                     return;
@@ -198,6 +214,11 @@ export default function VerifyPage() {
                 subTitle={
                     <div>
                         <Paragraph>You have not registered for this tournament, so you cannot be verified.</Paragraph>
+                        {registerTournamentId ? (
+                            <Button type="primary" onClick={() => navigate(`/tournaments/${registerTournamentId}/register`)}>
+                                Register Now
+                            </Button>
+                        ) : null}
                         {renderVerificationDetails()}
                     </div>
                 }

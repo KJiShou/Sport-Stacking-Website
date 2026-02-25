@@ -993,7 +993,10 @@ export const updateVerification = onRequest(async (req, res) => {
                 const registrationSnapshot = await registrationQuery.get();
 
                 if (registrationSnapshot.empty) {
-                    res.status(404).json({error: "Registration not found for member"});
+                    res.status(409).json({
+                        error: "You must register for this tournament before verification.",
+                        code: "MEMBER_NOT_REGISTERED",
+                    });
                     return;
                 }
 
