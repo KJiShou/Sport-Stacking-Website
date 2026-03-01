@@ -23,8 +23,7 @@ const appCheck = initializeAppCheck(app, {
     provider: new ReCaptchaV3Provider("6LcRC_0rAAAAADINnR7-KKu56U_F-QiCt0I0I0QQ"),
     isTokenAutoRefreshEnabled: true,
 });
-const firestoreDatabaseId = import.meta.env.DEV ? (import.meta.env.VITE_FIRESTORE_DATABASE_ID ?? "develop2") : undefined;
-export const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
+export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const auth = getAuth(app);
 const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION;
