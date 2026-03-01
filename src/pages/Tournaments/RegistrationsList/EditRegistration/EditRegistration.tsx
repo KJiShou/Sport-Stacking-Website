@@ -996,7 +996,7 @@ export default function EditTournamentRegistrationPage() {
                                                     {team.members.map((m, i) => (
                                                         <div key={nanoid()} className="flex gap-2 items-center">
                                                             <Tag
-                                                                color={m.verified ? "green" : "red"}
+                                                                color={m.verified ? "arcoblue" : "red"}
                                                                 style={{cursor: edit ? "pointer" : "default"}}
                                                                 onClick={() => {
                                                                     if (edit) {
