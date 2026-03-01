@@ -56,7 +56,7 @@ import {
     Upload,
 } from "@arco-design/web-react";
 import type {UploadItem} from "@arco-design/web-react/es/Upload";
-import {IconClose, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import {IconClose, IconDelete, IconPlus, IconUndo} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {nanoid} from "nanoid";
@@ -550,6 +550,38 @@ export default function EditTournamentRegistrationPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleDeleteRecruitment = (recruitment: TeamRecruitment | DoubleRecruitment) => {
+        const isTeamRecruitment = "team_id" in recruitment;
+        const recruitmentLabel = isTeamRecruitment
+            ? `Team · ${recruitment.team_name} · ${recruitment.event_name}`
+            : `Double · ${recruitment.event_name}`;
+
+        Modal.confirm({
+            title: "Delete Recruitment",
+            content: `Are you sure you want to delete this recruitment? (${recruitmentLabel})`,
+            okText: "Delete",
+            okButtonProps: {status: "danger"},
+            onOk: async () => {
+                try {
+                    setLoading(true);
+                    if (isTeamRecruitment) {
+                        await deleteTeamRecruitment(recruitment.id);
+                        setTeamRecruitments((prev) => prev.filter((item) => item.id !== recruitment.id));
+                    } else {
+                        await deleteDoubleRecruitment(recruitment.id);
+                        setDoubleRecruitments((prev) => prev.filter((item) => item.id !== recruitment.id));
+                    }
+                    Message.success("Recruitment deleted.");
+                } catch (error) {
+                    console.error("Failed to delete recruitment:", error);
+                    Message.error("Failed to delete recruitment.");
+                } finally {
+                    setLoading(false);
+                }
+            },
+        });
     };
 
     const loadData = async () => {
@@ -1058,13 +1090,22 @@ export default function EditTournamentRegistrationPage() {
                                             </Form.Item>
                                             <div className="mt-3 flex flex-col gap-2">
                                                 {activeRecruitment ? (
-                                                    <Tag color={activeRecruitment.status === "active" ? "blue" : "gray"}>
-                                                        Recruitment {activeRecruitment.status}
-                                                        {"max_members_needed" in activeRecruitment &&
-                                                        typeof activeRecruitment.max_members_needed === "number"
-                                                            ? ` · Need ${activeRecruitment.max_members_needed}`
-                                                            : ""}
-                                                    </Tag>
+                                                    <div className="flex items-center gap-2">
+                                                        <Tag color={activeRecruitment.status === "active" ? "blue" : "gray"}>
+                                                            Recruitment {activeRecruitment.status}
+                                                            {"max_members_needed" in activeRecruitment &&
+                                                            typeof activeRecruitment.max_members_needed === "number"
+                                                                ? ` · Need ${activeRecruitment.max_members_needed}`
+                                                                : ""}
+                                                        </Tag>
+                                                        <Button
+                                                            size="mini"
+                                                            status="danger"
+                                                            disabled={!edit}
+                                                            icon={<IconDelete />}
+                                                            onClick={() => handleDeleteRecruitment(activeRecruitment)}
+                                                        />
+                                                    </div>
                                                 ) : (
                                                     <Tag color="gray">No recruitment yet</Tag>
                                                 )}
@@ -1095,14 +1136,32 @@ export default function EditTournamentRegistrationPage() {
                             <Form.Item label="Recruitments">
                                 <div className="flex flex-col gap-2">
                                     {doubleRecruitments.map((recruitment) => (
-                                        <Tag key={recruitment.id} color="arcoblue">
-                                            Double · {recruitment.event_name} · {recruitment.status}
-                                        </Tag>
+                                        <div key={recruitment.id} className="flex items-center gap-2">
+                                            <Tag color="arcoblue">
+                                                Double · {recruitment.event_name} · {recruitment.status}
+                                            </Tag>
+                                            <Button
+                                                size="mini"
+                                                status="danger"
+                                                disabled={!edit}
+                                                icon={<IconDelete />}
+                                                onClick={() => handleDeleteRecruitment(recruitment)}
+                                            />
+                                        </div>
                                     ))}
                                     {teamRecruitments.map((recruitment) => (
-                                        <Tag key={recruitment.id} color="green">
-                                            Team · {recruitment.team_name} · {recruitment.event_name} · {recruitment.status}
-                                        </Tag>
+                                        <div key={recruitment.id} className="flex items-center gap-2">
+                                            <Tag color="green">
+                                                Team · {recruitment.team_name} · {recruitment.event_name} · {recruitment.status}
+                                            </Tag>
+                                            <Button
+                                                size="mini"
+                                                status="danger"
+                                                disabled={!edit}
+                                                icon={<IconDelete />}
+                                                onClick={() => handleDeleteRecruitment(recruitment)}
+                                            />
+                                        </div>
                                     ))}
                                 </div>
                             </Form.Item>

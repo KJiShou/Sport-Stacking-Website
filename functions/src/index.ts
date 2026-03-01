@@ -54,6 +54,54 @@ const db = getFirestore();
 const buildVerificationRequestId = (tournamentId: string, teamId: string, memberId: string): string =>
     `${tournamentId}_${teamId}_${memberId}`;
 
+const deleteRecruitmentsForVerifiedMember = async ({
+    tournamentId,
+    memberId,
+    registrationId,
+}: {
+    tournamentId: string;
+    memberId: string;
+    registrationId: string;
+}): Promise<void> => {
+    const teamRecruitmentRef = db.collection("team_recruitment");
+    const normalizedRegistrationId = registrationId.trim();
+    const [individualSnapshot, doubleSnapshot, teamLeaderSnapshot, teamRegistrationSnapshot] = await Promise.all([
+        db.collection("individual_recruitment")
+            .where("tournament_id", "==", tournamentId)
+            .where("participant_id", "==", memberId)
+            .get(),
+        db.collection("double_recruitment")
+            .where("tournament_id", "==", tournamentId)
+            .where("participant_id", "==", memberId)
+            .get(),
+        teamRecruitmentRef.where("tournament_id", "==", tournamentId).where("leader_id", "==", memberId).get(),
+        normalizedRegistrationId.length > 0
+            ? teamRecruitmentRef.where("tournament_id", "==", tournamentId).where("registration_id", "==", normalizedRegistrationId).get()
+            : Promise.resolve(null),
+    ]);
+
+    const teamRecruitmentDocRefs = new Map<string, ReturnType<typeof teamRecruitmentRef.doc>>();
+    for (const docSnapshot of teamLeaderSnapshot.docs) {
+        teamRecruitmentDocRefs.set(docSnapshot.id, docSnapshot.ref);
+    }
+    if (teamRegistrationSnapshot) {
+        for (const docSnapshot of teamRegistrationSnapshot.docs) {
+            teamRecruitmentDocRefs.set(docSnapshot.id, docSnapshot.ref);
+        }
+    }
+
+    const deletions = [
+        ...individualSnapshot.docs.map((docSnapshot) => docSnapshot.ref.delete()),
+        ...doubleSnapshot.docs.map((docSnapshot) => docSnapshot.ref.delete()),
+        ...Array.from(teamRecruitmentDocRefs.values()).map((ref) => ref.delete()),
+    ];
+    if (deletions.length === 0) {
+        return;
+    }
+
+    await Promise.all(deletions);
+};
+
 type TeamEventRefs = Partial<Pick<Team, "event_id" | "event">> & {
     event_ids?: unknown;
     events?: unknown;
@@ -1131,6 +1179,16 @@ export const updateVerification = onRequest(async (req, res) => {
                 },
                 {merge: true},
             );
+
+            try {
+                await deleteRecruitmentsForVerifiedMember({
+                    tournamentId,
+                    memberId,
+                    registrationId: regRef.id,
+                });
+            } catch (cleanupError) {
+                console.error("Failed to clean up recruitments after verification:", cleanupError);
+            }
 
             res.status(200).json({success: true});
         } catch (err: unknown) {
