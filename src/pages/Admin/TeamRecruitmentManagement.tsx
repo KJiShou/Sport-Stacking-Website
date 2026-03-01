@@ -1,6 +1,7 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {AssignmentModalData, DoubleRecruitment, IndividualRecruitment, TeamRecruitment, Tournament} from "@/schema";
 import {
+    deleteDoubleRecruitment,
     getAllDoubleRecruitments,
     getDoubleRecruitmentsByTournament,
     updateDoubleRecruitmentStatus,
@@ -295,7 +296,7 @@ export default function TeamRecruitmentManagement() {
     };
 
     // Handle individual deletion
-    const handleDeleteIndividual = async (individual: IndividualRecruitment) => {
+    const handleDeleteIndividual = (individual: IndividualRecruitment) => {
         Modal.confirm({
             title: "Delete Recruitment Request",
             content: `Are you sure you want to delete ${individual.participant_name}'s recruitment request?`,
@@ -308,6 +309,25 @@ export default function TeamRecruitmentManagement() {
                     loadRecruitmentData();
                 } catch (error) {
                     console.error("Failed to delete recruitment:", error);
+                    Message.error("Failed to delete recruitment request");
+                }
+            },
+        });
+    };
+
+    const handleDeleteDouble = (recruitment: DoubleRecruitment) => {
+        Modal.confirm({
+            title: "Delete Recruitment Request",
+            content: `Are you sure you want to delete ${recruitment.participant_name}'s double recruitment request?`,
+            okText: "Delete",
+            okButtonProps: {status: "danger"},
+            onOk: async () => {
+                try {
+                    await deleteDoubleRecruitment(recruitment.id);
+                    Message.success("Recruitment request deleted");
+                    loadRecruitmentData();
+                } catch (error) {
+                    console.error("Failed to delete double recruitment:", error);
                     Message.error("Failed to delete recruitment request");
                 }
             },
@@ -393,19 +413,31 @@ export default function TeamRecruitmentManagement() {
         isAdmin && {
             title: "Actions",
             key: "actions",
-            width: 120,
+            width: 160,
             render: (_: unknown, record: IndividualRecruitment) => (
-                <Button
-                    type="primary"
-                    icon={<IconUserAdd style={{marginRight: "4px"}} />}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        handleAssignToTeam(record);
-                    }}
-                    disabled={record.status !== "active"}
-                >
-                    Assign
-                </Button>
+                <div className="flex gap-2">
+                    <Button
+                        type="primary"
+                        size="mini"
+                        icon={<IconUserAdd style={{marginRight: "4px"}} />}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleAssignToTeam(record);
+                        }}
+                        disabled={record.status !== "active"}
+                    >
+                        Assign
+                    </Button>
+                        <Button
+                            size="mini"
+                            status="danger"
+                            icon={<IconDelete />}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteIndividual(record);
+                            }}
+                        />
+                </div>
             ),
         },
     ].filter(Boolean) as TableColumnProps<IndividualRecruitment>[];
@@ -456,7 +488,7 @@ export default function TeamRecruitmentManagement() {
         isAdmin && {
             title: "Actions",
             key: "actions",
-            width: 120,
+            width: 160,
             render: (_: unknown, record: DoubleRecruitment) => {
                 const hasPartner = doubles.some(
                     (candidate) =>
@@ -466,17 +498,29 @@ export default function TeamRecruitmentManagement() {
                         candidate.event_id === record.event_id,
                 );
                 return (
-                    <Button
-                        type="primary"
-                        icon={<IconUserAdd style={{marginRight: "4px"}} />}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            handleAssignDouble(record);
-                        }}
-                        disabled={record.status !== "active" || !hasPartner}
-                    >
-                        Match
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button
+                            type="primary"
+                            size="mini"
+                            icon={<IconUserAdd style={{marginRight: "4px"}} />}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleAssignDouble(record);
+                            }}
+                            disabled={record.status !== "active" || !hasPartner}
+                        >
+                            Match
+                        </Button>
+                        <Button
+                            size="mini"
+                            status="danger"
+                            icon={<IconDelete />}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteDouble(record);
+                            }}
+                        />
+                    </div>
                 );
             },
         },
