@@ -188,11 +188,8 @@ export default function EditTournamentRegistrationPage() {
         if (registrationOwnerIsMember === true) {
             return tournament.member_registration_fee ?? 0;
         }
-        if (registrationOwnerIsMember === false) {
-            return tournament.registration_fee ?? 0;
-        }
-        return (user?.memberId ? tournament.member_registration_fee : tournament.registration_fee) ?? 0;
-    }, [registrationOwnerIsMember, tournament, user?.memberId]);
+        return tournament.registration_fee ?? 0;
+    }, [registrationOwnerIsMember, tournament]);
     const additionalEventFee = useMemo(
         () => calculateAdditionalEventFee(events, registration?.events_registered ?? []),
         [events, registration?.events_registered],
@@ -587,6 +584,7 @@ export default function EditTournamentRegistrationPage() {
     const loadData = async () => {
         if (!tournamentId || !user?.global_id || !registrationId) return;
         setLoading(true);
+        setRegistrationOwnerIsMember(null);
         try {
             const tournamentData = await fetchTournamentById(tournamentId);
             setTournament(tournamentData);
