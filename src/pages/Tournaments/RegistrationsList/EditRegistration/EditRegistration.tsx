@@ -31,6 +31,7 @@ import {
 import {
     createTeam,
     deleteTeam,
+    fetchTeamsByRegistrationId,
     fetchTeamsByTournament,
     fetchTournamentById,
     fetchTournamentEvents,
@@ -155,6 +156,106 @@ const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds
         return total + getAdditionalFeeForEvent(event);
     }, 0);
 
+const getTeamCompletenessScore = (team: LegacyTeam): number => {
+    let score = 0;
+    if ((team.name ?? "").trim().length > 0) {
+        score += 3;
+    }
+    if ((team.leader_id ?? "").trim().length > 0) {
+        score += 2;
+    }
+    score += (team.members ?? []).length;
+    if (team.looking_for_member) {
+        score += 1;
+    }
+    return score;
+};
+
+const mergeTeamMembers = (teamsToMerge: LegacyTeam[]): Team["members"] => {
+    const memberMap = new Map<string, Team["members"][number]>();
+
+    for (const team of teamsToMerge) {
+        for (const member of team.members ?? []) {
+            const memberId = (member.global_id ?? "").trim();
+            if (!memberId) {
+                continue;
+            }
+
+            const existing = memberMap.get(memberId);
+            memberMap.set(memberId, {
+                global_id: memberId,
+                verified: (existing?.verified ?? false) || Boolean(member.verified),
+            });
+        }
+    }
+
+    return Array.from(memberMap.values());
+};
+
+const dedupeTeamsByEvent = (
+    sourceTeams: LegacyTeam[],
+    tournamentEvents: TournamentEvent[],
+    registrationId?: string,
+): {teams: LegacyTeam[]; duplicateTeamIds: string[]} => {
+    const groupedByEvent = new Map<string, LegacyTeam[]>();
+
+    for (const team of sourceTeams) {
+        const {eventId, eventName} = resolveTeamEvent(team, tournamentEvents);
+        const normalizedEventId = (eventId ?? "").trim().toLowerCase();
+        const normalizedEventName = (eventName ?? "").trim().toLowerCase();
+        const groupKey = normalizedEventId
+            ? `event:${normalizedEventId}`
+            : normalizedEventName
+              ? `name:${normalizedEventName}`
+              : `team:${team.id}`;
+        const bucket = groupedByEvent.get(groupKey) ?? [];
+        bucket.push(team);
+        groupedByEvent.set(groupKey, bucket);
+    }
+
+    const dedupedTeams: LegacyTeam[] = [];
+    const duplicateTeamIds: string[] = [];
+
+    for (const teamsInGroup of groupedByEvent.values()) {
+        if (teamsInGroup.length === 1) {
+            dedupedTeams.push(teamsInGroup[0]);
+            continue;
+        }
+
+        const rankedTeams = [...teamsInGroup].sort((a, b) => {
+            const registrationScoreA = a.registration_id === registrationId ? 1 : 0;
+            const registrationScoreB = b.registration_id === registrationId ? 1 : 0;
+            if (registrationScoreA !== registrationScoreB) {
+                return registrationScoreB - registrationScoreA;
+            }
+            const completenessDelta = getTeamCompletenessScore(b) - getTeamCompletenessScore(a);
+            if (completenessDelta !== 0) {
+                return completenessDelta;
+            }
+            return (a.id ?? "").localeCompare(b.id ?? "");
+        });
+
+        const canonicalTeam = rankedTeams[0];
+        const canonicalEvent = resolveTeamEvent(canonicalTeam, tournamentEvents);
+        const mergedMembers = mergeTeamMembers(rankedTeams);
+        const mergedTeam: LegacyTeam = {
+            ...canonicalTeam,
+            members: mergedMembers,
+            event_id: canonicalEvent.eventId || canonicalTeam.event_id,
+            event: canonicalEvent.eventName
+                ? [canonicalEvent.eventName]
+                : Array.isArray(canonicalTeam.event)
+                  ? canonicalTeam.event
+                  : [],
+        };
+
+        dedupedTeams.push(mergedTeam);
+        duplicateTeamIds.push(...rankedTeams.slice(1).map((team) => team.id));
+    }
+
+    return {teams: dedupedTeams, duplicateTeamIds: Array.from(new Set(duplicateTeamIds))};
+};
+
 export default function EditTournamentRegistrationPage() {
     const {tournamentId, registrationId} = useParams();
     const {user} = useAuthContext();
@@ -175,6 +276,7 @@ export default function EditTournamentRegistrationPage() {
     const [recruitmentTeam, setRecruitmentTeam] = useState<LegacyTeam | null>(null);
     const [participantNameMap, setParticipantNameMap] = useState<Record<string, string>>({});
     const [registrationOwnerIsMember, setRegistrationOwnerIsMember] = useState<boolean | null>(null);
+    const [duplicateTeamIdsToDelete, setDuplicateTeamIdsToDelete] = useState<string[]>([]);
 
     const [isMounted, setIsMounted] = useState<boolean>(false);
     const mountedRef = useRef(false);
@@ -313,6 +415,37 @@ export default function EditTournamentRegistrationPage() {
                 );
             }
 
+            const duplicateCleanupIds = duplicateTeamIdsToDelete.filter(
+                (teamId) => !removedTeams.some((team) => team.id === teamId),
+            );
+            if (duplicateCleanupIds.length > 0) {
+                await Promise.all(
+                    duplicateCleanupIds.map(async (teamId) => {
+                        try {
+                            await deleteTeam(teamId);
+                        } catch (error) {
+                            if (!(error instanceof Error && error.message.includes("Team not found"))) {
+                                console.error("Failed to delete duplicate team:", error);
+                            }
+                        }
+                        try {
+                            await deleteVerificationRequestsByTeamId(teamId);
+                        } catch (error) {
+                            console.error("Failed to delete verification requests for duplicate team:", error);
+                        }
+                        const relatedRecruitment = teamRecruitments.find((recruitment) => recruitment.team_id === teamId);
+                        if (relatedRecruitment) {
+                            try {
+                                await deleteTeamRecruitment(relatedRecruitment.id);
+                            } catch (error) {
+                                console.error("Failed to delete team recruitment for duplicate team:", error);
+                            }
+                        }
+                    }),
+                );
+                setTeamRecruitments((prev) => prev.filter((recruitment) => !duplicateCleanupIds.includes(recruitment.team_id)));
+            }
+
             if (removedMembersFromPersistedTeams.length > 0 && tournamentId) {
                 await Promise.all(
                     removedMembersFromPersistedTeams.map(async ({teamId, memberId}) => {
@@ -348,6 +481,7 @@ export default function EditTournamentRegistrationPage() {
                 }
             }
             initialEventIdsRef.current = registrationData.events_registered;
+            setDuplicateTeamIdsToDelete([]);
 
             for (const team of teams) {
                 const memberIds = team.members.map((m) => m.global_id);
@@ -356,6 +490,17 @@ export default function EditTournamentRegistrationPage() {
                 }
 
                 const memberUsers = await Promise.all(memberIds.map((id) => getUserByGlobalId(id)));
+                const memberNameById = new Map<string, string>();
+                memberIds.forEach((id, index) => {
+                    const normalizedId = (id ?? "").trim();
+                    if (!normalizedId) {
+                        return;
+                    }
+                    const candidateName = (memberUsers[index]?.name ?? "").trim();
+                    if (candidateName.length > 0) {
+                        memberNameById.set(normalizedId, candidateName);
+                    }
+                });
 
                 const ages = memberUsers
                     .map((memberUser) => {
@@ -406,11 +551,33 @@ export default function EditTournamentRegistrationPage() {
                 const eventDetails = eventDefinition;
                 const nextEventId = eventDetails ? getEventKey(eventDetails) : resolvedEventId;
                 const nextEventName = eventDetails ? getEventLabel(eventDetails) : resolvedEventName;
+                const normalizedEventType = (eventDetails?.type ?? resolvedEventName ?? "").toLowerCase();
+                const isDoubleEvent = normalizedEventType.includes("double");
+                const isParentChildEvent =
+                    normalizedEventType.includes("parent") && normalizedEventType.includes("child");
+
+                let resolvedTeamName = team.name;
+                if (isDoubleEvent || isParentChildEvent) {
+                    const leaderId = stripTeamLeaderPrefix(team.leader_id ?? "").trim();
+                    const leaderName = leaderId ? memberNameById.get(leaderId) : undefined;
+                    const partnerNames = (team.members ?? [])
+                        .map((member) => member.global_id?.trim())
+                        .filter((id): id is string => Boolean(id) && id !== leaderId)
+                        .map((id) => memberNameById.get(id))
+                        .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+                    const nameParts = [leaderName, ...partnerNames].filter(
+                        (name): name is string => typeof name === "string" && name.trim().length > 0,
+                    );
+                    if (nameParts.length > 0) {
+                        resolvedTeamName = Array.from(new Set(nameParts)).join(" & ");
+                    }
+                }
 
                 const {event_ids: _legacyEventIds, events: _legacyEvents, largest_age: _legacyLargestAge, ...teamRest} = team;
 
                 const teamData: Team = {
                     ...teamRest,
+                    name: resolvedTeamName,
                     event_id: nextEventId || null,
                     event: nextEventName ? [nextEventName] : Array.isArray(team.event) ? team.event : [],
                     team_age,
@@ -607,16 +774,19 @@ export default function EditTournamentRegistrationPage() {
             setRegistrationOwnerIsMember(hasMemberId);
             initialEventIdsRef.current = userReg.events_registered ?? [];
 
-            const allTeamsData = await fetchTeamsByTournament(tournamentId);
-            // Only show teams where the participant is leader or member (like ViewRegisterTournament)
-            const membershipTeams = allTeamsData.filter((team) => {
-                const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                return (
-                    leaderId === userReg.user_global_id ||
-                    (team.members ?? []).some((m) => m.global_id === userReg.user_global_id)
-                );
-            });
-            const normalizedTeams: LegacyTeam[] = membershipTeams.map((team) => {
+            const registrationTeams = await fetchTeamsByRegistrationId(registrationId);
+            const sourceTeams =
+                registrationTeams.length > 0
+                    ? registrationTeams
+                    : (await fetchTeamsByTournament(tournamentId)).filter((team) => {
+                          const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                          return (
+                              leaderId === userReg.user_global_id ||
+                              (team.members ?? []).some((m) => m.global_id === userReg.user_global_id)
+                          );
+                      });
+
+            const normalizedTeams: LegacyTeam[] = sourceTeams.map((team) => {
                 const legacyTeam = team as LegacyTeam;
                 const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentData?.events ?? []);
                 const normalizedLeaderId =
@@ -631,8 +801,15 @@ export default function EditTournamentRegistrationPage() {
                     event: eventName ? [eventName] : Array.isArray(legacyTeam.event) ? legacyTeam.event : [],
                 };
             });
-            setTeams(normalizedTeams);
-            setInitialTeams(normalizedTeams);
+            const deduped = dedupeTeamsByEvent(normalizedTeams, tournamentData?.events ?? [], registrationId);
+            setTeams(deduped.teams);
+            setInitialTeams(deduped.teams);
+            setDuplicateTeamIdsToDelete(deduped.duplicateTeamIds);
+            if (deduped.duplicateTeamIds.length > 0) {
+                Message.warning(
+                    `Detected ${deduped.duplicateTeamIds.length} duplicate team record(s). They will be removed when you save.`,
+                );
+            }
 
             const [leaderRecruitments, participantDoubleRecruitments] = await Promise.all([
                 getTeamRecruitmentsByLeader(userReg.user_global_id),
@@ -849,18 +1026,44 @@ export default function EditTournamentRegistrationPage() {
                                         (event) =>
                                             selectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
                                     );
-
-                                    const newTeamEvents = selectedTeamEvents.filter(
-                                        (event) => !teams.some((team) => teamMatchesEvent(team, event, tournamentEvents)),
+                                    const registrationLeaderIds = [registration?.user_global_id, registration?.user_id].filter(
+                                        (value): value is string => Boolean(value),
                                     );
+                                    const removedEventIds: string[] = [];
 
-                                    if (newTeamEvents.length > 0) {
-                                        const newTeamsToAdd: LegacyTeam[] = newTeamEvents.map((event) => {
+                                    setTeams((prevTeams) => {
+                                        const retainedTeams = prevTeams.filter((team) => {
+                                            const stillSelected = selectedTeamEvents.some((event) =>
+                                                teamMatchesEvent(team, event, tournamentEvents),
+                                            );
+                                            if (stillSelected) {
+                                                return true;
+                                            }
+
+                                            const ownedByRegistration = registrationLeaderIds.includes(
+                                                stripTeamLeaderPrefix(team.leader_id),
+                                            );
+                                            if (!ownedByRegistration) {
+                                                return true;
+                                            }
+
+                                            const removedEventId = resolveTeamEvent(team, tournamentEvents).eventId;
+                                            if (removedEventId) {
+                                                removedEventIds.push(removedEventId);
+                                            }
+                                            return false;
+                                        });
+
+                                        const nextTeams = [...retainedTeams];
+                                        for (const event of selectedTeamEvents) {
+                                            if (nextTeams.some((team) => teamMatchesEvent(team, event, tournamentEvents))) {
+                                                continue;
+                                            }
                                             const eventKey = getEventKey(event);
                                             const eventType = (event.type ?? "").toLowerCase();
                                             const isDoubleEvent = eventType.includes("double");
                                             const isParentChild = eventType.includes("parent") && eventType.includes("child");
-                                            return {
+                                            nextTeams.push({
                                                 id: nanoid(),
                                                 tournament_id: tournamentId ?? "",
                                                 name: isDoubleEvent || isParentChild ? (registration?.user_name ?? "") : "",
@@ -871,54 +1074,37 @@ export default function EditTournamentRegistrationPage() {
                                                 registration_id: registrationId ?? "",
                                                 team_age: 0,
                                                 looking_for_member: false,
-                                            };
-                                        });
-                                        setTeams((prev) => [...prev, ...newTeamsToAdd]);
-                                    }
-
-                                    const removedTeamEvents = teams.filter(
-                                        (team) =>
-                                            !selectedTeamEvents.some((event) => teamMatchesEvent(team, event, tournamentEvents)),
-                                    );
-                                    if (removedTeamEvents.length > 0) {
-                                        const registrationLeaderIds = [
-                                            registration?.user_global_id,
-                                            registration?.user_id,
-                                        ].filter((value): value is string => Boolean(value));
-                                        const removedTeamIds = removedTeamEvents
-                                            .filter((team) =>
-                                                registrationLeaderIds.includes(stripTeamLeaderPrefix(team.leader_id)),
-                                            )
-                                            .map((t) => t.id);
-                                        setTeams((prev) => prev.filter((team) => !removedTeamIds.includes(team.id)));
-
-                                        const removedEventIds = removedTeamEvents
-                                            .map((team) => resolveTeamEvent(team, tournamentEvents).eventId)
-                                            .filter((value): value is string => Boolean(value));
-                                        if (registration?.user_global_id && removedEventIds.length > 0) {
-                                            void (async () => {
-                                                try {
-                                                    const participantRecruitments = await getDoubleRecruitmentsByParticipant(
-                                                        registration.user_global_id,
-                                                    );
-                                                    const toDelete = participantRecruitments.filter(
-                                                        (recruitment) =>
-                                                            recruitment.tournament_id === tournamentId &&
-                                                            removedEventIds.includes(recruitment.event_id),
-                                                    );
-                                                    await Promise.all(
-                                                        toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)),
-                                                    );
-                                                    setDoubleRecruitments((prev) =>
-                                                        prev.filter(
-                                                            (recruitment) => !removedEventIds.includes(recruitment.event_id),
-                                                        ),
-                                                    );
-                                                } catch (error) {
-                                                    console.error("Failed to delete double recruitments:", error);
-                                                }
-                                            })();
+                                            });
                                         }
+
+                                        return nextTeams;
+                                    });
+
+                                    const uniqueRemovedEventIds = Array.from(new Set(removedEventIds));
+                                    if (registration?.user_global_id && uniqueRemovedEventIds.length > 0) {
+                                        void (async () => {
+                                            try {
+                                                const participantRecruitments = await getDoubleRecruitmentsByParticipant(
+                                                    registration.user_global_id,
+                                                );
+                                                const toDelete = participantRecruitments.filter(
+                                                    (recruitment) =>
+                                                        recruitment.tournament_id === tournamentId &&
+                                                        uniqueRemovedEventIds.includes(recruitment.event_id),
+                                                );
+                                                await Promise.all(
+                                                    toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)),
+                                                );
+                                                setDoubleRecruitments((prev) =>
+                                                    prev.filter(
+                                                        (recruitment) =>
+                                                            !uniqueRemovedEventIds.includes(recruitment.event_id),
+                                                    ),
+                                                );
+                                            } catch (error) {
+                                                console.error("Failed to delete double recruitments:", error);
+                                            }
+                                        })();
                                     }
                                 }}
                             >
@@ -939,8 +1125,14 @@ export default function EditTournamentRegistrationPage() {
                             </Select>
                         </Form.Item>
 
+                        {duplicateTeamIdsToDelete.length > 0 && (
+                            <div className="w-full rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+                                Merged duplicate team records for the same event. The extra records will be removed when you
+                                save this registration.
+                            </div>
+                        )}
                         <Form.Item shouldUpdate noStyle>
-                            <div className="flex flex-row w-full gap-10">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
                                 {teams.map((team) => {
                                     const {eventId, eventName, eventDefinition} = resolveTeamEvent(team, events ?? []);
                                     const teamEventLabel = eventName || "Team Event";
@@ -972,7 +1164,7 @@ export default function EditTournamentRegistrationPage() {
                                             : "";
 
                                     return (
-                                        <div key={team.id} className="border p-4 rounded-md shadow-sm">
+                                        <div key={team.id} className="border p-4 rounded-md shadow-sm min-w-0">
                                             <Title heading={6}>{teamEventLabel}</Title>
                                             <Divider />
                                             <Form.Item label={teamNameLabel}>

@@ -1143,7 +1143,7 @@ export default function RegisterTournamentPage() {
                         </Form.Item>
 
                         <Form.Item shouldUpdate noStyle>
-                            <div className="flex flex-row w-full gap-10">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
                                 {haveTeam
                                     .filter((entry) => entry.requiresTeam)
                                     .map((entry) => {
@@ -1174,7 +1174,7 @@ export default function RegisterTournamentPage() {
                                         const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
-                                            <div key={eventId}>
+                                            <div key={eventId} className="min-w-0 border p-4 rounded-md shadow-sm">
                                                 <div className="text-center">{eventLabel}</div>
                                                 <Divider />
                                                 <Form.Item field={`teams.${eventId}.label`} initialValue={eventLabel} noStyle>

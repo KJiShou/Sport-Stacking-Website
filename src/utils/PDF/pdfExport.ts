@@ -474,6 +474,19 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
             return parts.length > 0 ? parts.join(", ") : "None";
         };
 
+        const sortedRegistrations = [...registrations].sort((a, b) => {
+            const globalIdA = (a.user_global_id ?? "").trim();
+            const globalIdB = (b.user_global_id ?? "").trim();
+
+            if (globalIdA && globalIdB) {
+                return globalIdA.localeCompare(globalIdB, undefined, {numeric: true, sensitivity: "base"});
+            }
+            if (globalIdA) return -1;
+            if (globalIdB) return 1;
+
+            return (a.user_name ?? "").localeCompare(b.user_name ?? "", undefined, {sensitivity: "base"});
+        });
+
         // Header
         doc.setFont("times", "bold");
         doc.setFontSize(25);
@@ -492,18 +505,19 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
 
         const startY = currentY;
 
-        const tableData = registrations.map((r, index) => [
+        const tableData = sortedRegistrations.map((r, index) => [
             (index + 1).toString(),
             r.user_global_id || "N/A",
             r.user_name || "N/A",
             ageMap[r.user_id]?.toString() || "N/A",
+            r.organizer?.trim() || r.country?.trim() || "N/A",
             phoneMap[r.user_global_id] || "N/A",
             formatEventsRegistered(r),
         ]);
 
         autoTable(doc, {
             startY,
-            head: [["No.", "Global ID", "Name", "Age", "Phone", "Events Registered"]],
+            head: [["No.", "Global ID", "Name", "Age", "School", "Phone", "Events Registered"]],
             body: tableData,
             theme: "plain",
             styles: {
@@ -522,12 +536,13 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
                 fontStyle: "bold",
             },
             columnStyles: {
-                0: {cellWidth: 10},
-                1: {cellWidth: 25},
-                2: {cellWidth: 40},
-                3: {cellWidth: 15},
+                0: {cellWidth: 8},
+                1: {cellWidth: 22},
+                2: {cellWidth: 32},
+                3: {cellWidth: 12},
                 4: {cellWidth: 30},
-                5: {cellWidth: 65},
+                5: {cellWidth: 22},
+                6: {cellWidth: 56},
             },
         });
 

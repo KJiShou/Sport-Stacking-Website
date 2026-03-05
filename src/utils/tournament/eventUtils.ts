@@ -135,6 +135,10 @@ export const matchesEventKey = (value: string, event: TournamentEvent | null | u
     if (normalizedValue === normalizedType) {
         return true;
     }
+    const normalizedLabel = getEventLabel(event).toLowerCase();
+    if (normalizedValue === normalizedLabel) {
+        return true;
+    }
 
     const codes = sanitizeEventCodes(event.codes);
     for (const code of codes) {

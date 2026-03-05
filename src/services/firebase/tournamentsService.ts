@@ -19,7 +19,11 @@ import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} fro
 import {EventSchema, TournamentSchema} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {teamMatchesEventKey} from "../../utils/tournament/eventUtils";
-import {removeUserRegistrationRecordsByTournament, removeUserTournamentHistoryByTournament} from "./authService";
+import {
+    fetchUsersByGlobalIds,
+    removeUserRegistrationRecordsByTournament,
+    removeUserTournamentHistoryByTournament,
+} from "./authService";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByTournament} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByTournament} from "./individualRecruitmentService";
@@ -818,6 +822,27 @@ export async function updateTeamNamesForTournament(tournamentId: string): Promis
         const registration = docSnap.data() as Registration;
         if (registration.user_global_id && registration.user_name) {
             nameMap.set(registration.user_global_id, registration.user_name);
+        }
+    }
+    const missingGlobalIds = Array.from(
+        new Set(
+            teamsSnapshot.docs.flatMap((docSnap) => {
+                const team = docSnap.data() as Team;
+                const leaderId = stripTeamLeaderPrefix(team.leader_id ?? "").trim();
+                const memberIds = (team.members ?? [])
+                    .map((member) => (member.global_id ?? "").trim())
+                    .filter((memberId) => memberId.length > 0);
+                return leaderId ? [leaderId, ...memberIds] : memberIds;
+            }),
+        ),
+    ).filter((globalId) => !nameMap.has(globalId));
+    if (missingGlobalIds.length > 0) {
+        const usersByGlobalId = await fetchUsersByGlobalIds(missingGlobalIds);
+        for (const [globalId, user] of Object.entries(usersByGlobalId)) {
+            const candidateName = (user.name ?? "").trim();
+            if (candidateName.length > 0) {
+                nameMap.set(globalId, candidateName);
+            }
         }
     }
 
