@@ -1,7 +1,12 @@
 import type {Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/schema";
 import {fetchUsersByGlobalIds} from "@/services/firebase/authService";
 import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {
+    fetchTeamsByTournament,
+    fetchTournamentById,
+    fetchTournamentEvents,
+    updateTeamNamesForTournament,
+} from "@/services/firebase/tournamentsService";
 import {
     exportAllBracketsListToPDF,
     exportCombinedTimeSheetsPDF,
@@ -373,6 +378,26 @@ export default function ParticipantListPage() {
         }
     };
 
+    const handleUpdateTeamNames = async () => {
+        if (!tournamentId) {
+            Message.warning("Tournament ID is missing");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const updatedCount = await updateTeamNamesForTournament(tournamentId);
+            Message.success(
+                updatedCount > 0 ? `Updated ${updatedCount} team name(s).` : "All team names are already up to date.",
+            );
+            await refreshParticipantList();
+        } catch (error) {
+            Message.error("Failed to update team names");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     if (!tournament) return null;
 
     const tournamentEvents = events ?? [];
@@ -507,6 +532,14 @@ export default function ParticipantListPage() {
                                         onClick={handlePrintAllTimeSheets}
                                     >
                                         Time Sheet
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        loading={loading}
+                                        className={`text-left`}
+                                        onClick={handleUpdateTeamNames}
+                                    >
+                                        Update Team Name
                                     </Button>
                                 </div>
                             }

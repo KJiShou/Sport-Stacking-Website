@@ -8,7 +8,12 @@ import {fetchUsersByGlobalIds, getUserByGlobalId} from "@/services/firebase/auth
 import {getDoubleRecruitmentsByParticipant} from "@/services/firebase/doubleRecruitmentService";
 import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
 import {getTeamRecruitmentsByLeader} from "@/services/firebase/teamRecruitmentService";
-import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {
+    fetchTeamsByRegistrationId,
+    fetchTeamsByTournament,
+    fetchTournamentById,
+    fetchTournamentEvents,
+} from "@/services/firebase/tournamentsService";
 import {getEventKey, getEventLabel, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
@@ -105,6 +110,52 @@ const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds
         }
         return total + getAdditionalFeeForEvent(event);
     }, 0);
+
+const getTeamCompletenessScore = (team: LegacyTeam): number => {
+    let score = 0;
+    if ((team.name ?? "").trim().length > 0) score += 3;
+    if ((team.leader_id ?? "").trim().length > 0) score += 2;
+    score += (team.members ?? []).length;
+    return score;
+};
+
+const dedupeTeamsByEvent = (sourceTeams: LegacyTeam[], tournamentEvents: TournamentEvent[]): LegacyTeam[] => {
+    const groupedByEvent = new Map<string, LegacyTeam[]>();
+
+    for (const team of sourceTeams) {
+        const {eventId, eventName} = resolveTeamEvent(team, tournamentEvents);
+        const normalizedEventId = (eventId ?? "").trim().toLowerCase();
+        const normalizedEventName = (eventName ?? "").trim().toLowerCase();
+        const groupKey = normalizedEventId
+            ? `event:${normalizedEventId}`
+            : normalizedEventName
+              ? `name:${normalizedEventName}`
+              : `team:${team.id}`;
+        const bucket = groupedByEvent.get(groupKey) ?? [];
+        bucket.push(team);
+        groupedByEvent.set(groupKey, bucket);
+    }
+
+    const dedupedTeams: LegacyTeam[] = [];
+    for (const teamsInGroup of groupedByEvent.values()) {
+        if (teamsInGroup.length === 1) {
+            dedupedTeams.push(teamsInGroup[0]);
+            continue;
+        }
+
+        const canonicalTeam = [...teamsInGroup].sort((a, b) => {
+            const completenessDelta = getTeamCompletenessScore(b) - getTeamCompletenessScore(a);
+            if (completenessDelta !== 0) {
+                return completenessDelta;
+            }
+            return (a.id ?? "").localeCompare(b.id ?? "");
+        })[0];
+
+        dedupedTeams.push(canonicalTeam);
+    }
+
+    return dedupedTeams;
+};
 
 export default function ViewTournamentRegistrationPage() {
     const {tournamentId} = useParams();
@@ -205,13 +256,16 @@ export default function ViewTournamentRegistrationPage() {
                 const hasMemberId = typeof registrationOwner?.memberId === "string" && registrationOwner.memberId.trim().length > 0;
                 setRegistrationOwnerIsMember(hasMemberId);
 
-                const teamsData = await fetchTeamsByTournament(tournamentId);
-
-                const membershipTeams = teamsData.filter(
-                    (team) =>
-                        team.leader_id === user.global_id || (team.members ?? []).some((m) => m.global_id === user.global_id),
-                );
-                const normalizedTeams = membershipTeams.map((team) => {
+                const registrationTeams = userReg.id ? await fetchTeamsByRegistrationId(userReg.id) : [];
+                const sourceTeams =
+                    registrationTeams.length > 0
+                        ? registrationTeams
+                        : (await fetchTeamsByTournament(tournamentId)).filter(
+                              (team) =>
+                                  team.leader_id === user.global_id ||
+                                  (team.members ?? []).some((m) => m.global_id === user.global_id),
+                          );
+                const normalizedTeams = sourceTeams.map((team) => {
                     const legacyTeam = team as LegacyTeam;
                     const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentEvents);
 
@@ -221,7 +275,8 @@ export default function ViewTournamentRegistrationPage() {
                         event: eventName ? [eventName] : Array.isArray(legacyTeam.event) ? legacyTeam.event : [],
                     };
                 });
-                setTeams(normalizedTeams);
+                const dedupedTeams = dedupeTeamsByEvent(normalizedTeams, tournamentEvents);
+                setTeams(dedupedTeams);
                 const [leaderRecruitments, participantDoubleRecruitments] = await Promise.all([
                     getTeamRecruitmentsByLeader(user.global_id),
                     getDoubleRecruitmentsByParticipant(user.global_id),
@@ -355,7 +410,7 @@ export default function ViewTournamentRegistrationPage() {
                             </Select>
                         </Form.Item>
                         <Form.Item shouldUpdate noStyle>
-                            <div className={`flex flex-row w-full gap-10`}>
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
                                 {teams.map((team) => {
                                     const {eventId, eventName} = resolveTeamEvent(team, availableEventsState);
                                     const teamEventLabel = eventName || "Team Event";
@@ -379,7 +434,7 @@ export default function ViewTournamentRegistrationPage() {
                                         : undefined;
                                     const activeRecruitment = activeDoubleRecruitment ?? activeTeamRecruitment;
                                     return (
-                                        <div key={team.id}>
+                                        <div key={team.id} className="min-w-0 border p-4 rounded-md shadow-sm">
                                             <div className={`text-center font-semibold mb-2`}>{teamEventLabel}</div>
                                             <Divider />
                                             <Form.Item label={teamNameLabel}>
