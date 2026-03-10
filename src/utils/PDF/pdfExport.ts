@@ -660,12 +660,21 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                     });
 
                     const bracketHighlight =
-                        typeof bracket.highlightFinalists === "boolean" ? bracket.highlightFinalists : highlightFinalists;
+                        typeof bracketResult.highlightFinalists === "boolean"
+                            ? bracketResult.highlightFinalists
+                            : highlightFinalists;
                     const shouldHighlightRows = round !== "Final" && bracketHighlight;
+                    const highlightedRecordClassifications = bracketResult.highlightedRecordClassifications ?? {};
                     const finalCriteria = shouldHighlightRows ? bracket.final_criteria || [] : [];
                     const rankGroups: {classification: string; startRank: number; endRank: number}[] = [];
+                    const classificationColors: {[key: string]: [number, number, number]} = {
+                        advance: [255, 255, 0],
+                        intermediate: [144, 238, 144],
+                        beginner: [173, 216, 230],
+                        prelim: [255, 218, 185],
+                    };
 
-                    if (shouldHighlightRows && finalCriteria.length > 0) {
+                    if (shouldHighlightRows && finalCriteria.length > 0 && Object.keys(highlightedRecordClassifications).length === 0) {
                         const classificationOrder = ["advance", "intermediate", "beginner", "prelim"];
                         const sortedCriteria = [...finalCriteria].sort(
                             (a, b) =>
@@ -693,17 +702,25 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                         didParseCell: shouldHighlightRows
                             ? (data) => {
                                   if (data.section === "body") {
+                                      const sourceRecord = records[data.row.index];
+                                      const mappedClassification =
+                                          sourceRecord && sourceRecord.id
+                                              ? highlightedRecordClassifications[String(sourceRecord.id)]
+                                              : undefined;
+
+                                      if (mappedClassification) {
+                                          const color = classificationColors[mappedClassification];
+                                          if (color) {
+                                              data.cell.styles.fillColor = color;
+                                          }
+                                          return;
+                                      }
+
                                       const rawRank = data.row.raw[0];
                                       const rank = typeof rawRank === "number" ? rawRank : Number.parseInt(String(rawRank), 10);
 
                                       for (const group of rankGroups) {
                                           if (rank >= group.startRank && rank <= group.endRank) {
-                                              const classificationColors: {[key: string]: [number, number, number]} = {
-                                                  advance: [255, 255, 0],
-                                                  intermediate: [144, 238, 144],
-                                                  beginner: [173, 216, 230],
-                                                  prelim: [255, 218, 185],
-                                              };
                                               const color = classificationColors[group.classification];
                                               if (color) {
                                                   data.cell.styles.fillColor = color;
@@ -731,8 +748,13 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
 
                     currentY = (doc as jsPDF & {lastAutoTable?: {finalY: number}}).lastAutoTable?.finalY + 10 || currentY + 20;
 
+                    const legendClassifications =
+                        Object.keys(highlightedRecordClassifications).length > 0
+                            ? Array.from(new Set(Object.values(highlightedRecordClassifications)))
+                            : rankGroups.map((group) => group.classification);
+
                     // Add classification legend if we're showing prelim results with highlights
-                    if (shouldHighlightRows && rankGroups.length > 0) {
+                    if (shouldHighlightRows && legendClassifications.length > 0) {
                         // Add some spacing before the legend
                         currentY += 5;
 
@@ -758,19 +780,13 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                             beginner: "Beginner - Entry-level performers (Light Blue)",
                         };
 
-                        const classificationColors: {[key: string]: [number, number, number]} = {
-                            advance: [255, 255, 0],
-                            intermediate: [144, 238, 144],
-                            beginner: [173, 216, 230],
-                        };
-
                         const legendStartX = 25;
                         const boxSize = 4;
                         const boxSpacing = 2;
 
-                        for (const group of rankGroups) {
-                            const label = classificationLabels[group.classification];
-                            const color = classificationColors[group.classification];
+                        for (const classification of legendClassifications) {
+                            const label = classificationLabels[classification];
+                            const color = classificationColors[classification];
 
                             if (label && color) {
                                 // Draw colored box

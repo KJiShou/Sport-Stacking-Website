@@ -38,6 +38,8 @@ import type {TournamentRecord, TournamentTeamRecord} from "../../../schema/Recor
 const {Title} = Typography;
 const {TabPane} = Tabs;
 type PrintScope = "all" | "event" | "age";
+const FINALIST_EXCLUDED_TOTAL_TIME = 299.997;
+const TIME_COMPARISON_EPSILON = 0.0005;
 
 type AggregatedPrelimResult = Partial<PrelimResultData> & {
     registration?: Registration;
@@ -123,6 +125,18 @@ const sortWithBestTimes = (a: AggregatedPrelimResult, b: AggregatedPrelimResult)
     const secondary = (a.secondBestTime ?? Number.POSITIVE_INFINITY) - (b.secondBestTime ?? Number.POSITIVE_INFINITY);
     if (secondary !== 0) return secondary;
     return (a.thirdBestTime ?? Number.POSITIVE_INFINITY) - (b.thirdBestTime ?? Number.POSITIVE_INFINITY);
+};
+
+const isEligibleForFinalistSelection = (event: TournamentEvent, record: AggregatedPrelimResult): boolean => {
+    if (typeof record.bestTime !== "number" || !Number.isFinite(record.bestTime)) {
+        return false;
+    }
+
+    if (sanitizeEventCodes(event.codes).length <= 1) {
+        return true;
+    }
+
+    return Math.abs(record.bestTime - FINALIST_EXCLUDED_TOTAL_TIME) > TIME_COMPARISON_EPSILON;
 };
 
 const isTeamRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentTeamRecord =>
@@ -765,7 +779,25 @@ export default function PrelimResultsPage() {
                     const brackets = scopedBrackets
                         .map((bracket) => {
                             const records = computeEventBracketResults(event, bracket, aggregationContext);
-                            return {bracket, records};
+                            const eligibleRecords = records.filter((record) => isEligibleForFinalistSelection(event, record));
+                            const highlightedRecordClassifications: Record<string, string> = {};
+
+                            const finalCriteria = bracket.final_criteria ?? [];
+                            let processedCount = 0;
+                            for (const criterion of finalCriteria) {
+                                const {classification, number} = criterion;
+                                const bracketFinalists = eligibleRecords.slice(processedCount, processedCount + number);
+                                for (const finalistRecord of bracketFinalists) {
+                                    highlightedRecordClassifications[finalistRecord.id] = classification;
+                                }
+                                processedCount += number;
+                            }
+
+                            return {
+                                bracket,
+                                records,
+                                highlightedRecordClassifications,
+                            };
                         })
                         .filter((entry) => entry.records.length > 0);
 
@@ -824,7 +856,9 @@ export default function PrelimResultsPage() {
 
                 const brackets: BracketResults[] = [];
                 for (const bracket of scopedBrackets) {
-                    const records = computeEventBracketResults(event, bracket, aggregationContext);
+                    const records = computeEventBracketResults(event, bracket, aggregationContext).filter((record) =>
+                        isEligibleForFinalistSelection(event, record),
+                    );
                     if (records.length === 0) continue;
 
                     const finalCriteria = bracket.final_criteria ?? [];
@@ -1062,12 +1096,14 @@ export default function PrelimResultsPage() {
                 for (const bracket of event.age_brackets ?? []) {
                     const records = computeEventBracketResults(event, bracket, aggregationContext);
                     if (records.length === 0) continue;
+                    const eligibleRecords = records.filter((record) => isEligibleForFinalistSelection(event, record));
+                    if (eligibleRecords.length === 0) continue;
 
                     const finalCriteria = bracket.final_criteria ?? [];
                     let processedCount = 0;
                     for (const criterion of finalCriteria) {
                         const {classification, number} = criterion;
-                        const bracketFinalists = records.slice(processedCount, processedCount + number);
+                        const bracketFinalists = eligibleRecords.slice(processedCount, processedCount + number);
                         if (bracketFinalists.length > 0) {
                             finalists.push({
                                 event,
