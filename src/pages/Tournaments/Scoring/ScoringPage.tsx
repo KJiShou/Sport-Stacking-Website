@@ -765,7 +765,10 @@ export default function ScoringPage() {
                     await calculateAndSaveOverallResults(nextRegistrationList);
                 }
 
-                Message.success(`Record saved for ${selectedParticipant.user_name}!`);
+                Message.success({
+                    content: `Record saved for ${selectedParticipant.user_name}!`,
+                    closable: true,
+                });
                 closeModal();
             } else if (selectedTeam && event) {
                 const updatedModalScores: Record<string, Score> = {...modalScores};
@@ -858,12 +861,20 @@ export default function ScoringPage() {
                 // Update the team in the list with new scores
                 setTeamScoreList((prev) => prev.map((t) => (t.id === selectedTeam.id ? {...t, scores: updatedModalScores} : t)));
 
-                Message.success(`Record saved for team ${selectedTeam.name}!`);
+                Message.success({
+                    content: `Record saved for team ${selectedTeam.name}!`,
+                    closable: true,
+                    duration: 0,
+                });
                 closeModal();
             }
         } catch (error) {
             console.error("Failed to save record:", error);
-            Message.error("Failed to save record. Please try again.");
+            Message.error({
+                content: "Failed to save record. Please try again.",
+                closable: true,
+                duration: 0,
+            });
         } finally {
             setLoading(false);
         }
@@ -1425,7 +1436,7 @@ export default function ScoringPage() {
                                                             if (validationErrors.length > 0) {
                                                                 for (const error of validationErrors) {
                                                                     const errorMessage = `Cannot complete preliminary round for ${eventType}. Missing records:\n${error}`;
-                                                                    Message.error(errorMessage);
+                                                                    Message.error({content: errorMessage, closable: true});
                                                                 }
                                                                 setLoading(false);
                                                                 return;

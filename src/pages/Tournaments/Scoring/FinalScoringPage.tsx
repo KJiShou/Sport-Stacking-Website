@@ -767,10 +767,18 @@ export default function FinalScoringPage() {
             setSelectedParticipant(null);
             setSelectedTeam(null);
             setModalScores({});
-            Message.success("Record(s) saved.");
+            Message.success({
+                content: "Record(s) saved.",
+                closable: true,
+                duration: 0,
+            });
         } catch (error) {
             console.error(error);
-            Message.error("Failed to save record(s).");
+            Message.error({
+                content: "Failed to save record(s).",
+                closable: true,
+                duration: 0,
+            });
         } finally {
             setLoading(false);
         }
