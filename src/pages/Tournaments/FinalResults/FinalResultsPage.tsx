@@ -20,7 +20,7 @@ import {
     isScoreTrackedEvent,
     isTeamEvent as isTournamentTeamEvent,
 } from "@/utils/tournament/eventUtils";
-import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
+import {Button, Dropdown, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
 import {useCallback, useEffect, useMemo, useState} from "react";
@@ -28,6 +28,7 @@ import {useNavigate, useParams} from "react-router-dom";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
+type PrintScope = "all" | "event" | "age";
 
 type AggregatedFinalResult = PrelimResultData & {
     registration?: Registration;
@@ -730,17 +731,30 @@ export default function FinalResultsPage() {
         }
     }, []);
 
-    const handlePrint = useCallback(async () => {
-        if (!tournament) return;
+    const buildFinalResultsData = useCallback(
+        (scope: PrintScope): EventResults[] => {
+            const scopedEvents =
+                scope === "all"
+                    ? events ?? []
+                    : currentEvent
+                      ? [currentEvent]
+                      : [];
 
-        setLoading(true);
-        try {
-            const resultsData: EventResults[] = (events ?? [])
+            return scopedEvents
                 .map((event) => {
-                    const brackets = (event.age_brackets ?? [])
+                    const scopedBrackets =
+                        scope === "age" && event.id === currentEvent?.id && currentBracket ? [currentBracket] : event.age_brackets ?? [];
+
+                    const brackets = scopedBrackets
                         .flatMap((bracket) => {
-                            // For each bracket, create separate entries for each classification
-                            return (bracket.final_criteria ?? []).map((fc) => {
+                            const criteria =
+                                scope === "age" && event.id === currentEvent?.id && bracket.name === currentBracket?.name
+                                    ? (bracket.final_criteria ?? []).filter(
+                                          (fc) => fc.classification === currentClassificationTab,
+                                      )
+                                    : bracket.final_criteria ?? [];
+
+                            return criteria.map((fc) => {
                                 const records = computeEventBracketResults(event, bracket, aggregationContext, fc.classification);
                                 return {
                                     bracket: {
@@ -753,12 +767,29 @@ export default function FinalResultsPage() {
                             });
                         })
                         .filter((entry) => entry.records.length > 0);
+
                     return {event, brackets};
                 })
                 .filter((entry) => entry.brackets.length > 0);
+        },
+        [aggregationContext, currentBracket, currentClassificationTab, currentEvent, events],
+    );
+
+    const handlePrint = useCallback(async (scope: PrintScope = "age") => {
+        if (!tournament) return;
+
+        setLoading(true);
+        try {
+            const resultsData = buildFinalResultsData(scope);
 
             if (resultsData.length === 0) {
-                Message.info("No final results found.");
+                const scopeLabel =
+                    scope === "all"
+                        ? "No final results found."
+                        : scope === "event"
+                          ? "No final results found for the current event."
+                          : "No final results found for the current age bracket and classification.";
+                Message.info(scopeLabel);
                 return;
             }
 
@@ -775,7 +806,7 @@ export default function FinalResultsPage() {
         } finally {
             setLoading(false);
         }
-    }, [aggregationContext, events, tournament]);
+    }, [buildFinalResultsData, tournament]);
 
     const handlePrintCertificates = useCallback(async () => {
         if (!tournament) return;
@@ -894,10 +925,32 @@ export default function FinalResultsPage() {
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <div className="w-full flex justify-between items-center">
                     <Title heading={3}>Final Results</Title>
-                    <div className="flex items-center gap-2">
-                        <Button type="primary" icon={<IconPrinter />} onClick={handlePrint} loading={loading}>
-                            Print All Brackets
-                        </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Dropdown
+                            trigger="click"
+                            droplist={
+                                <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
+                                    <Button type="text" className="text-left" loading={loading} onClick={() => handlePrint("all")}>
+                                        Print All
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrint("event")}
+                                    >
+                                        Print Current Event
+                                    </Button>
+                                    <Button type="text" className="text-left" loading={loading} onClick={() => handlePrint("age")}>
+                                        Print Current Age
+                                    </Button>
+                                </div>
+                            }
+                        >
+                            <Button type="primary" icon={<IconPrinter />} loading={loading}>
+                                Print Results
+                            </Button>
+                        </Dropdown>
                         <Button type="primary" icon={<IconPrinter />} onClick={handlePrintCertificates} loading={loading}>
                             Print Certificates
                         </Button>

@@ -28,7 +28,7 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
+import {Button, Dropdown, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
 import {useCallback, useEffect, useMemo, useState} from "react";
@@ -37,6 +37,7 @@ import type {TournamentRecord, TournamentTeamRecord} from "../../../schema/Recor
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
+type PrintScope = "all" | "event" | "age";
 
 type AggregatedPrelimResult = Partial<PrelimResultData> & {
     registration?: Registration;
@@ -747,25 +748,49 @@ export default function PrelimResultsPage() {
         [currentEvent, currentBracketTab],
     );
 
-    const handlePrint = useCallback(async () => {
-        if (!tournament) return;
+    const buildPrelimResultsData = useCallback(
+        (scope: PrintScope): EventResults[] => {
+            const scopedEvents =
+                scope === "all"
+                    ? events ?? []
+                    : currentEvent
+                      ? [currentEvent]
+                      : [];
 
-        setLoading(true);
-        try {
-            const resultsData: EventResults[] = (events ?? [])
+            return scopedEvents
                 .map((event) => {
-                    const brackets = (event.age_brackets ?? [])
+                    const scopedBrackets =
+                        scope === "age" && event.id === currentEvent?.id && currentBracket ? [currentBracket] : event.age_brackets ?? [];
+
+                    const brackets = scopedBrackets
                         .map((bracket) => {
                             const records = computeEventBracketResults(event, bracket, aggregationContext);
                             return {bracket, records};
                         })
                         .filter((entry) => entry.records.length > 0);
+
                     return {event, brackets};
                 })
                 .filter((entry) => entry.brackets.length > 0);
+        },
+        [aggregationContext, currentBracket, currentEvent, events],
+    );
+
+    const handlePrint = useCallback(async (scope: PrintScope = "age") => {
+        if (!tournament) return;
+
+        setLoading(true);
+        try {
+            const resultsData = buildPrelimResultsData(scope);
 
             if (resultsData.length === 0) {
-                Message.info("No preliminary results found.");
+                const scopeLabel =
+                    scope === "all"
+                        ? "No preliminary results found."
+                        : scope === "event"
+                          ? "No preliminary results found for the current event."
+                          : "No preliminary results found for the current age bracket.";
+                Message.info(scopeLabel);
                 return;
             }
 
@@ -780,18 +805,25 @@ export default function PrelimResultsPage() {
         } finally {
             setLoading(false);
         }
-    }, [aggregationContext, tournament]);
+    }, [buildPrelimResultsData, tournament]);
 
-    const handlePrintFinalists = useCallback(async () => {
-        if (!tournament) return;
+    const buildFinalistsPrintData = useCallback(
+        (scope: PrintScope): EventResults[] => {
+            const scopedEvents =
+                scope === "all"
+                    ? events ?? []
+                    : currentEvent
+                      ? [currentEvent]
+                      : [];
 
-        setLoading(true);
-        try {
             const finalistsData: EventResults[] = [];
 
-            for (const event of events) {
+            for (const event of scopedEvents) {
+                const scopedBrackets =
+                    scope === "age" && event.id === currentEvent?.id && currentBracket ? [currentBracket] : event.age_brackets ?? [];
+
                 const brackets: BracketResults[] = [];
-                for (const bracket of event.age_brackets ?? []) {
+                for (const bracket of scopedBrackets) {
                     const records = computeEventBracketResults(event, bracket, aggregationContext);
                     if (records.length === 0) continue;
 
@@ -845,8 +877,26 @@ export default function PrelimResultsPage() {
                 }
             }
 
+            return finalistsData;
+        },
+        [aggregationContext, currentBracket, currentEvent, events],
+    );
+
+    const handlePrintFinalists = useCallback(async (scope: PrintScope = "age") => {
+        if (!tournament) return;
+
+        setLoading(true);
+        try {
+            const finalistsData = buildFinalistsPrintData(scope);
+
             if (finalistsData.length === 0) {
-                Message.info("No finalists found to print.");
+                const scopeLabel =
+                    scope === "all"
+                        ? "No finalists found to print."
+                        : scope === "event"
+                          ? "No finalists found for the current event."
+                          : "No finalists found for the current age bracket.";
+                Message.info(scopeLabel);
                 return;
             }
 
@@ -861,7 +911,7 @@ export default function PrelimResultsPage() {
         } finally {
             setLoading(false);
         }
-    }, [aggregationContext, tournament]);
+    }, [buildFinalistsPrintData, tournament]);
 
     const handleStartFinal = useCallback(async () => {
         if (!tournament) return;
@@ -1154,7 +1204,7 @@ export default function PrelimResultsPage() {
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <div className="w-full flex justify-between items-center">
                     <Title heading={3}>Preliminary Results</Title>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <Button
                             type="primary"
                             status="success"
@@ -1164,23 +1214,74 @@ export default function PrelimResultsPage() {
                         >
                             Start Final
                         </Button>
-                        <Button type="primary" icon={<IconPrinter />} onClick={handlePrint} loading={loading}>
-                            Print All Brackets
-                        </Button>
+                        <Dropdown
+                            trigger="click"
+                            droplist={
+                                <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
+                                    <Button type="text" className="text-left" loading={loading} onClick={() => handlePrint("all")}>
+                                        Print All
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrint("event")}
+                                    >
+                                        Print Current Event
+                                    </Button>
+                                    <Button type="text" className="text-left" loading={loading} onClick={() => handlePrint("age")}>
+                                        Print Current Age
+                                    </Button>
+                                </div>
+                            }
+                        >
+                            <Button type="primary" icon={<IconPrinter />} loading={loading}>
+                                Print Results
+                            </Button>
+                        </Dropdown>
                         {canShareLinks && (
                             <Button type="outline" icon={<IconCopy />} onClick={handleCopyShareLink}>
                                 Copy Share Link
                             </Button>
                         )}
-                        <Button
-                            type="primary"
-                            status="warning"
-                            icon={<IconPrinter />}
-                            onClick={handlePrintFinalists}
-                            loading={loading}
+                        <Dropdown
+                            trigger="click"
+                            droplist={
+                                <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
+                                    <Button
+                                        type="text"
+                                        status="warning"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrintFinalists("all")}
+                                    >
+                                        Print All
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        status="warning"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrintFinalists("event")}
+                                    >
+                                        Print Current Event
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        status="warning"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrintFinalists("age")}
+                                    >
+                                        Print Current Age
+                                    </Button>
+                                </div>
+                            }
                         >
-                            Print Finalists
-                        </Button>
+                            <Button type="primary" status="warning" icon={<IconPrinter />} loading={loading}>
+                                Print Finalists
+                            </Button>
+                        </Dropdown>
                     </div>
                 </div>
                 <Tabs
