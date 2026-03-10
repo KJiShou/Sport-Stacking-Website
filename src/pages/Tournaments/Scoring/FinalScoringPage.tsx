@@ -445,7 +445,7 @@ export default function FinalScoringPage() {
         return Math.min(...vals).toFixed(3);
     };
 
-    const checkAllFinalistsAndNavigate = async (targetEvent: TournamentEvent) => {
+    const checkAllFinalistsAndNavigate = async (targetEvent: TournamentEvent, bracketName: string) => {
         if (!tournamentId) return;
         setLoading(true);
         try {
@@ -459,6 +459,9 @@ export default function FinalScoringPage() {
             };
 
             const currentEventFinalists = finalist.filter((g) => {
+                if (g.bracket_name !== bracketName) {
+                    return false;
+                }
                 if (targetEvent.id && g.event_id) {
                     return g.event_id === targetEvent.id;
                 }
@@ -466,7 +469,7 @@ export default function FinalScoringPage() {
             });
 
             if (currentEventFinalists.length === 0) {
-                Message.info(`No finalists found for ${getEventLabel(targetEvent)}.`);
+                Message.info(`No finalists found for ${getEventLabel(targetEvent)} in ${bracketName}.`);
                 setLoading(false);
                 return;
             }
@@ -521,7 +524,7 @@ export default function FinalScoringPage() {
                             updateParticipantRankingsAndResults(tournamentId, classification),
                         ),
                     );
-                    Message.success(`${getEventLabel(targetEvent)} is complete. Redirecting to results…`);
+                    Message.success(`${getEventLabel(targetEvent)} ${bracketName} is complete. Redirecting to results...`);
                 } catch (updateError) {
                     console.error("Error updating rankings:", updateError);
                     Message.warning("Records complete but failed to update some rankings.");
@@ -551,7 +554,7 @@ export default function FinalScoringPage() {
                     .map((m) => `${resolveName(m.id, m.eventType)} [${m.code} - ${getEventName(m)}]`)
                     .join(", ");
                 const more = missing.length > 12 ? ` and ${missing.length - 12} more` : "";
-                Message.warning(`Some finalists are missing scores: ${preview}${more}`);
+                Message.warning(`Some finalists in ${bracketName} are missing scores: ${preview}${more}`);
             }
         } catch (error) {
             console.error("Failed to check records:", error);
@@ -915,7 +918,7 @@ export default function FinalScoringPage() {
                                                     type="primary"
                                                     status="success"
                                                     loading={loading}
-                                                    onClick={() => checkAllFinalistsAndNavigate(evt)}
+                                                    onClick={() => checkAllFinalistsAndNavigate(evt, br.name)}
                                                     style={{marginLeft: 8}}
                                                 >
                                                     Final Done
