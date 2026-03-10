@@ -36,7 +36,12 @@ export function uploadFile(
             typeof optionsOrProgress === "function" ? {onProgress: optionsOrProgress} : (optionsOrProgress ?? {});
         const timeoutMs = typeof options.timeoutMs === "number" && options.timeoutMs > 0 ? options.timeoutMs : 120000;
         const storageRef = ref(storage, `${path}/${fileName}`);
-        const uploadTask = uploadBytesResumable(storageRef, file);
+        const metadata = file.type
+            ? {
+                  contentType: file.type,
+              }
+            : undefined;
+        const uploadTask = uploadBytesResumable(storageRef, file, metadata);
         let settled = false;
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
