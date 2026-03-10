@@ -49,7 +49,9 @@ if (!getApps().length) {
     initializeApp();
 }
 
-const db = getFirestore();
+const firebaseApp = getApps()[0]!;
+const firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID?.trim();
+const db = firestoreDatabaseId ? getFirestore(firebaseApp, firestoreDatabaseId) : getFirestore(firebaseApp);
 
 const buildVerificationRequestId = (tournamentId: string, teamId: string, memberId: string): string =>
     `${tournamentId}_${teamId}_${memberId}`;

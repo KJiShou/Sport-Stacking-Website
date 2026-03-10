@@ -16,16 +16,19 @@ import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {exportAllPrelimResultsToPDF, exportFinalistsNameListToPDF} from "@/utils/PDF/pdfExport";
-import {formatTeamLeaderId} from "@/utils/teamLeaderId";
+import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {
+    getEventKey,
     getEventLabel,
     getEventTypeOrderIndex,
     isScoreTrackedEvent,
     isTeamEvent as isTournamentTeamEvent,
+    matchesAnyEventKey,
     sanitizeEventCodes,
+    teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import {Button, Message, Table, Tabs, Typography} from "@arco-design/web-react";
+import {Button, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
 import {useCallback, useEffect, useMemo, useState} from "react";
@@ -135,6 +138,31 @@ const getParticipantId = (record: Partial<TournamentRecord | AggregatedPrelimRes
 
 const getTeamAge = (record: Partial<TournamentTeamRecord | AggregatedPrelimResult>): number | undefined =>
     (record as {team_age?: number}).team_age ?? (record as {largest_age?: number}).largest_age;
+
+const normalizeGender = (value: unknown): "Male" | "Female" | "Mixed" => {
+    if (value === "Male" || value === "Female") {
+        return value;
+    }
+    return "Mixed";
+};
+
+const isGenderEligible = (participantGender: unknown, eventGender: TournamentEvent["gender"]): boolean => {
+    const normalizedEventGender = normalizeGender(eventGender);
+    if (normalizedEventGender === "Mixed") {
+        return true;
+    }
+    return normalizeGender(participantGender) === normalizedEventGender;
+};
+
+const registrationMatchesEvent = (registration: Registration, event: TournamentEvent): boolean => {
+    if (!isGenderEligible(registration.gender, event.gender)) {
+        return false;
+    }
+
+    return (
+        registration.events_registered.includes(getEventKey(event)) || matchesAnyEventKey(registration.events_registered, event)
+    );
+};
 
 const computeTeamMultiCodeResults = (
     event: TournamentEvent,
@@ -840,6 +868,141 @@ export default function PrelimResultsPage() {
 
         setLoading(true);
         try {
+            const approvedRegistrations = registrations.filter((registration) => registration.registration_status === "approved");
+            const approvedRegistrationIds = new Set(
+                approvedRegistrations.flatMap((registration) => [registration.user_id, registration.user_global_id]).filter(Boolean),
+            );
+            const validationErrors: string[] = [];
+
+            for (const event of events) {
+                const eventKey = getEventKey(event);
+                const eventCodes = sanitizeEventCodes(event.codes);
+
+                for (const bracket of event.age_brackets ?? []) {
+                    if (isTournamentTeamEvent(event)) {
+                        const participantsForBracket = teams.filter((team) => {
+                            const teamAge = team.team_age ?? team.largest_age;
+                            if (typeof teamAge !== "number" || teamAge < bracket.min_age || teamAge > bracket.max_age) {
+                                return false;
+                            }
+
+                            const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                            if (!approvedRegistrationIds.has(leaderId)) {
+                                return false;
+                            }
+
+                            return (
+                                teamMatchesEventKey(team, eventKey, events) ||
+                                teamMatchesEventKey(team, event.id ?? "", events) ||
+                                teamMatchesEventKey(team, event.type, events)
+                            );
+                        });
+
+                        for (const team of participantsForBracket) {
+                            if (eventCodes.length > 0) {
+                                for (const code of eventCodes) {
+                                    const hasRecord = allRecords.some(
+                                        (record) =>
+                                            isTeamRecord(record) &&
+                                            getTeamId(record) === team.id &&
+                                            record.code === code &&
+                                            (event.id ? record.event_id === event.id : record.event === event.type),
+                                    );
+
+                                    if (!hasRecord) {
+                                        validationErrors.push(
+                                            `${team.name} missing ${code} record for ${getEventLabel(event)} (${bracket.name})`,
+                                        );
+                                    }
+                                }
+                            } else {
+                                const hasRecord = allRecords.some(
+                                    (record) =>
+                                        isTeamRecord(record) &&
+                                        getTeamId(record) === team.id &&
+                                        (event.id ? record.event_id === event.id : record.event === event.type),
+                                );
+
+                                if (!hasRecord) {
+                                    validationErrors.push(
+                                        `${team.name} missing record for ${getEventLabel(event)} (${bracket.name})`,
+                                    );
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    const participantsForBracket = approvedRegistrations.filter((registration) => {
+                        if (!registrationMatchesEvent(registration, event)) {
+                            return false;
+                        }
+
+                        return registration.age >= bracket.min_age && registration.age <= bracket.max_age;
+                    });
+
+                    for (const participant of participantsForBracket) {
+                        if (eventCodes.length > 0) {
+                            for (const code of eventCodes) {
+                                const hasRecord = allRecords.some(
+                                    (record) =>
+                                        isIndividualRecord(record) &&
+                                        record.participant_id === participant.user_id &&
+                                        record.code === code &&
+                                        (event.id ? record.event_id === event.id : record.event === event.type),
+                                );
+
+                                if (!hasRecord) {
+                                    validationErrors.push(
+                                        `${participant.user_name} (${participant.user_global_id}) missing ${code} record for ${getEventLabel(event)} (${bracket.name})`,
+                                    );
+                                }
+                            }
+                        } else {
+                            const hasRecord = allRecords.some(
+                                (record) =>
+                                    isIndividualRecord(record) &&
+                                    record.participant_id === participant.user_id &&
+                                    (event.id ? record.event_id === event.id : record.event === event.type),
+                            );
+
+                            if (!hasRecord) {
+                                validationErrors.push(
+                                    `${participant.user_name} (${participant.user_global_id}) missing record for ${getEventLabel(event)} (${bracket.name})`,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (validationErrors.length > 0) {
+                const previewErrors = validationErrors.slice(0, 20);
+                const remainingCount = validationErrors.length - previewErrors.length;
+
+                Modal.warning({
+                    title: "Cannot Start Final",
+                    style: {width: 720},
+                    content: (
+                        <div style={{maxHeight: 420, overflowY: "auto"}}>
+                            <p style={{marginBottom: 12}}>
+                                Finals can only start after every required prelim record has been entered.
+                            </p>
+                            <ul style={{paddingLeft: 20, margin: 0}}>
+                                {previewErrors.map((error) => (
+                                    <li key={error} style={{marginBottom: 8}}>
+                                        {error}
+                                    </li>
+                                ))}
+                            </ul>
+                            {remainingCount > 0 ? <p style={{marginTop: 12}}>And {remainingCount} more missing records.</p> : null}
+                        </div>
+                    ),
+                });
+                setLoading(false);
+                return;
+            }
+
             const finalists: Finalist[] = [];
 
             for (const event of events) {
