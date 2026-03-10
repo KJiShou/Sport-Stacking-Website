@@ -23,6 +23,7 @@ export interface BracketResults {
     records: PrelimResultData[];
     classification?: "beginner" | "intermediate" | "advance" | "prelim";
     highlightFinalists?: boolean;
+    highlightedRecordClassifications?: Record<string, string>;
 }
 
 export interface EventResults {

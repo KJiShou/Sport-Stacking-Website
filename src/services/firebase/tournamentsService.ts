@@ -18,7 +18,7 @@ import {
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import {EventSchema, TournamentSchema} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
-import {teamMatchesEventKey} from "../../utils/tournament/eventUtils";
+import {getTeamEvents, teamMatchesEventKey} from "../../utils/tournament/eventUtils";
 import {
     fetchUsersByGlobalIds,
     removeUserRegistrationRecordsByTournament,
@@ -37,6 +37,73 @@ function isUUID(value: string): boolean {
     const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     return uuidV4Regex.test(value);
 }
+
+const getNormalizedTeamEventType = (
+    teamData: Partial<Pick<Team, "event_id" | "event">>,
+    tournamentEvents: TournamentEvent[],
+): string => {
+    const matchedEventType = getTeamEvents(teamData, tournamentEvents)[0]?.type;
+    if (typeof matchedEventType === "string" && matchedEventType.trim().length > 0) {
+        return matchedEventType.trim().toLowerCase();
+    }
+
+    const rawReferences = [
+        ...(Array.isArray(teamData.event) ? teamData.event : [teamData.event]).filter(
+            (value): value is string => typeof value === "string" && value.trim().length > 0,
+        ),
+        ...(typeof teamData.event_id === "string" && teamData.event_id.trim().length > 0 ? [teamData.event_id] : []),
+    ];
+
+    return rawReferences.join(" ").trim().toLowerCase();
+};
+
+const calculateTeamAge = (
+    ages: number[],
+    eventType: string,
+    options: {enforceDoubleRange?: boolean} = {},
+): number => {
+    const validAges = ages.filter((age) => Number.isFinite(age) && age > 0);
+    if (validAges.length === 0) {
+        return 0;
+    }
+
+    if (eventType.includes("team relay")) {
+        return Math.round(validAges.reduce((sum, age) => sum + age, 0) / validAges.length);
+    }
+
+    if (eventType.includes("double")) {
+        const minAge = Math.min(...validAges);
+        const maxAge = Math.max(...validAges);
+        if (options.enforceDoubleRange !== false && maxAge - minAge > 10) {
+            throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
+        }
+        return Math.round(validAges.reduce((sum, age) => sum + age, 0) / validAges.length);
+    }
+
+    if (eventType.includes("parent") && eventType.includes("child")) {
+        return Math.min(...validAges);
+    }
+
+    return Math.max(...validAges);
+};
+
+const buildRegistrationLookup = (registrations: Registration[]): Map<string, Registration> => {
+    const registrationMap = new Map<string, Registration>();
+
+    for (const registration of registrations) {
+        const globalId = registration.user_global_id?.trim();
+        if (globalId) {
+            registrationMap.set(globalId, registration);
+        }
+
+        const userId = registration.user_id?.trim();
+        if (userId && !registrationMap.has(userId)) {
+            registrationMap.set(userId, registration);
+        }
+    }
+
+    return registrationMap;
+};
 
 export async function createTournament(
     user: FirestoreUser,
@@ -544,11 +611,12 @@ export async function createTeam(tournamentId: string, teamData: Omit<Team, "id"
 
     const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
     const ages: number[] = [];
+    const tournamentEvents = await fetchTournamentEvents(tournamentId);
     for (const id of memberIds) {
         const registrationQuery = query(
             collection(db, "registrations"),
             where("tournament_id", "==", tournamentId),
-            where("user_id", "==", id),
+            where("user_global_id", "==", id),
         );
         const registrationSnapshot = await getDocs(registrationQuery);
         const registration = registrationSnapshot.docs[0]?.data() as Registration | undefined;
@@ -557,8 +625,12 @@ export async function createTeam(tournamentId: string, teamData: Omit<Team, "id"
         }
     }
 
+    const eventType = getNormalizedTeamEventType(teamData, tournamentEvents);
+    const resolvedTeamAge = calculateTeamAge(ages, eventType);
+
     const docRef = await addDoc(teamsCollectionRef, {
         ...teamData,
+        team_age: resolvedTeamAge,
         tournament_id: tournamentId,
         event_id: teamData.event_id ?? null,
     });
@@ -748,6 +820,7 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
 
     const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
     const ages: number[] = [];
+    const tournamentEvents = await fetchTournamentEvents(tournamentId);
 
     // Normalize event names and get event ids (if present)
     const normalizedEventNames = Array.isArray(teamData.event)
@@ -772,7 +845,7 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
         const registrationQuery = query(
             collection(db, "registrations"),
             where("tournament_id", "==", tournamentId),
-            where("user_id", "==", id),
+            where("user_global_id", "==", id),
         );
         const registrationSnapshot = await getDocs(registrationQuery);
         const registrationDoc = registrationSnapshot.docs[0];
@@ -799,7 +872,7 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
     }
 
     const {id, tournament_id: _ignoredTournamentId, ...restTeamData} = teamData;
-    const teamAge = restTeamData.team_age ?? (ages.length > 0 ? Math.max(...ages) : 0);
+    const teamAge = calculateTeamAge(ages, getNormalizedTeamEventType(teamData, tournamentEvents));
 
     await updateDoc(teamRef, {
         ...restTeamData,
@@ -812,10 +885,14 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
 export async function updateTeamNamesForTournament(tournamentId: string): Promise<number> {
     const teamsCollectionRef = collection(db, "teams");
     const registrationsCollectionRef = collection(db, "registrations");
-    const [teamsSnapshot, registrationsSnapshot] = await Promise.all([
+    const [teamsSnapshot, registrationsSnapshot, tournamentEvents] = await Promise.all([
         getDocs(query(teamsCollectionRef, where("tournament_id", "==", tournamentId))),
         getDocs(query(registrationsCollectionRef, where("tournament_id", "==", tournamentId))),
+        fetchTournamentEvents(tournamentId),
     ]);
+    const registrationMap = buildRegistrationLookup(
+        registrationsSnapshot.docs.map((docSnap) => docSnap.data() as Registration),
+    );
 
     const nameMap = new Map<string, string>();
     for (const docSnap of registrationsSnapshot.docs) {
@@ -858,13 +935,19 @@ export async function updateTeamNamesForTournament(tournamentId: string): Promis
             .filter((name): name is string => Boolean(name));
 
         const nameParts = [leaderName, ...memberNames].filter((name): name is string => Boolean(name));
-        if (nameParts.length === 0) {
-            continue;
-        }
+        const nextName = nameParts.length > 0 ? nameParts.join(" & ") : team.name;
+        const teamMemberAges = [leaderId, ...(team.members ?? []).map((member) => member.global_id)]
+            .map((id) => registrationMap.get(id ?? "")?.age)
+            .filter((age): age is number => typeof age === "number" && Number.isFinite(age));
+        const nextTeamAge = calculateTeamAge(teamMemberAges, getNormalizedTeamEventType(team, tournamentEvents), {
+            enforceDoubleRange: false,
+        });
 
-        const nextName = nameParts.join(" & ");
-        if (nextName !== team.name) {
-            await updateDoc(docSnap.ref, {name: nextName});
+        if (nextName !== team.name || nextTeamAge !== team.team_age) {
+            await updateDoc(docSnap.ref, {
+                name: nextName,
+                team_age: nextTeamAge,
+            });
             updatedCount += 1;
         }
     }
