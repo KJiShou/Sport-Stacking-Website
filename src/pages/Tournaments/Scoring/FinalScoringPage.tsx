@@ -30,6 +30,7 @@ import {useMount} from "react-use";
 const {Title} = Typography;
 const {TabPane} = Tabs;
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
+const MESSAGE_DURATION_SECONDS = 5;
 
 /**
  * Helper function to determine age group based on participant age
@@ -773,14 +774,14 @@ export default function FinalScoringPage() {
             Message.success({
                 content: "Record(s) saved.",
                 closable: true,
-                duration: 0,
+                duration: MESSAGE_DURATION_SECONDS,
             });
         } catch (error) {
             console.error(error);
             Message.error({
                 content: "Failed to save record(s).",
                 closable: true,
-                duration: 0,
+                duration: MESSAGE_DURATION_SECONDS,
             });
         } finally {
             setLoading(false);

@@ -35,6 +35,7 @@ import {useMount} from "react-use";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
+const MESSAGE_DURATION_SECONDS = 5;
 
 const isTeamTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentTeamRecord =>
     "team_id" in record;
@@ -768,6 +769,7 @@ export default function ScoringPage() {
                 Message.success({
                     content: `Record saved for ${selectedParticipant.user_name}!`,
                     closable: true,
+                    duration: MESSAGE_DURATION_SECONDS,
                 });
                 closeModal();
             } else if (selectedTeam && event) {
@@ -864,7 +866,7 @@ export default function ScoringPage() {
                 Message.success({
                     content: `Record saved for team ${selectedTeam.name}!`,
                     closable: true,
-                    duration: 0,
+                    duration: MESSAGE_DURATION_SECONDS,
                 });
                 closeModal();
             }
@@ -873,7 +875,7 @@ export default function ScoringPage() {
             Message.error({
                 content: "Failed to save record. Please try again.",
                 closable: true,
-                duration: 0,
+                duration: MESSAGE_DURATION_SECONDS,
             });
         } finally {
             setLoading(false);
@@ -1426,7 +1428,11 @@ export default function ScoringPage() {
                                                             if (validationErrors.length > 0) {
                                                                 for (const error of validationErrors) {
                                                                     const errorMessage = `Cannot complete preliminary round for ${eventType}. Missing records:\n${error}`;
-                                                                    Message.error({content: errorMessage, closable: true});
+                                                                    Message.error({
+                                                                        content: errorMessage,
+                                                                        closable: true,
+                                                                        duration: MESSAGE_DURATION_SECONDS,
+                                                                    });
                                                                 }
                                                                 setLoading(false);
                                                                 return;
