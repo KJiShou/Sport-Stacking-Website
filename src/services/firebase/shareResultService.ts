@@ -80,15 +80,21 @@ const buildAggregationContext = (
     };
 };
 
-const toShareRows = (rows: ReturnType<typeof computeEventBracketResults>) =>
+const toShareRows = (
+    rows: ReturnType<typeof computeEventBracketResults>,
+    scope: {eventId: string; bracketName: string; classification?: string},
+) =>
     rows
-        .map((row) => ({
-            ...row,
-            id: String(row.id ?? row.participant_id ?? row.participantId ?? row.teamId ?? row.name ?? crypto.randomUUID()),
-            rank: typeof row.rank === "number" ? row.rank : 0,
-            name: typeof row.name === "string" ? row.name : "N/A",
-            bestTime: typeof row.bestTime === "number" ? row.bestTime : Number.POSITIVE_INFINITY,
-        }))
+        .map((row) => {
+            const baseId = String(row.id ?? row.participant_id ?? row.participantId ?? row.teamId ?? row.name ?? crypto.randomUUID());
+            return {
+                ...row,
+                id: `${scope.eventId}::${scope.bracketName}::${scope.classification ?? "all"}::${baseId}`,
+                rank: typeof row.rank === "number" ? row.rank : 0,
+                name: typeof row.name === "string" ? row.name : "N/A",
+                bestTime: typeof row.bestTime === "number" ? row.bestTime : Number.POSITIVE_INFINITY,
+            };
+        })
         .filter((row) => Number.isFinite(row.bestTime));
 
 export const getShareScoreSheetData = async (tournamentId: string, round: ShareRound): Promise<ShareScoreSheetPayload | null> => {
@@ -136,14 +142,21 @@ export const getShareScoreSheetData = async (tournamentId: string, round: ShareR
                 return criteria.map((criterion) => ({
                     bracket,
                     classification: criterion.classification,
-                    rows: toShareRows(computeEventBracketResults(event, bracket, context, criterion.classification)),
+                    rows: toShareRows(computeEventBracketResults(event, bracket, context, criterion.classification), {
+                        eventId: event.id ?? event.type,
+                        bracketName: bracket.name,
+                        classification: criterion.classification,
+                    }),
                 }));
             }
 
             return [
                 {
                     bracket,
-                    rows: toShareRows(computeEventBracketResults(event, bracket, context)),
+                    rows: toShareRows(computeEventBracketResults(event, bracket, context), {
+                        eventId: event.id ?? event.type,
+                        bracketName: bracket.name,
+                    }),
                 },
             ];
         });

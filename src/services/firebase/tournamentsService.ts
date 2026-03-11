@@ -943,11 +943,58 @@ export async function updateTeamNamesForTournament(tournamentId: string): Promis
             enforceDoubleRange: false,
         });
 
+        let teamDocumentUpdated = false;
         if (nextName !== team.name || nextTeamAge !== team.team_age) {
             await updateDoc(docSnap.ref, {
                 name: nextName,
                 team_age: nextTeamAge,
             });
+            teamDocumentUpdated = true;
+        }
+
+        let registrationEntriesUpdated = 0;
+        for (const registrationDoc of registrationsSnapshot.docs) {
+            const registration = registrationDoc.data() as Registration;
+            const registrationTeams = Array.isArray(registration.teams) ? registration.teams : [];
+            let registrationChanged = false;
+
+            const nextRegistrationTeams = registrationTeams.map((registrationTeam) => {
+                if (registrationTeam.team_id !== team.id) {
+                    return registrationTeam;
+                }
+
+                const currentLeader = registrationTeam.leader?.global_id?.trim();
+                const currentMembers = Array.isArray(registrationTeam.member) ? registrationTeam.member : [];
+                const normalizedMemberIds = currentMembers
+                    .map((member) => member.global_id?.trim())
+                    .filter((memberId): memberId is string => Boolean(memberId));
+                const sameLeader = currentLeader === leaderId;
+                const sameMemberCount = normalizedMemberIds.length === (team.members ?? []).length;
+                const sameMembers =
+                    sameMemberCount &&
+                    normalizedMemberIds.every((memberId, index) => memberId === (team.members?.[index]?.global_id ?? "").trim());
+
+                const nextRegistrationTeam = {
+                    ...registrationTeam,
+                    name: nextName,
+                    label: nextName,
+                };
+
+                if (!sameLeader || !sameMembers || registrationTeam.name !== nextName || registrationTeam.label !== nextName) {
+                    registrationChanged = true;
+                    registrationEntriesUpdated += 1;
+                    return nextRegistrationTeam;
+                }
+
+                return registrationTeam;
+            });
+
+            if (registrationChanged) {
+                await updateDoc(registrationDoc.ref, {teams: nextRegistrationTeams});
+            }
+        }
+
+        if (teamDocumentUpdated || registrationEntriesUpdated > 0) {
             updatedCount += 1;
         }
     }
