@@ -1265,7 +1265,13 @@ export const generateStackingSheetPDF = async (
     participants: Registration[],
     ageMap: Record<string, number>,
     division: string,
-    options: {logoUrl?: string; includeAllParticipants?: boolean; participantId?: string; eventCodes?: string[]} = {},
+    options: {
+        logoUrl?: string;
+        includeAllParticipants?: boolean;
+        participantId?: string;
+        eventCodes?: string[];
+        roundLabel?: string;
+    } = {},
     sheetType = "Individual",
 ): Promise<void> => {
     try {
@@ -1300,6 +1306,8 @@ export const generateStackingSheetPDF = async (
                 sheetType,
                 options.eventCodes ?? [],
                 index % 2, // position: 0 top, 1 bottom
+                undefined,
+                options.roundLabel,
             );
         });
 
@@ -1319,6 +1327,7 @@ export interface TimeSheetEntry {
     division: string;
     sheetType: string;
     eventCodes: string[];
+    roundLabel?: string;
 }
 
 export interface CertificateEntry {
@@ -1364,6 +1373,7 @@ export const exportCombinedTimeSheetsPDF = async (options: {
             entry.eventCodes,
             index % 2,
             nameMap,
+            entry.roundLabel,
         );
     });
 
@@ -1486,7 +1496,7 @@ export const generateTeamStackingSheetPDF = async (
     team: Team,
     ageMap: Record<string, number>,
     division: string,
-    options: {logoUrl?: string; eventCodes?: string[]; nameMap?: Record<string, string>} = {},
+    options: {logoUrl?: string; eventCodes?: string[]; nameMap?: Record<string, string>; roundLabel?: string} = {},
     sheetType = "Team",
 ): Promise<void> => {
     try {
@@ -1508,6 +1518,7 @@ export const generateTeamStackingSheetPDF = async (
             options.eventCodes ?? [],
             0,
             options.nameMap,
+            options.roundLabel,
         );
 
         const filename = createPDFFilename([tournament.name, team.name, "timesheet.pdf"]);
@@ -1549,6 +1560,7 @@ const generateSingleStackingSheet = (
     eventCodes: string[] = [],
     position = 0,
     nameMap: Record<string, string> = {},
+    roundLabel = "Prelim",
 ): void => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginX = 5;
@@ -1651,8 +1663,9 @@ const generateSingleStackingSheet = (
     // === 2. Subtitle ===
     doc.setFontSize(11);
     doc.setFont("times", "bold");
-    doc.text(`${sheetType} Prelim`, marginX, startY + titleHeight + 8);
-    const sheetTypeWidth = marginX + doc.getTextWidth(`${sheetType} Prelim`);
+    const sheetTitle = `${sheetType} ${roundLabel}`;
+    doc.text(sheetTitle, marginX, startY + titleHeight + 8);
+    const sheetTypeWidth = marginX + doc.getTextWidth(sheetTitle);
     doc.setFont("times", "normal");
     doc.text("Time Sheet", sheetTypeWidth + 1, startY + titleHeight + 8);
 
