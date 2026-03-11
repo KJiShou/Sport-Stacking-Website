@@ -15,7 +15,7 @@ import {fetchTournamentFinalists, saveTournamentFinalists} from "@/services/fire
 import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
-import {exportAllPrelimResultsToPDF, exportFinalistsNameListToPDF} from "@/utils/PDF/pdfExport";
+import {exportAllPrelimResultsToPDF, exportCombinedTimeSheetsPDF, exportFinalistsNameListToPDF} from "@/utils/PDF/pdfExport";
 import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {
@@ -677,6 +677,7 @@ export default function PrelimResultsPage() {
             registrations.reduce(
                 (acc, reg) => {
                     acc[reg.user_id] = reg.user_name;
+                    acc[reg.user_global_id] = reg.user_name;
                     return acc;
                 },
                 {} as Record<string, string>,
@@ -946,6 +947,99 @@ export default function PrelimResultsPage() {
             setLoading(false);
         }
     }, [buildFinalistsPrintData, tournament]);
+
+    const buildFinalistsTimeSheetEntries = useCallback(
+        (scope: PrintScope) => {
+            const scopedEvents =
+                scope === "all"
+                    ? events ?? []
+                    : currentEvent
+                      ? [currentEvent]
+                      : [];
+
+            return scopedEvents.flatMap((event) => {
+                const scopedBrackets =
+                    scope === "age" && event.id === currentEvent?.id && currentBracket ? [currentBracket] : event.age_brackets ?? [];
+
+                return scopedBrackets.flatMap((bracket) => {
+                    const records = computeEventBracketResults(event, bracket, aggregationContext).filter((record) =>
+                        isEligibleForFinalistSelection(event, record),
+                    );
+
+                    if (records.length === 0) {
+                        return [];
+                    }
+
+                    const finalCriteria = bracket.final_criteria ?? [];
+                    let processedCount = 0;
+                    const entries: Array<{
+                        participant: Registration | Team;
+                        division: string;
+                        sheetType: string;
+                        eventCodes: string[];
+                        roundLabel: string;
+                    }> = [];
+
+                    for (const criterion of finalCriteria) {
+                        const classificationLabel = criterion.classification ? `${bracket.name} - ${criterion.classification}` : bracket.name;
+                        const bracketFinalists = records.slice(processedCount, processedCount + criterion.number);
+                        for (const finalistRecord of bracketFinalists) {
+                            const participant = isTournamentTeamEvent(event) ? finalistRecord.team : finalistRecord.registration;
+                            if (!participant) {
+                                continue;
+                            }
+
+                            entries.push({
+                                participant,
+                                division: classificationLabel,
+                                sheetType: event.type,
+                                eventCodes: sanitizeEventCodes(event.codes),
+                                roundLabel: "Final",
+                            });
+                        }
+                        processedCount += criterion.number;
+                    }
+
+                    return entries;
+                });
+            });
+        },
+        [aggregationContext, currentBracket, currentEvent, events],
+    );
+
+    const handlePrintTimeSheet = useCallback(async (scope: PrintScope = "age") => {
+        if (!tournament) return;
+
+        setLoading(true);
+        try {
+            const entries = buildFinalistsTimeSheetEntries(scope);
+
+            if (entries.length === 0) {
+                const scopeLabel =
+                    scope === "all"
+                        ? "No finalists found to print time sheets."
+                        : scope === "event"
+                          ? "No finalists found for the current event."
+                          : "No finalists found for the current age bracket.";
+                Message.info(scopeLabel);
+                return;
+            }
+
+            await exportCombinedTimeSheetsPDF({
+                tournament,
+                entries,
+                ageMap,
+                nameMap,
+                logoUrl: tournament.logo ?? "",
+            });
+            Message.success("Final time sheets opened in new tab!");
+        } catch (error) {
+            console.error(error);
+            Message.error("Failed to generate time sheets");
+        } finally {
+            setLoading(false);
+        }
+    }, [ageMap, buildFinalistsTimeSheetEntries, nameMap, tournament]);
 
     const handleStartFinal = useCallback(async () => {
         if (!tournament) return;
@@ -1316,6 +1410,41 @@ export default function PrelimResultsPage() {
                         >
                             <Button type="primary" status="warning" icon={<IconPrinter />} loading={loading}>
                                 Print Finalists
+                            </Button>
+                        </Dropdown>
+                        <Dropdown
+                            trigger="click"
+                            droplist={
+                                <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
+                                    <Button
+                                        type="text"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrintTimeSheet("all")}
+                                    >
+                                        Print All
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrintTimeSheet("event")}
+                                    >
+                                        Print Current Event
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrintTimeSheet("age")}
+                                    >
+                                        Print Current Age
+                                    </Button>
+                                </div>
+                            }
+                        >
+                            <Button type="primary" icon={<IconPrinter />} loading={loading}>
+                                Print Time Sheet
                             </Button>
                         </Dropdown>
                     </div>
