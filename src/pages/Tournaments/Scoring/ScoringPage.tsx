@@ -991,22 +991,32 @@ export default function ScoringPage() {
 
     // Filter function for search
     const filterParticipants = (participants: ParticipantScore[]) => {
-        if (!searchTerm.trim()) return participants;
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) return participants;
         return participants.filter(
             (p) =>
-                p.user_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                p.user_name.toLowerCase().includes(searchTerm.toLowerCase()),
+                p.user_global_id?.toLowerCase().includes(normalizedSearch) ||
+                p.user_id?.toLowerCase().includes(normalizedSearch) ||
+                p.user_name?.toLowerCase().includes(normalizedSearch),
         );
     };
 
     const filterTeams = (teams: TeamScore[]) => {
-        if (!searchTerm.trim()) return teams;
-        return teams.filter(
-            (t) =>
-                t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                stripTeamLeaderPrefix(t.leader_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
-                t.members.some((m) => m.global_id.toLowerCase().includes(searchTerm.toLowerCase())),
-        );
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) return teams;
+        return teams.filter((team) => {
+            const leaderId = stripTeamLeaderPrefix(team.leader_id).toLowerCase();
+            const formattedLeaderId = formatTeamLeaderId(team.leader_id, currentEvent?.type).toLowerCase();
+            const memberMatches = team.members.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch));
+
+            return (
+                team.name?.toLowerCase().includes(normalizedSearch) ||
+                team.id?.toLowerCase().includes(normalizedSearch) ||
+                leaderId.includes(normalizedSearch) ||
+                formattedLeaderId.includes(normalizedSearch) ||
+                memberMatches
+            );
+        });
     };
 
     const getExpandableColumns = (codes: string[], eventId: string, eventType: string): TableColumnProps<ParticipantScore>[] => [
@@ -1093,7 +1103,7 @@ export default function ScoringPage() {
     ];
 
     const getIndividualColumns = (eventId: string, eventType: string): TableColumnProps<ParticipantScore>[] => [
-        {title: "Global ID", dataIndex: "user_id", width: 150},
+        {title: "Global ID", dataIndex: "user_global_id", width: 150},
         {title: "Name", dataIndex: "user_name", width: 200},
         {
             title: "Status",

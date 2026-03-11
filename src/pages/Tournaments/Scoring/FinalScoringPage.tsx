@@ -221,22 +221,32 @@ export default function FinalScoringPage() {
     });
 
     const filterParticipants = (participants: Registration[]) => {
-        if (!searchTerm.trim()) return participants;
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) return participants;
         return participants.filter(
             (p) =>
-                p.user_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                p.user_name.toLowerCase().includes(searchTerm.toLowerCase()),
+                p.user_global_id?.toLowerCase().includes(normalizedSearch) ||
+                p.user_id?.toLowerCase().includes(normalizedSearch) ||
+                p.user_name?.toLowerCase().includes(normalizedSearch),
         );
     };
 
     const filterTeams = (teams: Team[]) => {
-        if (!searchTerm.trim()) return teams;
-        return teams.filter(
-            (t) =>
-                t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                stripTeamLeaderPrefix(t.leader_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
-                t.members.some((m) => m.global_id.toLowerCase().includes(searchTerm.toLowerCase())),
-        );
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) return teams;
+        return teams.filter((team) => {
+            const leaderId = stripTeamLeaderPrefix(team.leader_id).toLowerCase();
+            const formattedLeaderId = formatTeamLeaderId(team.leader_id, currentEvent?.type).toLowerCase();
+            const memberMatches = team.members.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch));
+
+            return (
+                team.name?.toLowerCase().includes(normalizedSearch) ||
+                team.id?.toLowerCase().includes(normalizedSearch) ||
+                leaderId.includes(normalizedSearch) ||
+                formattedLeaderId.includes(normalizedSearch) ||
+                memberMatches
+            );
+        });
     };
 
     const getExpandableColumns = (
