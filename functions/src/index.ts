@@ -469,6 +469,16 @@ const determineHistoryRole = (globalId: string, leaderId: string | null, memberI
     return "participant";
 };
 
+const isPrelimResult = (data: Record<string, unknown>): boolean => {
+    const classification = toStringOrNull(data.classification)?.toLowerCase();
+    if (classification === "prelim") {
+        return true;
+    }
+
+    const round = toStringOrNull(data.round)?.toLowerCase();
+    return round === "prelim";
+};
+
 const buildHistoryResult = (
     globalId: string,
     collectionName: string,
@@ -1233,6 +1243,10 @@ export const updateUserBestTimes = onDocumentWritten(
             return;
         }
 
+        if (isPrelimResult(afterData as Record<string, unknown>)) {
+            return;
+        }
+
         const participantGlobalId = typeof afterData.participant_global_id === "string" ? afterData.participant_global_id : null;
         if (!participantGlobalId) {
             return;
@@ -1368,6 +1382,10 @@ export const updateUserBestTimesFromOverall = onDocumentWritten(
     async (event) => {
         const afterData = event.data?.after?.data();
         if (!afterData) {
+            return;
+        }
+
+        if (isPrelimResult(afterData as Record<string, unknown>)) {
             return;
         }
 
