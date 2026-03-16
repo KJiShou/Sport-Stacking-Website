@@ -18,7 +18,7 @@ import {
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import {EventSchema, TournamentSchema} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
-import {getTeamEvents, teamMatchesEventKey} from "../../utils/tournament/eventUtils";
+import {getTeamEvents, normalizeEventSelections, teamMatchesEventKey} from "../../utils/tournament/eventUtils";
 import {
     fetchUsersByGlobalIds,
     removeUserRegistrationRecordsByTournament,
@@ -57,11 +57,7 @@ const getNormalizedTeamEventType = (
     return rawReferences.join(" ").trim().toLowerCase();
 };
 
-const calculateTeamAge = (
-    ages: number[],
-    eventType: string,
-    options: {enforceDoubleRange?: boolean} = {},
-): number => {
+const calculateTeamAge = (ages: number[], eventType: string, options: {enforceDoubleRange?: boolean} = {}): number => {
     const validAges = ages.filter((age) => Number.isFinite(age) && age > 0);
     if (validAges.length === 0) {
         return 0;
@@ -664,10 +660,7 @@ export async function fetchTeamsByTournament(tournamentId: string): Promise<Team
     });
 }
 
-export async function fetchOccupiedParticipantIdsByTournamentEvent(
-    tournamentId: string,
-    eventId: string,
-): Promise<Set<string>> {
+export async function fetchOccupiedParticipantIdsByTournamentEvent(tournamentId: string, eventId: string): Promise<Set<string>> {
     const occupiedIds = new Set<string>();
     const normalizedEventId = eventId.trim();
     if (!normalizedEventId) {
@@ -858,15 +851,9 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
             const regEvents: string[] = Array.isArray(registration.events_registered)
                 ? registration.events_registered.filter((e: string) => typeof e === "string" && e.length > 0)
                 : [];
-            let updated = false;
-            for (const eid of eventIds) {
-                if (!regEvents.includes(eid)) {
-                    regEvents.push(eid);
-                    updated = true;
-                }
-            }
-            if (updated) {
-                await updateDoc(registrationDoc.ref, {events_registered: regEvents});
+            const normalizedEvents = normalizeEventSelections([...regEvents, ...eventIds], tournamentEvents);
+            if (JSON.stringify(normalizedEvents) !== JSON.stringify(regEvents)) {
+                await updateDoc(registrationDoc.ref, {events_registered: normalizedEvents});
             }
         }
     }
@@ -890,9 +877,7 @@ export async function updateTeamNamesForTournament(tournamentId: string): Promis
         getDocs(query(registrationsCollectionRef, where("tournament_id", "==", tournamentId))),
         fetchTournamentEvents(tournamentId),
     ]);
-    const registrationMap = buildRegistrationLookup(
-        registrationsSnapshot.docs.map((docSnap) => docSnap.data() as Registration),
-    );
+    const registrationMap = buildRegistrationLookup(registrationsSnapshot.docs.map((docSnap) => docSnap.data() as Registration));
 
     const nameMap = new Map<string, string>();
     for (const docSnap of registrationsSnapshot.docs) {

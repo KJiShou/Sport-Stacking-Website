@@ -89,6 +89,8 @@ export default function ParticipantListPage() {
     const combinedNameMap: Record<string, string> = {...nameMap, ...supplementalNameMap};
     const isStackOutChampionEvent = (event: TournamentEvent): boolean =>
         event.type.toLowerCase() === "stackout champion" || event.type.toLowerCase() === "stack up champion";
+    const registrationMatchesParticipantId = (registration: Registration, participantId: string): boolean =>
+        registration.user_id === participantId || registration.user_global_id === participantId;
 
     const refreshParticipantList = async () => {
         if (!tournamentId) return;
@@ -207,7 +209,9 @@ export default function ParticipantListPage() {
                 ]),
             );
 
-            return registrationList.filter((r) => teamUserIds.has(r.user_id));
+            return registrationList.filter(
+                (registration) => teamUserIds.has(registration.user_id) || teamUserIds.has(registration.user_global_id ?? ""),
+            );
         }
 
         return registrationList.filter((r) => {
@@ -533,12 +537,7 @@ export default function ParticipantListPage() {
                                     >
                                         Time Sheet
                                     </Button>
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={handleUpdateTeamNames}
-                                    >
+                                    <Button type="text" loading={loading} className={`text-left`} onClick={handleUpdateTeamNames}>
                                         Update Team Name
                                     </Button>
                                 </div>
@@ -644,8 +643,8 @@ export default function ParticipantListPage() {
                                                     width: 200,
                                                     render: (_, rec) => {
                                                         const teamMembers = rec.members.map((member) => {
-                                                            const registration = registrationList.find(
-                                                                (r) => r.user_id === member.global_id,
+                                                            const registration = registrationList.find((r) =>
+                                                                registrationMatchesParticipantId(r, member.global_id),
                                                             );
                                                             return {
                                                                 ...member,

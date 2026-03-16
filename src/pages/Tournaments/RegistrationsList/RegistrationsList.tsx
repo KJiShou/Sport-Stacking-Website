@@ -1,11 +1,12 @@
 import {useAuthContext} from "@/context/AuthContext";
-import type {FirestoreUser, Registration, Team, Tournament} from "@/schema";
+import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import {fetchUsersByIds} from "@/services/firebase/authService";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
+import {findDuplicateEventSelections, groupEventSelections} from "@/utils/tournament/eventUtils";
 import {Button, Dropdown, Input, Message, Popconfirm, type TableColumnProps, Tag} from "@arco-design/web-react";
 import Table from "@arco-design/web-react/es/Table/table";
 import Title from "@arco-design/web-react/es/Typography/title";
@@ -29,6 +30,7 @@ export default function RegistrationsListPage() {
     const mountedRef = useRef(false);
     const [registrations, setRegistrations] = useState<Registration[]>([]); // Replace 'any' with your actual registration type
     const [teams, setTeams] = useState<Team[]>([]);
+    const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [userMap, setUserMap] = useState<Record<string, FirestoreUser>>({});
     const [tournamentTitle, setTournamentTitle] = useState<string>();
     const [searchTerm, setSearchTerm] = useState<string>("");
@@ -55,12 +57,14 @@ export default function RegistrationsListPage() {
 
         setLoading(true);
         try {
-            const [tempRegistrations, fetchedTeams] = await Promise.all([
+            const [tempRegistrations, fetchedTeams, fetchedEvents] = await Promise.all([
                 fetchRegistrations(tournamentId),
                 fetchTeamsByTournament(tournamentId),
+                fetchTournamentEvents(tournamentId),
             ]);
             setRegistrations(tempRegistrations);
             setTeams(fetchedTeams);
+            setEvents(fetchedEvents);
             const userIds = tempRegistrations.map((registration) => registration.user_id).filter(Boolean);
             const usersById = await fetchUsersByIds(userIds);
             setUserMap(usersById);
@@ -106,6 +110,26 @@ export default function RegistrationsListPage() {
 
         handleMount().finally(() => setIsMounted(true));
     });
+
+    const registrationEventDebugMap = useMemo(() => {
+        return registrations.reduce(
+            (acc, registration) => {
+                const groups = groupEventSelections(registration.events_registered, events);
+                acc[registration.id ?? ""] = {
+                    groups,
+                    duplicates: findDuplicateEventSelections(registration.events_registered, events),
+                };
+                return acc;
+            },
+            {} as Record<
+                string,
+                {
+                    groups: ReturnType<typeof groupEventSelections>;
+                    duplicates: ReturnType<typeof findDuplicateEventSelections>;
+                }
+            >,
+        );
+    }, [events, registrations]);
 
     const columns: (TableColumnProps<(typeof registrations)[number]> | false)[] = [
         {
@@ -182,6 +206,55 @@ export default function RegistrationsListPage() {
                         <Tag color={color}>{status}</Tag>
                         {teamsForRegistration.length > 0 &&
                             (teamVerified ? <Tag color="green">Team Verified</Tag> : <Tag color="red">Team Not Verified</Tag>)}
+                    </div>
+                );
+            },
+        },
+        {
+            title: "Events",
+            width: 360,
+            sorter: (a: Registration, b: Registration) => {
+                const debugA = a.id ? registrationEventDebugMap[a.id] : undefined;
+                const debugB = b.id ? registrationEventDebugMap[b.id] : undefined;
+                const duplicateCountA = debugA?.duplicates.length ?? 0;
+                const duplicateCountB = debugB?.duplicates.length ?? 0;
+
+                if (duplicateCountA !== duplicateCountB) {
+                    return duplicateCountB - duplicateCountA;
+                }
+
+                const labelA = (debugA?.groups ?? [])
+                    .map((group) => group.label)
+                    .join(", ")
+                    .toLowerCase();
+                const labelB = (debugB?.groups ?? [])
+                    .map((group) => group.label)
+                    .join(", ")
+                    .toLowerCase();
+
+                if (labelA !== labelB) {
+                    return labelA.localeCompare(labelB);
+                }
+
+                return (a.user_name ?? "").localeCompare(b.user_name ?? "", undefined, {sensitivity: "base"});
+            },
+            render: (_: string, record: Registration) => {
+                const debugInfo = record.id ? registrationEventDebugMap[record.id] : undefined;
+                const groups = debugInfo?.groups ?? [];
+                const duplicates = debugInfo?.duplicates ?? [];
+
+                return (
+                    <div className="flex flex-wrap gap-2">
+                        {groups.length > 0 ? (
+                            groups.map((group) => <Tag key={`${record.id}-${group.canonicalKey}`}>{group.label}</Tag>)
+                        ) : (
+                            <span>-</span>
+                        )}
+                        {duplicates.map((group) => (
+                            <Tag key={`${record.id}-${group.canonicalKey}-duplicate`} color="red">
+                                Duplicate: {group.label} ({group.values.join(" / ")})
+                            </Tag>
+                        ))}
                     </div>
                 );
             },

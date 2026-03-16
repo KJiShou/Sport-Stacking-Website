@@ -263,6 +263,9 @@ const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string
     return teamData;
 };
 
+const registrationMatchesParticipantId = (registration: Registration, participantId: string): boolean =>
+    registration.user_id === participantId || registration.user_global_id === participantId;
+
 // Main Export Functions
 export const exportParticipantListToPDF = async (options: ExportPDFOptions): Promise<void> => {
     const {
@@ -674,7 +677,11 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                         prelim: [255, 218, 185],
                     };
 
-                    if (shouldHighlightRows && finalCriteria.length > 0 && Object.keys(highlightedRecordClassifications).length === 0) {
+                    if (
+                        shouldHighlightRows &&
+                        finalCriteria.length > 0 &&
+                        Object.keys(highlightedRecordClassifications).length === 0
+                    ) {
                         const classificationOrder = ["advance", "intermediate", "beginner", "prelim"];
                         const sortedCriteria = [...finalCriteria].sort(
                             (a, b) =>
@@ -1951,7 +1958,10 @@ const filterRegistrations = (
         );
 
         return registrationList.filter((registration) => {
-            if (!teamUserIds.has(registration.user_id)) {
+            const hasParticipantMatch = Array.from(teamUserIds).some((participantId) =>
+                registrationMatchesParticipantId(registration, participantId),
+            );
+            if (!hasParticipantMatch) {
                 return false;
             }
 
