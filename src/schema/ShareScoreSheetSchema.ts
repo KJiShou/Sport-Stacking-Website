@@ -10,6 +10,7 @@ export interface ShareResultRow {
     globalId?: string;
     teamId?: string;
     leaderId?: string;
+    finalClassification?: "advance" | "intermediate" | "beginner" | "prelim";
     [key: string]: unknown;
 }
 

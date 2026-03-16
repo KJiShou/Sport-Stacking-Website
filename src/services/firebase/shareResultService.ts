@@ -1,6 +1,7 @@
 import type {
     AggregationContext,
     Registration,
+    ShareBracketSection,
     ShareEventSection,
     ShareRound,
     ShareScoreSheetPayload,
@@ -13,6 +14,7 @@ import type {
 import {getTournamentFinalRecords, getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {buildFinalistClassificationMap} from "@/utils/tournament/finalistStyling";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {getEventTypeOrderIndex, isScoreTrackedEvent} from "@/utils/tournament/eventUtils";
 import {computeEventBracketResults} from "@/utils/tournament/resultAggregation";
@@ -132,7 +134,7 @@ export const getShareScoreSheetData = async (tournamentId: string, round: ShareR
     const context = buildAggregationContext(records, registrations, verifiedTeams);
 
     const sections: ShareEventSection[] = scoringEvents.map((event) => {
-        const brackets = (event.age_brackets ?? []).flatMap((bracket) => {
+        const brackets: ShareBracketSection[] = (event.age_brackets ?? []).flatMap((bracket): ShareBracketSection[] => {
             if (round === "final") {
                 const criteria = bracket.final_criteria ?? [];
                 if (criteria.length === 0) {
@@ -150,13 +152,20 @@ export const getShareScoreSheetData = async (tournamentId: string, round: ShareR
                 }));
             }
 
+            const rows = toShareRows(computeEventBracketResults(event, bracket, context), {
+                eventId: event.id ?? event.type,
+                bracketName: bracket.name,
+            });
+            const finalistClassificationMap = buildFinalistClassificationMap(rows, event.codes, bracket.final_criteria ?? []);
+
             return [
                 {
                     bracket,
-                    rows: toShareRows(computeEventBracketResults(event, bracket, context), {
-                        eventId: event.id ?? event.type,
-                        bracketName: bracket.name,
-                    }),
+                    classification: undefined,
+                    rows: rows.map((row) => ({
+                        ...row,
+                        finalClassification: finalistClassificationMap[row.id],
+                    })),
                 },
             ];
         });
