@@ -4,10 +4,16 @@ import {getShareScoreSheetData} from "@/services/firebase/shareResultService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
+import {
+    FINALIST_VISUAL_STYLES,
+    getFinalistLegendItems,
+    type FinalClassification,
+} from "@/utils/tournament/finalistStyling";
 import {getEventLabel, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Card,
+    Drawer,
     Empty,
     Message,
     Result,
@@ -31,6 +37,7 @@ type SharePageRow = {
     name: string;
     globalId?: string;
     bestTime: number;
+    finalClassification?: FinalClassification;
     try1?: number;
     try2?: number;
     try3?: number;
@@ -154,6 +161,7 @@ const ScoreSheetPage = () => {
     const [notFound, setNotFound] = useState(false);
     const [activeEventId, setActiveEventId] = useState<string>("");
     const [activeBracketKey, setActiveBracketKey] = useState<string>("");
+    const [mobileTableVisible, setMobileTableVisible] = useState(false);
     const [payload, setPayload] = useState<Awaited<ReturnType<typeof getShareScoreSheetData>>>(null);
 
     const isMobile = useDeviceBreakpoint() <= DeviceBreakpoint.sm;
@@ -237,6 +245,15 @@ const ScoreSheetPage = () => {
         if (!currentSection) return [];
         return buildColumnsForEvent(currentSection.event);
     }, [currentSection]);
+
+    const finalistLegendItems = useMemo(() => {
+        if (parsedRound !== "prelim" || !currentBracket) {
+            return [];
+        }
+        return getFinalistLegendItems(currentBracket.bracket.final_criteria ?? []);
+    }, [currentBracket, parsedRound]);
+
+    const mobileDrawerHeight = typeof window === "undefined" ? 640 : Math.min(window.innerHeight * 0.82, 760);
 
     if (!parsedRound) {
         return (
@@ -329,6 +346,61 @@ const ScoreSheetPage = () => {
                 minHeight: "calc(100vh - 96px)",
             }}
         >
+            <style>
+                {`
+                    .finalist-row td {
+                        transition: background-color 180ms ease, border-color 180ms ease;
+                    }
+
+                    .finalist-row--advance td {
+                        background: #f4f8ff;
+                        border-top: 1px solid #d6e4ff;
+                        border-bottom: 1px solid #d6e4ff;
+                    }
+
+                    .finalist-row--intermediate td {
+                        background: #f2fbf8;
+                        border-top: 1px solid #d2f1e8;
+                        border-bottom: 1px solid #d2f1e8;
+                    }
+
+                    .finalist-row--beginner td {
+                        background: #fff8ef;
+                        border-top: 1px solid #f8dec1;
+                        border-bottom: 1px solid #f8dec1;
+                    }
+
+                    .finalist-row--prelim td {
+                        background: #f7f8fb;
+                        border-top: 1px solid #e6e9f0;
+                        border-bottom: 1px solid #e6e9f0;
+                    }
+
+                    .finalist-row--advance td:first-child,
+                    .finalist-row--intermediate td:first-child,
+                    .finalist-row--beginner td:first-child,
+                    .finalist-row--prelim td:first-child {
+                        border-left-width: 4px;
+                        border-left-style: solid;
+                    }
+
+                    .finalist-row--advance td:first-child {
+                        border-left-color: #2563eb;
+                    }
+
+                    .finalist-row--intermediate td:first-child {
+                        border-left-color: #0f766e;
+                    }
+
+                    .finalist-row--beginner td:first-child {
+                        border-left-color: #c2410c;
+                    }
+
+                    .finalist-row--prelim td:first-child {
+                        border-left-color: #64748b;
+                    }
+                `}
+            </style>
             <Card
                 bordered={false}
                 style={{
@@ -364,6 +436,11 @@ const ScoreSheetPage = () => {
                         <Button icon={<IconPrinter />} onClick={() => window.print()} style={{minHeight: 44}}>
                             Print
                         </Button>
+                        {isMobile ? (
+                            <Button type="primary" onClick={() => setMobileTableVisible(true)} style={{minHeight: 44}}>
+                                View Full Table
+                            </Button>
+                        ) : null}
                     </Space>
                 </div>
             </Card>
@@ -402,28 +479,88 @@ const ScoreSheetPage = () => {
                 ) : null}
 
                 <div style={{marginTop: 16}}>
+                    {parsedRound === "prelim" && finalistLegendItems.length > 0 ? (
+                        <div
+                            className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-solid p-4"
+                            style={{
+                                background: "#fbfcfe",
+                                borderColor: "#e5eaf2",
+                                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
+                            }}
+                        >
+                            <span className="text-sm font-semibold text-slate-700">Final Categories</span>
+                            {finalistLegendItems.map((classification) => {
+                                const visualStyle = FINALIST_VISUAL_STYLES[classification];
+                                return (
+                                    <div
+                                        key={classification}
+                                        className="flex items-center gap-2 rounded-full border border-solid px-3 py-2 text-sm font-medium"
+                                        style={{
+                                            backgroundColor: visualStyle.surface,
+                                            borderColor: visualStyle.border,
+                                            color: visualStyle.text,
+                                        }}
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            className="h-2.5 w-2.5 rounded-full"
+                                            style={{backgroundColor: visualStyle.tint}}
+                                        />
+                                        {visualStyle.label}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : null}
                     {!hasRows ? (
                         <Empty description={`No ${roundLabel(parsedRound)} records found for this selection.`} />
                     ) : isMobile ? (
                         <div className="flex flex-col gap-3">
-                            {currentBracket?.rows.map((row) => (
-                                <Card key={row.id} style={{borderRadius: 12, border: "1px solid #e5e7eb"}}>
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div>
-                                            <Tag color={medalColor(row.rank)} style={{marginBottom: 8}}>
-                                                Rank #{row.rank}
-                                            </Tag>
-                                            <div className="text-base font-semibold">{String(row.name ?? "N/A")}</div>
-                                            {row.globalId ? (
-                                                <Text type="secondary" style={{fontSize: 12}}>
-                                                    Global ID: {String(row.globalId)}
-                                                </Text>
-                                            ) : null}
+                            {currentBracket?.rows.map((row) => {
+                                const visualStyle = row.finalClassification
+                                    ? FINALIST_VISUAL_STYLES[row.finalClassification]
+                                    : null;
+
+                                return (
+                                    <Card
+                                        key={row.id}
+                                        style={{
+                                            borderRadius: 16,
+                                            border: `1px solid ${visualStyle?.border ?? "#e5e7eb"}`,
+                                            background: visualStyle?.surface ?? "#ffffff",
+                                            boxShadow: "0 8px 18px rgba(15, 23, 42, 0.04)",
+                                        }}
+                                    >
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <Tag color={medalColor(row.rank)} style={{marginBottom: 8}}>
+                                                    Rank #{row.rank}
+                                                </Tag>
+                                                {visualStyle ? (
+                                                    <div style={{marginBottom: 8}}>
+                                                        <Tag
+                                                            style={{
+                                                                backgroundColor: visualStyle.surface,
+                                                                borderColor: visualStyle.border,
+                                                                color: visualStyle.text,
+                                                            }}
+                                                        >
+                                                            {visualStyle.label}
+                                                        </Tag>
+                                                    </div>
+                                                ) : null}
+                                                <div className="text-base font-semibold">{String(row.name ?? "N/A")}</div>
+                                                {row.globalId ? (
+                                                    <Text type="secondary" style={{fontSize: 12}}>
+                                                        Global ID: {String(row.globalId)}
+                                                    </Text>
+                                                ) : null}
+                                            </div>
+                                            <Text style={{fontWeight: 700, fontSize: 18}}>{formatTime(Number(row.bestTime))}</Text>
                                         </div>
-                                        <Text style={{fontWeight: 700, fontSize: 18}}>{formatTime(Number(row.bestTime))}</Text>
-                                    </div>
-                                </Card>
-                            ))}
+                                    </Card>
+                                );
+                            })}
                         </div>
                     ) : (
                         <Table
@@ -433,10 +570,53 @@ const ScoreSheetPage = () => {
                             pagination={false}
                             scroll={{x: true}}
                             border={false}
+                            rowClassName={(record) =>
+                                record.finalClassification
+                                    ? `finalist-row ${FINALIST_VISUAL_STYLES[record.finalClassification].rowClassName}`
+                                    : ""
+                            }
                         />
                     )}
                 </div>
             </Card>
+            <Drawer
+                title="Full Results Table"
+                visible={mobileTableVisible}
+                placement="bottom"
+                height={mobileDrawerHeight}
+                onCancel={() => setMobileTableVisible(false)}
+                footer={null}
+            >
+                {currentSection && currentBracket ? (
+                    <div className="flex flex-col gap-3">
+                        <div
+                            className="rounded-2xl border border-solid px-4 py-3"
+                            style={{
+                                background: "linear-gradient(180deg, #f8fbff 0%, #f1f5f9 100%)",
+                                borderColor: "#dbe7f3",
+                            }}
+                        >
+                            <div className="text-base font-semibold text-slate-900">{getEventLabel(currentSection.event)}</div>
+                            <Text type="secondary" style={{fontSize: 12}}>
+                                Swipe horizontally to compare all columns.
+                            </Text>
+                        </div>
+                        <Table
+                            rowKey={(record) => record.id}
+                            data={currentBracket.rows}
+                            columns={columns}
+                            pagination={false}
+                            scroll={{x: true, y: "100%"}}
+                            border={false}
+                            rowClassName={(record) =>
+                                record.finalClassification
+                                    ? `finalist-row ${FINALIST_VISUAL_STYLES[record.finalClassification].rowClassName}`
+                                    : ""
+                            }
+                        />
+                    </div>
+                ) : null}
+            </Drawer>
         </div>
     );
 };

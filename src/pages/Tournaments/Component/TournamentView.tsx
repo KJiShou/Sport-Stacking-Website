@@ -22,6 +22,12 @@ import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {getCountryFlag} from "@/utils/countryFlags";
+import {
+    buildFinalistClassificationMap,
+    FINALIST_VISUAL_STYLES,
+    getFinalistLegendItems,
+    type FinalClassification,
+} from "@/utils/tournament/finalistStyling";
 import {getEventLabel, isTeamEvent, matchesAnyEventKey, teamMatchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
@@ -120,6 +126,19 @@ const isTeamVerifiedForCounting = (team: Team): boolean => {
     const members = Array.isArray(team.members) ? team.members : [];
     return members.every((member) => member.verified);
 };
+
+const buildViewFinalistMap = <T extends {id?: string | null; bestTime: number}>(
+    records: T[],
+    eventCodes: string[],
+    bracket?: AgeBracket,
+): Record<string, FinalClassification> =>
+    buildFinalistClassificationMap(
+        records
+            .filter((record): record is T & {id: string} => typeof record.id === "string" && record.id.length > 0)
+            .map((record) => ({id: record.id, bestTime: record.bestTime})),
+        eventCodes,
+        bracket?.final_criteria ?? [],
+    );
 
 export default function TournamentView() {
     const {id} = useParams<{id: string}>();
@@ -596,6 +615,61 @@ export default function TournamentView() {
 
     return (
         <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
+            <style>
+                {`
+                    .finalist-row td {
+                        transition: background-color 180ms ease, border-color 180ms ease;
+                    }
+
+                    .finalist-row--advance td {
+                        background: #f4f8ff;
+                        border-top: 1px solid #d6e4ff;
+                        border-bottom: 1px solid #d6e4ff;
+                    }
+
+                    .finalist-row--intermediate td {
+                        background: #f2fbf8;
+                        border-top: 1px solid #d2f1e8;
+                        border-bottom: 1px solid #d2f1e8;
+                    }
+
+                    .finalist-row--beginner td {
+                        background: #fff8ef;
+                        border-top: 1px solid #f8dec1;
+                        border-bottom: 1px solid #f8dec1;
+                    }
+
+                    .finalist-row--prelim td {
+                        background: #f7f8fb;
+                        border-top: 1px solid #e6e9f0;
+                        border-bottom: 1px solid #e6e9f0;
+                    }
+
+                    .finalist-row--advance td:first-child,
+                    .finalist-row--intermediate td:first-child,
+                    .finalist-row--beginner td:first-child,
+                    .finalist-row--prelim td:first-child {
+                        border-left-width: 4px;
+                        border-left-style: solid;
+                    }
+
+                    .finalist-row--advance td:first-child {
+                        border-left-color: #2563eb;
+                    }
+
+                    .finalist-row--intermediate td:first-child {
+                        border-left-color: #0f766e;
+                    }
+
+                    .finalist-row--beginner td:first-child {
+                        border-left-color: #c2410c;
+                    }
+
+                    .finalist-row--prelim td:first-child {
+                        border-left-color: #64748b;
+                    }
+                `}
+            </style>
             <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
                 <IconUndo /> Go Back
             </Button>
@@ -788,191 +862,255 @@ export default function TournamentView() {
                                                     [...prelimOverallRecords].sort((a, b) => a.overall_time - b.overall_time),
                                                     selectedBracket,
                                                 );
+                                                const finalistClassificationMap = buildViewFinalistMap(
+                                                    filteredRecords.map((record) => ({
+                                                        id: record.id,
+                                                        bestTime: record.overall_time,
+                                                    })),
+                                                    individualEvent?.codes ?? [],
+                                                    selectedBracket,
+                                                );
+                                                const finalistLegendItems = getFinalistLegendItems(
+                                                    selectedBracket?.final_criteria ?? [],
+                                                );
                                                 return (
-                                                    <Table
-                                                        columns={[
-                                                            {
-                                                                title: "Rank",
-                                                                width: 60,
-                                                                render: (
-                                                                    _: unknown,
-                                                                    __: TournamentOverallRecord,
-                                                                    index: number,
-                                                                ) => <Text bold>{index + 1}</Text>,
-                                                            },
-                                                            {
-                                                                title: "Athlete",
-                                                                dataIndex: "participant_name",
-                                                                width: 200,
-                                                            },
-                                                            ...(deviceBreakpoint > DeviceBreakpoint.md
-                                                                ? [
-                                                                      {
-                                                                          title: "Event Code",
-                                                                          dataIndex: "code" as const,
-                                                                          width: 100,
-                                                                      },
-                                                                      {
-                                                                          title: "3-3-3",
-                                                                          dataIndex: "three_three_three" as const,
-                                                                          width: 100,
-                                                                          render: (time: number) => (
-                                                                              <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>
-                                                                          ),
-                                                                      },
-                                                                      {
-                                                                          title: "3-6-3",
-                                                                          dataIndex: "three_six_three" as const,
-                                                                          width: 100,
-                                                                          render: (time: number) => (
-                                                                              <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>
-                                                                          ),
-                                                                      },
-                                                                      {
-                                                                          title: "Cycle",
-                                                                          dataIndex: "cycle" as const,
-                                                                          width: 100,
-                                                                          render: (time: number) => (
-                                                                              <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>
-                                                                          ),
-                                                                      },
-                                                                  ]
-                                                                : []),
-                                                            {
-                                                                title: "Overall Time",
-                                                                dataIndex: "overall_time",
-                                                                width: 120,
-                                                                render: (time: number, record: TournamentOverallRecord) => {
-                                                                    const canOpen =
-                                                                        record.video_url &&
-                                                                        (record.status === "verified" || isAdmin);
+                                                    <>
+                                                        {finalistLegendItems.length > 0 ? (
+                                                            <div
+                                                                className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-solid p-4"
+                                                                style={{
+                                                                    background: "#fbfcfe",
+                                                                    borderColor: "#e5eaf2",
+                                                                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
+                                                                }}
+                                                            >
+                                                                <span className="text-sm font-semibold text-slate-700">
+                                                                    Final Categories
+                                                                </span>
+                                                                {finalistLegendItems.map((classification) => {
+                                                                    const visualStyle = FINALIST_VISUAL_STYLES[classification];
                                                                     return (
-                                                                        <Text
-                                                                            bold
+                                                                        <div
+                                                                            key={classification}
+                                                                            className="flex items-center gap-2 rounded-full border border-solid px-3 py-2 text-sm font-medium"
                                                                             style={{
-                                                                                color: "#1890ff",
-                                                                                cursor: canOpen ? "pointer" : "default",
-                                                                                textDecoration: canOpen ? "underline" : "none",
+                                                                                backgroundColor: visualStyle.surface,
+                                                                                borderColor: visualStyle.border,
+                                                                                color: visualStyle.text,
                                                                             }}
-                                                                            onClick={() =>
-                                                                                handleTimeClick(record.video_url, record.status)
-                                                                            }
                                                                         >
-                                                                            {formatTime(time)}
-                                                                            {record.video_url && (
-                                                                                <IconVideoCamera
-                                                                                    style={{marginLeft: 6, fontSize: 12}}
-                                                                                />
-                                                                            )}
-                                                                        </Text>
+                                                                            <span
+                                                                                aria-hidden="true"
+                                                                                className="h-2.5 w-2.5 rounded-full"
+                                                                                style={{backgroundColor: visualStyle.tint}}
+                                                                            />
+                                                                            {visualStyle.label}
+                                                                        </div>
                                                                     );
+                                                                })}
+                                                            </div>
+                                                        ) : null}
+                                                        <Table
+                                                            columns={[
+                                                                {
+                                                                    title: "Rank",
+                                                                    width: 60,
+                                                                    render: (
+                                                                        _: unknown,
+                                                                        __: TournamentOverallRecord,
+                                                                        index: number,
+                                                                    ) => <Text bold>{index + 1}</Text>,
                                                                 },
-                                                            },
-                                                            ...(deviceBreakpoint > DeviceBreakpoint.md
-                                                                ? [
-                                                                      {
-                                                                          title: "Country",
-                                                                          dataIndex: "country" as const,
-                                                                          width: 120,
-                                                                      },
-                                                                      {
-                                                                          title: "Status",
-                                                                          dataIndex: "status" as const,
-                                                                          width: 100,
-                                                                          render: (status: string) => (
-                                                                              <Tag
-                                                                                  color={
-                                                                                      status === "verified" ? "green" : "orange"
-                                                                                  }
-                                                                              >
-                                                                                  {status === "verified"
-                                                                                      ? "Verified"
-                                                                                      : "Submitted"}
-                                                                              </Tag>
-                                                                          ),
-                                                                      },
-                                                                  ]
-                                                                : []),
-                                                            ...(isAdmin
-                                                                ? [
-                                                                      {
-                                                                          title: "Actions",
-                                                                          width: 150,
-                                                                          render: (
-                                                                              _: unknown,
-                                                                              record: TournamentOverallRecord,
-                                                                          ) => (
-                                                                              <div className="flex gap-2">
-                                                                                  <Popover content="Edit record times">
-                                                                                      <Button
-                                                                                          size="mini"
-                                                                                          type="primary"
-                                                                                          icon={<IconEdit />}
-                                                                                          onClick={() =>
-                                                                                              handleEditRecord(record, "overall")
-                                                                                          }
-                                                                                      />
-                                                                                  </Popover>
-                                                                                  <Popover
-                                                                                      content={
-                                                                                          record.status === "verified"
-                                                                                              ? "Unverify this record"
-                                                                                              : "Verify this record"
+                                                                {
+                                                                    title: "Athlete",
+                                                                    dataIndex: "participant_name",
+                                                                    width: 200,
+                                                                },
+                                                                ...(deviceBreakpoint > DeviceBreakpoint.md
+                                                                    ? [
+                                                                          {
+                                                                              title: "Event Code",
+                                                                              dataIndex: "code" as const,
+                                                                              width: 100,
+                                                                          },
+                                                                          {
+                                                                              title: "3-3-3",
+                                                                              dataIndex: "three_three_three" as const,
+                                                                              width: 100,
+                                                                              render: (time: number) => (
+                                                                                  <Text>
+                                                                                      {time > 0 ? formatTime(time) : "DNF"}
+                                                                                  </Text>
+                                                                              ),
+                                                                          },
+                                                                          {
+                                                                              title: "3-6-3",
+                                                                              dataIndex: "three_six_three" as const,
+                                                                              width: 100,
+                                                                              render: (time: number) => (
+                                                                                  <Text>
+                                                                                      {time > 0 ? formatTime(time) : "DNF"}
+                                                                                  </Text>
+                                                                              ),
+                                                                          },
+                                                                          {
+                                                                              title: "Cycle",
+                                                                              dataIndex: "cycle" as const,
+                                                                              width: 100,
+                                                                              render: (time: number) => (
+                                                                                  <Text>
+                                                                                      {time > 0 ? formatTime(time) : "DNF"}
+                                                                                  </Text>
+                                                                              ),
+                                                                          },
+                                                                      ]
+                                                                    : []),
+                                                                {
+                                                                    title: "Overall Time",
+                                                                    dataIndex: "overall_time",
+                                                                    width: 120,
+                                                                    render: (time: number, record: TournamentOverallRecord) => {
+                                                                        const canOpen =
+                                                                            record.video_url &&
+                                                                            (record.status === "verified" || isAdmin);
+                                                                        return (
+                                                                            <Text
+                                                                                bold
+                                                                                style={{
+                                                                                    color: "#1890ff",
+                                                                                    cursor: canOpen ? "pointer" : "default",
+                                                                                    textDecoration: canOpen ? "underline" : "none",
+                                                                                }}
+                                                                                onClick={() =>
+                                                                                    handleTimeClick(
+                                                                                        record.video_url,
+                                                                                        record.status,
+                                                                                    )
+                                                                                }
+                                                                            >
+                                                                                {formatTime(time)}
+                                                                                {record.video_url && (
+                                                                                    <IconVideoCamera
+                                                                                        style={{marginLeft: 6, fontSize: 12}}
+                                                                                    />
+                                                                                )}
+                                                                            </Text>
+                                                                        );
+                                                                    },
+                                                                },
+                                                                ...(deviceBreakpoint > DeviceBreakpoint.md
+                                                                    ? [
+                                                                          {
+                                                                              title: "Country",
+                                                                              dataIndex: "country" as const,
+                                                                              width: 120,
+                                                                          },
+                                                                          {
+                                                                              title: "Status",
+                                                                              dataIndex: "status" as const,
+                                                                              width: 100,
+                                                                              render: (status: string) => (
+                                                                                  <Tag
+                                                                                      color={
+                                                                                          status === "verified"
+                                                                                              ? "green"
+                                                                                              : "orange"
                                                                                       }
                                                                                   >
-                                                                                      <Button
-                                                                                          size="mini"
-                                                                                          status={
-                                                                                              record.status === "verified"
-                                                                                                  ? "warning"
-                                                                                                  : "success"
-                                                                                          }
-                                                                                          icon={
-                                                                                              record.status === "verified" ? (
-                                                                                                  <IconClose />
-                                                                                              ) : (
-                                                                                                  <IconCheck />
-                                                                                              )
-                                                                                          }
-                                                                                          onClick={() =>
-                                                                                              handleToggleVerification(
-                                                                                                  record,
-                                                                                                  true,
-                                                                                              )
-                                                                                          }
-                                                                                      />
-                                                                                  </Popover>
-                                                                                  <Popconfirm
-                                                                                      title="Are you sure you want to delete this record and all its individual events?"
-                                                                                      onOk={() =>
-                                                                                          handleDeleteRecord(record, true)
-                                                                                      }
-                                                                                      okText="Delete"
-                                                                                      cancelText="Cancel"
-                                                                                  >
-                                                                                      <Popover content="Delete this record">
+                                                                                      {status === "verified"
+                                                                                          ? "Verified"
+                                                                                          : "Submitted"}
+                                                                                  </Tag>
+                                                                              ),
+                                                                          },
+                                                                      ]
+                                                                    : []),
+                                                                ...(isAdmin
+                                                                    ? [
+                                                                          {
+                                                                              title: "Actions",
+                                                                              width: 150,
+                                                                              render: (
+                                                                                  _: unknown,
+                                                                                  record: TournamentOverallRecord,
+                                                                              ) => (
+                                                                                  <div className="flex gap-2">
+                                                                                      <Popover content="Edit record times">
                                                                                           <Button
                                                                                               size="mini"
-                                                                                              status="danger"
-                                                                                              icon={<IconDelete />}
+                                                                                              type="primary"
+                                                                                              icon={<IconEdit />}
+                                                                                              onClick={() =>
+                                                                                                  handleEditRecord(record, "overall")
+                                                                                              }
                                                                                           />
                                                                                       </Popover>
-                                                                                  </Popconfirm>
-                                                                              </div>
-                                                                          ),
-                                                                      },
-                                                                  ]
-                                                                : []),
-                                                        ]}
-                                                        data={filteredRecords}
-                                                        pagination={{
-                                                            pageSize: 20,
-                                                            showTotal: true,
-                                                            showJumper: true,
-                                                        }}
-                                                        rowKey="id"
-                                                        size="small"
-                                                    />
+                                                                                      <Popover
+                                                                                          content={
+                                                                                              record.status === "verified"
+                                                                                                  ? "Unverify this record"
+                                                                                                  : "Verify this record"
+                                                                                          }
+                                                                                      >
+                                                                                          <Button
+                                                                                              size="mini"
+                                                                                              status={
+                                                                                                  record.status === "verified"
+                                                                                                      ? "warning"
+                                                                                                      : "success"
+                                                                                              }
+                                                                                              icon={
+                                                                                                  record.status === "verified" ? (
+                                                                                                      <IconClose />
+                                                                                                  ) : (
+                                                                                                      <IconCheck />
+                                                                                                  )
+                                                                                              }
+                                                                                              onClick={() =>
+                                                                                                  handleToggleVerification(
+                                                                                                      record,
+                                                                                                      true,
+                                                                                                  )
+                                                                                              }
+                                                                                          />
+                                                                                      </Popover>
+                                                                                      <Popconfirm
+                                                                                          title="Are you sure you want to delete this record and all its individual events?"
+                                                                                          onOk={() => handleDeleteRecord(record, true)}
+                                                                                          okText="Delete"
+                                                                                          cancelText="Cancel"
+                                                                                      >
+                                                                                          <Popover content="Delete this record">
+                                                                                              <Button
+                                                                                                  size="mini"
+                                                                                                  status="danger"
+                                                                                                  icon={<IconDelete />}
+                                                                                              />
+                                                                                          </Popover>
+                                                                                      </Popconfirm>
+                                                                                  </div>
+                                                                              ),
+                                                                          },
+                                                                      ]
+                                                                    : []),
+                                                            ]}
+                                                            data={filteredRecords}
+                                                            pagination={{
+                                                                pageSize: 20,
+                                                                showTotal: true,
+                                                                showJumper: true,
+                                                            }}
+                                                            rowKey="id"
+                                                            size="small"
+                                                            rowClassName={(record) => {
+                                                                const classification =
+                                                                    record.id && finalistClassificationMap[record.id];
+                                                                return classification
+                                                                    ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}`
+                                                                    : "";
+                                                            }}
+                                                        />
+                                                    </>
                                                 );
                                             })()}
                                         </Card>
@@ -1007,6 +1145,17 @@ export default function TournamentView() {
                                             // Sort all records by best_time
                                             const sortedRecords = eventRecords.sort((a, b) => a.best_time - b.best_time);
                                             const filteredRecords = filterRecordsByBracket(sortedRecords, selectedBracket);
+                                            const finalistClassificationMap = buildViewFinalistMap(
+                                                filteredRecords.map((record) => ({
+                                                    id: record.id,
+                                                    bestTime: record.best_time,
+                                                })),
+                                                eventConfig?.codes ?? [],
+                                                selectedBracket,
+                                            );
+                                            const finalistLegendItems = getFinalistLegendItems(
+                                                selectedBracket?.final_criteria ?? [],
+                                            );
 
                                             const columns: TableColumnProps<TournamentTeamRecord>[] = [
                                                 {
@@ -1144,6 +1293,41 @@ export default function TournamentView() {
                                                     className="score-card"
                                                 >
                                                     {eventConfig && renderBracketTabs(eventConfig, bracketKey)}
+                                                    {finalistLegendItems.length > 0 ? (
+                                                        <div
+                                                            className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-solid p-4"
+                                                            style={{
+                                                                background: "#fbfcfe",
+                                                                borderColor: "#e5eaf2",
+                                                                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
+                                                            }}
+                                                        >
+                                                            <span className="text-sm font-semibold text-slate-700">
+                                                                Final Categories
+                                                            </span>
+                                                            {finalistLegendItems.map((classification) => {
+                                                                const visualStyle = FINALIST_VISUAL_STYLES[classification];
+                                                                return (
+                                                                    <div
+                                                                        key={classification}
+                                                                        className="flex items-center gap-2 rounded-full border border-solid px-3 py-2 text-sm font-medium"
+                                                                        style={{
+                                                                            backgroundColor: visualStyle.surface,
+                                                                            borderColor: visualStyle.border,
+                                                                            color: visualStyle.text,
+                                                                        }}
+                                                                    >
+                                                                        <span
+                                                                            aria-hidden="true"
+                                                                            className="h-2.5 w-2.5 rounded-full"
+                                                                            style={{backgroundColor: visualStyle.tint}}
+                                                                        />
+                                                                        {visualStyle.label}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    ) : null}
                                                     <Table
                                                         columns={columns}
                                                         data={filteredRecords}
@@ -1154,6 +1338,13 @@ export default function TournamentView() {
                                                         }}
                                                         rowKey="id"
                                                         size="small"
+                                                        rowClassName={(record) => {
+                                                            const classification =
+                                                                record.id && finalistClassificationMap[record.id];
+                                                            return classification
+                                                                ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}`
+                                                                : "";
+                                                        }}
                                                     />
                                                 </Card>
                                             );
