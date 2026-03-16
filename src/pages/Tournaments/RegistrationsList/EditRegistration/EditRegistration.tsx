@@ -39,7 +39,14 @@ import {
     updateTeam,
 } from "@/services/firebase/tournamentsService";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
-import {getEventKey, getEventLabel, isTeamEvent, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
+import {
+    getEventKey,
+    getEventLabel,
+    isTeamEvent,
+    matchesAnyEventKey,
+    matchesEventKey,
+    normalizeEventSelections,
+} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Divider,
@@ -330,6 +337,7 @@ export default function EditTournamentRegistrationPage() {
                 );
             }
             setPaymentProofUrl(tempPaymentProofUrl);
+            const normalizedEventSelections = normalizeEventSelections(values.events_registered ?? [], events);
             const registrationData: Registration = {
                 id: registrationId,
                 tournament_id: tournamentId ?? "",
@@ -341,7 +349,7 @@ export default function EditTournamentRegistrationPage() {
                 country: registration?.country ?? "MY",
                 phone_number: values.phone_number ?? "",
                 organizer: values?.organizer ?? "",
-                events_registered: values.events_registered ?? [],
+                events_registered: normalizedEventSelections,
                 payment_proof_url: tempPaymentProofUrl,
                 registration_status: values?.registration_status ?? "pending",
                 rejection_reason: values?.registration_status === "rejected" ? rejection_reason : null,
@@ -553,8 +561,7 @@ export default function EditTournamentRegistrationPage() {
                 const nextEventName = eventDetails ? getEventLabel(eventDetails) : resolvedEventName;
                 const normalizedEventType = (eventDetails?.type ?? resolvedEventName ?? "").toLowerCase();
                 const isDoubleEvent = normalizedEventType.includes("double");
-                const isParentChildEvent =
-                    normalizedEventType.includes("parent") && normalizedEventType.includes("child");
+                const isParentChildEvent = normalizedEventType.includes("parent") && normalizedEventType.includes("child");
 
                 let resolvedTeamName = team.name;
                 if (isDoubleEvent || isParentChildEvent) {
@@ -1097,8 +1104,7 @@ export default function EditTournamentRegistrationPage() {
                                                 );
                                                 setDoubleRecruitments((prev) =>
                                                     prev.filter(
-                                                        (recruitment) =>
-                                                            !uniqueRemovedEventIds.includes(recruitment.event_id),
+                                                        (recruitment) => !uniqueRemovedEventIds.includes(recruitment.event_id),
                                                     ),
                                                 );
                                             } catch (error) {
@@ -1127,8 +1133,8 @@ export default function EditTournamentRegistrationPage() {
 
                         {duplicateTeamIdsToDelete.length > 0 && (
                             <div className="w-full rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
-                                Merged duplicate team records for the same event. The extra records will be removed when you
-                                save this registration.
+                                Merged duplicate team records for the same event. The extra records will be removed when you save
+                                this registration.
                             </div>
                         )}
                         <Form.Item shouldUpdate noStyle>
@@ -1179,7 +1185,10 @@ export default function EditTournamentRegistrationPage() {
                                                 />
                                             </Form.Item>
                                             <Form.Item label={teamLeaderLabel}>
-                                                <Input value={getParticipantDisplay(stripTeamLeaderPrefix(team.leader_id))} disabled />
+                                                <Input
+                                                    value={getParticipantDisplay(stripTeamLeaderPrefix(team.leader_id))}
+                                                    disabled
+                                                />
                                             </Form.Item>
                                             <Form.Item label={teamMemberLabel}>
                                                 <div className="flex flex-col gap-2">

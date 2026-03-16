@@ -161,6 +161,73 @@ export const matchesAnyEventKey = (values: string[] | null | undefined, event: T
     return values.some((value) => matchesEventKey(value, event));
 };
 
+export type EventSelectionGroup = {
+    canonicalKey: string;
+    canonicalValue: string;
+    label: string;
+    values: string[];
+};
+
+const resolveEventSelection = (value: string, tournamentEvents: TournamentEvent[] | null | undefined): TournamentEvent | null => {
+    if (!tournamentEvents || tournamentEvents.length === 0) {
+        return null;
+    }
+
+    return tournamentEvents.find((event) => matchesEventKey(value, event)) ?? null;
+};
+
+export const groupEventSelections = (
+    values: string[] | null | undefined,
+    tournamentEvents: TournamentEvent[] | null | undefined,
+): EventSelectionGroup[] => {
+    if (!values || values.length === 0) {
+        return [];
+    }
+
+    const groups = new Map<string, EventSelectionGroup>();
+
+    for (const value of values) {
+        if (typeof value !== "string") {
+            continue;
+        }
+
+        const trimmed = value.trim();
+        if (trimmed.length === 0) {
+            continue;
+        }
+
+        const matchedEvent = resolveEventSelection(trimmed, tournamentEvents);
+        const canonicalKey = matchedEvent ? `event:${getEventKey(matchedEvent)}` : `raw:${trimmed.toLowerCase()}`;
+        const canonicalValue = matchedEvent ? getEventKey(matchedEvent) : trimmed;
+        const label = matchedEvent ? getEventLabel(matchedEvent) || matchedEvent.type : trimmed;
+        const existingGroup = groups.get(canonicalKey);
+
+        if (existingGroup) {
+            existingGroup.values.push(trimmed);
+            continue;
+        }
+
+        groups.set(canonicalKey, {
+            canonicalKey,
+            canonicalValue,
+            label,
+            values: [trimmed],
+        });
+    }
+
+    return Array.from(groups.values());
+};
+
+export const findDuplicateEventSelections = (
+    values: string[] | null | undefined,
+    tournamentEvents: TournamentEvent[] | null | undefined,
+): EventSelectionGroup[] => groupEventSelections(values, tournamentEvents).filter((group) => group.values.length > 1);
+
+export const normalizeEventSelections = (
+    values: string[] | null | undefined,
+    tournamentEvents: TournamentEvent[] | null | undefined,
+): string[] => groupEventSelections(values, tournamentEvents).map((group) => group.canonicalValue);
+
 export const getTeamEventIds = (team: TeamEventRefs | null | undefined): string[] => {
     const ids = getTeamEventIdReferences(team);
     if (ids.length > 0) {
