@@ -43,6 +43,13 @@ export default function AdminPermissionsPage() {
             width: 200,
             sorter: (a, b) => a.name.length - b.name.length,
         },
+        {
+            title: "Member ID",
+            dataIndex: "memberId",
+            width: 160,
+            render: (_: string, record: FirestoreUser) => record.memberId || "-",
+            sorter: (a, b) => (a.memberId ?? "").localeCompare(b.memberId ?? ""),
+        },
         deviceBreakpoint > DeviceBreakpoint.md && {
             title: "Email",
             dataIndex: "email",
