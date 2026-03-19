@@ -71,6 +71,12 @@ import remarkBreaks from "remark-breaks";
 
 const {Title, Text} = Typography;
 
+type FullResultModalState = {
+    visible: boolean;
+    title: string;
+    content: ReactNode;
+};
+
 const EVENT_TYPE_ORDER = [
     "Individual",
     "Open Age Individual",
@@ -112,6 +118,12 @@ const formatTime = (time: number): string => {
         return `${minutes}:${secStr}.${msStr}`;
     }
     return `${seconds}.${msStr}`;
+};
+
+const formatAttemptTime = (time?: number | null): string => {
+    if (typeof time !== "number" || !Number.isFinite(time)) return "-";
+    if (time === 0) return "DNF";
+    return formatTime(time);
 };
 
 const getRecordAge = (record: Partial<TournamentRecord | TournamentTeamRecord | TournamentOverallRecord>): number | null => {
@@ -160,6 +172,11 @@ export default function TournamentView() {
     const [editingRecordType, setEditingRecordType] = useState<"individual" | "team" | "overall" | null>(null);
     const [individualEventRecords, setIndividualEventRecords] = useState<TournamentRecord[]>([]);
     const [eventBracketSelection, setEventBracketSelection] = useState<Record<string, string>>({});
+    const [fullResultModal, setFullResultModal] = useState<FullResultModalState>({
+        visible: false,
+        title: "",
+        content: null,
+    });
     const [form] = Form.useForm();
     const navigate = useNavigate();
 
@@ -229,6 +246,14 @@ export default function TournamentView() {
             console.error(error);
             Message.error("Failed to copy share link.");
         }
+    };
+
+    const openFullResultModal = (title: string, content: ReactNode) => {
+        setFullResultModal({
+            visible: true,
+            title,
+            content,
+        });
     };
 
     const refreshRecords = async () => {
@@ -622,21 +647,21 @@ export default function TournamentView() {
                     }
 
                     .finalist-row--advance td {
-                        background: #f4f8ff;
-                        border-top: 1px solid #d6e4ff;
-                        border-bottom: 1px solid #d6e4ff;
+                        background: #fdf2f8;
+                        border-top: 1px solid #f9a8d4;
+                        border-bottom: 1px solid #f9a8d4;
                     }
 
                     .finalist-row--intermediate td {
-                        background: #f2fbf8;
-                        border-top: 1px solid #d2f1e8;
-                        border-bottom: 1px solid #d2f1e8;
+                        background: #fefce8;
+                        border-top: 1px solid #fde047;
+                        border-bottom: 1px solid #fde047;
                     }
 
                     .finalist-row--beginner td {
-                        background: #fff8ef;
-                        border-top: 1px solid #f8dec1;
-                        border-bottom: 1px solid #f8dec1;
+                        background: #ecfeff;
+                        border-top: 1px solid #67e8f9;
+                        border-bottom: 1px solid #67e8f9;
                     }
 
                     .finalist-row--prelim td {
@@ -654,15 +679,15 @@ export default function TournamentView() {
                     }
 
                     .finalist-row--advance td:first-child {
-                        border-left-color: #2563eb;
+                        border-left-color: #ec4899;
                     }
 
                     .finalist-row--intermediate td:first-child {
-                        border-left-color: #0f766e;
+                        border-left-color: #ca8a04;
                     }
 
                     .finalist-row--beginner td:first-child {
-                        border-left-color: #c2410c;
+                        border-left-color: #0891b2;
                     }
 
                     .finalist-row--prelim td:first-child {
@@ -698,7 +723,7 @@ export default function TournamentView() {
                             overflowWrap: "anywhere",
                         }}
                     />
-                    <div className="flex justify-center w-full mb-4">
+                    <div className="flex flex-wrap justify-center w-full gap-2 mb-4">
                         {(() => {
                             if (!tournament) return null;
                             const hasRegistrationDates =
@@ -740,20 +765,22 @@ export default function TournamentView() {
 
                             const showPopover = isDisabled && disabledMessage.length > 0;
 
-                            if (!showPopover) {
-                                return button;
-                            }
-
                             return (
-                                <Popover
-                                    content={
-                                        <span>
-                                            <p>{disabledMessage}</p>
-                                        </span>
-                                    }
-                                >
-                                    {button}
-                                </Popover>
+                                <>
+                                    {showPopover ? (
+                                        <Popover
+                                            content={
+                                                <span>
+                                                    <p>{disabledMessage}</p>
+                                                </span>
+                                            }
+                                        >
+                                            {button}
+                                        </Popover>
+                                    ) : (
+                                        button
+                                    )}
+                                </>
                             );
                         })()}
                     </div>
@@ -873,8 +900,306 @@ export default function TournamentView() {
                                                 const finalistLegendItems = getFinalistLegendItems(
                                                     selectedBracket?.final_criteria ?? [],
                                                 );
+                                                const columns: TableColumnProps<TournamentOverallRecord>[] = [
+                                                    {
+                                                        title: "Rank",
+                                                        width: 60,
+                                                        render: (_: unknown, __: TournamentOverallRecord, index: number) => (
+                                                            <Text bold>{index + 1}</Text>
+                                                        ),
+                                                    },
+                                                    {
+                                                        title: "Athlete",
+                                                        dataIndex: "participant_name",
+                                                        width: 200,
+                                                    },
+                                                    ...(deviceBreakpoint > DeviceBreakpoint.md
+                                                        ? [
+                                                              {
+                                                                  title: "Event Code",
+                                                                  dataIndex: "code" as const,
+                                                                  width: 100,
+                                                              },
+                                                              {
+                                                                  title: "3-3-3",
+                                                                  dataIndex: "three_three_three" as const,
+                                                                  width: 100,
+                                                                  render: (time: number) => (
+                                                                      <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>
+                                                                  ),
+                                                              },
+                                                              {
+                                                                  title: "3-6-3",
+                                                                  dataIndex: "three_six_three" as const,
+                                                                  width: 100,
+                                                                  render: (time: number) => (
+                                                                      <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>
+                                                                  ),
+                                                              },
+                                                              {
+                                                                  title: "Cycle",
+                                                                  dataIndex: "cycle" as const,
+                                                                  width: 100,
+                                                                  render: (time: number) => (
+                                                                      <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>
+                                                                  ),
+                                                              },
+                                                          ]
+                                                        : []),
+                                                    {
+                                                        title: "Overall Time",
+                                                        dataIndex: "overall_time",
+                                                        width: 120,
+                                                        render: (time: number, record: TournamentOverallRecord) => {
+                                                            const canOpen =
+                                                                record.video_url && (record.status === "verified" || isAdmin);
+                                                            return (
+                                                                <Text
+                                                                    bold
+                                                                    style={{
+                                                                        color: "#1890ff",
+                                                                        cursor: canOpen ? "pointer" : "default",
+                                                                        textDecoration: canOpen ? "underline" : "none",
+                                                                    }}
+                                                                    onClick={() =>
+                                                                        handleTimeClick(record.video_url, record.status)
+                                                                    }
+                                                                >
+                                                                    {formatTime(time)}
+                                                                    {record.video_url && (
+                                                                        <IconVideoCamera
+                                                                            style={{marginLeft: 6, fontSize: 12}}
+                                                                        />
+                                                                    )}
+                                                                </Text>
+                                                            );
+                                                        },
+                                                    },
+                                                    ...(deviceBreakpoint > DeviceBreakpoint.md
+                                                        ? [
+                                                              {
+                                                                  title: "Country",
+                                                                  dataIndex: "country" as const,
+                                                                  width: 120,
+                                                              },
+                                                              {
+                                                                  title: "Status",
+                                                                  dataIndex: "status" as const,
+                                                                  width: 100,
+                                                                  render: (status: string) => (
+                                                                      <Tag color={status === "verified" ? "green" : "orange"}>
+                                                                          {status === "verified" ? "Verified" : "Submitted"}
+                                                                      </Tag>
+                                                                  ),
+                                                              },
+                                                          ]
+                                                        : []),
+                                                    ...(isAdmin
+                                                        ? [
+                                                              {
+                                                                  title: "Actions",
+                                                                  width: 150,
+                                                                  render: (_: unknown, record: TournamentOverallRecord) => (
+                                                                      <div className="flex gap-2">
+                                                                          <Popover content="Edit record times">
+                                                                              <Button
+                                                                                  size="mini"
+                                                                                  type="primary"
+                                                                                  icon={<IconEdit />}
+                                                                                  onClick={() => handleEditRecord(record, "overall")}
+                                                                              />
+                                                                          </Popover>
+                                                                          <Popover
+                                                                              content={
+                                                                                  record.status === "verified"
+                                                                                      ? "Unverify this record"
+                                                                                      : "Verify this record"
+                                                                              }
+                                                                          >
+                                                                              <Button
+                                                                                  size="mini"
+                                                                                  status={
+                                                                                      record.status === "verified"
+                                                                                          ? "warning"
+                                                                                          : "success"
+                                                                                  }
+                                                                                  icon={
+                                                                                      record.status === "verified" ? (
+                                                                                          <IconClose />
+                                                                                      ) : (
+                                                                                          <IconCheck />
+                                                                                      )
+                                                                                  }
+                                                                                  onClick={() =>
+                                                                                      handleToggleVerification(record, true)
+                                                                                  }
+                                                                              />
+                                                                          </Popover>
+                                                                          <Popconfirm
+                                                                              title="Are you sure you want to delete this record and all its individual events?"
+                                                                              onOk={() => handleDeleteRecord(record, true)}
+                                                                              okText="Delete"
+                                                                              cancelText="Cancel"
+                                                                          >
+                                                                              <Popover content="Delete this record">
+                                                                                  <Button
+                                                                                      size="mini"
+                                                                                      status="danger"
+                                                                                      icon={<IconDelete />}
+                                                                                  />
+                                                                              </Popover>
+                                                                          </Popconfirm>
+                                                                      </div>
+                                                                  ),
+                                                              },
+                                                          ]
+                                                        : []),
+                                                ];
+                                                const tableRowClassName = (record: TournamentOverallRecord) => {
+                                                    const classification = record.id && finalistClassificationMap[record.id];
+                                                    return classification
+                                                        ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}`
+                                                        : "";
+                                                };
                                                 return (
                                                     <>
+                                                        <div className="mb-4 flex justify-end">
+                                                            <Button
+                                                                type="outline"
+                                                                size="small"
+                                                                onClick={() =>
+                                                                    openFullResultModal(
+                                                                        `Overall Rankings (${individualEventLabel})`,
+                                                                        <Table
+                                                                            columns={[
+                                                                                {
+                                                                                    title: "Rank",
+                                                                                    width: 60,
+                                                                                    render: (
+                                                                                        _: unknown,
+                                                                                        __: TournamentOverallRecord,
+                                                                                        index: number,
+                                                                                    ) => <Text bold>{index + 1}</Text>,
+                                                                                },
+                                                                                {
+                                                                                    title: "Athlete",
+                                                                                    dataIndex: "participant_name",
+                                                                                    width: 200,
+                                                                                },
+                                                                                {
+                                                                                    title: "Event Code",
+                                                                                    dataIndex: "code" as const,
+                                                                                    width: 100,
+                                                                                },
+                                                                                {
+                                                                                    title: "3-3-3",
+                                                                                    dataIndex: "three_three_three" as const,
+                                                                                    width: 100,
+                                                                                    render: (time: number) => (
+                                                                                        <Text>{formatAttemptTime(time)}</Text>
+                                                                                    ),
+                                                                                },
+                                                                                {
+                                                                                    title: "3-6-3",
+                                                                                    dataIndex: "three_six_three" as const,
+                                                                                    width: 100,
+                                                                                    render: (time: number) => (
+                                                                                        <Text>{formatAttemptTime(time)}</Text>
+                                                                                    ),
+                                                                                },
+                                                                                {
+                                                                                    title: "Cycle",
+                                                                                    dataIndex: "cycle" as const,
+                                                                                    width: 100,
+                                                                                    render: (time: number) => (
+                                                                                        <Text>{formatAttemptTime(time)}</Text>
+                                                                                    ),
+                                                                                },
+                                                                                {
+                                                                                    title: "Overall Time",
+                                                                                    dataIndex: "overall_time",
+                                                                                    width: 120,
+                                                                                    render: (
+                                                                                        time: number,
+                                                                                        record: TournamentOverallRecord,
+                                                                                    ) => {
+                                                                                        const canOpen =
+                                                                                            record.video_url &&
+                                                                                            (record.status === "verified" ||
+                                                                                                isAdmin);
+                                                                                        return (
+                                                                                            <Text
+                                                                                                bold
+                                                                                                style={{
+                                                                                                    color: "#1890ff",
+                                                                                                    cursor: canOpen
+                                                                                                        ? "pointer"
+                                                                                                        : "default",
+                                                                                                    textDecoration: canOpen
+                                                                                                        ? "underline"
+                                                                                                        : "none",
+                                                                                                }}
+                                                                                                onClick={() =>
+                                                                                                    handleTimeClick(
+                                                                                                        record.video_url,
+                                                                                                        record.status,
+                                                                                                    )
+                                                                                                }
+                                                                                            >
+                                                                                                {formatTime(time)}
+                                                                                                {record.video_url && (
+                                                                                                    <IconVideoCamera
+                                                                                                        style={{
+                                                                                                            marginLeft: 6,
+                                                                                                            fontSize: 12,
+                                                                                                        }}
+                                                                                                    />
+                                                                                                )}
+                                                                                            </Text>
+                                                                                        );
+                                                                                    },
+                                                                                },
+                                                                                {
+                                                                                    title: "Country",
+                                                                                    dataIndex: "country" as const,
+                                                                                    width: 120,
+                                                                                },
+                                                                                {
+                                                                                    title: "Status",
+                                                                                    dataIndex: "status" as const,
+                                                                                    width: 100,
+                                                                                    render: (status: string) => (
+                                                                                        <Tag
+                                                                                            color={
+                                                                                                status === "verified"
+                                                                                                    ? "green"
+                                                                                                    : "orange"
+                                                                                            }
+                                                                                        >
+                                                                                            {status === "verified"
+                                                                                                ? "Verified"
+                                                                                                : "Submitted"}
+                                                                                        </Tag>
+                                                                                    ),
+                                                                                },
+                                                                            ]}
+                                                                            data={filteredRecords}
+                                                                            pagination={{
+                                                                                pageSize: 20,
+                                                                                showTotal: true,
+                                                                                showJumper: true,
+                                                                            }}
+                                                                            rowKey="id"
+                                                                            size="small"
+                                                                            scroll={{x: true, y: 560}}
+                                                                            rowClassName={tableRowClassName}
+                                                                        />,
+                                                                    )
+                                                                }
+                                                            >
+                                                                View Full Result
+                                                            </Button>
+                                                        </div>
                                                         {finalistLegendItems.length > 0 ? (
                                                             <div
                                                                 className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-solid p-4"
@@ -911,189 +1236,7 @@ export default function TournamentView() {
                                                             </div>
                                                         ) : null}
                                                         <Table
-                                                            columns={[
-                                                                {
-                                                                    title: "Rank",
-                                                                    width: 60,
-                                                                    render: (
-                                                                        _: unknown,
-                                                                        __: TournamentOverallRecord,
-                                                                        index: number,
-                                                                    ) => <Text bold>{index + 1}</Text>,
-                                                                },
-                                                                {
-                                                                    title: "Athlete",
-                                                                    dataIndex: "participant_name",
-                                                                    width: 200,
-                                                                },
-                                                                ...(deviceBreakpoint > DeviceBreakpoint.md
-                                                                    ? [
-                                                                          {
-                                                                              title: "Event Code",
-                                                                              dataIndex: "code" as const,
-                                                                              width: 100,
-                                                                          },
-                                                                          {
-                                                                              title: "3-3-3",
-                                                                              dataIndex: "three_three_three" as const,
-                                                                              width: 100,
-                                                                              render: (time: number) => (
-                                                                                  <Text>
-                                                                                      {time > 0 ? formatTime(time) : "DNF"}
-                                                                                  </Text>
-                                                                              ),
-                                                                          },
-                                                                          {
-                                                                              title: "3-6-3",
-                                                                              dataIndex: "three_six_three" as const,
-                                                                              width: 100,
-                                                                              render: (time: number) => (
-                                                                                  <Text>
-                                                                                      {time > 0 ? formatTime(time) : "DNF"}
-                                                                                  </Text>
-                                                                              ),
-                                                                          },
-                                                                          {
-                                                                              title: "Cycle",
-                                                                              dataIndex: "cycle" as const,
-                                                                              width: 100,
-                                                                              render: (time: number) => (
-                                                                                  <Text>
-                                                                                      {time > 0 ? formatTime(time) : "DNF"}
-                                                                                  </Text>
-                                                                              ),
-                                                                          },
-                                                                      ]
-                                                                    : []),
-                                                                {
-                                                                    title: "Overall Time",
-                                                                    dataIndex: "overall_time",
-                                                                    width: 120,
-                                                                    render: (time: number, record: TournamentOverallRecord) => {
-                                                                        const canOpen =
-                                                                            record.video_url &&
-                                                                            (record.status === "verified" || isAdmin);
-                                                                        return (
-                                                                            <Text
-                                                                                bold
-                                                                                style={{
-                                                                                    color: "#1890ff",
-                                                                                    cursor: canOpen ? "pointer" : "default",
-                                                                                    textDecoration: canOpen ? "underline" : "none",
-                                                                                }}
-                                                                                onClick={() =>
-                                                                                    handleTimeClick(
-                                                                                        record.video_url,
-                                                                                        record.status,
-                                                                                    )
-                                                                                }
-                                                                            >
-                                                                                {formatTime(time)}
-                                                                                {record.video_url && (
-                                                                                    <IconVideoCamera
-                                                                                        style={{marginLeft: 6, fontSize: 12}}
-                                                                                    />
-                                                                                )}
-                                                                            </Text>
-                                                                        );
-                                                                    },
-                                                                },
-                                                                ...(deviceBreakpoint > DeviceBreakpoint.md
-                                                                    ? [
-                                                                          {
-                                                                              title: "Country",
-                                                                              dataIndex: "country" as const,
-                                                                              width: 120,
-                                                                          },
-                                                                          {
-                                                                              title: "Status",
-                                                                              dataIndex: "status" as const,
-                                                                              width: 100,
-                                                                              render: (status: string) => (
-                                                                                  <Tag
-                                                                                      color={
-                                                                                          status === "verified"
-                                                                                              ? "green"
-                                                                                              : "orange"
-                                                                                      }
-                                                                                  >
-                                                                                      {status === "verified"
-                                                                                          ? "Verified"
-                                                                                          : "Submitted"}
-                                                                                  </Tag>
-                                                                              ),
-                                                                          },
-                                                                      ]
-                                                                    : []),
-                                                                ...(isAdmin
-                                                                    ? [
-                                                                          {
-                                                                              title: "Actions",
-                                                                              width: 150,
-                                                                              render: (
-                                                                                  _: unknown,
-                                                                                  record: TournamentOverallRecord,
-                                                                              ) => (
-                                                                                  <div className="flex gap-2">
-                                                                                      <Popover content="Edit record times">
-                                                                                          <Button
-                                                                                              size="mini"
-                                                                                              type="primary"
-                                                                                              icon={<IconEdit />}
-                                                                                              onClick={() =>
-                                                                                                  handleEditRecord(record, "overall")
-                                                                                              }
-                                                                                          />
-                                                                                      </Popover>
-                                                                                      <Popover
-                                                                                          content={
-                                                                                              record.status === "verified"
-                                                                                                  ? "Unverify this record"
-                                                                                                  : "Verify this record"
-                                                                                          }
-                                                                                      >
-                                                                                          <Button
-                                                                                              size="mini"
-                                                                                              status={
-                                                                                                  record.status === "verified"
-                                                                                                      ? "warning"
-                                                                                                      : "success"
-                                                                                              }
-                                                                                              icon={
-                                                                                                  record.status === "verified" ? (
-                                                                                                      <IconClose />
-                                                                                                  ) : (
-                                                                                                      <IconCheck />
-                                                                                                  )
-                                                                                              }
-                                                                                              onClick={() =>
-                                                                                                  handleToggleVerification(
-                                                                                                      record,
-                                                                                                      true,
-                                                                                                  )
-                                                                                              }
-                                                                                          />
-                                                                                      </Popover>
-                                                                                      <Popconfirm
-                                                                                          title="Are you sure you want to delete this record and all its individual events?"
-                                                                                          onOk={() => handleDeleteRecord(record, true)}
-                                                                                          okText="Delete"
-                                                                                          cancelText="Cancel"
-                                                                                      >
-                                                                                          <Popover content="Delete this record">
-                                                                                              <Button
-                                                                                                  size="mini"
-                                                                                                  status="danger"
-                                                                                                  icon={<IconDelete />}
-                                                                                              />
-                                                                                          </Popover>
-                                                                                      </Popconfirm>
-                                                                                  </div>
-                                                                              ),
-                                                                          },
-                                                                      ]
-                                                                    : []),
-                                                            ]}
+                                                            columns={columns}
                                                             data={filteredRecords}
                                                             pagination={{
                                                                 pageSize: 20,
@@ -1102,13 +1245,7 @@ export default function TournamentView() {
                                                             }}
                                                             rowKey="id"
                                                             size="small"
-                                                            rowClassName={(record) => {
-                                                                const classification =
-                                                                    record.id && finalistClassificationMap[record.id];
-                                                                return classification
-                                                                    ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}`
-                                                                    : "";
-                                                            }}
+                                                            rowClassName={tableRowClassName}
                                                         />
                                                     </>
                                                 );
@@ -1284,6 +1421,12 @@ export default function TournamentView() {
                                                       ]
                                                     : []),
                                             ];
+                                            const tableRowClassName = (record: TournamentTeamRecord) => {
+                                                const classification = record.id && finalistClassificationMap[record.id];
+                                                return classification
+                                                    ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}`
+                                                    : "";
+                                            };
 
                                             return (
                                                 <Card
@@ -1293,6 +1436,142 @@ export default function TournamentView() {
                                                     className="score-card"
                                                 >
                                                     {eventConfig && renderBracketTabs(eventConfig, bracketKey)}
+                                                    <div className="mb-4 flex justify-end">
+                                                        <Button
+                                                            type="outline"
+                                                            size="small"
+                                                            onClick={() =>
+                                                                openFullResultModal(
+                                                                    `${eventLabel} - Team Rankings`,
+                                                                    <Table
+                                                                        columns={[
+                                                                            {
+                                                                                title: "Rank",
+                                                                                width: 60,
+                                                                                render: (
+                                                                                    _: unknown,
+                                                                                    __: TournamentTeamRecord,
+                                                                                    index: number,
+                                                                                ) => <Text bold>{index + 1}</Text>,
+                                                                            },
+                                                                            {
+                                                                                title: "Team",
+                                                                                dataIndex: "team_name",
+                                                                                width: 200,
+                                                                            },
+                                                                            {
+                                                                                title: "Event Code",
+                                                                                dataIndex: "code" as const,
+                                                                                width: 100,
+                                                                            },
+                                                                            {
+                                                                                title: "Try 1",
+                                                                                dataIndex: "try1" as const,
+                                                                                width: 100,
+                                                                                render: (time: number) => (
+                                                                                    <Text>{formatAttemptTime(time)}</Text>
+                                                                                ),
+                                                                            },
+                                                                            {
+                                                                                title: "Try 2",
+                                                                                dataIndex: "try2" as const,
+                                                                                width: 100,
+                                                                                render: (time: number) => (
+                                                                                    <Text>{formatAttemptTime(time)}</Text>
+                                                                                ),
+                                                                            },
+                                                                            {
+                                                                                title: "Try 3",
+                                                                                dataIndex: "try3" as const,
+                                                                                width: 100,
+                                                                                render: (time: number) => (
+                                                                                    <Text>{formatAttemptTime(time)}</Text>
+                                                                                ),
+                                                                            },
+                                                                            {
+                                                                                title: "Best Time",
+                                                                                dataIndex: "best_time" as const,
+                                                                                width: 120,
+                                                                                render: (
+                                                                                    time: number,
+                                                                                    record: TournamentTeamRecord,
+                                                                                ) => {
+                                                                                    const canOpen =
+                                                                                        record.video_url &&
+                                                                                        (record.status === "verified" || isAdmin);
+                                                                                    return (
+                                                                                        <Text
+                                                                                            bold
+                                                                                            style={{
+                                                                                                color: "#1890ff",
+                                                                                                cursor: canOpen
+                                                                                                    ? "pointer"
+                                                                                                    : "default",
+                                                                                                textDecoration: canOpen
+                                                                                                    ? "underline"
+                                                                                                    : "none",
+                                                                                            }}
+                                                                                            onClick={() =>
+                                                                                                handleTimeClick(
+                                                                                                    record.video_url,
+                                                                                                    record.status,
+                                                                                                )
+                                                                                            }
+                                                                                        >
+                                                                                            {formatAttemptTime(time)}
+                                                                                            {record.video_url && (
+                                                                                                <IconVideoCamera
+                                                                                                    style={{
+                                                                                                        marginLeft: 6,
+                                                                                                        fontSize: 12,
+                                                                                                    }}
+                                                                                                />
+                                                                                            )}
+                                                                                        </Text>
+                                                                                    );
+                                                                                },
+                                                                            },
+                                                                            {
+                                                                                title: "Country",
+                                                                                dataIndex: "country" as const,
+                                                                                width: 120,
+                                                                            },
+                                                                            {
+                                                                                title: "Status",
+                                                                                dataIndex: "status" as const,
+                                                                                width: 100,
+                                                                                render: (status: string) => (
+                                                                                    <Tag
+                                                                                        color={
+                                                                                            status === "verified"
+                                                                                                ? "green"
+                                                                                                : "orange"
+                                                                                        }
+                                                                                    >
+                                                                                        {status === "verified"
+                                                                                            ? "Verified"
+                                                                                            : "Submitted"}
+                                                                                    </Tag>
+                                                                                ),
+                                                                            },
+                                                                        ]}
+                                                                        data={filteredRecords}
+                                                                        pagination={{
+                                                                            pageSize: 20,
+                                                                            showTotal: true,
+                                                                            showJumper: true,
+                                                                        }}
+                                                                        rowKey="id"
+                                                                        size="small"
+                                                                        scroll={{x: true, y: 560}}
+                                                                        rowClassName={tableRowClassName}
+                                                                    />,
+                                                                )
+                                                            }
+                                                        >
+                                                            View Full Result
+                                                        </Button>
+                                                    </div>
                                                     {finalistLegendItems.length > 0 ? (
                                                         <div
                                                             className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-solid p-4"
@@ -1338,13 +1617,7 @@ export default function TournamentView() {
                                                         }}
                                                         rowKey="id"
                                                         size="small"
-                                                        rowClassName={(record) => {
-                                                            const classification =
-                                                                record.id && finalistClassificationMap[record.id];
-                                                            return classification
-                                                                ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}`
-                                                                : "";
-                                                        }}
+                                                        rowClassName={tableRowClassName}
                                                     />
                                                 </Card>
                                             );
@@ -1376,6 +1649,24 @@ export default function TournamentView() {
 
                                         const classificationLabel =
                                             classification.charAt(0).toUpperCase() + classification.slice(1);
+                                        const finalIndividualEvent = events.find((e) => e.type === "Individual");
+                                        const finalIndividualEventKey = finalIndividualEvent?.id ?? "Individual";
+                                        const finalIndividualBracketKey = buildBracketKey(
+                                            "final",
+                                            finalIndividualEventKey,
+                                            classification,
+                                        );
+                                        const selectedFinalIndividualBracketName = getSelectedBracketName(
+                                            finalIndividualBracketKey,
+                                            finalIndividualEvent,
+                                        );
+                                        const selectedFinalIndividualBracket = finalIndividualEvent?.age_brackets?.find(
+                                            (b) => b.name === selectedFinalIndividualBracketName,
+                                        );
+                                        const filteredOverallRecords = filterRecordsByBracket(
+                                            [...classificationOverallRecords].sort((a, b) => a.overall_time - b.overall_time),
+                                            selectedFinalIndividualBracket,
+                                        );
 
                                         return (
                                             <div key={classification} className="space-y-4">
@@ -1400,6 +1691,162 @@ export default function TournamentView() {
                                                                 );
                                                                 return renderBracketTabs(individualEvent, bracketKey);
                                                             })()}
+                                                        <div className="mb-4 flex justify-end">
+                                                            <Button
+                                                                type="outline"
+                                                                size="small"
+                                                                onClick={() =>
+                                                                    openFullResultModal(
+                                                                        `Overall Rankings (${individualEventLabel}) - ${classificationLabel}`,
+                                                                        <Table
+                                                                            columns={[
+                                                                                {
+                                                                                    title: "Rank",
+                                                                                    width: 60,
+                                                                                    render: (
+                                                                                        _: unknown,
+                                                                                        __: TournamentOverallRecord,
+                                                                                        index: number,
+                                                                                    ) => (
+                                                                                        <Text
+                                                                                            bold
+                                                                                            style={{
+                                                                                                color:
+                                                                                                    index === 0
+                                                                                                        ? "#52c41a"
+                                                                                                        : index === 1
+                                                                                                          ? "#1890ff"
+                                                                                                          : index === 2
+                                                                                                            ? "#fa8c16"
+                                                                                                            : "inherit",
+                                                                                            }}
+                                                                                        >
+                                                                                            {index + 1}
+                                                                                        </Text>
+                                                                                    ),
+                                                                                },
+                                                                                {
+                                                                                    title: "Athlete",
+                                                                                    dataIndex: "participant_name",
+                                                                                    width: 200,
+                                                                                },
+                                                                                {
+                                                                                    title: "Event Code",
+                                                                                    dataIndex: "code" as const,
+                                                                                    width: 100,
+                                                                                },
+                                                                                {
+                                                                                    title: "3-3-3",
+                                                                                    dataIndex: "three_three_three" as const,
+                                                                                    width: 100,
+                                                                                    render: (time: number) => (
+                                                                                        <Text>{formatAttemptTime(time)}</Text>
+                                                                                    ),
+                                                                                },
+                                                                                {
+                                                                                    title: "3-6-3",
+                                                                                    dataIndex: "three_six_three" as const,
+                                                                                    width: 100,
+                                                                                    render: (time: number) => (
+                                                                                        <Text>{formatAttemptTime(time)}</Text>
+                                                                                    ),
+                                                                                },
+                                                                                {
+                                                                                    title: "Cycle",
+                                                                                    dataIndex: "cycle" as const,
+                                                                                    width: 100,
+                                                                                    render: (time: number) => (
+                                                                                        <Text>{formatAttemptTime(time)}</Text>
+                                                                                    ),
+                                                                                },
+                                                                                {
+                                                                                    title: "Overall Time",
+                                                                                    dataIndex: "overall_time",
+                                                                                    width: 120,
+                                                                                    render: (
+                                                                                        time: number,
+                                                                                        record: TournamentOverallRecord,
+                                                                                        index: number,
+                                                                                    ) => {
+                                                                                        const canOpen =
+                                                                                            record.video_url &&
+                                                                                            (record.status === "verified" ||
+                                                                                                isAdmin);
+                                                                                        return (
+                                                                                            <Text
+                                                                                                bold
+                                                                                                style={{
+                                                                                                    color:
+                                                                                                        index === 0
+                                                                                                            ? "#52c41a"
+                                                                                                            : "#1890ff",
+                                                                                                    cursor: canOpen
+                                                                                                        ? "pointer"
+                                                                                                        : "default",
+                                                                                                    textDecoration: canOpen
+                                                                                                        ? "underline"
+                                                                                                        : "none",
+                                                                                                }}
+                                                                                                onClick={() =>
+                                                                                                    handleTimeClick(
+                                                                                                        record.video_url,
+                                                                                                        record.status,
+                                                                                                    )
+                                                                                                }
+                                                                                            >
+                                                                                                {formatTime(time)}
+                                                                                                {record.video_url && (
+                                                                                                    <IconVideoCamera
+                                                                                                        style={{
+                                                                                                            marginLeft: 6,
+                                                                                                            fontSize: 12,
+                                                                                                        }}
+                                                                                                    />
+                                                                                                )}
+                                                                                            </Text>
+                                                                                        );
+                                                                                    },
+                                                                                },
+                                                                                {
+                                                                                    title: "Country",
+                                                                                    dataIndex: "country" as const,
+                                                                                    width: 120,
+                                                                                },
+                                                                                {
+                                                                                    title: "Status",
+                                                                                    dataIndex: "status" as const,
+                                                                                    width: 100,
+                                                                                    render: (status: string) => (
+                                                                                        <Tag
+                                                                                            color={
+                                                                                                status === "verified"
+                                                                                                    ? "green"
+                                                                                                    : "orange"
+                                                                                            }
+                                                                                        >
+                                                                                            {status === "verified"
+                                                                                                ? "Verified"
+                                                                                                : "Submitted"}
+                                                                                        </Tag>
+                                                                                    ),
+                                                                                },
+                                                                            ]}
+                                                                            data={filteredOverallRecords}
+                                                                            pagination={{
+                                                                                pageSize: 20,
+                                                                                showTotal: true,
+                                                                                showJumper: true,
+                                                                            }}
+                                                                            rowKey="id"
+                                                                            size="small"
+                                                                            scroll={{x: true, y: 560}}
+                                                                        />,
+                                                                    )
+                                                                }
+                                                            >
+                                                                View Full Result
+                                                            </Button>
+                                                        </div>
                                                         <Table
                                                             columns={[
                                                                 {
@@ -1611,30 +2058,7 @@ export default function TournamentView() {
                                                                       ]
                                                                     : []),
                                                             ]}
-                                                            data={(() => {
-                                                                const individualEvent = events.find(
-                                                                    (e) => e.type === "Individual",
-                                                                );
-                                                                const eventKey = individualEvent?.id ?? "Individual";
-                                                                const bracketKey = buildBracketKey(
-                                                                    "final",
-                                                                    eventKey,
-                                                                    classification,
-                                                                );
-                                                                const selectedBracketName = getSelectedBracketName(
-                                                                    bracketKey,
-                                                                    individualEvent,
-                                                                );
-                                                                const selectedBracket = individualEvent?.age_brackets?.find(
-                                                                    (b) => b.name === selectedBracketName,
-                                                                );
-                                                                return filterRecordsByBracket(
-                                                                    [...classificationOverallRecords].sort(
-                                                                        (a, b) => a.overall_time - b.overall_time,
-                                                                    ),
-                                                                    selectedBracket,
-                                                                );
-                                                            })()}
+                                                            data={filteredOverallRecords}
                                                             pagination={{
                                                                 pageSize: 20,
                                                                 showTotal: true,
@@ -1850,6 +2274,163 @@ export default function TournamentView() {
                                                                 className="score-card"
                                                             >
                                                                 {eventConfig && renderBracketTabs(eventConfig, bracketKey)}
+                                                                <div className="mb-4 flex justify-end">
+                                                                    <Button
+                                                                        type="outline"
+                                                                        size="small"
+                                                                        onClick={() =>
+                                                                            openFullResultModal(
+                                                                                `${eventLabel} - Team Rankings - ${classificationLabel}`,
+                                                                                <Table
+                                                                                    columns={[
+                                                                                        {
+                                                                                            title: "Rank",
+                                                                                            width: 60,
+                                                                                            render: (
+                                                                                                _: unknown,
+                                                                                                __: TournamentTeamRecord,
+                                                                                                index: number,
+                                                                                            ) => (
+                                                                                                <Text
+                                                                                                    bold
+                                                                                                    style={{
+                                                                                                        color:
+                                                                                                            index === 0
+                                                                                                                ? "#52c41a"
+                                                                                                                : index === 1
+                                                                                                                  ? "#1890ff"
+                                                                                                                  : index === 2
+                                                                                                                    ? "#fa8c16"
+                                                                                                                    : "inherit",
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {index + 1}
+                                                                                                </Text>
+                                                                                            ),
+                                                                                        },
+                                                                                        {
+                                                                                            title: "Team",
+                                                                                            dataIndex: "team_name",
+                                                                                            width: 200,
+                                                                                        },
+                                                                                        {
+                                                                                            title: "Event Code",
+                                                                                            dataIndex: "code" as const,
+                                                                                            width: 100,
+                                                                                        },
+                                                                                        {
+                                                                                            title: "Try 1",
+                                                                                            dataIndex: "try1" as const,
+                                                                                            width: 100,
+                                                                                            render: (time: number) => (
+                                                                                                <Text>{formatAttemptTime(time)}</Text>
+                                                                                            ),
+                                                                                        },
+                                                                                        {
+                                                                                            title: "Try 2",
+                                                                                            dataIndex: "try2" as const,
+                                                                                            width: 100,
+                                                                                            render: (time: number) => (
+                                                                                                <Text>{formatAttemptTime(time)}</Text>
+                                                                                            ),
+                                                                                        },
+                                                                                        {
+                                                                                            title: "Try 3",
+                                                                                            dataIndex: "try3" as const,
+                                                                                            width: 100,
+                                                                                            render: (time: number) => (
+                                                                                                <Text>{formatAttemptTime(time)}</Text>
+                                                                                            ),
+                                                                                        },
+                                                                                        {
+                                                                                            title: "Best Time",
+                                                                                            dataIndex: "best_time" as const,
+                                                                                            width: 120,
+                                                                                            render: (
+                                                                                                time: number,
+                                                                                                record: TournamentTeamRecord,
+                                                                                                index: number,
+                                                                                            ) => {
+                                                                                                const canOpen =
+                                                                                                    record.video_url &&
+                                                                                                    (record.status ===
+                                                                                                        "verified" || isAdmin);
+                                                                                                return (
+                                                                                                    <Text
+                                                                                                        bold
+                                                                                                        style={{
+                                                                                                            color:
+                                                                                                                index === 0
+                                                                                                                    ? "#52c41a"
+                                                                                                                    : "#1890ff",
+                                                                                                            cursor: canOpen
+                                                                                                                ? "pointer"
+                                                                                                                : "default",
+                                                                                                            textDecoration:
+                                                                                                                canOpen
+                                                                                                                    ? "underline"
+                                                                                                                    : "none",
+                                                                                                        }}
+                                                                                                        onClick={() =>
+                                                                                                            handleTimeClick(
+                                                                                                                record.video_url,
+                                                                                                                record.status,
+                                                                                                            )
+                                                                                                        }
+                                                                                                    >
+                                                                                                        {formatAttemptTime(time)}
+                                                                                                        {record.video_url && (
+                                                                                                            <IconVideoCamera
+                                                                                                                style={{
+                                                                                                                    marginLeft: 6,
+                                                                                                                    fontSize: 12,
+                                                                                                                }}
+                                                                                                            />
+                                                                                                        )}
+                                                                                                    </Text>
+                                                                                                );
+                                                                                            },
+                                                                                        },
+                                                                                        {
+                                                                                            title: "Country",
+                                                                                            dataIndex: "country" as const,
+                                                                                            width: 120,
+                                                                                        },
+                                                                                        {
+                                                                                            title: "Status",
+                                                                                            dataIndex: "status" as const,
+                                                                                            width: 100,
+                                                                                            render: (status: string) => (
+                                                                                                <Tag
+                                                                                                    color={
+                                                                                                        status === "verified"
+                                                                                                            ? "green"
+                                                                                                            : "orange"
+                                                                                                    }
+                                                                                                >
+                                                                                                    {status === "verified"
+                                                                                                        ? "Verified"
+                                                                                                        : "Submitted"}
+                                                                                                </Tag>
+                                                                                            ),
+                                                                                        },
+                                                                                    ]}
+                                                                                    data={filteredRecords}
+                                                                                    pagination={{
+                                                                                        pageSize: 20,
+                                                                                        showTotal: true,
+                                                                                        showJumper: true,
+                                                                                    }}
+                                                                                    rowKey="id"
+                                                                                    size="small"
+                                                                                    scroll={{x: true, y: 560}}
+                                                                                />,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        View Full Result
+                                                                    </Button>
+                                                                </div>
                                                                 <Table
                                                                     columns={columns}
                                                                     data={filteredRecords}
@@ -1984,6 +2565,21 @@ export default function TournamentView() {
                             <Input placeholder="https://example.com/video" />
                         </Form.Item>
                     </Form>
+                </Modal>
+                <Modal
+                    title={fullResultModal.title}
+                    visible={fullResultModal.visible}
+                    footer={null}
+                    style={{width: "min(1200px, 95vw)"}}
+                    onCancel={() =>
+                        setFullResultModal({
+                            visible: false,
+                            title: "",
+                            content: null,
+                        })
+                    }
+                >
+                    {fullResultModal.content}
                 </Modal>
             </div>
         </div>
