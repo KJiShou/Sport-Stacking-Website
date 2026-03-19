@@ -48,6 +48,7 @@ import {
     Upload,
 } from "@arco-design/web-react";
 import {IconCalendar, IconExclamationCircle, IconLaunch} from "@arco-design/web-react/icon";
+import type {UploadItem} from "@arco-design/web-react/es/Upload";
 import MDEditor from "@uiw/react-md-editor";
 import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
@@ -120,7 +121,7 @@ export default function RegisterTournamentPage() {
     const [tournamentData, setTournamentData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
     const [requiredKeys, setRequiredKeys] = useState<string[]>([]);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
-    const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
+    const [paymentProofFileList, setPaymentProofFileList] = useState<UploadItem[]>([]);
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
     const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
     const [lookingForTeams, setLookingForTeams] = useState<string[]>([]); // Events user is looking for teams
@@ -1418,94 +1419,117 @@ export default function RegisterTournamentPage() {
                         )}
 
                         {requiresPaymentProof && (
-                            <Form.Item
-                                label={
-                                    <div className="flex flex-col gap-1">
-                                        <div>
-                                            Payment Proof
-                                            <Tooltip content="Please upload a picture of your payment proof.">
-                                                <IconExclamationCircle
-                                                    style={{
-                                                        margin: "0 8px",
-                                                        color: "rgb(var(--arcoblue-6))",
-                                                    }}
-                                                />
-                                            </Tooltip>
+                            <>
+                                <Form.Item field="payment_proof" rules={[{required: true, message: "Payment proof is required."}]} hidden>
+                                    <Input />
+                                </Form.Item>
+                                <Form.Item
+                                    label={
+                                        <div className="flex flex-col gap-1">
+                                            <div>
+                                                Payment Proof
+                                                <Tooltip content="Please upload a picture of your payment proof.">
+                                                    <IconExclamationCircle
+                                                        style={{
+                                                            margin: "0 8px",
+                                                            color: "rgb(var(--arcoblue-6))",
+                                                        }}
+                                                    />
+                                                </Tooltip>
+                                            </div>
+                                            <div className="text-2xl font-bold text-green-600">Total Payment: RM{totalRegistrationFee}</div>
                                         </div>
-                                        <div className="text-2xl font-bold text-green-600">Total Payment: RM{totalRegistrationFee}</div>
-                                    </div>
-                                }
-                                field="payment_proof"
-                                rules={[{required: !paymentProofUrl, message: "Payment proof is required."}]}
-                            >
-                                <Upload
-                                    className={"w-full flex flex-col items-center justify-center mb-10"}
-                                    drag
-                                    multiple={false}
-                                    limit={1}
-                                    accept="image/jpeg,image/png,image/gif"
-                                    disabled={paymentUploadLoading}
-                                    customRequest={async (option: {
-                                        file: File;
-                                        onSuccess?: (file: File) => void;
-                                        onError?: (error: Error) => void;
-                                        onProgress?: (progress: number) => void;
-                                    }) => {
-                                        const {file, onSuccess, onError, onProgress} = option;
-                                        const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-                                        const validTypes = ["image/jpeg", "image/png", "image/gif"];
+                                    }
+                                >
+                                    <Upload
+                                        className={"w-full flex flex-col items-center justify-center mb-10"}
+                                        drag
+                                        multiple={false}
+                                        limit={1}
+                                        accept="image/jpeg,image/png,image/gif"
+                                        disabled={paymentUploadLoading}
+                                        fileList={paymentProofFileList}
+                                        onChange={(fileList) => {
+                                            setPaymentProofFileList(fileList);
+                                        }}
+                                        onRemove={() => {
+                                            setPaymentProofFileList([]);
+                                            setPaymentProofUrl(null);
+                                            form.setFieldValue("payment_proof", undefined);
+                                        }}
+                                        customRequest={async (option: {
+                                            file: File;
+                                            onSuccess?: (response?: object) => void;
+                                            onError?: (error?: object) => void;
+                                            onProgress?: (progress: number) => void;
+                                        }) => {
+                                            const {file, onSuccess, onError, onProgress} = option;
+                                            const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+                                            const validTypes = ["image/jpeg", "image/png", "image/gif"];
 
-                                        if (!validTypes.includes(file.type)) {
-                                            Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
-                                            onError?.(new Error("Invalid file type"));
-                                            return;
-                                        }
+                                            if (!validTypes.includes(file.type)) {
+                                                Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
+                                                onError?.(new Error("Invalid file type"));
+                                                return;
+                                            }
 
-                                        if (file.size > MAX_SIZE) {
-                                            Message.error("File size exceeds 10MB limit");
-                                            onError?.(new Error("File size exceeds 10MB limit"));
-                                            return;
-                                        }
+                                            if (file.size > MAX_SIZE) {
+                                                Message.error("File size exceeds 10MB limit");
+                                                onError?.(new Error("File size exceeds 10MB limit"));
+                                                return;
+                                            }
 
-                                        if (!user?.global_id) {
-                                            Message.error("User not authenticated");
-                                            onError?.(new Error("User not authenticated"));
-                                            return;
-                                        }
-                                        try {
-                                            setPaymentUploadLoading(true);
-                                            const downloadURL = await uploadFile(
-                                                file as File,
-                                                `tournaments/${tournamentId}/registrations/payment_proof`,
-                                                user.global_id,
-                                                {
-                                                    timeoutMs: 120000,
-                                                    onProgress: (progress) => {
-                                                        onProgress?.(progress);
+                                            if (!user?.global_id) {
+                                                Message.error("User not authenticated");
+                                                onError?.(new Error("User not authenticated"));
+                                                return;
+                                            }
+
+                                            try {
+                                                setPaymentUploadLoading(true);
+                                                const downloadURL = await uploadFile(
+                                                    file,
+                                                    `tournaments/${tournamentId}/registrations/payment_proof`,
+                                                    user.global_id,
+                                                    {
+                                                        timeoutMs: 120000,
+                                                        onProgress: (progress) => {
+                                                            onProgress?.(progress);
+                                                        },
                                                     },
-                                                },
-                                            );
-                                            setPaymentProofUrl(downloadURL);
-                                            onSuccess?.(file);
-                                        } catch (err) {
-                                            const errorMessage = resolveUploadErrorMessage(err);
-                                            console.error("Payment proof upload failed", {
-                                                error: err,
-                                                firebaseCode: err instanceof FirebaseError ? err.code : null,
-                                                fileSize: file.size,
-                                                tournamentId: tournamentId ?? null,
-                                                userGlobalId: user?.global_id ?? null,
-                                                timestamp: new Date().toISOString(),
-                                            });
-                                            Message.error(errorMessage);
-                                            onError?.(err as Error);
-                                        } finally {
-                                            setPaymentUploadLoading(false);
-                                        }
-                                    }}
-                                    tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
-                                />
-                            </Form.Item>
+                                                );
+
+                                                setPaymentProofUrl(downloadURL);
+                                                form.setFieldValue("payment_proof", downloadURL);
+                                                setPaymentProofFileList([
+                                                    {
+                                                        uid: user.global_id,
+                                                        name: file.name,
+                                                        status: "done",
+                                                        url: downloadURL,
+                                                    },
+                                                ]);
+                                                onSuccess?.({url: downloadURL});
+                                            } catch (err) {
+                                                const errorMessage = resolveUploadErrorMessage(err);
+                                                console.error("Payment proof upload failed", {
+                                                    error: err,
+                                                    firebaseCode: err instanceof FirebaseError ? err.code : null,
+                                                    fileSize: file.size,
+                                                    tournamentId: tournamentId ?? null,
+                                                    userGlobalId: user?.global_id ?? null,
+                                                    timestamp: new Date().toISOString(),
+                                                });
+                                                Message.error(errorMessage);
+                                                onError?.(err instanceof Error ? err : new Error(errorMessage));
+                                            } finally {
+                                                setPaymentUploadLoading(false);
+                                            }
+                                        }}
+                                        tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
+                                    />
+                                </Form.Item>
+                            </>
                         )}
 
                         <Form.Item>
