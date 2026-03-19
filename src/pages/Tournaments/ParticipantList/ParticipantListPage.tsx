@@ -37,25 +37,35 @@ import type {TableColumnProps} from "@arco-design/web-react";
 import {IconUndo} from "@arco-design/web-react/icon";
 import {nanoid} from "nanoid";
 // src/pages/ParticipantListPage.tsx
-import React, {useState, useRef} from "react";
-import {useNavigate, useParams} from "react-router-dom";
+import React, {useEffect, useRef, useState} from "react";
+import {useLocation, useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
+const PAGE_SIZE_INDIVIDUAL = 10;
+const PAGE_SIZE_TEAM = 5;
+
+const parsePositivePage = (value: string | null): number => {
+    const parsed = Number.parseInt(value ?? "", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+};
 
 export default function ParticipantListPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
     const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [registrationList, setRegistrationList] = useState<Registration[]>([]);
     const [teamList, setTeamList] = useState<Team[]>([]);
     const [supplementalNameMap, setSupplementalNameMap] = useState<Record<string, string>>({});
-    const [searchTerm, setSearchTerm] = useState("");
-    const [currentEventTab, setCurrentEventTab] = useState<string>("");
-    const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
+    const [searchTerm, setSearchTerm] = useState(() => searchParams.get("search") ?? "");
+    const [currentEventTab, setCurrentEventTab] = useState<string>(() => searchParams.get("event") ?? "");
+    const [currentBracketTab, setCurrentBracketTab] = useState<string>(() => searchParams.get("bracket") ?? "");
+    const [currentPage, setCurrentPage] = useState<number>(() => parsePositivePage(searchParams.get("page")));
     const mountedRef = useRef(false);
     const sortedEvents = [...events].sort((a, b) => {
         const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
@@ -105,9 +115,21 @@ export default function ParticipantListPage() {
                 if (orderDiff !== 0) return orderDiff;
                 return a.type.localeCompare(b.type);
             });
-            setCurrentEventTab(sortedEventList[0]?.id ?? sortedEventList[0]?.type ?? "");
-            const firstBracket = sortedEventList[0]?.age_brackets?.[0];
-            setCurrentBracketTab(firstBracket ? firstBracket.name : "");
+
+            const requestedEventTab = searchParams.get("event") ?? currentEventTab;
+            const selectedEvent =
+                sortedEventList.find((evt) => evt.id === requestedEventTab) ||
+                sortedEventList.find((evt) => evt.type === requestedEventTab) ||
+                sortedEventList[0];
+            const resolvedEventTab = selectedEvent?.id ?? selectedEvent?.type ?? "";
+            setCurrentEventTab(resolvedEventTab);
+
+            const requestedBracketTab = searchParams.get("bracket") ?? currentBracketTab;
+            const selectedBracket =
+                selectedEvent?.age_brackets?.find((bracket) => bracket.name === requestedBracketTab) ??
+                selectedEvent?.age_brackets?.[0];
+            setCurrentBracketTab(selectedBracket?.name ?? "");
+
             const regs = await fetchApprovedRegistrations(tournamentId);
             const teams = await fetchTeamsByTournament(tournamentId);
             const verifiedTeams = teams.filter((team) => {
@@ -180,6 +202,38 @@ export default function ParticipantListPage() {
         refreshParticipantList();
     });
 
+    useEffect(() => {
+        const nextParams = new URLSearchParams(searchParams);
+
+        if (searchTerm.trim()) {
+            nextParams.set("search", searchTerm.trim());
+        } else {
+            nextParams.delete("search");
+        }
+
+        if (currentEventTab) {
+            nextParams.set("event", currentEventTab);
+        } else {
+            nextParams.delete("event");
+        }
+
+        if (currentBracketTab) {
+            nextParams.set("bracket", currentBracketTab);
+        } else {
+            nextParams.delete("bracket");
+        }
+
+        if (currentPage > 1) {
+            nextParams.set("page", `${currentPage}`);
+        } else {
+            nextParams.delete("page");
+        }
+
+        if (nextParams.toString() !== searchParams.toString()) {
+            setSearchParams(nextParams, {replace: true});
+        }
+    }, [currentBracketTab, currentEventTab, currentPage, searchParams, searchTerm, setSearchParams]);
+
     const filterRegistrations = (evtKey: string, isTeam: boolean, event?: TournamentEvent) => {
         const normalizedSearch = searchTerm.trim().toLowerCase();
 
@@ -233,6 +287,7 @@ export default function ParticipantListPage() {
 
     const handleEventTabChange = (key: string) => {
         setCurrentEventTab(key);
+        setCurrentPage(1);
 
         if (!events) {
             return;
@@ -405,6 +460,12 @@ export default function ParticipantListPage() {
     if (!tournament) return null;
 
     const tournamentEvents = events ?? [];
+    const currentEvent =
+        sortedEvents.find((evt) => (evt.id ?? evt.type) === currentEventTab) ??
+        sortedEvents.find((evt) => evt.type === currentEventTab) ??
+        sortedEvents[0];
+    const currentEventIsTeam = currentEvent ? isTeamEvent(currentEvent) : false;
+    const currentPageSize = currentEventIsTeam ? PAGE_SIZE_TEAM : PAGE_SIZE_INDIVIDUAL;
 
     const individualColumns: TableColumnProps<Registration>[] = [
         {title: "Global ID", dataIndex: "user_global_id", width: 150},
@@ -496,7 +557,11 @@ export default function ParticipantListPage() {
                             placeholder="Search by name or ID"
                             allowClear
                             style={{width: 300}}
-                            onChange={(val) => setSearchTerm(val.trim())}
+                            value={searchTerm}
+                            onChange={(val) => {
+                                setSearchTerm(val);
+                                setCurrentPage(1);
+                            }}
                         />
                         <Dropdown.Button
                             type="primary"
@@ -566,7 +631,10 @@ export default function ParticipantListPage() {
                                     tabPosition="top"
                                     destroyOnHide
                                     activeTab={currentBracketTab}
-                                    onChange={(key) => setCurrentBracketTab(key)}
+                                    onChange={(key) => {
+                                        setCurrentBracketTab(key);
+                                        setCurrentPage(1);
+                                    }}
                                 >
                                     {evt.age_brackets.map((br) => {
                                         if (isTeamEventForTab) {
@@ -717,7 +785,7 @@ export default function ParticipantListPage() {
                                                                     buttonProps={{
                                                                         onClick: () =>
                                                                             window.open(
-                                                                                `/tournaments/${tournamentId}/registrations/${rec.registration_id}/edit`,
+                                                                                `/tournaments/${tournamentId}/registrations/${rec.registration_id}/edit${location.search}`,
                                                                                 "_blank",
                                                                             ),
                                                                     }}
@@ -735,10 +803,15 @@ export default function ParticipantListPage() {
                                                         style={{width: "100%"}}
                                                         columns={teamColumns}
                                                         data={rowsForBracket}
-                                                        pagination={{pageSize: 5, showTotal: true}}
+                                                        pagination={{
+                                                            pageSize: PAGE_SIZE_TEAM,
+                                                            current: currentPage,
+                                                            showTotal: true,
+                                                        }}
                                                         loading={loading}
                                                         rowKey={(rec) => `${rec.id}`}
                                                         pagePosition="bottomCenter"
+                                                        onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
                                                     />
                                                 </TabPane>
                                             );
@@ -750,10 +823,15 @@ export default function ParticipantListPage() {
                                                     style={{width: "100%"}}
                                                     columns={individualColumns}
                                                     data={individualRows}
-                                                    pagination={{pageSize: 10, showTotal: true}}
+                                                    pagination={{
+                                                        pageSize: PAGE_SIZE_INDIVIDUAL,
+                                                        current: currentPage,
+                                                        showTotal: true,
+                                                    }}
                                                     loading={loading}
                                                     rowKey={(r) => r.id ?? r.user_id ?? nanoid()}
                                                     pagePosition="bottomCenter"
+                                                    onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
                                                 />
                                             </TabPane>
                                         );

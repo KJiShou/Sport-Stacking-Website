@@ -349,21 +349,21 @@ const ScoreSheetPage = () => {
                     }
 
                     .finalist-row--advance td {
-                        background: #f4f8ff;
-                        border-top: 1px solid #d6e4ff;
-                        border-bottom: 1px solid #d6e4ff;
+                        background: #fdf2f8;
+                        border-top: 1px solid #f9a8d4;
+                        border-bottom: 1px solid #f9a8d4;
                     }
 
                     .finalist-row--intermediate td {
-                        background: #f2fbf8;
-                        border-top: 1px solid #d2f1e8;
-                        border-bottom: 1px solid #d2f1e8;
+                        background: #fefce8;
+                        border-top: 1px solid #fde047;
+                        border-bottom: 1px solid #fde047;
                     }
 
                     .finalist-row--beginner td {
-                        background: #fff8ef;
-                        border-top: 1px solid #f8dec1;
-                        border-bottom: 1px solid #f8dec1;
+                        background: #ecfeff;
+                        border-top: 1px solid #67e8f9;
+                        border-bottom: 1px solid #67e8f9;
                     }
 
                     .finalist-row--prelim td {
@@ -381,15 +381,15 @@ const ScoreSheetPage = () => {
                     }
 
                     .finalist-row--advance td:first-child {
-                        border-left-color: #2563eb;
+                        border-left-color: #ec4899;
                     }
 
                     .finalist-row--intermediate td:first-child {
-                        border-left-color: #0f766e;
+                        border-left-color: #ca8a04;
                     }
 
                     .finalist-row--beginner td:first-child {
-                        border-left-color: #c2410c;
+                        border-left-color: #0891b2;
                     }
 
                     .finalist-row--prelim td:first-child {

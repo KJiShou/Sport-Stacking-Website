@@ -25,10 +25,6 @@ import {
     getTeamRecruitmentsByLeader,
 } from "@/services/firebase/teamRecruitmentService";
 import {
-    deleteVerificationRequestByTournamentTeamMember,
-    deleteVerificationRequestsByTeamId,
-} from "@/services/firebase/verificationRequestService";
-import {
     createTeam,
     deleteTeam,
     fetchTeamsByRegistrationId,
@@ -38,6 +34,10 @@ import {
     removeMemberFromTeam,
     updateTeam,
 } from "@/services/firebase/tournamentsService";
+import {
+    deleteVerificationRequestByTournamentTeamMember,
+    deleteVerificationRequestsByTeamId,
+} from "@/services/firebase/verificationRequestService";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {
     getEventKey,
@@ -69,7 +69,7 @@ import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {nanoid} from "nanoid";
 import {useEffect, useMemo, useRef, useState} from "react";
-import {useNavigate, useParams} from "react-router-dom";
+import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 
 const {Title} = Typography;
@@ -267,6 +267,7 @@ export default function EditTournamentRegistrationPage() {
     const {tournamentId, registrationId} = useParams();
     const {user} = useAuthContext();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const [form] = Form.useForm();
     const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -951,7 +952,7 @@ export default function EditTournamentRegistrationPage() {
             <Spin loading={loading} tip="Loading…" className={"w-full"}>
                 <Button
                     type="outline"
-                    onClick={() => navigate(`/tournaments/${tournamentId}/registrations`)}
+                    onClick={() => navigate(`/tournaments/${tournamentId}/registrations${location.search}`)}
                     className={`w-fit pt-2 pb-2 mb-4`}
                 >
                     <IconUndo /> Go Back
