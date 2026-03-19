@@ -4,12 +4,8 @@ import {getShareScoreSheetData} from "@/services/firebase/shareResultService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
-import {
-    FINALIST_VISUAL_STYLES,
-    getFinalistLegendItems,
-    type FinalClassification,
-} from "@/utils/tournament/finalistStyling";
 import {getEventLabel, isTeamEvent as isTournamentTeamEvent} from "@/utils/tournament/eventUtils";
+import {FINALIST_VISUAL_STYLES, type FinalClassification, getFinalistLegendItems} from "@/utils/tournament/finalistStyling";
 import {
     Button,
     Card,
@@ -436,11 +432,6 @@ const ScoreSheetPage = () => {
                         <Button icon={<IconPrinter />} onClick={() => window.print()} style={{minHeight: 44}}>
                             Print
                         </Button>
-                        {isMobile ? (
-                            <Button type="primary" onClick={() => setMobileTableVisible(true)} style={{minHeight: 44}}>
-                                View Full Table
-                            </Button>
-                        ) : null}
                     </Space>
                 </div>
             </Card>
@@ -477,6 +468,12 @@ const ScoreSheetPage = () => {
                         })}
                     </Tabs>
                 ) : null}
+
+                <div className="mt-4 flex justify-start sm:justify-end">
+                    <Button type="primary" onClick={() => setMobileTableVisible(true)} style={{minHeight: 44}}>
+                        View Full Table
+                    </Button>
+                </div>
 
                 <div style={{marginTop: 16}}>
                     {parsedRound === "prelim" && finalistLegendItems.length > 0 ? (
@@ -556,7 +553,9 @@ const ScoreSheetPage = () => {
                                                     </Text>
                                                 ) : null}
                                             </div>
-                                            <Text style={{fontWeight: 700, fontSize: 18}}>{formatTime(Number(row.bestTime))}</Text>
+                                            <Text style={{fontWeight: 700, fontSize: 18}}>
+                                                {formatTime(Number(row.bestTime))}
+                                            </Text>
                                         </div>
                                     </Card>
                                 );
