@@ -1031,48 +1031,44 @@ export default function RegisterTournamentPage() {
                                     only the child registers and enters the parent's Global ID; the system auto-verifies the
                                     parent.
                                 </Typography.Text>
-                                <Select
-                                    placeholder="Select events"
-                                    style={{width: eventSelectWidth}}
-                                    mode="multiple"
-                                    className="select-wrap"
+                                <Checkbox.Group
                                     value={form.getFieldValue("events_registered") || []}
                                     onChange={(value: string[]) => {
                                         if (!availableEvents) return;
-                                        // 确保个人赛事项不能被取消选择
+                                        // Ensure individual events cannot be deselected
                                         const finalValue = Array.from(new Set([...value, ...requiredKeys]));
 
-                                        // 更新表单值
+                                        // Update form value
                                         form.setFieldsValue({events_registered: finalValue});
 
-                                        // 更新团队事件的状态
+                                        // Update team event state
                                         setHaveTeam(buildTeamEntries(finalValue));
                                         setSelectedEventIds(finalValue);
 
-                                        // 清理已取消选择的"寻找队伍"记录
+                                        // Clean up "looking for team" records for deselected events
                                         setLookingForTeams((prev) => prev.filter((eventId) => finalValue.includes(eventId)));
                                     }}
-                                    notFoundContent={<Empty description="No Available Events" />}
                                 >
-                                    {options?.map((option) => {
-                                        const key = getEventKey(option);
-                                        const isRequired = requiredKeys.includes(key);
-                                        const displayText = getEventLabel(option);
-                                        return (
-                                            <Option
-                                                key={key}
-                                                value={key}
-                                                disabled={isRequired}
-                                                style={{
-                                                    opacity: isRequired ? 0.6 : 1,
-                                                    backgroundColor: isRequired ? "#f5f5f5" : "transparent",
-                                                }}
-                                            >
-                                                {displayText} {isRequired && "(Required)"}
-                                            </Option>
-                                        );
-                                    })}
-                                </Select>
+                                    <div className="flex flex-col gap-2">
+                                        {options?.map((option) => {
+                                            const key = getEventKey(option);
+                                            const isRequired = requiredKeys.includes(key);
+                                            const displayText = getEventLabel(option);
+                                            return (
+                                                <Checkbox
+                                                    key={key}
+                                                    value={key}
+                                                    disabled={isRequired}
+                                                    style={{
+                                                        opacity: isRequired ? 0.6 : 1,
+                                                    }}
+                                                >
+                                                    {displayText} {isRequired && "(Required)"}
+                                                </Checkbox>
+                                            );
+                                        })}
+                                    </div>
+                                </Checkbox.Group>
                             </div>
                         </Form.Item>
 

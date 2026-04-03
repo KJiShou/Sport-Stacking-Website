@@ -17,6 +17,7 @@ import {
 import {getEventKey, getEventLabel, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
+    Checkbox,
     Divider,
     Form,
     Image,
@@ -392,22 +393,24 @@ export default function ViewTournamentRegistrationPage() {
                         </Form.Item>
 
                         <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>
-                            <Select mode="multiple" disabled>
-                                {availableEventsState.map((event) => {
-                                    const key = getEventKey(event);
-                                    const displayText = getEventLabel(event);
-                                    return (
-                                        <Option key={key} value={key}>
-                                            {displayText}
-                                        </Option>
-                                    );
-                                })}
-                                {extraEventIds.map((eventId) => (
-                                    <Option key={`extra-${eventId}`} value={eventId}>
-                                        {getEventDisplayLabel(eventId)}
-                                    </Option>
-                                ))}
-                            </Select>
+                            <Checkbox.Group disabled value={registration?.events_registered || []}>
+                                <div className="flex flex-col gap-2">
+                                    {availableEventsState.map((event) => {
+                                        const key = getEventKey(event);
+                                        const displayText = getEventLabel(event);
+                                        return (
+                                            <Checkbox key={key} value={key}>
+                                                {displayText}
+                                            </Checkbox>
+                                        );
+                                    })}
+                                    {extraEventIds.map((eventId) => (
+                                        <Checkbox key={`extra-${eventId}`} value={eventId}>
+                                            {getEventDisplayLabel(eventId)}
+                                        </Checkbox>
+                                    ))}
+                                </div>
+                            </Checkbox.Group>
                         </Form.Item>
                         <Form.Item shouldUpdate noStyle>
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">

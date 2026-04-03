@@ -49,6 +49,7 @@ import {
 } from "@/utils/tournament/eventUtils";
 import {
     Button,
+    Checkbox,
     Divider,
     Form,
     Input,
@@ -73,7 +74,6 @@ import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 
 const {Title} = Typography;
-const Option = Select.Option;
 
 type LegacyTeam = Team & {
     event_ids?: string[];
@@ -1021,8 +1021,7 @@ export default function EditTournamentRegistrationPage() {
                         </Form.Item>
 
                         <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>
-                            <Select
-                                mode="multiple"
+                            <Checkbox.Group
                                 disabled={!edit}
                                 value={registration?.events_registered}
                                 onChange={(selectedEvents: string[]) => {
@@ -1115,21 +1114,23 @@ export default function EditTournamentRegistrationPage() {
                                     }
                                 }}
                             >
-                                {events?.map((event) => {
-                                    const key = getEventKey(event);
-                                    const displayText = getEventLabel(event);
-                                    return (
-                                        <Option key={key} value={key}>
-                                            {displayText}
-                                        </Option>
-                                    );
-                                })}
-                                {extraEventIds.map((eventId) => (
-                                    <Option key={`extra-${eventId}`} value={eventId}>
-                                        {getEventDisplayLabel(eventId)}
-                                    </Option>
-                                ))}
-                            </Select>
+                                <div className="flex flex-col gap-2">
+                                    {events?.map((event) => {
+                                        const key = getEventKey(event);
+                                        const displayText = getEventLabel(event);
+                                        return (
+                                            <Checkbox key={key} value={key}>
+                                                {displayText}
+                                            </Checkbox>
+                                        );
+                                    })}
+                                    {extraEventIds.map((eventId) => (
+                                        <Checkbox key={`extra-${eventId}`} value={eventId}>
+                                            {getEventDisplayLabel(eventId)}
+                                        </Checkbox>
+                                    ))}
+                                </div>
+                            </Checkbox.Group>
                         </Form.Item>
 
                         {duplicateTeamIdsToDelete.length > 0 && (
