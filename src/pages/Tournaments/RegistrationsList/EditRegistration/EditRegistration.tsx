@@ -147,6 +147,9 @@ const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): s
     });
 };
 
+const getRequiredEventIds = (events: TournamentEvent[]): string[] =>
+    events.filter((event) => event.type === "Individual").map((event) => getEventKey(event));
+
 const getAdditionalFeeForEvent = (event: TournamentEvent): number => {
     if (event.additional_fee_enabled !== true) {
         return 0;
@@ -1023,15 +1026,19 @@ export default function EditTournamentRegistrationPage() {
                         <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>
                             <Checkbox.Group
                                 disabled={!edit}
-                                value={registration?.events_registered}
+                                value={(form.getFieldValue("events_registered") as string[] | undefined) ?? []}
                                 onChange={(selectedEvents: string[]) => {
-                                    form.setFieldValue("events_registered", selectedEvents);
-                                    setRegistration((prev) => (prev ? {...prev, events_registered: selectedEvents} : null));
-
                                     const tournamentEvents = events ?? [];
+                                    const requiredEventIds = getRequiredEventIds(tournamentEvents);
+                                    const nextSelectedEvents = Array.from(new Set([...selectedEvents, ...requiredEventIds]));
+                                    form.setFieldValue("events_registered", nextSelectedEvents);
+                                    setRegistration((prev) =>
+                                        prev ? {...prev, events_registered: nextSelectedEvents} : null,
+                                    );
+
                                     const selectedTeamEvents = tournamentEvents.filter(
                                         (event) =>
-                                            selectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
+                                            nextSelectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
                                     );
                                     const registrationLeaderIds = [registration?.user_global_id, registration?.user_id].filter(
                                         (value): value is string => Boolean(value),
@@ -1118,9 +1125,10 @@ export default function EditTournamentRegistrationPage() {
                                     {events?.map((event) => {
                                         const key = getEventKey(event);
                                         const displayText = getEventLabel(event);
+                                        const isRequired = event.type === "Individual";
                                         return (
-                                            <Checkbox key={key} value={key}>
-                                                {displayText}
+                                            <Checkbox key={key} value={key} disabled={isRequired}>
+                                                {displayText} {isRequired && "(Required)"}
                                             </Checkbox>
                                         );
                                     })}
