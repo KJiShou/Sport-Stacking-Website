@@ -2,6 +2,7 @@ import TournamentView from "@/pages/Tournaments/Component/TournamentView";
 import FinalResultsPage from "@/pages/Tournaments/FinalResults/FinalResultsPage";
 import ParticipantListPage from "@/pages/Tournaments/ParticipantList/ParticipantListPage";
 import PrelimResultsPage from "@/pages/Tournaments/PrelimResults/PrelimResultsPage";
+import PrintResultsPage from "@/pages/Tournaments/PrintResults/PrintResultsPage";
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
 import EditTournamentRegistrationPage from "@/pages/Tournaments/RegistrationsList/EditRegistration/EditRegistration";
 import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/RegistrationsList";
@@ -77,6 +78,10 @@ const routes: AppRoute[] = [
     {
         path: "/tournaments/:tournamentId/record/final",
         component: FinalResultsPage,
+    },
+    {
+        path: "/tournaments/:tournamentId/print-results",
+        component: PrintResultsPage,
     },
     {
         path: "/verify",

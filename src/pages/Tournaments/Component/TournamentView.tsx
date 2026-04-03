@@ -60,6 +60,7 @@ import {
     IconEdit,
     IconExclamationCircle,
     IconLaunch,
+    IconPrinter,
     IconUndo,
     IconVideoCamera,
 } from "@arco-design/web-react/icon";
@@ -791,6 +792,9 @@ export default function TournamentView() {
                             </Button>
                             <Button type="outline" icon={<IconCopy />} onClick={() => handleCopyShareLink("final")}>
                                 Share Final Results
+                            </Button>
+                            <Button type="primary" icon={<IconPrinter />} onClick={() => navigate(`/tournaments/${id}/print-results`)}>
+                                Print Results
                             </Button>
                         </div>
                     )}

@@ -10,10 +10,20 @@ The following commands are commonly used in this project:
 - **`yarn build`**: Build the project for production.
 - **`yarn preview`**: Preview the production build.
 - **`yarn typecheck`**: Run TypeScript type checking.
-- **`yarn lint`**: Lint files using Biome.
+- **`yarn check`**: Run Biome checks without auto-fixing.
+- **`yarn lint`**: Run Biome linting.
 - **`yarn format`**: Format files using Biome.
 - **`yarn fix`**: Auto-fix linting issues using Biome.
 - **`yarn validate`**: Run both type checking and linting.
+- **`yarn setup`**: Run install script and install dependencies.
+
+### Firebase Functions Commands
+
+From the `functions/` directory:
+
+- **`yarn build`**: Build TypeScript in functions/
+- **`yarn serve`**: Run Firebase Functions emulator
+- **`yarn deploy`**: Deploy functions to Firebase
 
 ## High-level Architecture
 
@@ -42,7 +52,8 @@ This is a web application for managing sport stacking tournaments.
   - **`config/`**: Application configuration, including routes in `routes.tsx`.
   - **`types/`**: TypeScript type definitions.
   - **`utils/`**: Utility functions.
-- **`functions/`**: Firebase Cloud Functions.
+- **`functions/`**: Firebase Cloud Functions (Node.js backend).
+- **`config/` subdirectories**: Biome, ESLint, Firebase hosting, PostCSS, Prettier, Tailwind, and Vite configurations are organized under `/config/`.
 - **`.env`**: Holds Firebase configuration and other environment variables.
 
 ### Key Concepts
@@ -55,7 +66,15 @@ This is a web application for managing sport stacking tournaments.
 
 ### Firebase Functions
 
-The project uses Firebase Cloud Functions located in the `functions/` directory. To deploy them, `cd functions`, then run `yarn build` and `yarn deploy`.
+The project uses Firebase Cloud Functions located in the `functions/` directory. It uses yarn workspaces, so dependencies are managed from the root.
+
+**Key Function**: `sendEmail` - Sends verification emails to tournament participants with automatic failover:
+- **Primary**: Resend API
+- **Backup**: AWS SES (automatically triggered if Resend fails)
+
+Secrets required via Firebase Secrets Manager: `RESEND_API_KEY`, `AWS_SES_SMTP_USERNAME`, `AWS_SES_SMTP_PASSWORD`
+
+To deploy: `cd functions && yarn deploy`
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.
