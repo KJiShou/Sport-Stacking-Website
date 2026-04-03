@@ -8,12 +8,14 @@ import {
     getDocs,
     increment,
     query,
+    runTransaction,
     setDoc,
     updateDoc,
     where,
 } from "firebase/firestore";
 import type {FirestoreUser, Registration, Team, Tournament, UserTournamentHistory} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
+import {matchesAnyEventKey} from "../../utils/tournament/eventUtils";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByParticipant} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
@@ -24,6 +26,15 @@ import {
     deleteVerificationRequestsByTeamId,
     deleteVerificationRequestsByTournamentAndMember,
 } from "./verificationRequestService";
+
+const isNonScoringEventType = (type: string): boolean => {
+    const normalized = type?.toLowerCase() ?? "";
+    return (
+        normalized === "stackout champion" ||
+        normalized === "stack up champion" ||
+        normalized === "blindfolded cycle"
+    );
+};
 
 async function getApprovedRegistrationCount(tournamentId: string): Promise<number> {
     const registrationsRef = query(
@@ -88,29 +99,58 @@ export async function createRegistration(user: FirestoreUser, data: Registration
         }
     }
 
+    // Read tournament and registrations outside transaction for event-level limit checking
+    // The transaction ensures atomic write - if concurrent registration slips through,
+    // transaction will fail and user can retry
     const tournamentDoc = await getDoc(doc(db, "tournaments", data.tournament_id));
     const tournament = tournamentDoc.data();
     if (!tournament) {
         throw new Error("Tournament not found");
     }
-    await ensureTournamentHasCapacity(
-        data.tournament_id,
-        typeof tournament.max_participants === "number" ? tournament.max_participants : null,
+
+    const registrationsSnapshot = await getDocs(
+        query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", data.tournament_id),
+        ),
     );
+    const existingRegistrations = registrationsSnapshot.docs.map((d) => d.data() as Registration);
 
-    // 确保 created_at / updated_at 都有填入
-    const payload: Omit<Registration, "id"> = {
-        ...data,
-        created_at: data.created_at ?? Timestamp.now(),
-        updated_at: Timestamp.now(),
-    };
+    // Check event-level limits for non-scoring events
+    const events = tournament.events ?? [];
+    for (const eventId of data.events_registered ?? []) {
+        const event = events.find(
+            (e: {id?: string | null; type: string}) => e.id === eventId || e.type === eventId,
+        );
 
-    const ref = await addDoc(collection(db, "registrations"), {
-        ...data,
-        created_at: data.created_at ?? Timestamp.now(),
-        updated_at: Timestamp.now(),
+        if (event && isNonScoringEventType(event.type)) {
+            const eventMaxParticipants = event.max_participants;
+            if (typeof eventMaxParticipants === "number" && eventMaxParticipants > 0) {
+                const count = existingRegistrations.filter((reg) =>
+                    matchesAnyEventKey(reg.events_registered, event),
+                ).length;
+
+                if (count >= eventMaxParticipants) {
+                    throw new Error(`${event.type} has reached the maximum participants.`);
+                }
+            }
+        }
+    }
+
+    // Use transaction for atomic write to prevent race conditions on the write itself
+    const ref = await runTransaction(db, async (transaction) => {
+        // Create the registration
+        const newRef = doc(collection(db, "registrations"));
+        const now = Timestamp.now();
+        transaction.set(newRef, {
+            ...data,
+            created_at: data.created_at ?? now,
+            updated_at: now,
+        });
+        return newRef;
     });
-    // Ensure the document has its generated ID in the Firestore document
+
+    // Update the document to ensure it has its generated ID
     await updateDoc(ref, {id: ref.id});
     return ref.id;
 }

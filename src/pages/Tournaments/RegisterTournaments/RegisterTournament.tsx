@@ -127,6 +127,7 @@ export default function RegisterTournamentPage() {
     const [lookingForTeams, setLookingForTeams] = useState<string[]>([]); // Events user is looking for teams
     const [loginModalVisible, setLoginModalVisible] = useState(false);
     const [occupiedIdsByEvent, setOccupiedIdsByEvent] = useState<Record<string, Set<string>>>({});
+    const [fullEventIds, setFullEventIds] = useState<Set<string>>(new Set());
     const [memberSearchLoadingByEvent, setMemberSearchLoadingByEvent] = useState<Record<string, boolean>>({});
     const [memberSearchOptionsByEvent, setMemberSearchOptionsByEvent] = useState<Record<string, MemberSearchOption[]>>({});
     const memberSearchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -373,6 +374,11 @@ export default function RegisterTournamentPage() {
         try {
             if (!user) {
                 Message.error("You must be logged in to register.");
+                return;
+            }
+
+            if (requiresPaymentProof && paymentProofFileList.length === 0) {
+                Message.error("Payment proof is required. Please upload your payment receipt.");
                 return;
             }
 
@@ -751,33 +757,29 @@ export default function RegisterTournamentPage() {
                 }
 
                 const registrationCounts: Record<string, number> = {};
+                const nextFullEventIds = new Set<string>();
                 for (const event of availableGroupedEvents) {
                     const eventKey = getEventKey(event);
                     registrationCounts[eventKey] = registrations.filter((registration) =>
                         matchesAnyEventKey(registration.events_registered, event),
                     ).length;
+
+                    const maxParticipants = typeof event.max_participants === "number" ? event.max_participants : 0;
+                    if (isNonScoringEvent(event) && maxParticipants > 0 && registrationCounts[eventKey] >= maxParticipants) {
+                        nextFullEventIds.add(eventKey);
+                    }
                 }
 
-                const filteredEvents = availableGroupedEvents.filter((event) => {
-                    if (!isNonScoringEvent(event)) {
-                        return true;
-                    }
-                    const maxParticipants = typeof event.max_participants === "number" ? event.max_participants : 0;
-                    if (!maxParticipants || maxParticipants <= 0) {
-                        return true;
-                    }
-                    const count = registrationCounts[getEventKey(event)] ?? 0;
-                    return count < maxParticipants;
-                });
+                // Keep all events in availableEvents so the validation check can run for all non-scoring events
+                // (including those that are at capacity - they will be rejected during validation)
+                setAvailableEvents(availableGroupedEvents);
+                setOptions(availableGroupedEvents);
+                setFullEventIds(nextFullEventIds);
 
-                // 找出 required keys (individual events) - now using the grouped format
-                const requiredEventIds = filteredEvents
+                // Required event IDs for Individual events
+                const requiredEventIds = availableGroupedEvents
                     .filter((event) => event.type === "Individual")
                     .map((event) => getEventKey(event));
-
-                // 设置所有可用事件，而不是排除required的
-                setAvailableEvents(filteredEvents);
-                setOptions(filteredEvents);
 
                 if (comp) {
                     setTournament(comp);
@@ -1031,12 +1033,23 @@ export default function RegisterTournamentPage() {
                                     only the child registers and enters the parent's Global ID; the system auto-verifies the
                                     parent.
                                 </Typography.Text>
+                                {fullEventIds.size > 0 && (
+                                    <Typography.Text type="secondary">
+                                        Some events are marked as full because pending registrations also reserve slots.
+                                    </Typography.Text>
+                                )}
                                 <Checkbox.Group
                                     value={form.getFieldValue("events_registered") || []}
                                     onChange={(value: string[]) => {
                                         if (!availableEvents) return;
                                         // Ensure individual events cannot be deselected
-                                        const finalValue = Array.from(new Set([...value, ...requiredKeys]));
+                                        const finalValue = Array.from(
+                                            new Set(
+                                                [...value, ...requiredKeys].filter(
+                                                    (eventId) => requiredKeys.includes(eventId) || !fullEventIds.has(eventId),
+                                                ),
+                                            ),
+                                        );
 
                                         // Update form value
                                         form.setFieldsValue({events_registered: finalValue});
@@ -1053,18 +1066,21 @@ export default function RegisterTournamentPage() {
                                         {options?.map((option) => {
                                             const key = getEventKey(option);
                                             const isRequired = requiredKeys.includes(key);
+                                            const isFull = fullEventIds.has(key);
                                             const displayText = getEventLabel(option);
+                                            const fullReason = "Full (pending approvals included)";
                                             return (
-                                                <Checkbox
-                                                    key={key}
-                                                    value={key}
-                                                    disabled={isRequired}
-                                                    style={{
-                                                        opacity: isRequired ? 0.6 : 1,
-                                                    }}
-                                                >
-                                                    {displayText} {isRequired && "(Required)"}
-                                                </Checkbox>
+                                                <Tooltip key={key} content={isFull ? fullReason : undefined}>
+                                                    <Checkbox
+                                                        value={key}
+                                                        disabled={isRequired || isFull}
+                                                        style={{
+                                                            opacity: isRequired || isFull ? 0.6 : 1,
+                                                        }}
+                                                    >
+                                                        {displayText} {isRequired && "(Required)"} {isFull && `(${fullReason})`}
+                                                    </Checkbox>
+                                                </Tooltip>
                                             );
                                         })}
                                     </div>
@@ -1416,7 +1432,7 @@ export default function RegisterTournamentPage() {
 
                         {requiresPaymentProof && (
                             <>
-                                <Form.Item field="payment_proof" rules={[{required: true, message: "Payment proof is required."}]} hidden>
+                                <Form.Item field="payment_proof" hidden>
                                     <Input />
                                 </Form.Item>
                                 <Form.Item
