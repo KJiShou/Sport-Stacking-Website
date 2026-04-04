@@ -7,7 +7,7 @@ import {
     deleteUser,
     reauthenticateWithCredential,
     signInWithEmailAndPassword,
-    signInWithPopup,
+    signInWithRedirect,
     signOut,
     updatePassword,
 } from "firebase/auth";
@@ -114,10 +114,10 @@ export const login = (email: string, password: string) => signInWithEmailAndPass
 // Logout user
 export const logout = () => signOut(auth);
 
-// Sign in with Google
-export const signInWithGoogle = () => {
+// Sign in with Google - uses redirect to support all browsers (including in-app browsers)
+export const signInWithGoogle = (): Promise<void> => {
     const provider = new GoogleAuthProvider();
-    return signInWithPopup(auth, provider);
+    return signInWithRedirect(auth, provider);
 };
 
 export const cacheGoogleAvatar = async (photoURL: string): Promise<string> => {

@@ -218,13 +218,10 @@ const RegisterPage = () => {
                             onClick={async () => {
                                 setLoading(true);
                                 try {
-                                    const result = await signInWithGoogle();
-                                    const userDoc = await getDoc(doc(db, "users", result.user.uid));
-                                    if (userDoc.exists()) {
-                                        Message.success("Account already registered. You're now logged in.");
-                                        setUser(userDoc.data() as FirestoreUser);
-                                        navigate("/", {replace: true});
-                                    }
+                                    // signInWithRedirect triggers a page redirect to Google OAuth.
+                                    // After the redirect returns, onAuthStateChanged fires and the
+                                    // useEffect above handles the redirect/navigation.
+                                    await signInWithGoogle();
                                 } catch (err) {
                                     Message.error(err instanceof Error ? err.message : "Failed to sign in with Google.");
                                 } finally {
