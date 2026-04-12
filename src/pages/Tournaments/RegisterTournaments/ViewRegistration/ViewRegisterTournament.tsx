@@ -4,6 +4,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {DoubleRecruitment, TeamRecruitment} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
+import {dedupeTeamsByEvent, LegacyTeam, resolveTeamEvent} from "@/utils/teamDeduplication";
 import {fetchUsersByGlobalIds, getUserByGlobalId} from "@/services/firebase/authService";
 import {getDoubleRecruitmentsByParticipant} from "@/services/firebase/doubleRecruitmentService";
 import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
@@ -40,47 +41,6 @@ import {useNavigate, useParams} from "react-router-dom";
 const {Title} = Typography;
 const Option = Select.Option;
 
-type LegacyTeam = Team & {
-    event_ids?: string[];
-    events?: string[];
-};
-
-const resolveTeamEvent = (
-    team: LegacyTeam,
-    tournamentEvents: TournamentEvent[] | null | undefined,
-): {eventId: string; eventName: string} => {
-    const legacyIds = Array.isArray(team.event_ids) ? team.event_ids.filter(Boolean) : [];
-    const legacyNames = Array.isArray(team.events) ? team.events.filter(Boolean) : [];
-
-    let eventId = team.event_id ?? legacyIds[0] ?? "";
-    let eventName = Array.isArray(team.event) && team.event[0] ? (team.event[0] ?? "") : (legacyNames[0] ?? "");
-
-    const eventsList = tournamentEvents ?? [];
-
-    if (eventsList.length > 0) {
-        if (eventId) {
-            const matchById = eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
-            if (matchById) {
-                eventId = getEventKey(matchById);
-                if (!eventName) {
-                    eventName = getEventLabel(matchById);
-                }
-                return {eventId, eventName};
-            }
-        }
-
-        if (eventName) {
-            const matchByName = eventsList.find((evt) => matchesEventKey(eventName, evt)) ?? null;
-            if (matchByName) {
-                eventId = getEventKey(matchByName);
-                eventName = getEventLabel(matchByName);
-            }
-        }
-    }
-
-    return {eventId, eventName};
-};
-
 const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): string[] => {
     if (selected.length === 0 || events.length === 0) {
         return selected;
@@ -111,52 +71,6 @@ const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds
         }
         return total + getAdditionalFeeForEvent(event);
     }, 0);
-
-const getTeamCompletenessScore = (team: LegacyTeam): number => {
-    let score = 0;
-    if ((team.name ?? "").trim().length > 0) score += 3;
-    if ((team.leader_id ?? "").trim().length > 0) score += 2;
-    score += (team.members ?? []).length;
-    return score;
-};
-
-const dedupeTeamsByEvent = (sourceTeams: LegacyTeam[], tournamentEvents: TournamentEvent[]): LegacyTeam[] => {
-    const groupedByEvent = new Map<string, LegacyTeam[]>();
-
-    for (const team of sourceTeams) {
-        const {eventId, eventName} = resolveTeamEvent(team, tournamentEvents);
-        const normalizedEventId = (eventId ?? "").trim().toLowerCase();
-        const normalizedEventName = (eventName ?? "").trim().toLowerCase();
-        const groupKey = normalizedEventId
-            ? `event:${normalizedEventId}`
-            : normalizedEventName
-              ? `name:${normalizedEventName}`
-              : `team:${team.id}`;
-        const bucket = groupedByEvent.get(groupKey) ?? [];
-        bucket.push(team);
-        groupedByEvent.set(groupKey, bucket);
-    }
-
-    const dedupedTeams: LegacyTeam[] = [];
-    for (const teamsInGroup of groupedByEvent.values()) {
-        if (teamsInGroup.length === 1) {
-            dedupedTeams.push(teamsInGroup[0]);
-            continue;
-        }
-
-        const canonicalTeam = [...teamsInGroup].sort((a, b) => {
-            const completenessDelta = getTeamCompletenessScore(b) - getTeamCompletenessScore(a);
-            if (completenessDelta !== 0) {
-                return completenessDelta;
-            }
-            return (a.id ?? "").localeCompare(b.id ?? "");
-        })[0];
-
-        dedupedTeams.push(canonicalTeam);
-    }
-
-    return dedupedTeams;
-};
 
 export default function ViewTournamentRegistrationPage() {
     const {tournamentId} = useParams();
@@ -276,7 +190,7 @@ export default function ViewTournamentRegistrationPage() {
                         event: eventName ? [eventName] : Array.isArray(legacyTeam.event) ? legacyTeam.event : [],
                     };
                 });
-                const dedupedTeams = dedupeTeamsByEvent(normalizedTeams, tournamentEvents);
+                const {teams: dedupedTeams} = dedupeTeamsByEvent(normalizedTeams, tournamentEvents);
                 setTeams(dedupedTeams);
                 const [leaderRecruitments, participantDoubleRecruitments] = await Promise.all([
                     getTeamRecruitmentsByLeader(user.global_id),

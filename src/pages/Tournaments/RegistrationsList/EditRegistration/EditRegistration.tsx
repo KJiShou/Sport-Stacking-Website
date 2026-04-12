@@ -1,10 +1,11 @@
 // src/pages/ViewTournamentRegistrationPage.tsx
 
 import {useAuthContext} from "@/context/AuthContext";
-import type {DoubleRecruitment, Registration, Tournament, TournamentEvent} from "@/schema";
+import type {DoubleRecruitment, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
-import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
+import {dedupeTeamsByEvent, resolveTeamEvent, teamMatchesEvent} from "@/utils/teamDeduplication";
+import type {LegacyTeam} from "@/utils/teamDeduplication";
 import {fetchUsersByGlobalIds, getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {
     createDoubleRecruitment,
@@ -75,63 +76,6 @@ import {useMount} from "react-use";
 
 const {Title} = Typography;
 
-type LegacyTeam = Team & {
-    event_ids?: string[];
-    events?: string[];
-    largest_age?: number;
-};
-
-const resolveTeamEvent = (
-    team: LegacyTeam,
-    tournamentEvents: TournamentEvent[] | null | undefined,
-): {eventId: string; eventName: string; eventDefinition: TournamentEvent | null} => {
-    const legacyIds = Array.isArray(team.event_ids) ? team.event_ids.filter(Boolean) : [];
-    const legacyNames = Array.isArray(team.events) ? team.events.filter(Boolean) : [];
-
-    let eventId = team.event_id ?? legacyIds[0] ?? "";
-    let eventName = Array.isArray(team.event) && team.event[0] ? (team.event[0] ?? "") : (legacyNames[0] ?? "");
-    let eventDefinition: TournamentEvent | null = null;
-
-    const eventsList = tournamentEvents ?? [];
-
-    if (eventsList.length > 0) {
-        if (eventId) {
-            eventDefinition = eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
-        }
-
-        if (!eventDefinition && eventName) {
-            eventDefinition = eventsList.find((evt) => matchesEventKey(eventName, evt)) ?? null;
-        }
-
-        if (eventDefinition) {
-            const resolvedId = getEventKey(eventDefinition);
-            if (!eventId || !matchesEventKey(eventId, eventDefinition)) {
-                eventId = resolvedId;
-            }
-            if (!eventName) {
-                eventName = getEventLabel(eventDefinition);
-            }
-        }
-    }
-
-    return {
-        eventId,
-        eventName,
-        eventDefinition,
-    };
-};
-
-const teamMatchesEvent = (
-    team: LegacyTeam,
-    event: TournamentEvent,
-    tournamentEvents: TournamentEvent[] | null | undefined,
-): boolean => {
-    const {eventId, eventName} = resolveTeamEvent(team, tournamentEvents);
-    const hasEventIdMatch = Boolean(eventId) && matchesEventKey(eventId, event);
-    const hasEventNameMatch = Boolean(eventName) && matchesEventKey(eventName, event);
-    return hasEventIdMatch || hasEventNameMatch;
-};
-
 const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): string[] => {
     if (selected.length === 0 || events.length === 0) {
         return selected;
@@ -166,105 +110,6 @@ const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds
         return total + getAdditionalFeeForEvent(event);
     }, 0);
 
-const getTeamCompletenessScore = (team: LegacyTeam): number => {
-    let score = 0;
-    if ((team.name ?? "").trim().length > 0) {
-        score += 3;
-    }
-    if ((team.leader_id ?? "").trim().length > 0) {
-        score += 2;
-    }
-    score += (team.members ?? []).length;
-    if (team.looking_for_member) {
-        score += 1;
-    }
-    return score;
-};
-
-const mergeTeamMembers = (teamsToMerge: LegacyTeam[]): Team["members"] => {
-    const memberMap = new Map<string, Team["members"][number]>();
-
-    for (const team of teamsToMerge) {
-        for (const member of team.members ?? []) {
-            const memberId = (member.global_id ?? "").trim();
-            if (!memberId) {
-                continue;
-            }
-
-            const existing = memberMap.get(memberId);
-            memberMap.set(memberId, {
-                global_id: memberId,
-                verified: (existing?.verified ?? false) || Boolean(member.verified),
-            });
-        }
-    }
-
-    return Array.from(memberMap.values());
-};
-
-const dedupeTeamsByEvent = (
-    sourceTeams: LegacyTeam[],
-    tournamentEvents: TournamentEvent[],
-    registrationId?: string,
-): {teams: LegacyTeam[]; duplicateTeamIds: string[]} => {
-    const groupedByEvent = new Map<string, LegacyTeam[]>();
-
-    for (const team of sourceTeams) {
-        const {eventId, eventName} = resolveTeamEvent(team, tournamentEvents);
-        const normalizedEventId = (eventId ?? "").trim().toLowerCase();
-        const normalizedEventName = (eventName ?? "").trim().toLowerCase();
-        const groupKey = normalizedEventId
-            ? `event:${normalizedEventId}`
-            : normalizedEventName
-              ? `name:${normalizedEventName}`
-              : `team:${team.id}`;
-        const bucket = groupedByEvent.get(groupKey) ?? [];
-        bucket.push(team);
-        groupedByEvent.set(groupKey, bucket);
-    }
-
-    const dedupedTeams: LegacyTeam[] = [];
-    const duplicateTeamIds: string[] = [];
-
-    for (const teamsInGroup of groupedByEvent.values()) {
-        if (teamsInGroup.length === 1) {
-            dedupedTeams.push(teamsInGroup[0]);
-            continue;
-        }
-
-        const rankedTeams = [...teamsInGroup].sort((a, b) => {
-            const registrationScoreA = a.registration_id === registrationId ? 1 : 0;
-            const registrationScoreB = b.registration_id === registrationId ? 1 : 0;
-            if (registrationScoreA !== registrationScoreB) {
-                return registrationScoreB - registrationScoreA;
-            }
-            const completenessDelta = getTeamCompletenessScore(b) - getTeamCompletenessScore(a);
-            if (completenessDelta !== 0) {
-                return completenessDelta;
-            }
-            return (a.id ?? "").localeCompare(b.id ?? "");
-        });
-
-        const canonicalTeam = rankedTeams[0];
-        const canonicalEvent = resolveTeamEvent(canonicalTeam, tournamentEvents);
-        const mergedMembers = mergeTeamMembers(rankedTeams);
-        const mergedTeam: LegacyTeam = {
-            ...canonicalTeam,
-            members: mergedMembers,
-            event_id: canonicalEvent.eventId || canonicalTeam.event_id,
-            event: canonicalEvent.eventName
-                ? [canonicalEvent.eventName]
-                : Array.isArray(canonicalTeam.event)
-                  ? canonicalTeam.event
-                  : [],
-        };
-
-        dedupedTeams.push(mergedTeam);
-        duplicateTeamIds.push(...rankedTeams.slice(1).map((team) => team.id));
-    }
-
-    return {teams: dedupedTeams, duplicateTeamIds: Array.from(new Set(duplicateTeamIds))};
-};
 
 export default function EditTournamentRegistrationPage() {
     const {tournamentId, registrationId} = useParams();
