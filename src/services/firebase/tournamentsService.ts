@@ -793,6 +793,21 @@ export async function fetchOccupiedParticipantIdsByTournamentEvent(tournamentId:
     return occupiedIds;
 }
 
+export async function fetchUnavailableParticipantIdsByEvent(tournamentId: string, eventId: string): Promise<Set<string>> {
+    const [occupiedTeamIds, recruitmentData] = await Promise.all([
+        fetchOccupiedParticipantIdsByTournamentEvent(tournamentId, eventId),
+        getDoubleRecruitmentsByTournament(tournamentId),
+    ]);
+
+    const unavailable = new Set(occupiedTeamIds);
+    for (const r of recruitmentData) {
+        if (r.event_id === eventId && r.status === "active") {
+            unavailable.add(r.participant_id);
+        }
+    }
+    return unavailable;
+}
+
 export async function fetchTeamsByRegistrationId(registrationId: string): Promise<Team[]> {
     const teamsCollectionRef = collection(db, "teams");
     const q = query(teamsCollectionRef, where("registration_id", "==", registrationId));

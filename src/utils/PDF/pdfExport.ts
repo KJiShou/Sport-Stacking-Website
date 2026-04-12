@@ -54,6 +54,10 @@ const getPrimaryEventCode = (event: TournamentEvent): string => {
 };
 
 const isTeamEventType = (type: string): boolean => ["double", "team relay", "parent & child"].includes(type.toLowerCase());
+const isIndividualSheetType = (type: string): boolean => {
+    const normalized = type.trim().toLowerCase();
+    return normalized === "individual" || normalized === "open age individual";
+};
 const isStackOutChampionType = (type: string): boolean => {
     const normalized = type.trim().toLowerCase();
     return normalized === "stackout champion" || normalized === "stack up champion";
@@ -1544,6 +1548,7 @@ const resolveStackLabels = (sheetType: string, eventCodes: string[]): string[] =
 
     switch (sheetType.toLowerCase()) {
         case "individual":
+        case "open age individual":
             return ["3-3-3", "3-6-3", "Cycle"];
         case "double":
         case "parent & child":
@@ -1680,7 +1685,7 @@ const generateSingleStackingSheet = (
     const infoY = startY + titleHeight + 15;
 
     // Name and ID based on sheet type
-    if (sheetType !== "Individual") {
+    if (!isIndividualSheetType(sheetType)) {
         const team = participant as Team;
         doc.setFont("times", "normal");
         doc.setFontSize(10);
@@ -1734,8 +1739,17 @@ const generateSingleStackingSheet = (
         // Other information - normal size, positioned below the name
         doc.setFont("times", "normal");
         doc.setFontSize(10);
-        doc.text(`Division: ${division || "___"}`, marginX, infoY + sectionSpacing);
-        doc.text(`Age: ${(ageMap[individual.user_id] || "___").toString()}`, marginX + 80, infoY + sectionSpacing);
+        const divisionY = infoY + sectionSpacing;
+        const divisionText = `Division: ${division || "___"}`;
+        doc.text(divisionText, marginX, divisionY);
+
+        const ageText = `Age: ${(ageMap[individual.user_id] || "___").toString()}`;
+        const agePadding = 8;
+        const ageX = marginX + doc.getTextWidth(divisionText) + agePadding;
+        const ageMaxX = pageWidth - marginX - doc.getTextWidth(ageText);
+        const ageY = ageX <= ageMaxX ? divisionY : divisionY + sectionSpacing;
+        const resolvedAgeX = ageX <= ageMaxX ? ageX : marginX;
+        doc.text(ageText, resolvedAgeX, ageY);
         const schoolOrCountry =
             individual.organizer && individual.organizer.trim().length > 0 ? individual.organizer : individual.country;
         const schoolLabel = "School/Organizer: ";
@@ -1743,7 +1757,7 @@ const generateSingleStackingSheet = (
         const schoolLabelWidth = doc.getTextWidth(schoolLabel);
         const schoolMaxWidth = pageWidth - marginX * 2 - schoolLabelWidth;
         const schoolLines = doc.splitTextToSize(schoolValue, schoolMaxWidth);
-        const schoolY = infoY + sectionSpacing * 2;
+        const schoolY = ageY + sectionSpacing;
         doc.text(schoolLabel, marginX, schoolY);
         if (schoolLines.length > 0) {
             doc.text(schoolLines[0], marginX + schoolLabelWidth, schoolY);

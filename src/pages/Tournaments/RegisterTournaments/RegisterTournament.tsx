@@ -11,7 +11,7 @@ import {
     getUserEmailByGlobalId,
     searchUsersByNameOrGlobalIdPrefix,
 } from "@/services/firebase/authService";
-import {createDoubleRecruitment} from "@/services/firebase/doubleRecruitmentService";
+import {createDoubleRecruitment, getDoubleRecruitmentsByTournament, updateDoubleRecruitmentStatus} from "@/services/firebase/doubleRecruitmentService";
 import {createIndividualRecruitment} from "@/services/firebase/individualRecruitmentService";
 import {createRegistration, fetchRegistrations} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
@@ -21,6 +21,7 @@ import {
     fetchOccupiedParticipantIdsByTournamentEvent,
     fetchTournamentById,
     fetchTournamentEvents,
+    fetchUnavailableParticipantIdsByEvent,
 } from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
@@ -408,16 +409,16 @@ export default function RegisterTournamentPage() {
                 if (shouldCheckOccupiedParticipants) {
                     const participantIds = [leaderId, ...memberIds].filter((id): id is string => Boolean(id));
                     if (participantIds.length > 0) {
-                        const occupiedIds = await fetchOccupiedParticipantIdsByTournamentEvent(tournamentId, teamId);
+                        const unavailableIds = await fetchUnavailableParticipantIdsByEvent(tournamentId, teamId);
                         const conflictedParticipantId = participantIds.find((participantId) =>
-                            occupiedIds.has(participantId),
+                            unavailableIds.has(participantId),
                         );
                         if (conflictedParticipantId) {
                             Message.error(
-                                `${eventLabel}: participant ${conflictedParticipantId} is already in this event.`,
+                                `${eventLabel}: participant ${conflictedParticipantId} is already in this event or has an active recruitment.`,
                             );
                             throw new Error(
-                                `${eventLabel}: participant ${conflictedParticipantId} is already in this event.`,
+                                `${eventLabel}: participant ${conflictedParticipantId} is already in this event or has an active recruitment.`,
                             );
                         }
                     }
@@ -592,6 +593,21 @@ export default function RegisterTournamentPage() {
                     team_age,
                     looking_for_member: false,
                 });
+
+                // Close any active DoubleRecruitment for team members (they're now in a team)
+                const allMemberIds: string[] = memberIds.filter(Boolean);
+                if (teamData.leader) {
+                    allMemberIds.push(teamData.leader);
+                }
+                const activeRecruitments = await getDoubleRecruitmentsByTournament(tournamentId);
+                for (const memberId of allMemberIds) {
+                    const memberRecruitment = activeRecruitments.find(
+                        (r) => r.participant_id === memberId && r.event_id === eventId && r.status === "active",
+                    );
+                    if (memberRecruitment) {
+                        await updateDoubleRecruitmentStatus(memberRecruitment.id, "matched", undefined, teamId);
+                    }
+                }
 
                 // If looking for members, create a recruitment record
                 if (teamData.looking_for_team_members) {

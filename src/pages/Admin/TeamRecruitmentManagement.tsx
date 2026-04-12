@@ -19,7 +19,13 @@ import {
     updateTeamRecruitmentDetails,
     updateTeamRecruitmentMembersNeeded,
 } from "@/services/firebase/teamRecruitmentService";
-import {addMemberToTeam, createTeam, fetchTournamentsByType} from "@/services/firebase/tournamentsService";
+import {
+    addMemberToTeam,
+    createTeam,
+    fetchOccupiedParticipantIdsByTournamentEvent,
+    fetchTournamentsByType,
+    fetchUnavailableParticipantIdsByEvent,
+} from "@/services/firebase/tournamentsService";
 import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatTeamLeaderId} from "@/utils/teamLeaderId";
 import {
@@ -155,13 +161,16 @@ export default function TeamRecruitmentManagement() {
         setAssignmentModalVisible(true);
     };
 
-    const handleAssignDouble = (recruitment: DoubleRecruitment) => {
+    const handleAssignDouble = async (recruitment: DoubleRecruitment) => {
+        const unavailableIds = await fetchUnavailableParticipantIdsByEvent(recruitment.event_id, recruitment.tournament_id);
+
         const partners = doubles.filter(
             (candidate) =>
                 candidate.id !== recruitment.id &&
                 candidate.status === "active" &&
                 candidate.tournament_id === recruitment.tournament_id &&
-                candidate.event_id === recruitment.event_id,
+                candidate.event_id === recruitment.event_id &&
+                !unavailableIds.has(candidate.participant_id),
         );
         setDoubleAssignmentData({primary: recruitment, partners});
         setDoubleAssignmentModalVisible(true);
@@ -258,6 +267,17 @@ export default function TeamRecruitmentManagement() {
             const leaderRegistrationId = leaderIsPrimary ? primary.registration_id : partner.registration_id;
             if (!leaderRegistrationId) {
                 Message.error("Leader registration ID is missing. Please check registration data.");
+                return;
+            }
+
+            // Check if either participant is already in a team for this event
+            const occupied = await fetchOccupiedParticipantIdsByTournamentEvent(primary.event_id, primary.tournament_id);
+            if (occupied.has(primary.participant_id)) {
+                Message.error(`${primary.participant_name} is already in a team for this event. Their recruitment cannot be matched.`);
+                return;
+            }
+            if (occupied.has(partner.participant_id)) {
+                Message.error(`${partner.participant_name} is already in a team for this event.`);
                 return;
             }
 
