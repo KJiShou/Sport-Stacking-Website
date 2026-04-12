@@ -2,6 +2,7 @@ import type {Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/s
 import {fetchUsersByGlobalIds} from "@/services/firebase/authService";
 import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
 import {
+    dedupeTeamsForTournament,
     fetchTeamsByTournament,
     fetchTournamentById,
     fetchTournamentEvents,
@@ -445,10 +446,22 @@ export default function ParticipantListPage() {
 
         setLoading(true);
         try {
+            // Deduplicate teams first, then update names
+            const deletedCount = await dedupeTeamsForTournament(tournamentId);
             const updatedCount = await updateTeamNamesForTournament(tournamentId);
-            Message.success(
-                updatedCount > 0 ? `Updated ${updatedCount} team name(s).` : "All team names are already up to date.",
-            );
+
+            const parts: string[] = [];
+            if (deletedCount > 0) {
+                parts.push(`Removed ${deletedCount} duplicate team(s).`);
+            }
+            if (updatedCount > 0) {
+                parts.push(`Updated ${updatedCount} team name(s).`);
+            }
+            if (parts.length === 0) {
+                Message.success("All team names are already up to date.");
+            } else {
+                Message.success(parts.join(" "));
+            }
             await refreshParticipantList();
         } catch (error) {
             Message.error("Failed to update team names");
