@@ -85,12 +85,47 @@ const HEADER_ICON_SIZE = 30;
 const getHeaderTitleY = (): number => HEADER_ICON_Y + HEADER_ICON_SIZE / 2;
 
 let cachedDefaultIconDataUrl: string | undefined;
+type ImageLoadError = Error & {
+    cause?: unknown;
+    meta?: {
+        logoUrl: string;
+        origin: string;
+        responseStatus?: number;
+        responseStatusText?: string;
+        failureStage?: "fetch" | "response" | "decode";
+        possibleCause?: "cors_or_network_error" | "http_error" | "image_decode_error";
+    };
+};
+
+const getCurrentOrigin = (): string => {
+    if (typeof window === "undefined" || !window.location?.origin) {
+        return "unknown";
+    }
+    return window.location.origin;
+};
+
+const logImageLoadFailure = (label: string, logoUrl: string | null | undefined, error: unknown): void => {
+    const normalizedError = error as ImageLoadError;
+    const meta = normalizedError?.meta;
+    console.error(`[PDF] Failed to load ${label}`, {
+        origin: meta?.origin ?? getCurrentOrigin(),
+        logoUrl: meta?.logoUrl ?? logoUrl ?? null,
+        responseStatus: meta?.responseStatus ?? null,
+        responseStatusText: meta?.responseStatusText ?? null,
+        failureStage: meta?.failureStage ?? "unknown",
+        possibleCause: meta?.possibleCause ?? (normalizedError instanceof TypeError ? "cors_or_network_error" : "unknown"),
+        errorName: normalizedError instanceof Error ? normalizedError.name : typeof error,
+        errorMessage: normalizedError instanceof Error ? normalizedError.message : String(error),
+        cause: normalizedError?.cause,
+    });
+};
+
 const loadDefaultIcon = async (): Promise<string | undefined> => {
     if (cachedDefaultIconDataUrl !== undefined) return cachedDefaultIconDataUrl;
     try {
         cachedDefaultIconDataUrl = await fetchImageFixedOrientation(defaultIconSrc);
     } catch (error) {
-        console.error("Error loading default icon:", error);
+        logImageLoadFailure("default icon", defaultIconSrc, error);
         cachedDefaultIconDataUrl = undefined;
     }
     return cachedDefaultIconDataUrl;
@@ -101,7 +136,7 @@ const loadUserLogo = async (logoUrl?: string | null): Promise<string | undefined
     try {
         return await fetchImageFixedOrientation(logoUrl);
     } catch (error) {
-        console.error("Error loading user logo:", error);
+        logImageLoadFailure("user logo", logoUrl, error);
         return undefined;
     }
 };
@@ -149,32 +184,78 @@ const addPDFFooter = (doc: jsPDF): void => {
 };
 
 async function fetchImageFixedOrientation(url: string): Promise<string> {
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.statusText}`);
+    let response: Response;
+    try {
+        response = await fetch(url);
+    } catch (error) {
+        const wrappedError = new Error("Failed to fetch image due to a CORS or network error") as ImageLoadError;
+        wrappedError.cause = error;
+        wrappedError.meta = {
+            logoUrl: url,
+            origin: getCurrentOrigin(),
+            failureStage: "fetch",
+            possibleCause: "cors_or_network_error",
+        };
+        throw wrappedError;
     }
+
+    if (!response.ok) {
+        const wrappedError = new Error(`Failed to fetch image: ${response.status} ${response.statusText}`) as ImageLoadError;
+        wrappedError.meta = {
+            logoUrl: url,
+            origin: getCurrentOrigin(),
+            responseStatus: response.status,
+            responseStatusText: response.statusText,
+            failureStage: "response",
+            possibleCause: "http_error",
+        };
+        throw wrappedError;
+    }
+
     const blob = await response.blob();
 
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
+        const objectUrl = URL.createObjectURL(blob);
+        const cleanupObjectUrl = () => URL.revokeObjectURL(objectUrl);
+
         img.onload = () => {
-            // 创建canvas
+            cleanupObjectUrl();
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
-            if (!ctx) return reject("Cannot get 2D context");
+            if (!ctx) {
+                const wrappedError = new Error("Cannot get 2D context for image rendering") as ImageLoadError;
+                wrappedError.meta = {
+                    logoUrl: url,
+                    origin: getCurrentOrigin(),
+                    failureStage: "decode",
+                    possibleCause: "image_decode_error",
+                };
+                reject(wrappedError);
+                return;
+            }
 
-            // 直接以图像尺寸创建canvas
             canvas.width = img.width;
             canvas.height = img.height;
             ctx.drawImage(img, 0, 0);
 
-            // 将画好的canvas导出
             const dataURL = canvas.toDataURL("image/png");
             resolve(dataURL);
         };
-        img.onerror = reject;
-        img.src = URL.createObjectURL(blob);
+        img.onerror = (event) => {
+            cleanupObjectUrl();
+            const wrappedError = new Error("Failed to decode image for PDF export") as ImageLoadError;
+            wrappedError.cause = event;
+            wrappedError.meta = {
+                logoUrl: url,
+                origin: getCurrentOrigin(),
+                failureStage: "decode",
+                possibleCause: "image_decode_error",
+            };
+            reject(wrappedError);
+        };
+        img.src = objectUrl;
     });
 }
 
