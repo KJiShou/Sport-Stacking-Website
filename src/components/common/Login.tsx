@@ -4,6 +4,7 @@ import React, {useRef, useState, useEffect} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
 import {login, signInWithGoogle} from "../../services/firebase/authService";
+import InAppBrowserNotice from "./InAppBrowserNotice";
 
 const {Text} = Typography;
 
@@ -59,11 +60,9 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
     const handleGoogleLogin = async () => {
         setLoading(true);
         try {
-            // signInWithRedirect triggers a page redirect to Google OAuth.
-            // After the redirect returns, onAuthStateChanged fires and the useEffect
-            // above handles the successful login/navigation.
-            await signInWithGoogle();
-            // Note: code here never runs — the page has navigated away.
+            // Prefer popup in normal browsers and fall back to redirect only when needed.
+            // onAuthStateChanged handles the successful login state either way.
+            await signInWithGoogle("login");
         } catch (err: unknown) {
             const message = getLoginErrorMessage(err);
             console.error("Google sign-in error:", err);
@@ -75,6 +74,8 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
 
     return (
         <Form layout="vertical" requiredSymbol={false} onSubmit={handleLogin}>
+            <InAppBrowserNotice />
+
             <Form.Item field="email" rules={[{required: true, message: "Please enter your email"}]} label="Email">
                 <Input prefix={<IconEmail />} placeholder="example@mail.com" autoComplete="email" />
             </Form.Item>

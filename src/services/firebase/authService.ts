@@ -7,6 +7,7 @@ import {
     deleteUser,
     reauthenticateWithCredential,
     signInWithEmailAndPassword,
+    signInWithPopup,
     signInWithRedirect,
     signOut,
     updatePassword,
@@ -28,8 +29,8 @@ import {
     setDoc,
     startAfter,
     updateDoc,
-    writeBatch,
     where,
+    writeBatch,
 } from "firebase/firestore";
 import {httpsCallable} from "firebase/functions";
 import {deleteObject, ref} from "firebase/storage";
@@ -38,6 +39,43 @@ import {FirestoreUserSchema} from "../../schema";
 import type {UserTournamentHistory} from "../../schema/UserHistorySchema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
+
+export type GoogleSignInIntent = "login" | "register";
+
+const GOOGLE_SIGN_IN_INTENT_KEY = "google-sign-in-intent";
+
+const canUseSessionStorage = () => typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+
+export const setGoogleSignInIntent = (intent: GoogleSignInIntent): void => {
+    if (!canUseSessionStorage()) {
+        return;
+    }
+    window.sessionStorage.setItem(GOOGLE_SIGN_IN_INTENT_KEY, intent);
+};
+
+export const getGoogleSignInIntent = (): GoogleSignInIntent | null => {
+    if (!canUseSessionStorage()) {
+        return null;
+    }
+
+    const intent = window.sessionStorage.getItem(GOOGLE_SIGN_IN_INTENT_KEY);
+    return intent === "login" || intent === "register" ? intent : null;
+};
+
+export const clearGoogleSignInIntent = (): void => {
+    if (!canUseSessionStorage()) {
+        return;
+    }
+    window.sessionStorage.removeItem(GOOGLE_SIGN_IN_INTENT_KEY);
+};
+
+export const hasGoogleProvider = (user: User | null): boolean =>
+    Boolean(user?.providerData?.some((provider) => provider.providerId === "google.com"));
+
+export const hasPasswordProvider = (user: User | null): boolean =>
+    Boolean(user?.providerData?.some((provider) => provider.providerId === "password"));
+
+export const isGoogleOnlyUser = (user: User | null): boolean => hasGoogleProvider(user) && !hasPasswordProvider(user);
 
 const ensureAuthReady = (uid: string): Promise<void> =>
     new Promise((resolve, reject) => {
@@ -112,12 +150,34 @@ export function normalizeNameSearch(value: string): string {
 export const login = (email: string, password: string) => signInWithEmailAndPassword(auth, email, password);
 
 // Logout user
-export const logout = () => signOut(auth);
+export const logout = async () => {
+    clearGoogleSignInIntent();
+    await signOut(auth);
+};
 
-// Sign in with Google - uses redirect to support all browsers (including in-app browsers)
-export const signInWithGoogle = (): Promise<void> => {
+const shouldFallbackToRedirect = (error: unknown): boolean => {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    return [
+        "auth/popup-blocked",
+        "auth/operation-not-supported-in-this-environment",
+        "auth/web-storage-unsupported",
+        "auth/cancelled-popup-request",
+    ].includes(code);
+};
+
+// Prefer popup in normal browsers, then fall back to redirect where popup is blocked/unsupported.
+export const signInWithGoogle = async (intent: GoogleSignInIntent): Promise<void> => {
     const provider = new GoogleAuthProvider();
-    return signInWithRedirect(auth, provider);
+    setGoogleSignInIntent(intent);
+
+    try {
+        await signInWithPopup(auth, provider);
+    } catch (err) {
+        if (!shouldFallbackToRedirect(err)) {
+            throw err;
+        }
+        await signInWithRedirect(auth, provider);
+    }
 };
 
 export const cacheGoogleAvatar = async (photoURL: string): Promise<string> => {

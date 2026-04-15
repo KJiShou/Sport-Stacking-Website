@@ -1,7 +1,8 @@
+import InAppBrowserNotice from "@/components/common/InAppBrowserNotice";
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
 import {countries} from "@/schema/Country";
-import {cacheGoogleAvatar, registerWithGoogle, signInWithGoogle} from "@/services/firebase/authService";
+import {cacheGoogleAvatar, clearGoogleSignInIntent, registerWithGoogle, signInWithGoogle} from "@/services/firebase/authService";
 import {db} from "@/services/firebase/config";
 import {uploadAvatar} from "@/services/firebase/storageService";
 import {
@@ -23,7 +24,7 @@ import type {User} from "firebase/auth";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import {doc, getDoc} from "firebase/firestore";
 import {useEffect, useRef, useState} from "react";
-import {useLocation, useNavigate} from "react-router-dom";
+import {useNavigate} from "react-router-dom";
 
 const {Title} = Typography;
 
@@ -31,17 +32,11 @@ type RegisterFormData = Omit<FirestoreUser, "id"> & {password: string; confirmPa
 
 const RegisterPage = () => {
     const navigate = useNavigate();
-    const location = useLocation();
-    const {user, firebaseUser, setUser} = useAuthContext();
+    const {firebaseUser, isGoogleRegistrationPending, setUser, user} = useAuthContext();
     const [form] = Form.useForm<RegisterFormData>();
     const [loading, setLoading] = useState(false);
     const [isICMode, setIsICMode] = useState(true);
     const avatarRetryRef = useRef(0);
-
-    const isFromGoogle = location.state?.fromGoogle === true;
-    const isGoogleAuth = Boolean(
-        isFromGoogle || firebaseUser?.providerData?.some((provider) => provider.providerId === "google.com"),
-    );
 
     const linkEmailPassword = async (email: string, password: string, user: User) => {
         const credential = EmailAuthProvider.credential(email, password);
@@ -88,7 +83,7 @@ const RegisterPage = () => {
         }
 
         try {
-            if (!isGoogleAuth || !firebaseUser) {
+            if (!isGoogleRegistrationPending || !firebaseUser) {
                 Message.error("Please sign in with Google before registering.");
                 return;
             }
@@ -102,7 +97,7 @@ const RegisterPage = () => {
                     type: blob.type ?? "image/png",
                 });
                 avatarUrl = await uploadAvatar(file, firebaseUser.uid);
-            } else if (isGoogleAuth && firebaseUser.photoURL) {
+            } else if (isGoogleRegistrationPending && firebaseUser.photoURL) {
                 // Already uploaded in useEffect, just use the form value
                 avatarUrl = image_url;
             } else if (image_url) {
@@ -129,6 +124,7 @@ const RegisterPage = () => {
             if (userDoc.exists()) {
                 setUser(userDoc.data() as FirestoreUser);
             }
+            clearGoogleSignInIntent();
             Message.success("Registration successful!");
             navigate("/", {replace: true});
         } catch (err: unknown) {
@@ -144,7 +140,7 @@ const RegisterPage = () => {
 
     useEffect(() => {
         const fetchAndUploadGoogleAvatar = async () => {
-            if (!isGoogleAuth || !firebaseUser) {
+            if (!isGoogleRegistrationPending || !firebaseUser) {
                 return;
             }
 
@@ -161,7 +157,7 @@ const RegisterPage = () => {
             }
         };
         fetchAndUploadGoogleAvatar();
-    }, [isGoogleAuth, firebaseUser, form]);
+    }, [isGoogleRegistrationPending, firebaseUser, form]);
 
     const handleResetAvatar = async () => {
         if (firebaseUser?.photoURL) {
@@ -206,8 +202,9 @@ const RegisterPage = () => {
                     </div>
                 </Title>
 
-                {!isGoogleAuth || !firebaseUser ? (
+                {!isGoogleRegistrationPending || !firebaseUser ? (
                     <div className="flex flex-col items-center gap-4 w-full max-w-xl">
+                        <InAppBrowserNotice />
                         <p className="text-center text-gray-600">
                             Please sign in with Google to start your registration, then complete your participant details.
                         </p>
@@ -218,10 +215,9 @@ const RegisterPage = () => {
                             onClick={async () => {
                                 setLoading(true);
                                 try {
-                                    // signInWithRedirect triggers a page redirect to Google OAuth.
-                                    // After the redirect returns, onAuthStateChanged fires and the
-                                    // useEffect above handles the redirect/navigation.
-                                    await signInWithGoogle();
+                                    // Prefer popup in normal browsers and fall back to redirect only when needed.
+                                    // AuthContext and the useEffect above handle the returned Google user state.
+                                    await signInWithGoogle("register");
                                 } catch (err) {
                                     Message.error(err instanceof Error ? err.message : "Failed to sign in with Google.");
                                 } finally {
@@ -328,7 +324,7 @@ const RegisterPage = () => {
                             label="Participant Email"
                             rules={[{required: true, type: "email", message: "Enter a valid email"}]}
                         >
-                            <Input prefix={<IconEmail />} placeholder="example@mail.com" disabled={isGoogleAuth} />
+                            <Input prefix={<IconEmail />} placeholder="example@mail.com" disabled={Boolean(firebaseUser)} />
                         </Form.Item>
 
                         <Form.Item
