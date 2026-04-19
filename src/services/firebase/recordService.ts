@@ -362,6 +362,13 @@ const getEventCategoryFromType = (typeLabel: string): string => {
     return "individual";
 };
 
+const OVERALL_EVENT_TYPES = new Set(["individual", "open age individual"]);
+
+const isIndividualOverallRecord = (record: TournamentOverallRecord): boolean => {
+    const normalizedEvent = record.event?.trim().toLowerCase() ?? "";
+    return OVERALL_EVENT_TYPES.has(normalizedEvent);
+};
+
 const parseEventKey = (eventKey: string): {eventName: string; eventCategory: string} => {
     let eventName = eventKey;
     let typeLabel = "";
@@ -439,7 +446,10 @@ export const getTournamentPrelimOverallRecords = async (tournamentId: string): P
     const overallRecordsSnapshot = await getDocs(overallRecordsQuery);
     for (const recordDoc of overallRecordsSnapshot.docs) {
         const data = {...recordDoc.data(), id: recordDoc.id};
-        records.push(data as TournamentOverallRecord);
+        const overallRecord = data as TournamentOverallRecord;
+        if (isIndividualOverallRecord(overallRecord)) {
+            records.push(overallRecord);
+        }
     }
     return records;
 };
@@ -464,7 +474,10 @@ export const getTournamentFinalOverallRecords = async (tournamentId: string): Pr
     const overallRecordsSnapshot = await getDocs(overallRecordsQuery);
     for (const recordDoc of overallRecordsSnapshot.docs) {
         const data = {...recordDoc.data(), id: recordDoc.id};
-        records.push(data as TournamentOverallRecord);
+        const overallRecord = data as TournamentOverallRecord;
+        if (isIndividualOverallRecord(overallRecord)) {
+            records.push(overallRecord);
+        }
     }
     return records;
 };

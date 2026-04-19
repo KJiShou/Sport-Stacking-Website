@@ -140,6 +140,35 @@ const isTeamVerifiedForCounting = (team: Team): boolean => {
     return members.every((member) => member.verified);
 };
 
+const OVERALL_RANKING_EVENT_TYPES = new Set(["Individual", "Open Age Individual"]);
+
+const isOverallRankingEvent = (event: TournamentEvent | null | undefined): boolean => {
+    if (!event) return false;
+    return OVERALL_RANKING_EVENT_TYPES.has(event.type);
+};
+
+const filterOverallRecordsByEvent = (
+    records: TournamentOverallRecord[],
+    event: TournamentEvent | null | undefined,
+): TournamentOverallRecord[] => {
+    if (!event || !isOverallRankingEvent(event)) {
+        return [];
+    }
+
+    const eventId = event.id?.trim();
+    const normalizedEventType = event.type.trim().toLowerCase();
+
+    return records.filter((record) => {
+        const recordEventId = record.event_id?.trim();
+        if (eventId && recordEventId) {
+            return recordEventId === eventId;
+        }
+
+        const normalizedRecordEvent = record.event?.trim().toLowerCase() ?? "";
+        return normalizedRecordEvent === normalizedEventType;
+    });
+};
+
 const buildViewFinalistMap = <T extends {id?: string | null; bestTime: number}>(
     records: T[],
     eventCodes: string[],
@@ -184,14 +213,15 @@ export default function TournamentView() {
     const deviceBreakpoint = useDeviceBreakpoint();
     const {user} = useAuthContext();
     const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
-    const individualEvent = events.find((event) => event.type === "Individual");
-    const individualEventLabel = individualEvent ? getEventLabel(individualEvent) : "Individual";
     const isAdmin = user?.roles?.verify_record || user?.roles?.edit_tournament || false;
     const sortedEvents = [...events].sort((a, b) => {
         const orderDiff = getEventOrderIndex(a.type) - getEventOrderIndex(b.type);
         if (orderDiff !== 0) return orderDiff;
         return (a.type ?? "").localeCompare(b.type ?? "");
     });
+    const overallRankingEvents = sortedEvents.filter(isOverallRankingEvent);
+    const individualEvent = overallRankingEvents[0];
+    const individualEventLabel = individualEvent ? getEventLabel(individualEvent) : "Individual";
     const approvedRegistrationIds = new Set(
         registrations
             .map((registration) => registration.id)
@@ -870,27 +900,31 @@ export default function TournamentView() {
                                 </Title>
                                 <div className="space-y-6">
                                     {/* Overall Records Table for Individual Events */}
-                                    {prelimOverallRecords.length > 0 && (
+                                    {overallRankingEvents.map((overallEvent) => {
+                                        const overallEventRecords = filterOverallRecordsByEvent(prelimOverallRecords, overallEvent);
+                                        if (overallEventRecords.length === 0) {
+                                            return null;
+                                        }
+
+                                        return (
                                         <Card
-                                            title={`Overall Rankings (${individualEventLabel})`}
+                                            key={`prelim-overall-${overallEvent.id ?? overallEvent.type}`}
+                                            title={`Overall Rankings (${getEventLabel(overallEvent)})`}
                                             bordered
                                             className="score-card"
                                         >
-                                            {individualEvent &&
-                                                (() => {
-                                                    const eventKey = individualEvent.id ?? "Individual";
-                                                    const bracketKey = buildBracketKey("prelim", eventKey);
-                                                    return renderBracketTabs(individualEvent, bracketKey);
-                                                })()}
                                             {(() => {
-                                                const eventKey = individualEvent?.id ?? "Individual";
+                                                const eventKey = overallEvent.id ?? overallEvent.type;
                                                 const bracketKey = buildBracketKey("prelim", eventKey);
-                                                const selectedBracketName = getSelectedBracketName(bracketKey, individualEvent);
-                                                const selectedBracket = individualEvent?.age_brackets?.find(
-                                                    (b) => b.name === selectedBracketName,
-                                                );
+                                                return renderBracketTabs(overallEvent, bracketKey);
+                                            })()}
+                                            {(() => {
+                                                const eventKey = overallEvent.id ?? overallEvent.type;
+                                                const bracketKey = buildBracketKey("prelim", eventKey);
+                                                const selectedBracketName = getSelectedBracketName(bracketKey, overallEvent);
+                                                const selectedBracket = overallEvent.age_brackets?.find((b) => b.name === selectedBracketName);
                                                 const filteredRecords = filterRecordsByBracket(
-                                                    [...prelimOverallRecords].sort((a, b) => a.overall_time - b.overall_time),
+                                                    [...overallEventRecords].sort((a, b) => a.overall_time - b.overall_time),
                                                     selectedBracket,
                                                 );
                                                 const finalistClassificationMap = buildViewFinalistMap(
@@ -898,7 +932,7 @@ export default function TournamentView() {
                                                         id: record.id,
                                                         bestTime: record.overall_time,
                                                     })),
-                                                    individualEvent?.codes ?? [],
+                                                    overallEvent.codes ?? [],
                                                     selectedBracket,
                                                 );
                                                 const finalistLegendItems = getFinalistLegendItems(
@@ -1073,7 +1107,7 @@ export default function TournamentView() {
                                                                 size="small"
                                                                 onClick={() =>
                                                                     openFullResultModal(
-                                                                        `Overall Rankings (${individualEventLabel})`,
+                                                                        `Overall Rankings (${getEventLabel(overallEvent)})`,
                                                                         <Table
                                                                             columns={[
                                                                                 {
@@ -1255,7 +1289,8 @@ export default function TournamentView() {
                                                 );
                                             })()}
                                         </Card>
-                                    )}
+                                        );
+                                    })}
 
                                     {/* Team Event Rankings */}
                                     {Array.from(
@@ -1653,24 +1688,6 @@ export default function TournamentView() {
 
                                         const classificationLabel =
                                             classification.charAt(0).toUpperCase() + classification.slice(1);
-                                        const finalIndividualEvent = events.find((e) => e.type === "Individual");
-                                        const finalIndividualEventKey = finalIndividualEvent?.id ?? "Individual";
-                                        const finalIndividualBracketKey = buildBracketKey(
-                                            "final",
-                                            finalIndividualEventKey,
-                                            classification,
-                                        );
-                                        const selectedFinalIndividualBracketName = getSelectedBracketName(
-                                            finalIndividualBracketKey,
-                                            finalIndividualEvent,
-                                        );
-                                        const selectedFinalIndividualBracket = finalIndividualEvent?.age_brackets?.find(
-                                            (b) => b.name === selectedFinalIndividualBracketName,
-                                        );
-                                        const filteredOverallRecords = filterRecordsByBracket(
-                                            [...classificationOverallRecords].sort((a, b) => a.overall_time - b.overall_time),
-                                            selectedFinalIndividualBracket,
-                                        );
 
                                         return (
                                             <div key={classification} className="space-y-4">
@@ -1679,29 +1696,41 @@ export default function TournamentView() {
                                                 </Title>
 
                                                 {/* Overall Records Table for Individual Events */}
-                                                {classificationOverallRecords.length > 0 && (
+                                                {overallRankingEvents.map((overallEvent) => {
+                                                    const overallEventRecords = filterOverallRecordsByEvent(
+                                                        classificationOverallRecords,
+                                                        overallEvent,
+                                                    );
+                                                    if (overallEventRecords.length === 0) {
+                                                        return null;
+                                                    }
+
+                                                    const eventKey = overallEvent.id ?? overallEvent.type;
+                                                    const bracketKey = buildBracketKey("final", eventKey, classification);
+                                                    const selectedBracketName = getSelectedBracketName(bracketKey, overallEvent);
+                                                    const selectedBracket = overallEvent.age_brackets?.find(
+                                                        (b) => b.name === selectedBracketName,
+                                                    );
+                                                    const filteredOverallRecords = filterRecordsByBracket(
+                                                        [...overallEventRecords].sort((a, b) => a.overall_time - b.overall_time),
+                                                        selectedBracket,
+                                                    );
+
+                                                    return (
                                                     <Card
-                                                        title={`Overall Rankings (${individualEventLabel}) - ${classificationLabel}`}
+                                                        key={`final-overall-${classification}-${eventKey}`}
+                                                        title={`Overall Rankings (${getEventLabel(overallEvent)}) - ${classificationLabel}`}
                                                         bordered
                                                         className="score-card"
                                                     >
-                                                        {individualEvent &&
-                                                            (() => {
-                                                                const eventKey = individualEvent.id ?? "Individual";
-                                                                const bracketKey = buildBracketKey(
-                                                                    "final",
-                                                                    eventKey,
-                                                                    classification,
-                                                                );
-                                                                return renderBracketTabs(individualEvent, bracketKey);
-                                                            })()}
+                                                        {renderBracketTabs(overallEvent, bracketKey)}
                                                         <div className="mb-4 flex justify-end">
                                                             <Button
                                                                 type="outline"
                                                                 size="small"
                                                                 onClick={() =>
                                                                     openFullResultModal(
-                                                                        `Overall Rankings (${individualEventLabel}) - ${classificationLabel}`,
+                                                                        `Overall Rankings (${getEventLabel(overallEvent)}) - ${classificationLabel}`,
                                                                         <Table
                                                                             columns={[
                                                                                 {
@@ -2072,7 +2101,8 @@ export default function TournamentView() {
                                                             size="small"
                                                         />
                                                     </Card>
-                                                )}
+                                                    );
+                                                })}
 
                                                 {/* Team Event Rankings for this classification */}
                                                 {Array.from(new Set(classificationTeamRecords.map((r) => r.event)))
