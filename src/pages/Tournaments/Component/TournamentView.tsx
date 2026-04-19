@@ -2,10 +2,8 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {AgeBracket, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import type {TournamentOverallRecord, TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
 import {
-    deleteOverallRecord,
     deleteParticipantRecords,
     deleteRecord,
-    getParticipantEventRecords,
     getTournamentFinalOverallRecords,
     getTournamentFinalRecords,
     getTournamentPrelimOverallRecords,
@@ -13,7 +11,6 @@ import {
     toggleOverallRecordVerification,
     toggleRecordVerification,
     updateOverallRecord,
-    updateRecordVideoUrl,
     updateTournamentRecord,
 } from "@/services/firebase/recordService";
 import {fetchApprovedRegistrations} from "@/services/firebase/registerService";
@@ -21,7 +18,6 @@ import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
-import {getCountryFlag} from "@/utils/countryFlags";
 import {
     buildFinalistClassificationMap,
     FINALIST_VISUAL_STYLES,
@@ -78,6 +74,8 @@ type FullResultModalState = {
     content: ReactNode;
 };
 
+type CombinedTournamentRecord = TournamentRecord | TournamentTeamRecord | TournamentOverallRecord;
+
 const EVENT_TYPE_ORDER = [
     "Individual",
     "Open Age Individual",
@@ -127,7 +125,7 @@ const formatAttemptTime = (time?: number | null): string => {
     return formatTime(time);
 };
 
-const getRecordAge = (record: Partial<TournamentRecord | TournamentTeamRecord | TournamentOverallRecord>): number | null => {
+const getRecordAge = (record: Partial<CombinedTournamentRecord>): number | null => {
     const age =
         (record as TournamentRecord).age ??
         (record as TournamentTeamRecord).age ??
@@ -138,6 +136,15 @@ const getRecordAge = (record: Partial<TournamentRecord | TournamentTeamRecord | 
 const isTeamVerifiedForCounting = (team: Team): boolean => {
     const members = Array.isArray(team.members) ? team.members : [];
     return members.every((member) => member.verified);
+};
+
+const OVERALL_RECORD_CODE_ORDER = {"3-3-3": 0, "3-6-3": 1, Cycle: 2} as const;
+
+const getRankColor = (index: number): string => {
+    if (index === 0) return "#52c41a";
+    if (index === 1) return "#1890ff";
+    if (index === 2) return "#fa8c16";
+    return "inherit";
 };
 
 const OVERALL_RANKING_EVENT_TYPES = new Set(["Individual", "Open Age Individual"]);
@@ -220,8 +227,6 @@ export default function TournamentView() {
         return (a.type ?? "").localeCompare(b.type ?? "");
     });
     const overallRankingEvents = sortedEvents.filter(isOverallRankingEvent);
-    const individualEvent = overallRankingEvents[0];
-    const individualEventLabel = individualEvent ? getEventLabel(individualEvent) : "Individual";
     const approvedRegistrationIds = new Set(
         registrations
             .map((registration) => registration.id)
@@ -263,13 +268,13 @@ export default function TournamentView() {
 
     const handleTimeClick = (videoUrl?: string | null, status?: string) => {
         if (videoUrl && (status === "verified" || isAdmin)) {
-            window.open(videoUrl, "_blank", "noopener,noreferrer");
+            globalThis.open(videoUrl, "_blank", "noopener,noreferrer");
         }
     };
 
     const handleCopyShareLink = async (round: "prelim" | "final") => {
         if (!id) return;
-        const shareUrl = `${window.location.origin}/score-sheet/${id}/${round}`;
+        const shareUrl = `${globalThis.location.origin}/score-sheet/${id}/${round}`;
         try {
             await navigator.clipboard.writeText(shareUrl);
             Message.success(`${round === "prelim" ? "Preliminary" : "Final"} share link copied.`);
@@ -323,20 +328,20 @@ export default function TournamentView() {
                 // Only individual records (not team records)
                 if ("team_id" in r) return false;
 
-                const individualRecord = r as TournamentRecord;
                 return (
-                    individualRecord.participant_global_id === overallRecord.participant_global_id &&
-                    individualRecord.event_id === overallRecord.event_id &&
-                    individualRecord.classification === overallRecord.classification &&
-                    (individualRecord.code === "3-3-3" || individualRecord.code === "3-6-3" || individualRecord.code === "Cycle")
+                    r.participant_global_id === overallRecord.participant_global_id &&
+                    r.event_id === overallRecord.event_id &&
+                    r.classification === overallRecord.classification &&
+                    (r.code === "3-3-3" || r.code === "3-6-3" || r.code === "Cycle")
                 );
             });
 
             // Sort to ensure consistent order: 3-3-3, 3-6-3, Cycle
-            const sortedEventRecords = eventRecords.sort((a, b) => {
-                const order = {"3-3-3": 0, "3-6-3": 1, Cycle: 2};
-                return order[a.code as keyof typeof order] - order[b.code as keyof typeof order];
-            });
+            const sortedEventRecords = [...eventRecords].sort(
+                (a, b) =>
+                    OVERALL_RECORD_CODE_ORDER[a.code as keyof typeof OVERALL_RECORD_CODE_ORDER] -
+                    OVERALL_RECORD_CODE_ORDER[b.code as keyof typeof OVERALL_RECORD_CODE_ORDER],
+            );
 
             setIndividualEventRecords(sortedEventRecords);
 
@@ -497,13 +502,13 @@ export default function TournamentView() {
                     setTournament(data);
 
                     // Fetch registrations, events, and teams
-                    const [regs, evts, fetchedTeams] = await Promise.all([
+                    const [regs, fetchedEvents, fetchedTeams] = await Promise.all([
                         fetchApprovedRegistrations(id),
                         fetchTournamentEvents(id),
                         fetchTeamsByTournament(id),
                     ]);
                     setRegistrations(regs);
-                    setEvents(evts);
+                    setEvents(fetchedEvents);
                     setTeams(fetchedTeams);
 
                     // Fetch records if tournament is ongoing or ended
@@ -542,10 +547,9 @@ export default function TournamentView() {
                             value: (
                                 <div>
                                     <Text bold>{regs.length}</Text>
-                                    {data &&
-                                        data.max_participants !== null &&
-                                        data.max_participants !== undefined &&
-                                        data.max_participants > 0 && <Text type="secondary"> / {data.max_participants}</Text>}
+                                    {data?.max_participants != null && data.max_participants > 0 && (
+                                        <Text type="secondary"> / {data.max_participants}</Text>
+                                    )}
                                 </div>
                             ),
                         },
@@ -554,7 +558,7 @@ export default function TournamentView() {
                             value: (
                                 <Link
                                     onClick={() =>
-                                        window.open(
+                                        globalThis.open(
                                             `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(data?.address ?? "")}`,
                                             "_blank",
                                         )
@@ -601,7 +605,7 @@ export default function TournamentView() {
                         {
                             label: "Agenda",
                             value: data?.agenda ? (
-                                <Button type="text" onClick={() => window.open(`${data?.agenda}`, "_blank")}>
+                                <Button type="text" onClick={() => globalThis.open(`${data?.agenda}`, "_blank")}>
                                     <IconCalendar /> View Agenda
                                 </Button>
                             ) : (
@@ -1319,7 +1323,7 @@ export default function TournamentView() {
                                             );
 
                                             // Sort all records by best_time
-                                            const sortedRecords = eventRecords.sort((a, b) => a.best_time - b.best_time);
+                                            const sortedRecords = [...eventRecords].sort((a, b) => a.best_time - b.best_time);
                                             const filteredRecords = filterRecordsByBracket(sortedRecords, selectedBracket);
                                             const finalistClassificationMap = buildViewFinalistMap(
                                                 filteredRecords.map((record) => ({
@@ -1743,16 +1747,7 @@ export default function TournamentView() {
                                                                                     ) => (
                                                                                         <Text
                                                                                             bold
-                                                                                            style={{
-                                                                                                color:
-                                                                                                    index === 0
-                                                                                                        ? "#52c41a"
-                                                                                                        : index === 1
-                                                                                                          ? "#1890ff"
-                                                                                                          : index === 2
-                                                                                                            ? "#fa8c16"
-                                                                                                            : "inherit",
-                                                                                            }}
+                                                                                                style={{color: getRankColor(index)}}
                                                                                         >
                                                                                             {index + 1}
                                                                                         </Text>
@@ -1892,16 +1887,7 @@ export default function TournamentView() {
                                                                     ) => (
                                                                         <Text
                                                                             bold
-                                                                            style={{
-                                                                                color:
-                                                                                    index === 0
-                                                                                        ? "#52c41a"
-                                                                                        : index === 1
-                                                                                          ? "#1890ff"
-                                                                                          : index === 2
-                                                                                            ? "#fa8c16"
-                                                                                            : "inherit",
-                                                                            }}
+                                                                            style={{color: getRankColor(index)}}
                                                                         >
                                                                             {index + 1}
                                                                         </Text>
@@ -2128,7 +2114,7 @@ export default function TournamentView() {
                                                         );
 
                                                         // Sort all records by best_time
-                                                        const sortedRecords = eventRecords.sort(
+                                                        const sortedRecords = [...eventRecords].sort(
                                                             (a, b) => a.best_time - b.best_time,
                                                         );
                                                         const filteredRecords = filterRecordsByBracket(
@@ -2143,16 +2129,7 @@ export default function TournamentView() {
                                                                 render: (_: unknown, __: TournamentTeamRecord, index: number) => (
                                                                     <Text
                                                                         bold
-                                                                        style={{
-                                                                            color:
-                                                                                index === 0
-                                                                                    ? "#52c41a"
-                                                                                    : index === 1
-                                                                                      ? "#1890ff"
-                                                                                      : index === 2
-                                                                                        ? "#fa8c16"
-                                                                                        : "inherit",
-                                                                        }}
+                                                                        style={{color: getRankColor(index)}}
                                                                     >
                                                                         {index + 1}
                                                                     </Text>
@@ -2327,16 +2304,7 @@ export default function TournamentView() {
                                                                                             ) => (
                                                                                                 <Text
                                                                                                     bold
-                                                                                                    style={{
-                                                                                                        color:
-                                                                                                            index === 0
-                                                                                                                ? "#52c41a"
-                                                                                                                : index === 1
-                                                                                                                  ? "#1890ff"
-                                                                                                                  : index === 2
-                                                                                                                    ? "#fa8c16"
-                                                                                                                    : "inherit",
-                                                                                                    }}
+                                                                                                    style={{color: getRankColor(index)}}
                                                                                                 >
                                                                                                     {index + 1}
                                                                                                 </Text>
