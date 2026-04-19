@@ -272,12 +272,59 @@ export default function TournamentList() {
             return;
         }
         targetBracket.final_criteria ??= [];
-        const targetCriteria = targetBracket.final_criteria[criteriaIndex] as FinalCriterionWithId | undefined;
+        const targetCriteria = targetBracket.final_criteria[criteriaIndex];
         if (!targetCriteria) {
             return;
         }
         updater(targetCriteria);
         setAgeBrackets(updated);
+    };
+
+    const updateBracketField = (
+        bracketIndex: number,
+        updater: (bracket: AgeBracketWithId) => void,
+    ) => {
+        const updated = [...ageBrackets];
+        const targetBracket = updated[bracketIndex] as AgeBracketWithId | undefined;
+        if (!targetBracket) {
+            return;
+        }
+        updater(targetBracket);
+        setAgeBrackets(updated);
+    };
+
+    const handleBracketNameChange = (bracketIndex: number, value: string) => {
+        updateBracketField(bracketIndex, (bracket) => {
+            bracket.name = value;
+        });
+    };
+
+    const handleBracketMinAgeChange = (bracketIndex: number, value?: number) => {
+        updateBracketField(bracketIndex, (bracket) => {
+            bracket.min_age = value ?? 0;
+        });
+    };
+
+    const handleBracketMaxAgeChange = (bracketIndex: number, value?: number) => {
+        updateBracketField(bracketIndex, (bracket) => {
+            bracket.max_age = value ?? 0;
+        });
+    };
+
+    const handleCriteriaClassificationChange = (
+        bracketIndex: number,
+        criteriaIndex: number,
+        value: FinalCriterion["classification"],
+    ) => {
+        updateBracketCriteria(bracketIndex, criteriaIndex, (targetCriteria) => {
+            targetCriteria.classification = value;
+        });
+    };
+
+    const handleCriteriaNumberChange = (bracketIndex: number, criteriaIndex: number, value?: number) => {
+        updateBracketCriteria(bracketIndex, criteriaIndex, (targetCriteria) => {
+            targetCriteria.number = value ?? 0;
+        });
     };
 
     const removeBracketCriteria = (bracketIndex: number, criteriaIndex: number) => {
@@ -1639,11 +1686,7 @@ export default function TournamentList() {
                                                                     >
                                                                         <Input
                                                                             value={bracket.name}
-                                                                            onChange={(v) => {
-                                                                                const updated = [...ageBrackets];
-                                                                                updated[id].name = v;
-                                                                                setAgeBrackets(updated);
-                                                                            }}
+                                                                            onChange={(value) => handleBracketNameChange(id, value)}
                                                                             placeholder="Bracket Name"
                                                                         />
                                                                     </Form.Item>
@@ -1658,11 +1701,7 @@ export default function TournamentList() {
                                                                         <InputNumber
                                                                             value={bracket.min_age}
                                                                             min={0}
-                                                                            onChange={(v) => {
-                                                                                const updated = [...ageBrackets];
-                                                                                updated[id].min_age = v ?? 0;
-                                                                                setAgeBrackets(updated);
-                                                                            }}
+                                                                            onChange={(value) => handleBracketMinAgeChange(id, value)}
                                                                             placeholder="Min Age"
                                                                         />
                                                                     </Form.Item>
@@ -1677,11 +1716,7 @@ export default function TournamentList() {
                                                                         <InputNumber
                                                                             value={bracket.max_age}
                                                                             min={0}
-                                                                            onChange={(v) => {
-                                                                                const updated = [...ageBrackets];
-                                                                                updated[id].max_age = v ?? 0;
-                                                                                setAgeBrackets(updated);
-                                                                            }}
+                                                                            onChange={(value) => handleBracketMaxAgeChange(id, value)}
                                                                             placeholder="Max Age"
                                                                         />
                                                                     </Form.Item>
@@ -1711,9 +1746,7 @@ export default function TournamentList() {
                                                                                     value={criteria.classification}
                                                                                     placeholder="Classification"
                                                                                     onChange={(value) =>
-                                                                                        updateBracketCriteria(id, criteriaIndex, (targetCriteria) => {
-                                                                                            targetCriteria.classification = value;
-                                                                                        })
+                                                                                        handleCriteriaClassificationChange(id, criteriaIndex, value)
                                                                                     }
                                                                                     style={{width: 150}}
                                                                                 >
@@ -1732,15 +1765,15 @@ export default function TournamentList() {
                                                                                     placeholder="Number"
                                                                                     min={0}
                                                                                     onChange={(value) =>
-                                                                                        updateBracketCriteria(id, criteriaIndex, (targetCriteria) => {
-                                                                                            targetCriteria.number = value ?? 0;
-                                                                                        })
+                                                                                        handleCriteriaNumberChange(id, criteriaIndex, value)
                                                                                     }
                                                                                     style={{width: 100}}
                                                                                 />
                                                                                 <Button
                                                                                     status="danger"
-                                                                                    onClick={() => removeBracketCriteria(id, criteriaIndex)}
+                                                                                    onClick={() => {
+                                                                                        removeBracketCriteria(id, criteriaIndex);
+                                                                                    }}
                                                                                 >
                                                                                     <IconDelete />
                                                                                 </Button>

@@ -3,14 +3,16 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {
     AgeBracket,
     AggregationContext,
+    BracketResults,
+    EventResults,
     Finalist,
     FinalistGroupPayload,
+    PrelimResultData,
     Registration,
     Team,
     Tournament,
     TournamentEvent,
 } from "@/schema";
-import type {BracketResults, EventResults, PrelimResultData} from "@/schema";
 import {fetchTournamentFinalists, saveTournamentFinalists} from "@/services/firebase/finalistService";
 import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
@@ -18,10 +20,6 @@ import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from
 import {exportAllPrelimResultsToPDF, exportCombinedTimeSheetsPDF, exportFinalistsNameListToPDF} from "@/utils/PDF/pdfExport";
 import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
-import {
-    buildFinalistClassificationMap,
-    isEligibleForFinalistSelection,
-} from "@/utils/tournament/finalistStyling";
 import {
     getEventKey,
     getEventLabel,
@@ -32,6 +30,7 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
+import {buildFinalistClassificationMap, isEligibleForFinalistSelection} from "@/utils/tournament/finalistStyling";
 import {Button, Dropdown, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
@@ -66,11 +65,13 @@ type AggregatedPrelimResult = Partial<PrelimResultData> & {
 };
 
 const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9]/g, "");
+const getNumericRecordValue = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
 const getOrderedAttemptTimes = (record: Partial<TournamentRecord | TournamentTeamRecord>): number[] => {
     const attempts = [record.try1, record.try2, record.try3]
-        .map((value) => (typeof value === "number" ? value : Number.parseFloat((value as unknown as string) ?? "")))
-        .filter((value) => Number.isFinite(value)) as number[];
+        .map((value) => (typeof value === "number" ? value : Number.parseFloat(String(value ?? ""))))
+        .filter((value): value is number => Number.isFinite(value));
     attempts.sort((a, b) => a - b);
     return attempts;
 };
@@ -231,7 +232,6 @@ const computeTeamMultiCodeResults = (
         let secondTotal = 0;
         let thirdTotal = 0;
         let complete = true;
-        const bestTimes: number[] = [];
         for (const code of codes) {
             const value = aggregate[`${code} Best`];
             if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -239,14 +239,12 @@ const computeTeamMultiCodeResults = (
                 break;
             }
             total += value;
-            bestTimes.push(value);
             const secondVal = aggregate[`${code} Second`] as number | undefined;
             const thirdVal = aggregate[`${code} Third`] as number | undefined;
             secondTotal += typeof secondVal === "number" && Number.isFinite(secondVal) ? secondVal : Number.POSITIVE_INFINITY;
             thirdTotal += typeof thirdVal === "number" && Number.isFinite(thirdVal) ? thirdVal : Number.POSITIVE_INFINITY;
         }
         if (!complete) continue;
-        bestTimes.sort((a, b) => a - b);
         aggregate.bestTime = total;
         aggregate.secondBestTime = secondTotal;
         aggregate.thirdBestTime = thirdTotal;
@@ -308,11 +306,6 @@ const computeIndividualMultiCodeResults = (
     context: AggregationContext,
 ): AggregatedPrelimResult[] => {
     const aggregates = new Map<string, AggregatedPrelimResult>();
-    const getSortedBestTimes = (record: AggregatedPrelimResult): number[] =>
-        codes
-            .map((code) => record[`${code} Best`] as number | undefined)
-            .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
-            .sort((a, b) => a - b);
     for (const code of codes) {
         for (const record of context.allRecords) {
             if (!isIndividualRecord(record)) continue;
@@ -321,7 +314,7 @@ const computeIndividualMultiCodeResults = (
             // Check event_id to distinguish between events with same type
             if (event.id && record.event_id !== event.id) continue;
 
-            const participantId = record.participant_id as string | undefined;
+            const participantId = getParticipantId(record);
             if (!participantId) continue;
             const age = context.ageMap[participantId];
             if (age < bracket.min_age || age > bracket.max_age) continue;
@@ -355,7 +348,8 @@ const computeIndividualMultiCodeResults = (
 
     const results: AggregatedPrelimResult[] = [];
     for (const aggregate of aggregates.values()) {
-        const participantId = (aggregate.participantId ?? aggregate.participant_id) as string;
+        const participantId = getParticipantId(aggregate);
+        if (!participantId) continue;
         let total = 0;
         let secondTotal = 0;
         let thirdTotal = 0;
@@ -399,14 +393,14 @@ const computeIndividualSingleCodeResults = (
             return true;
         })
         .filter((record) => {
-            const participantId = record.participant_id as string | undefined;
+            const participantId = getParticipantId(record);
             if (!participantId) return false;
             const age = context.ageMap[participantId];
             return age >= bracket.min_age && age <= bracket.max_age;
         })
         .sort((a, b) => compareByAttempts(a, b))
         .map((record, index) => {
-            const participantId = record.participant_id as string;
+            const participantId = getParticipantId(record) ?? "";
             const registration = context.registrationMap[participantId];
             const globalId = registration?.user_global_id ?? participantId;
             const bestTime = resolveBestTime(record);
@@ -563,7 +557,7 @@ const buildExpandedRows = (
             try1: baseMatch?.try1 ? baseMatch.try1.toFixed(3) : "N/A",
             try2: baseMatch?.try2 ? baseMatch.try2.toFixed(3) : "N/A",
             try3: baseMatch?.try3 ? baseMatch.try3.toFixed(3) : "N/A",
-            best: typeof record[normalizedKey] === "number" ? (record[normalizedKey] as number).toFixed(3) : "N/A",
+            best: getNumericRecordValue(record[normalizedKey])?.toFixed(3) ?? "N/A",
         };
     });
     const columns: TableColumnProps<{code: string; try1: string; try2: string; try3: string; best: string}>[] = [
@@ -593,7 +587,6 @@ export default function PrelimResultsPage() {
     const [teams, setTeams] = useState<Team[]>([]);
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
-    const [currentClassificationTab, setCurrentClassificationTab] = useState<string>("");
     const sortedEvents = useMemo(
         () =>
             [...events].sort((a, b) => {
@@ -755,17 +748,14 @@ export default function PrelimResultsPage() {
 
     const buildPrelimResultsData = useCallback(
         (scope: PrintScope): EventResults[] => {
-            const scopedEvents =
-                scope === "all"
-                    ? events ?? []
-                    : currentEvent
-                      ? [currentEvent]
-                      : [];
+            const scopedEvents = scope === "all" ? (events ?? []) : currentEvent ? [currentEvent] : [];
 
             return scopedEvents
                 .map((event) => {
                     const scopedBrackets =
-                        scope === "age" && event.id === currentEvent?.id && currentBracket ? [currentBracket] : event.age_brackets ?? [];
+                        scope === "age" && event.id === currentEvent?.id && currentBracket
+                            ? [currentBracket]
+                            : (event.age_brackets ?? []);
 
                     const brackets = scopedBrackets
                         .map((bracket) => {
@@ -791,51 +781,51 @@ export default function PrelimResultsPage() {
         [aggregationContext, currentBracket, currentEvent, events],
     );
 
-    const handlePrint = useCallback(async (scope: PrintScope = "age") => {
-        if (!tournament) return;
+    const handlePrint = useCallback(
+        async (scope: PrintScope = "age") => {
+            if (!tournament) return;
 
-        setLoading(true);
-        try {
-            const resultsData = buildPrelimResultsData(scope);
+            setLoading(true);
+            try {
+                const resultsData = buildPrelimResultsData(scope);
 
-            if (resultsData.length === 0) {
-                const scopeLabel =
-                    scope === "all"
-                        ? "No preliminary results found."
-                        : scope === "event"
-                          ? "No preliminary results found for the current event."
-                          : "No preliminary results found for the current age bracket.";
-                Message.info(scopeLabel);
-                return;
+                if (resultsData.length === 0) {
+                    const scopeLabel =
+                        scope === "all"
+                            ? "No preliminary results found."
+                            : scope === "event"
+                              ? "No preliminary results found for the current event."
+                              : "No preliminary results found for the current age bracket.";
+                    Message.info(scopeLabel);
+                    return;
+                }
+
+                await exportAllPrelimResultsToPDF({
+                    tournament,
+                    resultsData,
+                });
+                Message.success("PDF preview opened in new tab!");
+            } catch (error) {
+                console.error(error);
+                Message.error("Failed to generate PDF");
+            } finally {
+                setLoading(false);
             }
-
-            await exportAllPrelimResultsToPDF({
-                tournament,
-                resultsData,
-            });
-            Message.success("PDF preview opened in new tab!");
-        } catch (error) {
-            console.error(error);
-            Message.error("Failed to generate PDF");
-        } finally {
-            setLoading(false);
-        }
-    }, [buildPrelimResultsData, tournament]);
+        },
+        [buildPrelimResultsData, tournament],
+    );
 
     const buildFinalistsPrintData = useCallback(
         (scope: PrintScope): EventResults[] => {
-            const scopedEvents =
-                scope === "all"
-                    ? events ?? []
-                    : currentEvent
-                      ? [currentEvent]
-                      : [];
+            const scopedEvents = scope === "all" ? (events ?? []) : currentEvent ? [currentEvent] : [];
 
             const finalistsData: EventResults[] = [];
 
             for (const event of scopedEvents) {
                 const scopedBrackets =
-                    scope === "age" && event.id === currentEvent?.id && currentBracket ? [currentBracket] : event.age_brackets ?? [];
+                    scope === "age" && event.id === currentEvent?.id && currentBracket
+                        ? [currentBracket]
+                        : (event.age_brackets ?? []);
 
                 const brackets: BracketResults[] = [];
                 for (const bracket of scopedBrackets) {
@@ -899,49 +889,49 @@ export default function PrelimResultsPage() {
         [aggregationContext, currentBracket, currentEvent, events],
     );
 
-    const handlePrintFinalists = useCallback(async (scope: PrintScope = "age") => {
-        if (!tournament) return;
+    const handlePrintFinalists = useCallback(
+        async (scope: PrintScope = "age") => {
+            if (!tournament) return;
 
-        setLoading(true);
-        try {
-            const finalistsData = buildFinalistsPrintData(scope);
+            setLoading(true);
+            try {
+                const finalistsData = buildFinalistsPrintData(scope);
 
-            if (finalistsData.length === 0) {
-                const scopeLabel =
-                    scope === "all"
-                        ? "No finalists found to print."
-                        : scope === "event"
-                          ? "No finalists found for the current event."
-                          : "No finalists found for the current age bracket.";
-                Message.info(scopeLabel);
-                return;
+                if (finalistsData.length === 0) {
+                    const scopeLabel =
+                        scope === "all"
+                            ? "No finalists found to print."
+                            : scope === "event"
+                              ? "No finalists found for the current event."
+                              : "No finalists found for the current age bracket.";
+                    Message.info(scopeLabel);
+                    return;
+                }
+
+                await exportFinalistsNameListToPDF({
+                    tournament,
+                    finalistsData,
+                });
+                Message.success("Finalists PDF preview opened in new tab!");
+            } catch (error) {
+                console.error(error);
+                Message.error("Failed to generate finalists PDF");
+            } finally {
+                setLoading(false);
             }
-
-            await exportFinalistsNameListToPDF({
-                tournament,
-                finalistsData,
-            });
-            Message.success("Finalists PDF preview opened in new tab!");
-        } catch (error) {
-            console.error(error);
-            Message.error("Failed to generate finalists PDF");
-        } finally {
-            setLoading(false);
-        }
-    }, [buildFinalistsPrintData, tournament]);
+        },
+        [buildFinalistsPrintData, tournament],
+    );
 
     const buildFinalistsTimeSheetEntries = useCallback(
         (scope: PrintScope) => {
-            const scopedEvents =
-                scope === "all"
-                    ? events ?? []
-                    : currentEvent
-                      ? [currentEvent]
-                      : [];
+            const scopedEvents = scope === "all" ? (events ?? []) : currentEvent ? [currentEvent] : [];
 
             return scopedEvents.flatMap((event) => {
                 const scopedBrackets =
-                    scope === "age" && event.id === currentEvent?.id && currentBracket ? [currentBracket] : event.age_brackets ?? [];
+                    scope === "age" && event.id === currentEvent?.id && currentBracket
+                        ? [currentBracket]
+                        : (event.age_brackets ?? []);
 
                 return scopedBrackets.flatMap((bracket) => {
                     const records = computeEventBracketResults(event, bracket, aggregationContext).filter((record) =>
@@ -963,7 +953,9 @@ export default function PrelimResultsPage() {
                     }> = [];
 
                     for (const criterion of finalCriteria) {
-                        const classificationLabel = criterion.classification ? `${bracket.name} - ${criterion.classification}` : bracket.name;
+                        const classificationLabel = criterion.classification
+                            ? `${bracket.name} - ${criterion.classification}`
+                            : bracket.name;
                         const bracketFinalists = records.slice(processedCount, processedCount + criterion.number);
                         for (const finalistRecord of bracketFinalists) {
                             const participant = isTournamentTeamEvent(event) ? finalistRecord.team : finalistRecord.registration;
@@ -989,39 +981,42 @@ export default function PrelimResultsPage() {
         [aggregationContext, currentBracket, currentEvent, events],
     );
 
-    const handlePrintTimeSheet = useCallback(async (scope: PrintScope = "age") => {
-        if (!tournament) return;
+    const handlePrintTimeSheet = useCallback(
+        async (scope: PrintScope = "age") => {
+            if (!tournament) return;
 
-        setLoading(true);
-        try {
-            const entries = buildFinalistsTimeSheetEntries(scope);
+            setLoading(true);
+            try {
+                const entries = buildFinalistsTimeSheetEntries(scope);
 
-            if (entries.length === 0) {
-                const scopeLabel =
-                    scope === "all"
-                        ? "No finalists found to print time sheets."
-                        : scope === "event"
-                          ? "No finalists found for the current event."
-                          : "No finalists found for the current age bracket.";
-                Message.info(scopeLabel);
-                return;
+                if (entries.length === 0) {
+                    const scopeLabel =
+                        scope === "all"
+                            ? "No finalists found to print time sheets."
+                            : scope === "event"
+                              ? "No finalists found for the current event."
+                              : "No finalists found for the current age bracket.";
+                    Message.info(scopeLabel);
+                    return;
+                }
+
+                await exportCombinedTimeSheetsPDF({
+                    tournament,
+                    entries,
+                    ageMap,
+                    nameMap,
+                    logoUrl: tournament.logo ?? "",
+                });
+                Message.success("Final time sheets opened in new tab!");
+            } catch (error) {
+                console.error(error);
+                Message.error("Failed to generate time sheets");
+            } finally {
+                setLoading(false);
             }
-
-            await exportCombinedTimeSheetsPDF({
-                tournament,
-                entries,
-                ageMap,
-                nameMap,
-                logoUrl: tournament.logo ?? "",
-            });
-            Message.success("Final time sheets opened in new tab!");
-        } catch (error) {
-            console.error(error);
-            Message.error("Failed to generate time sheets");
-        } finally {
-            setLoading(false);
-        }
-    }, [ageMap, buildFinalistsTimeSheetEntries, nameMap, tournament]);
+        },
+        [ageMap, buildFinalistsTimeSheetEntries, nameMap, tournament],
+    );
 
     const handleStartFinal = useCallback(async () => {
         if (!tournament) return;
@@ -1030,7 +1025,9 @@ export default function PrelimResultsPage() {
         try {
             const approvedRegistrations = registrations.filter((registration) => registration.registration_status === "approved");
             const approvedRegistrationIds = new Set(
-                approvedRegistrations.flatMap((registration) => [registration.user_id, registration.user_global_id]).filter(Boolean),
+                approvedRegistrations
+                    .flatMap((registration) => [registration.user_id, registration.user_global_id])
+                    .filter(Boolean),
             );
             const validationErrors: string[] = [];
 
@@ -1155,7 +1152,9 @@ export default function PrelimResultsPage() {
                                     </li>
                                 ))}
                             </ul>
-                            {remainingCount > 0 ? <p style={{marginTop: 12}}>And {remainingCount} more missing records.</p> : null}
+                            {remainingCount > 0 ? (
+                                <p style={{marginTop: 12}}>And {remainingCount} more missing records.</p>
+                            ) : null}
                         </div>
                     ),
                 });
@@ -1296,7 +1295,7 @@ export default function PrelimResultsPage() {
 
     const handleCopyShareLink = useCallback(async () => {
         if (!tournamentId) return;
-        const shareUrl = `${window.location.origin}/score-sheet/${tournamentId}/prelim`;
+        const shareUrl = `${globalThis.location.origin}/score-sheet/${tournamentId}/prelim`;
         try {
             await navigator.clipboard.writeText(shareUrl);
             Message.success("Share link copied.");
@@ -1332,7 +1331,12 @@ export default function PrelimResultsPage() {
                             trigger="click"
                             droplist={
                                 <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
-                                    <Button type="text" className="text-left" loading={loading} onClick={() => handlePrint("all")}>
+                                    <Button
+                                        type="text"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrint("all")}
+                                    >
                                         Print All
                                     </Button>
                                     <Button
@@ -1343,7 +1347,12 @@ export default function PrelimResultsPage() {
                                     >
                                         Print Current Event
                                     </Button>
-                                    <Button type="text" className="text-left" loading={loading} onClick={() => handlePrint("age")}>
+                                    <Button
+                                        type="text"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrint("age")}
+                                    >
                                         Print Current Age
                                     </Button>
                                 </div>

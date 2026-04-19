@@ -31,6 +31,30 @@ const {Title} = Typography;
 const {TabPane} = Tabs;
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
 const MESSAGE_DURATION_SECONDS = 5;
+const VALIDATION_PREVIEW_LIMIT = 20;
+
+const showValidationErrorsModal = (title: string, errors: string[], intro: string) => {
+    const previewErrors = errors.slice(0, VALIDATION_PREVIEW_LIMIT);
+    const remainingCount = errors.length - previewErrors.length;
+
+    Modal.warning({
+        title,
+        content: (
+            <div>
+                <p style={{marginBottom: 12}}>{intro}</p>
+                <ul style={{paddingLeft: 20, marginBottom: remainingCount > 0 ? 12 : 0}}>
+                    {previewErrors.map((error) => (
+                        <li key={error} style={{marginBottom: 8}}>
+                            {error}
+                        </li>
+                    ))}
+                </ul>
+                {remainingCount > 0 && <p>And {remainingCount} more issue(s).</p>}
+            </div>
+        ),
+        okText: "OK",
+    });
+};
 
 /**
  * Helper function to determine age group based on participant age
@@ -602,7 +626,11 @@ export default function FinalScoringPage() {
             }
 
             if (validationErrors.length > 0) {
-                Message.error(`Invalid times: ${validationErrors.join(", ")}`);
+                showValidationErrorsModal(
+                    "Invalid Final Scores",
+                    validationErrors,
+                    "Please fix the following score entries before saving this record.",
+                );
                 setLoading(false);
                 return;
             }
