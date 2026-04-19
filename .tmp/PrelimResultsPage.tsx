@@ -12,8 +12,6 @@ import type {
     Tournament,
     TournamentEvent,
 } from "@/schema";
-import type {TournamentRecord, TournamentTeamRecord} from "@/schema/RecordSchema";
-import {fetchUsersByGlobalIds} from "@/services/firebase/authService";
 import {fetchTournamentFinalists, saveTournamentFinalists} from "@/services/firebase/finalistService";
 import {getTournamentPrelimRecords} from "@/services/firebase/recordService";
 import {fetchRegistrations} from "@/services/firebase/registerService";
@@ -37,6 +35,7 @@ import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
+import type {TournamentRecord, TournamentTeamRecord} from "../../../schema/RecordSchema";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
@@ -48,13 +47,12 @@ type AggregatedPrelimResult = Partial<PrelimResultData> & {
     teamId?: string;
     team_id?: string;
     participantId?: string;
-    participant_id?: string;
     globalId?: string;
     bestTime: number;
     secondBestTime?: number;
     thirdBestTime?: number;
     rank: number;
-    name: string;
+    name?: string;
     id: string;
     event?: string;
     event_id?: string;
@@ -62,8 +60,6 @@ type AggregatedPrelimResult = Partial<PrelimResultData> & {
     try2?: number;
     try3?: number;
     classification?: "beginner" | "intermediate" | "advance" | "prelim" | null;
-    team_name?: string;
-    leader_id?: string | null;
     [key: string]: unknown;
 };
 
@@ -140,12 +136,10 @@ const isIndividualRecord = (record: TournamentRecord | TournamentTeamRecord): re
     (record as TournamentRecord).participant_id !== undefined;
 
 const getTeamId = (record: Partial<TournamentTeamRecord | AggregatedPrelimResult>): string | undefined =>
-    record.team_id ??
-    (record as {teamId?: string}).teamId ??
-    (record as {participantId?: string}).participantId;
+    record.team_id ?? record.teamId ?? (record as {participantId?: string}).participantId;
 
 const getParticipantId = (record: Partial<TournamentRecord | AggregatedPrelimResult>): string | undefined =>
-    record.participant_id ?? (record as {participantId?: string}).participantId ?? record.id;
+    record.participant_id ?? (record as {participantId?: string}).participantId ?? record.id ?? record.id;
 
 const getTeamAge = (record: Partial<TournamentTeamRecord | AggregatedPrelimResult>): number | undefined =>
     (record as {team_age?: number}).team_age ?? (record as {largest_age?: number}).largest_age;
@@ -205,7 +199,6 @@ const computeTeamMultiCodeResults = (
             aggregate = {
                 ...record,
                 participantId: teamId,
-                participant_id: teamId,
                 teamId,
                 team,
                 name:
@@ -219,10 +212,7 @@ const computeTeamMultiCodeResults = (
                 rank: 0,
                 event: `${event.codes.join(", ")}-${event.type}`,
                 event_id: record.event_id ?? event.id,
-                classification: record.classification ?? undefined,
-                team_name: record.team_name,
-                leader_id: record.leader_id,
-            } satisfies AggregatedPrelimResult;
+            };
             aggregates.set(teamId, aggregate);
         }
 
@@ -335,7 +325,6 @@ const computeIndividualMultiCodeResults = (
                 aggregate = {
                     ...record,
                     participantId,
-                    participant_id: participantId,
                     name: context.nameMap[participantId] || "N/A",
                     id: participantId,
                     bestTime: 0,
@@ -343,8 +332,7 @@ const computeIndividualMultiCodeResults = (
                     registration,
                     globalId,
                     event: `${event.codes.join(", ")}-${event.type}`,
-                    classification: record.classification ?? undefined,
-                } satisfies AggregatedPrelimResult;
+                };
                 aggregates.set(participantId, aggregate);
             }
 
@@ -529,7 +517,7 @@ const buildExpandedRows = (
     event: TournamentEvent,
     codes: string[],
     isTeamEvent: boolean,
-    allRecords: Array<TournamentRecord | TournamentTeamRecord>,
+    allRecords: TournamentRecord[],
 ) => {
     if (codes.length <= 1) {
         return undefined;
@@ -544,8 +532,8 @@ const buildExpandedRows = (
 
         const baseMatch = allRecords.find((candidate) => {
             const candidateParticipantId = isTeamEvent
-                ? (isTeamRecord(candidate) ? candidate.team_id : getParticipantId(candidate))
-                : getParticipantId(candidate);
+                ? ((candidate as TournamentTeamRecord).team_id ?? candidate.participant_id ?? candidate.participantId)
+                : (candidate.participant_id ?? candidate.participantId);
 
             if (!candidateParticipantId || candidateParticipantId !== targetParticipantId) {
                 return false;
@@ -555,7 +543,7 @@ const buildExpandedRows = (
                 return false;
             }
 
-            const candidateEventId = candidate.event_id;
+            const candidateEventId = (candidate as TournamentTeamRecord).event_id ?? candidate.event_id;
             if (targetEventId && candidateEventId && candidateEventId !== targetEventId) {
                 return false;
             }
@@ -596,7 +584,6 @@ export default function PrelimResultsPage() {
     const [allRecords, setAllRecords] = useState<Array<TournamentRecord | TournamentTeamRecord>>([]);
     const [registrations, setRegistrations] = useState<Registration[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
-    const [supplementalNameMap, setSupplementalNameMap] = useState<Record<string, string>>({});
     const [currentEventTab, setCurrentEventTab] = useState<string>("");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
     const sortedEvents = useMemo(
@@ -629,9 +616,7 @@ export default function PrelimResultsPage() {
                     });
                     const firstEvent = sortedEventList[0];
                     if (firstEvent) {
-                        if (typeof firstEvent.id === "string") {
-                            setCurrentEventTab(firstEvent.id);
-                        }
+                        setCurrentEventTab(firstEvent.id);
                         const firstBracket = firstEvent.age_brackets?.[0];
                         if (firstBracket) {
                             setCurrentBracketTab(firstBracket.name);
@@ -658,35 +643,6 @@ export default function PrelimResultsPage() {
                 setAllRecords(filteredRecords);
                 setRegistrations(fetchedRegistrations);
                 setTeams(verifiedTeams);
-
-                const approvedNameMap = fetchedRegistrations.reduce(
-                    (acc, registration) => {
-                        if (registration.user_global_id) {
-                            acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
-                        }
-                        return acc;
-                    },
-                    {} as Record<string, string>,
-                );
-                const missingGlobalIds = Array.from(
-                    new Set(
-                        verifiedTeams.flatMap((team) => [
-                            stripTeamLeaderPrefix(team.leader_id),
-                            ...(team.members ?? []).map((member) => member.global_id),
-                        ]),
-                    ),
-                ).filter((globalId) => globalId && !approvedNameMap[globalId]);
-
-                if (missingGlobalIds.length > 0) {
-                    const usersByGlobalId = await fetchUsersByGlobalIds(missingGlobalIds);
-                    const fetchedNameMap: Record<string, string> = {};
-                    for (const [globalId, user] of Object.entries(usersByGlobalId)) {
-                        fetchedNameMap[globalId] = user.name || globalId;
-                    }
-                    setSupplementalNameMap(fetchedNameMap);
-                } else {
-                    setSupplementalNameMap({});
-                }
             } catch (error) {
                 console.error(error);
                 Message.error("Failed to fetch preliminary results.");
@@ -710,8 +666,6 @@ export default function PrelimResultsPage() {
             ),
         [registrations],
     );
-
-    const combinedNameMap = useMemo(() => ({...nameMap, ...supplementalNameMap}), [nameMap, supplementalNameMap]);
 
     const ageMap = useMemo(
         () =>
@@ -768,11 +722,11 @@ export default function PrelimResultsPage() {
             registrationMap,
             teams,
             teamMap,
-            nameMap: combinedNameMap,
+            nameMap,
             ageMap,
             teamNameMap,
         }),
-        [allRecords, registrations, registrationMap, teams, teamMap, combinedNameMap, ageMap, teamNameMap],
+        [allRecords, registrations, registrationMap, teams, teamMap, nameMap, ageMap, teamNameMap],
     );
 
     const findEventByTabKey = useCallback(
@@ -1049,7 +1003,7 @@ export default function PrelimResultsPage() {
                     tournament,
                     entries,
                     ageMap,
-                    nameMap: combinedNameMap,
+                    nameMap,
                     logoUrl: tournament.logo ?? "",
                 });
                 Message.success("Final time sheets opened in new tab!");
@@ -1060,7 +1014,7 @@ export default function PrelimResultsPage() {
                 setLoading(false);
             }
         },
-        [ageMap, buildFinalistsTimeSheetEntries, combinedNameMap, tournament],
+        [ageMap, buildFinalistsTimeSheetEntries, nameMap, tournament],
     );
 
     const handleStartFinal = useCallback(async () => {
@@ -1083,7 +1037,7 @@ export default function PrelimResultsPage() {
                 for (const bracket of event.age_brackets ?? []) {
                     if (isTournamentTeamEvent(event)) {
                         const participantsForBracket = teams.filter((team) => {
-                            const teamAge = team.team_age;
+                            const teamAge = team.team_age ?? team.largest_age;
                             if (typeof teamAge !== "number" || teamAge < bracket.min_age || teamAge > bracket.max_age) {
                                 return false;
                             }
@@ -1520,7 +1474,7 @@ export default function PrelimResultsPage() {
                                             const bracketResults = computeEventBracketResults(event, bracket, aggregationContext);
                                             const expandedRowRender =
                                                 eventCodes.length > 1
-                                                    ? (record: AggregatedPrelimResult) =>
+                                                    ? (record: TournamentRecord) =>
                                                           buildExpandedRows(record, event, eventCodes, isTeamEvent, allRecords)
                                                     : undefined;
                                             return (

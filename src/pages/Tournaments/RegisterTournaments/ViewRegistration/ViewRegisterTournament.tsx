@@ -4,7 +4,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {DoubleRecruitment, TeamRecruitment} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
-import {dedupeTeamsByEvent, LegacyTeam, resolveTeamEvent} from "@/utils/teamDeduplication";
+import {dedupeTeamsByEvent, type LegacyTeam, resolveTeamEvent} from "@/utils/teamDeduplication";
 import {fetchUsersByGlobalIds, getUserByGlobalId} from "@/services/firebase/authService";
 import {getDoubleRecruitmentsByParticipant} from "@/services/firebase/doubleRecruitmentService";
 import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
