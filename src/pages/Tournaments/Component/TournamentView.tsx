@@ -134,6 +134,19 @@ const getRecordAge = (record: Partial<CombinedTournamentRecord>): number | null 
     return typeof age === "number" ? age : null;
 };
 
+const getSortableTime = (time: number | null | undefined): number => {
+    if (typeof time !== "number" || !Number.isFinite(time) || time <= 0) {
+        return Number.POSITIVE_INFINITY;
+    }
+    return time;
+};
+
+const sortOverallRankingRecords = (records: TournamentOverallRecord[]): TournamentOverallRecord[] =>
+    [...records].sort((a, b) => getSortableTime(a.overall_time) - getSortableTime(b.overall_time));
+
+const sortTeamRankingRecords = (records: TournamentTeamRecord[]): TournamentTeamRecord[] =>
+    [...records].sort((a, b) => getSortableTime(a.best_time) - getSortableTime(b.best_time));
+
 const isTeamVerifiedForCounting = (team: Team): boolean => {
     const members = Array.isArray(team.members) ? team.members : [];
     return members.every((member) => member.verified);
@@ -669,7 +682,7 @@ export default function TournamentView() {
         if (!bracket) return records;
         return records.filter((record) => {
             const age = getRecordAge(record);
-            if (age === null) return true;
+            if (age === null) return false;
             return age >= bracket.min_age && age <= bracket.max_age;
         });
     };
@@ -1271,7 +1284,7 @@ export default function TournamentView() {
                                                 const selectedBracketName = getSelectedBracketName(bracketKey, overallEvent);
                                                 const selectedBracket = overallEvent.age_brackets?.find((b) => b.name === selectedBracketName);
                                                 const filteredRecords = filterRecordsByBracket(
-                                                    [...overallEventRecords].sort((a, b) => a.overall_time - b.overall_time),
+                                                    sortOverallRankingRecords(overallEventRecords),
                                                     selectedBracket,
                                                 );
                                                 const finalistClassificationMap = buildViewFinalistMap(
@@ -1401,7 +1414,7 @@ export default function TournamentView() {
                                             );
 
                                             // Sort all records by best_time
-                                            const sortedRecords = [...eventRecords].sort((a, b) => a.best_time - b.best_time);
+                                            const sortedRecords = sortTeamRankingRecords(eventRecords);
                                             const filteredRecords = filterRecordsByBracket(sortedRecords, selectedBracket);
                                             const finalistClassificationMap = buildViewFinalistMap(
                                                 filteredRecords.map((record) => ({
@@ -1542,112 +1555,105 @@ export default function TournamentView() {
                                                 </Title>
 
                                                 {/* Overall Records Table for Individual Events */}
-                            {/* Final Team Rankings by classification */}
-                            {["advance", "intermediate", "beginner"].map((classification) => {
-                                const overallEventRecords = finalOverallRecords.filter(
-                                    (r) => r.classification === classification,
-                                );
-                                return events
-                                    .filter((event) => isOverallRankingEvent(event))
-                                    .map((overallEvent) => {
-                                        const filteredOverallRecords = filterOverallRecordsByEvent(
-                                            overallEventRecords,
-                                            overallEvent,
-                                        );
-                                        if (filteredOverallRecords.length === 0) return null;
+                                                {overallRankingEvents.map((overallEvent) => {
+                                                    const filteredOverallRecords = filterOverallRecordsByEvent(
+                                                        classificationOverallRecords,
+                                                        overallEvent,
+                                                    );
+                                                    if (filteredOverallRecords.length === 0) return null;
 
-                                        const bracketKey = buildBracketKey(
-                                            "final",
-                                            overallEvent.id ?? overallEvent.type,
-                                            classification,
-                                        );
-                                        const selectedBracketName = getSelectedBracketName(bracketKey, overallEvent);
-                                        const selectedBracket = overallEvent.age_brackets?.find(
-                                            (b) => b.name === selectedBracketName,
-                                        );
-                                        const filteredBracketRecords = filterRecordsByBracket(
-                                            [...filteredOverallRecords].sort((a, b) => a.overall_time - b.overall_time),
-                                            selectedBracket,
-                                        );
-                                        const finalistClassificationMap = buildViewFinalistMap(
-                                            filteredBracketRecords.map((record) => ({
-                                                id: record.id,
-                                                bestTime: record.overall_time,
-                                            })),
-                                            overallEvent.codes ?? [],
-                                            selectedBracket,
-                                        );
-                                        const finalistLegendItems = getFinalistLegendItems(
-                                            selectedBracket?.final_criteria ?? [],
-                                        );
-                                        const tableRowClassName = (record: TournamentOverallRecord) => {
-                                            const classificationKey = record.id && finalistClassificationMap[record.id];
-                                            return classificationKey
-                                                ? `finalist-row ${FINALIST_VISUAL_STYLES[classificationKey].rowClassName}`
-                                                : "";
-                                        };
+                                                    const bracketKey = buildBracketKey(
+                                                        "final",
+                                                        overallEvent.id ?? overallEvent.type,
+                                                        classification,
+                                                    );
+                                                    const selectedBracketName = getSelectedBracketName(bracketKey, overallEvent);
+                                                    const selectedBracket = overallEvent.age_brackets?.find(
+                                                        (b) => b.name === selectedBracketName,
+                                                    );
+                                                    const filteredBracketRecords = filterRecordsByBracket(
+                                                        sortOverallRankingRecords(filteredOverallRecords),
+                                                        selectedBracket,
+                                                    );
+                                                    const finalistClassificationMap = buildViewFinalistMap(
+                                                        filteredBracketRecords.map((record) => ({
+                                                            id: record.id,
+                                                            bestTime: record.overall_time,
+                                                        })),
+                                                        overallEvent.codes ?? [],
+                                                        selectedBracket,
+                                                    );
+                                                    const finalistLegendItems = getFinalistLegendItems(
+                                                        selectedBracket?.final_criteria ?? [],
+                                                    );
+                                                    const tableRowClassName = (record: TournamentOverallRecord) => {
+                                                        const classificationKey = record.id && finalistClassificationMap[record.id];
+                                                        return classificationKey
+                                                            ? `finalist-row ${FINALIST_VISUAL_STYLES[classificationKey].rowClassName}`
+                                                            : "";
+                                                    };
 
-                                        return (
-                                            <Card
-                                                key={`final-overall-${classification}-${overallEvent.id ?? overallEvent.type}`}
-                                                title={`Overall Rankings (${getEventLabel(overallEvent)}) - ${classificationLabel}`}
-                                                bordered
-                                                className="score-card"
-                                            >
-                                                {renderBracketTabs(overallEvent, bracketKey)}
-                                                <div className="mb-4 flex justify-end">
-                                                    <Button
-                                                        type="outline"
-                                                        size="small"
-                                                        onClick={() =>
-                                                            openFullResultModal(
-                                                                `Overall Rankings (${getEventLabel(overallEvent)}) - ${classificationLabel}`,
-                                                                <Table
-                                                                    columns={buildOverallModalColumns(true)}
-                                                                    data={filteredOverallRecords}
-                                                                    pagination={{
-                                                                        pageSize: 20,
-                                                                        showTotal: true,
-                                                                        showJumper: true,
-                                                                    }}
-                                                                    rowKey="id"
+                                                    return (
+                                                        <Card
+                                                            key={`final-overall-${classification}-${overallEvent.id ?? overallEvent.type}`}
+                                                            title={`Overall Rankings (${getEventLabel(overallEvent)})`}
+                                                            bordered
+                                                            className="score-card"
+                                                        >
+                                                            {renderBracketTabs(overallEvent, bracketKey)}
+                                                            <div className="mb-4 flex justify-end">
+                                                                <Button
+                                                                    type="outline"
                                                                     size="small"
-                                                                    scroll={{x: true, y: 560}}
-                                                                />,
-                                                            )
-                                                        }
-                                                    >
-                                                        View Full Result
-                                                    </Button>
-                                                </div>
-                                                <Table
-                                                    columns={buildOverallPreviewColumns(true)}
-                                                    data={filteredOverallRecords}
-                                                    pagination={{
-                                                        pageSize: 20,
-                                                        showTotal: true,
-                                                        showJumper: true,
-                                                    }}
-                                                    rowKey="id"
-                                                    size="small"
-                                                    rowClassName={tableRowClassName}
-                                                />
-                                                {finalistLegendItems.length > 0 && (
-                                                    <div className="mt-3 flex flex-wrap gap-2">
-                                                        {finalistLegendItems.map((legendItem) => (
-                                                            <Tag
-                                                                key={`${classification}-${overallEvent.id ?? overallEvent.type}-${legendItem}`}
-                                                                color={FINALIST_VISUAL_STYLES[legendItem].tint}
-                                                            >
-                                                                {FINALIST_VISUAL_STYLES[legendItem].label}
-                                                            </Tag>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </Card>
-                                        );
-                                    });
-                            })}
+                                                                    onClick={() =>
+                                                                        openFullResultModal(
+                                                                            `Overall Rankings (${getEventLabel(overallEvent)})`,
+                                                                            <Table
+                                                                                columns={buildOverallModalColumns(true)}
+                                                                                data={filteredBracketRecords}
+                                                                                pagination={{
+                                                                                    pageSize: 20,
+                                                                                    showTotal: true,
+                                                                                    showJumper: true,
+                                                                                }}
+                                                                                rowKey="id"
+                                                                                size="small"
+                                                                                scroll={{x: true, y: 560}}
+                                                                                rowClassName={tableRowClassName}
+                                                                            />,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    View Full Result
+                                                                </Button>
+                                                            </div>
+                                                            <Table
+                                                                columns={buildOverallPreviewColumns(true)}
+                                                                data={filteredBracketRecords}
+                                                                pagination={{
+                                                                    pageSize: 20,
+                                                                    showTotal: true,
+                                                                    showJumper: true,
+                                                                }}
+                                                                rowKey="id"
+                                                                size="small"
+                                                                rowClassName={tableRowClassName}
+                                                            />
+                                                            {finalistLegendItems.length > 0 && (
+                                                                <div className="mt-3 flex flex-wrap gap-2">
+                                                                    {finalistLegendItems.map((legendItem) => (
+                                                                        <Tag
+                                                                            key={`${classification}-${overallEvent.id ?? overallEvent.type}-${legendItem}`}
+                                                                            color={FINALIST_VISUAL_STYLES[legendItem].tint}
+                                                                        >
+                                                                            {FINALIST_VISUAL_STYLES[legendItem].label}
+                                                                        </Tag>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </Card>
+                                                    );
+                                                })}
 
                                                 {/* Team Event Rankings for this classification */}
                                                 {Array.from(new Set(classificationTeamRecords.map((r) => r.event)))
@@ -1673,9 +1679,7 @@ export default function TournamentView() {
                                                         );
 
                                                         // Sort all records by best_time
-                                                        const sortedRecords = [...eventRecords].sort(
-                                                            (a, b) => a.best_time - b.best_time,
-                                                        );
+                                                        const sortedRecords = sortTeamRankingRecords(eventRecords);
                                                         const filteredRecords = filterRecordsByBracket(
                                                             sortedRecords,
                                                             selectedBracket,

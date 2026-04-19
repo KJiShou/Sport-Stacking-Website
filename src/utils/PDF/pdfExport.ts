@@ -33,6 +33,21 @@ import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, Tournam
 // Utility Functions
 const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9_]/g, "");
 
+const formatPDFTime = (value: unknown): string => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value.toFixed(3);
+    }
+
+    if (typeof value === "string") {
+        const parsed = Number.parseFloat(value);
+        if (Number.isFinite(parsed)) {
+            return parsed.toFixed(3);
+        }
+    }
+
+    return "N/A";
+};
+
 const inferImageFormat = (imageDataUrl: string | undefined): jsPDF.ImageFormat => {
     if (!imageDataUrl) {
         return "PNG";
@@ -70,14 +85,29 @@ const createPDFFilename = (parts: string[]): string =>
         .toLowerCase();
 
 const openPDFInNewTab = (doc: jsPDF, filename: string): void => {
-    const pdfOutput = doc.output("bloburl");
+    const pdfBlob = doc.output("blob");
+    const pdfUrl = URL.createObjectURL(pdfBlob);
     const newWindow = window.open("", "_blank");
+
     if (newWindow) {
-        newWindow.location.href = pdfOutput.toString();
-        newWindow.document.title = filename;
-    } else {
-        throw new Error("Please allow popups to preview PDF");
+        newWindow.location.href = pdfUrl;
+        try {
+            newWindow.document.title = filename;
+        } catch {
+            // Ignore cross-window title assignment issues.
+        }
+        return;
     }
+
+    const link = document.createElement("a");
+    link.href = pdfUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.download = filename;
+    link.style.display = "none";
+    document.body.append(link);
+    link.click();
+    link.remove();
 };
 
 const HEADER_ICON_Y = 8;
@@ -732,18 +762,12 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                             for (const code of effectiveCodes) {
                                 const dataKey = `${normalizeCodeKey(code)}Best`;
                                 const value = (r as Record<string, unknown>)[dataKey];
-                                rowData.push(
-                                    typeof value === "number" && Number.isFinite(value)
-                                        ? value.toFixed(3)
-                                        : typeof value === "string"
-                                          ? value
-                                          : "N/A",
-                                );
+                                rowData.push(formatPDFTime(value));
                             }
                         } else {
-                            rowData.push(r.try1?.toFixed(3) ?? "N/A", r.try2?.toFixed(3) ?? "N/A", r.try3?.toFixed(3) ?? "N/A");
+                            rowData.push(formatPDFTime(r.try1), formatPDFTime(r.try2), formatPDFTime(r.try3));
                         }
-                        rowData.push(r.bestTime.toFixed(3));
+                        rowData.push(formatPDFTime(r.bestTime));
                         return rowData;
                     });
 
