@@ -1,4 +1,3 @@
-import {sanitizeEventCodes} from "@/utils/tournament/eventUtils";
 import {
     Timestamp,
     collection,
@@ -13,7 +12,6 @@ import {
     updateDoc,
     where,
 } from "firebase/firestore";
-import type {TeamMember, TournamentEvent} from "../../schema";
 import {
     type GetFastestRecordData,
     type GlobalResult,
@@ -26,11 +24,11 @@ import {
     TournamentTeamRecordSchema,
 } from "../../schema/RecordSchema";
 import {db as firestore} from "./config";
-import {fetchTournamentEvents} from "./tournamentsService";
 import {updateUserBestTime} from "./userBestTimesService";
 
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
 type RecordEventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
+type RecordRound = "prelim" | "advance" | "intermediate" | "beginner";
 
 const CATEGORIES: Category[] = ["individual", "double", "parent_&_child", "team_relay", "special_need"];
 // Event types constant for maintainability
@@ -118,7 +116,7 @@ const isTeamTournamentRecord = (record: TournamentRecord | TournamentTeamRecord)
 
 const determineRecordRound = (
     record: TournamentRecord | TournamentTeamRecord,
-): "prelim" | "advance" | "intermediate" | "beginner" => {
+): RecordRound => {
     if (record.classification === "prelim") {
         return "prelim";
     }
@@ -170,7 +168,7 @@ export const saveRecord = async (data: TournamentRecord): Promise<string> => {
         data.event.toLowerCase().includes("parent & child");
 
     if (isTeamEvent) {
-        return Promise.reject(new Error("Use saveTeamRecord for team events"));
+        throw new Error("Use saveTeamRecord for team events");
     }
     if (isExistingRecord) {
         await updateDoc(recordRef, TournamentRecordSchema.parse({...data, updated_at: now}));
@@ -261,7 +259,7 @@ export const saveOverallRecord = async (data: TournamentOverallRecord): Promise<
 
         const existingRecordsSnap = await getDocs(existingRecordsQuery);
 
-        if (!existingRecordsSnap.empty) {
+        if (existingRecordsSnap.docs.length > 0) {
             // Found existing record, use it for update
             const existingDoc = existingRecordsSnap.docs[0];
             recordRef = existingDoc.ref;
@@ -362,36 +360,55 @@ const getEventCategoryFromType = (typeLabel: string): string => {
     return "individual";
 };
 
-const parseEventKey = (eventKey: string): {eventName: string; eventCategory: string} => {
-    let eventName = eventKey;
-    let typeLabel = "";
+const OVERALL_EVENT_TYPES = new Set(["individual", "open age individual"]);
 
+const isIndividualOverallRecord = (record: TournamentOverallRecord): boolean => {
+    const normalizedEvent = record.event?.trim().toLowerCase() ?? "";
+    return OVERALL_EVENT_TYPES.has(normalizedEvent);
+};
+
+const parseEventKey = (eventKey: string): {eventName: string; eventCategory: string} => {
     if (eventKey.includes("-Team Relay")) {
-        typeLabel = "Team Relay";
-        eventName = eventKey.replace("-Team Relay", "");
-    } else if (eventKey.includes("-Parent & Child")) {
-        typeLabel = "Parent & Child";
-        eventName = eventKey.replace("-Parent & Child", "");
-    } else if (eventKey.includes("-Special Need")) {
-        typeLabel = "Special Need";
-        eventName = eventKey.replace("-Special Need", "");
-    } else if (eventKey.includes("-StackOut Champion")) {
-        typeLabel = "StackOut Champion";
-        eventName = eventKey.replace("-StackOut Champion", "");
-    } else if (eventKey.includes("-Blindfolded Cycle")) {
-        typeLabel = "Blindfolded Cycle";
-        eventName = eventKey.replace("-Blindfolded Cycle", "");
-    } else if (eventKey.includes("-Stack Up Champion")) {
-        typeLabel = "Stack Up Champion";
-        eventName = eventKey.replace("-Stack Up Champion", "");
-    } else {
-        const eventParts = eventKey.split("-");
-        typeLabel = eventParts.pop() || "";
-        eventName = eventParts.join("-");
+        return {
+            eventName: eventKey.replace("-Team Relay", "").trim(),
+            eventCategory: getEventCategoryFromType("Team Relay"),
+        };
+    }
+    if (eventKey.includes("-Parent & Child")) {
+        return {
+            eventName: eventKey.replace("-Parent & Child", "").trim(),
+            eventCategory: getEventCategoryFromType("Parent & Child"),
+        };
+    }
+    if (eventKey.includes("-Special Need")) {
+        return {
+            eventName: eventKey.replace("-Special Need", "").trim(),
+            eventCategory: getEventCategoryFromType("Special Need"),
+        };
+    }
+    if (eventKey.includes("-StackOut Champion")) {
+        return {
+            eventName: eventKey.replace("-StackOut Champion", "").trim(),
+            eventCategory: getEventCategoryFromType("StackOut Champion"),
+        };
+    }
+    if (eventKey.includes("-Blindfolded Cycle")) {
+        return {
+            eventName: eventKey.replace("-Blindfolded Cycle", "").trim(),
+            eventCategory: getEventCategoryFromType("Blindfolded Cycle"),
+        };
+    }
+    if (eventKey.includes("-Stack Up Champion")) {
+        return {
+            eventName: eventKey.replace("-Stack Up Champion", "").trim(),
+            eventCategory: getEventCategoryFromType("Stack Up Champion"),
+        };
     }
 
+    const eventParts = eventKey.split("-");
+    const typeLabel = eventParts.pop() || "";
     return {
-        eventName: eventName.trim(),
+        eventName: eventParts.join("-").trim(),
         eventCategory: getEventCategoryFromType(typeLabel.trim()),
     };
 };
@@ -439,7 +456,10 @@ export const getTournamentPrelimOverallRecords = async (tournamentId: string): P
     const overallRecordsSnapshot = await getDocs(overallRecordsQuery);
     for (const recordDoc of overallRecordsSnapshot.docs) {
         const data = {...recordDoc.data(), id: recordDoc.id};
-        records.push(data as TournamentOverallRecord);
+        const overallRecord = data as TournamentOverallRecord;
+        if (isIndividualOverallRecord(overallRecord)) {
+            records.push(overallRecord);
+        }
     }
     return records;
 };
@@ -464,7 +484,10 @@ export const getTournamentFinalOverallRecords = async (tournamentId: string): Pr
     const overallRecordsSnapshot = await getDocs(overallRecordsQuery);
     for (const recordDoc of overallRecordsSnapshot.docs) {
         const data = {...recordDoc.data(), id: recordDoc.id};
-        records.push(data as TournamentOverallRecord);
+        const overallRecord = data as TournamentOverallRecord;
+        if (isIndividualOverallRecord(overallRecord)) {
+            records.push(overallRecord);
+        }
     }
     return records;
 };
@@ -982,7 +1005,7 @@ const toGlobalFromIndividual = (r: TournamentRecord & {id: string}): (GlobalResu
         verified_at: r.verified_at ?? null,
         created_at: r.created_at ?? new Date().toISOString(),
         updated_at: r.updated_at ?? r.created_at ?? new Date().toISOString(),
-        age: (typeof r.age === "number" ? r.age : Number.NaN) as number,
+        age: typeof r.age === "number" ? r.age : Number.NaN,
         round: r.classification ?? "intermediate",
         classification: r.classification ?? undefined,
         bestTime: time,
@@ -1000,7 +1023,7 @@ const toGlobalFromTeam = (r: TournamentTeamRecord & {id: string}): (GlobalTeamRe
     return {
         id: r.id,
         event: (r.code as EventTypeKey) ?? "Cycle",
-        country: (r.country as string | undefined) ?? undefined,
+        country: r.country ?? undefined,
         time,
         teamName: r.team_name ?? undefined,
         leaderId: r.leader_id ?? undefined,
@@ -1011,7 +1034,7 @@ const toGlobalFromTeam = (r: TournamentTeamRecord & {id: string}): (GlobalTeamRe
         verified_at: r.verified_at ?? null,
         created_at: r.created_at ?? new Date().toISOString(),
         updated_at: r.updated_at ?? r.created_at ?? new Date().toISOString(),
-        age: (typeof r.age === "number" ? r.age : Number.NaN) as number,
+        age: typeof r.age === "number" ? r.age : Number.NaN,
         round: r.classification ?? "intermediate",
         classification: r.classification ?? undefined,
         bestTime: time,
@@ -1021,7 +1044,7 @@ const toGlobalFromTeam = (r: TournamentTeamRecord & {id: string}): (GlobalTeamRe
         tournamentId: r.tournament_id,
         teamId: r.team_id,
         tournament_name: r.tournament_name ?? null,
-    } as unknown as GlobalTeamResult & {id: string};
+    };
 };
 
 const toGlobalFromOverall = (r: TournamentOverallRecord & {id: string}): (GlobalResult & {id: string}) | null => {
@@ -1043,7 +1066,7 @@ const toGlobalFromOverall = (r: TournamentOverallRecord & {id: string}): (Global
         verified_at: r.verified_at ?? null,
         created_at: r.created_at ?? new Date().toISOString(),
         updated_at: r.updated_at ?? r.created_at ?? new Date().toISOString(),
-        age: (typeof r.age === "number" ? r.age : Number.NaN) as number,
+        age: typeof r.age === "number" ? r.age : Number.NaN,
         classification: r.classification ?? undefined,
         bestTime: time,
         tournamentId: r.tournament_id,

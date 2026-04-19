@@ -3,10 +3,27 @@ import type {Registration} from "./RegistrationSchema";
 import type {Team} from "./TeamSchema";
 import type {AgeBracket, Tournament, TournamentEvent} from "./TournamentSchema";
 
-export interface PrelimResultData extends Omit<TournamentRecord, "try1" | "try2" | "try3" | "bestTime" | "classification"> {
+export interface PrelimResultData {
+    id: string;
+    tournament_id?: string;
+    tournament_name?: string | null;
+    event_id?: string;
+    event?: string;
+    code?: string;
+    age?: number | null;
+    country?: string | null;
+    status?: "submitted" | "verified";
+    participant_id?: string;
+    participant_global_id?: string;
+    participant_name?: string;
+    gender?: string;
+    submitted_at?: string;
+    created_at?: string;
+    updated_at?: string;
+    verified_at?: string | null;
+    verified_by?: string | null;
     rank: number;
     name: string;
-    id: string;
     three?: number;
     threeSixThree?: number;
     cycle?: number;
@@ -14,14 +31,17 @@ export interface PrelimResultData extends Omit<TournamentRecord, "try1" | "try2"
     try2?: number;
     try3?: number;
     bestTime?: number;
-    classification?: "beginner" | "intermediate" | "advance" | "prelim";
+    classification?: "beginner" | "intermediate" | "advance" | "prelim" | null;
     round?: "prelim" | "advance" | "intermediate" | "beginner";
+    participantId?: string;
+    teamId?: string;
+    globalId?: string;
 }
 
 export interface BracketResults {
     bracket: AgeBracket;
     records: PrelimResultData[];
-    classification?: "beginner" | "intermediate" | "advance" | "prelim";
+    classification?: string;
     highlightFinalists?: boolean;
     highlightedRecordClassifications?: Record<string, string>;
 }
@@ -43,10 +63,10 @@ export interface FinalistsPDFParams {
     finalistsData: EventResults[];
 }
 
-export interface PrelimResult extends TournamentRecord {
+export type PrelimResult = TournamentRecord & {
     rank: number;
     name: string;
-}
+};
 
 export interface ExportPrelimResultsOptions {
     tournament: Tournament;

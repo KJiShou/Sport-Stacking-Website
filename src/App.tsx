@@ -1,12 +1,11 @@
 import {useEffect, useRef} from "react";
 import type {FC} from "react";
-import {Route, BrowserRouter as Router, Routes} from "react-router-dom";
+import {Route, BrowserRouter as Router, Routes, useLocation, useNavigate} from "react-router-dom";
 import "@arco-design/web-react/dist/css/arco.css";
 import {ConfigProvider, Layout} from "@arco-design/web-react";
 import enUS from "@arco-design/web-react/es/locale/en-US";
 import {Helmet as HelmetBase} from "react-helmet";
 import type {HelmetProps} from "react-helmet";
-import {useLocation, useNavigate} from "react-router-dom";
 import image from "./assets/icon.avif";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import {Footer, Navbar} from "./components/layout";

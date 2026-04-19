@@ -3,7 +3,7 @@ import {type User, getRedirectResult, onAuthStateChanged} from "firebase/auth";
 import {doc, getDoc} from "firebase/firestore";
 // src/context/AuthContext.tsx
 import type React from "react";
-import {createContext, useContext, useEffect, useState} from "react";
+import {createContext, useContext, useEffect, useMemo, useState} from "react";
 import {
     type GoogleSignInIntent,
     clearGoogleSignInIntent,
@@ -21,17 +21,15 @@ const resolveRedirectUserOnce = async (): Promise<User | null> => {
         return redirectResultUserCache;
     }
 
-    if (!redirectResultPromise) {
-        redirectResultPromise = getRedirectResult(auth)
-            .then((redirectResult) => {
-                redirectResultUserCache = redirectResult?.user ?? null;
-                return redirectResultUserCache;
-            })
-            .catch((err) => {
-                redirectResultUserCache = null;
-                throw err;
-            });
-    }
+    redirectResultPromise ??= getRedirectResult(auth)
+        .then((redirectResult) => {
+            redirectResultUserCache = redirectResult?.user ?? null;
+            return redirectResultUserCache;
+        })
+        .catch((err) => {
+            redirectResultUserCache = null;
+            throw err;
+        });
 
     return redirectResultPromise;
 };
@@ -123,23 +121,21 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
     const isGoogleOnlyAuth = isGoogleOnlyUser(firebaseUser);
     const isGoogleRegistrationPending = Boolean(firebaseUser && !hasProfile && hasGoogleProvider(firebaseUser));
     const loading = isResolvingRedirect || isHydratingAuth;
-
-    return (
-        <AuthContext.Provider
-            value={{
-                user,
-                loading,
-                firebaseUser,
-                hasProfile,
-                isGoogleOnlyAuth,
-                isGoogleRegistrationPending,
-                googleSignInIntent,
-                setUser,
-            }}
-        >
-            {children}
-        </AuthContext.Provider>
+    const contextValue = useMemo(
+        () => ({
+            user,
+            loading,
+            firebaseUser,
+            hasProfile,
+            isGoogleOnlyAuth,
+            isGoogleRegistrationPending,
+            googleSignInIntent,
+            setUser,
+        }),
+        [firebaseUser, googleSignInIntent, hasProfile, isGoogleOnlyAuth, isGoogleRegistrationPending, loading, user],
     );
+
+    return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
 };
 
 export const useAuthContext = () => useContext(AuthContext);

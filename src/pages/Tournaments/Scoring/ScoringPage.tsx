@@ -36,12 +36,36 @@ import {useMount} from "react-use";
 const {Title} = Typography;
 const {TabPane} = Tabs;
 const MESSAGE_DURATION_SECONDS = 5;
+const VALIDATION_PREVIEW_LIMIT = 20;
 
 const isTeamTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentTeamRecord =>
     "team_id" in record;
 
 const isIndividualTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentRecord =>
     "participant_id" in record;
+
+const showValidationErrorsModal = (title: string, errors: string[], intro: string) => {
+    const previewErrors = errors.slice(0, VALIDATION_PREVIEW_LIMIT);
+    const remainingCount = errors.length - previewErrors.length;
+
+    Modal.warning({
+        title,
+        content: (
+            <div>
+                <p style={{marginBottom: 12}}>{intro}</p>
+                <ul style={{paddingLeft: 20, marginBottom: remainingCount > 0 ? 12 : 0}}>
+                    {previewErrors.map((error) => (
+                        <li key={error} style={{marginBottom: 8}}>
+                            {error}
+                        </li>
+                    ))}
+                </ul>
+                {remainingCount > 0 && <p>And {remainingCount} more issue(s).</p>}
+            </div>
+        ),
+        okText: "OK",
+    });
+};
 
 /**
  * Helper function to determine age group based on participant age
@@ -658,8 +682,11 @@ export default function ScoringPage() {
 
         const validationErrors = validateModalRecord();
         if (validationErrors.length > 0) {
-            const errorMessage = `Validation Failed:\n${validationErrors.join("\n")}`;
-            Message.error(errorMessage);
+            showValidationErrorsModal(
+                "Validation Failed",
+                validationErrors,
+                "Please fix the following score entries before saving this record.",
+            );
             return;
         }
 
@@ -1436,14 +1463,11 @@ export default function ScoringPage() {
                                                             // If there are validation errors, show them
 
                                                             if (validationErrors.length > 0) {
-                                                                for (const error of validationErrors) {
-                                                                    const errorMessage = `Cannot complete preliminary round for ${eventType}. Missing records:\n${error}`;
-                                                                    Message.error({
-                                                                        content: errorMessage,
-                                                                        closable: true,
-                                                                        duration: MESSAGE_DURATION_SECONDS,
-                                                                    });
-                                                                }
+                                                                showValidationErrorsModal(
+                                                                    `Cannot complete preliminary round for ${eventType}`,
+                                                                    validationErrors,
+                                                                    "The current age bracket still has missing preliminary records.",
+                                                                );
                                                                 setLoading(false);
                                                                 return;
                                                             }

@@ -49,7 +49,7 @@ if (!getApps().length) {
     initializeApp();
 }
 
-const firebaseApp = getApps()[0]!;
+const firebaseApp = getApps()[0] ?? initializeApp();
 const firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID?.trim();
 const db = firestoreDatabaseId ? getFirestore(firebaseApp, firestoreDatabaseId) : getFirestore(firebaseApp);
 

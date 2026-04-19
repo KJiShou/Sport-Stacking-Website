@@ -795,10 +795,9 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                             ? (data) => {
                                   if (data.section === "body") {
                                       const sourceRecord = records[data.row.index];
-                                      const mappedClassification =
-                                          sourceRecord && sourceRecord.id
-                                              ? highlightedRecordClassifications[String(sourceRecord.id)]
-                                              : undefined;
+                                      const mappedClassification = sourceRecord?.id
+                                          ? highlightedRecordClassifications[String(sourceRecord.id)]
+                                          : undefined;
 
                                       if (mappedClassification) {
                                           const color = classificationColors[mappedClassification];
@@ -1774,7 +1773,9 @@ const generateSingleStackingSheet = (
         const nameX = marginX + doc.getTextWidth("Name: ");
         doc.setFont("times", "bold");
         doc.setFontSize(14);
-        const allMembers = [team.leader_id, ...(team.members || []).map((m) => m.global_id)].filter(Boolean);
+        const allMembers = [stripTeamLeaderPrefix(team.leader_id), ...(team.members || []).map((m) => m.global_id)].filter(
+            Boolean,
+        );
         const memberNames = allMembers.map((memberId) => nameMap[memberId] ?? memberId);
         const normalizedSheetType = sheetType.toLowerCase();
         const nameSeparator = (() => {

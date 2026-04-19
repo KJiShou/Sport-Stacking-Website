@@ -24,7 +24,7 @@ export interface Finalist {
     eventCode: string;
     eventCodes: string[];
     bracket: AgeBracket;
-    records: (PrelimResultData & {team?: Team; registration?: Registration})[];
+    records: (PrelimResultData & {team?: Team; registration?: Registration; teamId?: string; participantId?: string})[];
     classification: "beginner" | "intermediate" | "advance" | "prelim";
 }
 

@@ -18,7 +18,7 @@ import {
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import {EventSchema, TournamentSchema} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
-import {dedupeTeamsByEvent, LegacyTeam} from "../../utils/teamDeduplication";
+import {dedupeTeamsByEvent, type LegacyTeam} from "../../utils/teamDeduplication";
 import {getTeamEvents, normalizeEventSelections, teamMatchesEventKey} from "../../utils/tournament/eventUtils";
 import {
     fetchUsersByGlobalIds,
