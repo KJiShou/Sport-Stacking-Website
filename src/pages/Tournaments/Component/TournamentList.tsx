@@ -325,6 +325,7 @@ export default function TournamentList() {
                 let rejectionReason: string | undefined;
                 let tooltipMessage = "";
                 const tournamentFull = isTournamentFull(tournament);
+                const isActiveOrEnded = tournament.status === "On Going" || tournament.status === "End";
 
                 if (tournament.isDraft) {
                     color = "gray";
@@ -383,7 +384,7 @@ export default function TournamentList() {
                         displayText = "Rejected";
                         tooltipMessage = rejectionReason ? `Rejected: ${rejectionReason}` : "Your registration was rejected.";
                     }
-                } else if (tournamentFull) {
+                } else if (tournamentFull && !isActiveOrEnded) {
                     color = "red";
                     displayText = "Full";
                     tooltipMessage = "Participant limit reached.";
@@ -402,8 +403,9 @@ export default function TournamentList() {
             width: 220,
             render: (_: unknown, tournament: Tournament) => {
                 const tournamentFull = isTournamentFull(tournament);
+                const isActiveOrEnded = tournament.status === "On Going" || tournament.status === "End";
                 if (!user) {
-                    if (tournamentFull) {
+                    if (tournamentFull && !isActiveOrEnded) {
                         return renderFullAction(tournament);
                     }
                     return (
@@ -693,7 +695,7 @@ export default function TournamentList() {
                 if (!tournament.registration_start_date || !tournament.registration_end_date) {
                     return;
                 }
-                if (tournamentFull) {
+                if (tournamentFull && !isActiveOrEnded) {
                     return renderFullAction(tournament);
                 }
                 if (tournament.registration_end_date > Timestamp.now()) {
