@@ -551,171 +551,173 @@ export default function RegisterPage() {
                         </div>
 
                         {/* 右边：包一层，让它整体高度统一 */}
-                        {!user?.roles ? (
-                            <div className="flex flex-col w-full md:w-2/3 h-full gap-6">
-                                <div className="flex flex-col h-full gap-6">
-                                    {/* Best Record Section (like AthleteProfile) */}
-                                    <div className="bg-white flex flex-col w-full gap-6 items-start p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                                        <Title heading={4} className="!mb-4">
-                                            Best Performances
-                                        </Title>
-                                        {(() => {
-                                            type EventType = "3-3-3" | "3-6-3" | "Cycle";
-                                            const events: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
-                                            const bestTimes = events
-                                                .map((event) => {
-                                                    const record = user?.best_times?.[event];
-                                                    if (!record || !("time" in record) || !record.time) return null;
-                                                    return {
-                                                        event,
-                                                        time: record.time,
-                                                        season: record.season ?? null,
-                                                        updatedAt: record.updated_at
-                                                            ? record.updated_at instanceof Date
-                                                                ? record.updated_at
-                                                                : "toDate" in record.updated_at
-                                                                  ? record.updated_at.toDate()
-                                                                  : null
-                                                            : null,
-                                                    };
-                                                })
-                                                .filter(Boolean);
-                                            return bestTimes.length === 0 ? (
-                                                <Empty description="No best times recorded yet." />
-                                            ) : (
+                        <div className="flex flex-col w-full md:w-2/3 h-full gap-6">
+                            <div className="flex flex-col h-full gap-6">
+                                {/* Best Record Section (like AthleteProfile) */}
+                                <div className="bg-white flex flex-col w-full gap-6 items-start p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                                    <Title heading={4} className="!mb-4">
+                                        Best Performances
+                                    </Title>
+                                    {(() => {
+                                        type EventType = "3-3-3" | "3-6-3" | "Cycle";
+                                        const events: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
+                                        const bestTimes = events
+                                            .map((event) => {
+                                                const record = user?.best_times?.[event];
+                                                if (!record || !("time" in record) || !record.time) return null;
+                                                return {
+                                                    event,
+                                                    time: record.time,
+                                                    season: record.season ?? null,
+                                                    updatedAt: record.updated_at
+                                                        ? record.updated_at instanceof Date
+                                                            ? record.updated_at
+                                                            : "toDate" in record.updated_at
+                                                              ? record.updated_at.toDate()
+                                                              : null
+                                                        : null,
+                                                };
+                                            })
+                                            .filter(Boolean);
+                                        return bestTimes.length === 0 ? (
+                                            <Empty description="No best times recorded yet." />
+                                        ) : (
+                                            <Table
+                                                rowKey="event"
+                                                columns={[
+                                                    {title: "Event", dataIndex: "event", width: 120},
+                                                    {
+                                                        title: "Best Time",
+                                                        dataIndex: "time",
+                                                        width: 150,
+                                                        render: (time) => (
+                                                            <span className="font-semibold text-lg">
+                                                                {typeof time === "number" ? time.toFixed(3) : "-"}
+                                                            </span>
+                                                        ),
+                                                    },
+                                                    ...(isMobile
+                                                        ? []
+                                                        : [
+                                                              {
+                                                                  title: "Season",
+                                                                  dataIndex: "season",
+                                                                  width: 120,
+                                                                  render: (season: string | null) => season ?? "—",
+                                                              },
+                                                              {
+                                                                  title: "Last Updated",
+                                                                  dataIndex: "updatedAt",
+                                                                  width: 150,
+                                                                  render: (date: Date | null) =>
+                                                                      date ? dayjs(date).format("DD/MM/YYYY") : "—",
+                                                              },
+                                                          ]),
+                                                ]}
+                                                data={bestTimes}
+                                                pagination={false}
+                                                scroll={{x: true}}
+                                                border={false}
+                                            />
+                                        );
+                                    })()}
+                                </div>
+                                {/* Tournament Participation Section (like AthleteProfile) */}
+                                <div className="bg-white flex flex-col w-full gap-6 items-start p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                                    <Title heading={4} className="!mb-4">
+                                        Tournament Participation
+                                    </Title>
+                                    {(() => {
+                                        const tournaments = (user?.registration_records ?? [])
+                                            .filter((reg) => reg.status === "approved")
+                                            .map((reg) => ({
+                                                tournamentId: reg.tournament_id,
+                                                events: reg.events ?? [],
+                                                registrationDate: reg.updated_at
+                                                    ? reg.updated_at instanceof Date
+                                                        ? reg.updated_at
+                                                        : "toDate" in reg.updated_at
+                                                          ? reg.updated_at.toDate()
+                                                          : null
+                                                    : reg.registration_date
+                                                      ? reg.registration_date instanceof Date
+                                                          ? reg.registration_date
+                                                          : "toDate" in reg.registration_date
+                                                            ? reg.registration_date.toDate()
+                                                            : null
+                                                      : null,
+                                                status: reg.status ?? "pending",
+                                                prelimRank: toNumber(reg.prelim_rank),
+                                                finalRank: toNumber(reg.final_rank),
+                                                prelimOverall: toNumber(reg.prelim_overall_result),
+                                                finalOverall: toNumber(reg.final_overall_result),
+                                            }));
+                                        return tournaments.length === 0 ? (
+                                            <Empty description="No tournament participation records found." />
+                                        ) : (
+                                            <div className="w-full overflow-x-auto">
                                                 <Table
-                                                    rowKey="event"
+                                                    rowKey="tournamentId"
                                                     columns={[
-                                                        {title: "Event", dataIndex: "event", width: 120},
                                                         {
-                                                            title: "Best Time",
-                                                            dataIndex: "time",
+                                                            title: "Date",
+                                                            dataIndex: "registrationDate",
                                                             width: 150,
-                                                            render: (time) => (
-                                                                <span className="font-semibold text-lg">
-                                                                    {typeof time === "number" ? time.toFixed(3) : "-"}
-                                                                </span>
-                                                            ),
+                                                            render: (date) => (date ? dayjs(date).format("DD/MM/YYYY") : "—"),
                                                         },
-                                                        ...(isMobile
-                                                            ? []
-                                                            : [
-                                                                  {
-                                                                      title: "Season",
-                                                                      dataIndex: "season",
-                                                                      width: 120,
-                                                                      render: (season: string | null) => season ?? "—",
-                                                                  },
-                                                                  {
-                                                                      title: "Last Updated",
-                                                                      dataIndex: "updatedAt",
-                                                                      width: 150,
-                                                                      render: (date: Date | null) =>
-                                                                          date ? dayjs(date).format("DD/MM/YYYY") : "—",
-                                                                  },
-                                                              ]),
+                                                        {
+                                                            title: "Prelim Rank",
+                                                            dataIndex: "prelimRank",
+                                                            width: 120,
+                                                            render: (rank) => (rank ? `#${rank}` : "—"),
+                                                        },
+                                                        {
+                                                            title: "Prelim Overall",
+                                                            dataIndex: "prelimOverall",
+                                                            width: 150,
+                                                            render: (time: number | null) => (time ? time.toFixed(3) : "—"),
+                                                        },
+                                                        {
+                                                            title: "Final Rank",
+                                                            dataIndex: "finalRank",
+                                                            width: 120,
+                                                            render: (rank) => (rank ? `#${rank}` : "—"),
+                                                        },
+                                                        {
+                                                            title: "Final Overall",
+                                                            dataIndex: "finalOverall",
+                                                            width: 150,
+                                                            render: (time: number | null) => (time ? time.toFixed(3) : "—"),
+                                                        },
                                                     ]}
-                                                    data={bestTimes}
-                                                    pagination={false}
-                                                    scroll={{x: true}}
+                                                    data={tournaments}
+                                                    pagination={{pageSize: 10}}
+                                                    scroll={{x: "max-content"}}
                                                     border={false}
                                                 />
-                                            );
-                                        })()}
-                                    </div>
-                                    {/* Tournament Participation Section (like AthleteProfile) */}
-                                    <div className="bg-white flex flex-col w-full gap-6 items-start p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                                        <Title heading={4} className="!mb-4">
-                                            Tournament Participation
-                                        </Title>
-                                        {(() => {
-                                            const tournaments = (user?.registration_records ?? [])
-                                                .filter((reg) => reg.status === "approved")
-                                                .map((reg) => ({
-                                                    tournamentId: reg.tournament_id,
-                                                    events: reg.events ?? [],
-                                                    registrationDate: reg.updated_at
-                                                        ? reg.updated_at instanceof Date
-                                                            ? reg.updated_at
-                                                            : "toDate" in reg.updated_at
-                                                              ? reg.updated_at.toDate()
-                                                              : null
-                                                        : reg.registration_date
-                                                          ? reg.registration_date instanceof Date
-                                                              ? reg.registration_date
-                                                              : "toDate" in reg.registration_date
-                                                                ? reg.registration_date.toDate()
-                                                                : null
-                                                          : null,
-                                                    status: reg.status ?? "pending",
-                                                    prelimRank: toNumber(reg.prelim_rank),
-                                                    finalRank: toNumber(reg.final_rank),
-                                                    prelimOverall: toNumber(reg.prelim_overall_result),
-                                                    finalOverall: toNumber(reg.final_overall_result),
-                                                }));
-                                            return tournaments.length === 0 ? (
-                                                <Empty description="No tournament participation records found." />
-                                            ) : (
-                                                <div className="w-full overflow-x-auto">
-                                                    <Table
-                                                        rowKey="tournamentId"
-                                                        columns={[
-                                                            {
-                                                                title: "Date",
-                                                                dataIndex: "registrationDate",
-                                                                width: 150,
-                                                                render: (date) => (date ? dayjs(date).format("DD/MM/YYYY") : "—"),
-                                                            },
-                                                            {
-                                                                title: "Prelim Rank",
-                                                                dataIndex: "prelimRank",
-                                                                width: 120,
-                                                                render: (rank) => (rank ? `#${rank}` : "—"),
-                                                            },
-                                                            {
-                                                                title: "Prelim Overall",
-                                                                dataIndex: "prelimOverall",
-                                                                width: 150,
-                                                                render: (time: number | null) => (time ? time.toFixed(3) : "—"),
-                                                            },
-                                                            {
-                                                                title: "Final Rank",
-                                                                dataIndex: "finalRank",
-                                                                width: 120,
-                                                                render: (rank) => (rank ? `#${rank}` : "—"),
-                                                            },
-                                                            {
-                                                                title: "Final Overall",
-                                                                dataIndex: "finalOverall",
-                                                                width: 150,
-                                                                render: (time: number | null) => (time ? time.toFixed(3) : "—"),
-                                                            },
-                                                        ]}
-                                                        data={tournaments}
-                                                        pagination={{pageSize: 10}}
-                                                        scroll={{x: "max-content"}}
-                                                        border={false}
-                                                    />
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="bg-white flex flex-col w-full flex-1 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                                <Row gutter={[16, 16]}>
-                                    {permissionList.map(({key, label}) => (
-                                        <Col xs={24} sm={12} key={key}>
-                                            <div className="flex items-center justify-between px-4 py-2 border rounded">
-                                                <span>{label}</span>
-                                                <Switch checked={user.roles?.[key] ?? false} disabled />
                                             </div>
-                                        </Col>
-                                    ))}
-                                </Row>
+                                        );
+                                    })()}
+                                </div>
+                                {user?.roles && (
+                                    <div className="bg-white flex flex-col w-full gap-4 items-start p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                                        <Title heading={4} className="!mb-4">
+                                            Admin Permissions
+                                        </Title>
+                                        <Row gutter={[16, 16]} className="w-full">
+                                            {permissionList.map(({key, label}) => (
+                                                <Col xs={24} sm={12} key={key}>
+                                                    <div className="flex items-center justify-between px-4 py-2 border rounded">
+                                                        <span>{label}</span>
+                                                        <Switch checked={user.roles?.[key] ?? false} disabled />
+                                                    </div>
+                                                </Col>
+                                            ))}
+                                        </Row>
+                                    </div>
+                                )}
                             </div>
-                        )}
+                        </div>
                     </div>
                 )}
             </Spin>
