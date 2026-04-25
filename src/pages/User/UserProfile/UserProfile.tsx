@@ -3,6 +3,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {AllTimeStat, FirestoreUser, FirestoreUserSchema, OnlineBest, RecordItem} from "@/schema";
 import {countries} from "@/schema/Country";
 import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
+import {fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {Avatar, Spin} from "@arco-design/web-react";
@@ -68,6 +69,15 @@ const toNumber = (value: unknown): number | null => {
     return null;
 };
 
+const toDate = (value: Date | Timestamp | null | undefined): Date | null => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if ("toDate" in value && typeof value.toDate === "function") {
+        return value.toDate();
+    }
+    return null;
+};
+
 export default function RegisterPage() {
     const {Row, Col} = Grid;
     const deviceBreakpoint = useDeviceBreakpoint();
@@ -86,6 +96,7 @@ export default function RegisterPage() {
     const [secLoading, setSecLoading] = useState(false);
     const [addPasswordLoading, setAddPasswordLoading] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
+    const [tournamentStartDates, setTournamentStartDates] = useState<Record<string, Date | null>>({});
     const [searchParams, setSearchParams] = useSearchParams();
     const hasPasswordProvider = Boolean(firebaseUser?.providerData?.some((provider) => provider.providerId === "password"));
 
@@ -151,6 +162,7 @@ export default function RegisterPage() {
     useEffect(() => {
         if (!id) {
             setLoading(false);
+            setTournamentStartDates({});
             return;
         }
 
@@ -160,6 +172,28 @@ export default function RegisterPage() {
             try {
                 const data = await fetchUserByID(id);
                 setUser(data ?? null);
+
+                const approvedTournamentIds = Array.from(
+                    new Set(
+                        (data?.registration_records ?? [])
+                            .filter((record) => record.status === "approved")
+                            .map((record) => record.tournament_id)
+                            .filter((tournamentId): tournamentId is string => Boolean(tournamentId)),
+                    ),
+                );
+                const tournamentEntries = await Promise.all(
+                    approvedTournamentIds.map(async (tournamentId) => {
+                        try {
+                            const tournament = await fetchTournamentById(tournamentId);
+                            return [tournamentId, toDate(tournament?.start_date)] as const;
+                        } catch (error) {
+                            console.warn(`Failed to fetch tournament ${tournamentId} for user profile`, error);
+                            return [tournamentId, null] as const;
+                        }
+                    }),
+                );
+                setTournamentStartDates(Object.fromEntries(tournamentEntries));
+
                 form.setFieldsValue({
                     email: data?.email,
                     IC: data?.IC,
@@ -191,6 +225,7 @@ export default function RegisterPage() {
             } catch (err) {
                 console.error(err);
                 setUser(null);
+                setTournamentStartDates({});
             } finally {
                 setLoading(false);
             }
@@ -630,28 +665,19 @@ export default function RegisterPage() {
                                     {(() => {
                                         const tournaments = (user?.registration_records ?? [])
                                             .filter((reg) => reg.status === "approved")
-                                            .map((reg) => ({
-                                                tournamentId: reg.tournament_id,
-                                                events: reg.events ?? [],
-                                                registrationDate: reg.updated_at
-                                                    ? reg.updated_at instanceof Date
-                                                        ? reg.updated_at
-                                                        : "toDate" in reg.updated_at
-                                                          ? reg.updated_at.toDate()
-                                                          : null
-                                                    : reg.registration_date
-                                                      ? reg.registration_date instanceof Date
-                                                          ? reg.registration_date
-                                                          : "toDate" in reg.registration_date
-                                                            ? reg.registration_date.toDate()
-                                                            : null
-                                                      : null,
-                                                status: reg.status ?? "pending",
-                                                prelimRank: toNumber(reg.prelim_rank),
-                                                finalRank: toNumber(reg.final_rank),
-                                                prelimOverall: toNumber(reg.prelim_overall_result),
-                                                finalOverall: toNumber(reg.final_overall_result),
-                                            }));
+                                            .map((reg) => {
+                                                const registrationDate = toDate(reg.registration_date);
+                                                return {
+                                                    tournamentId: reg.tournament_id,
+                                                    events: reg.events ?? [],
+                                                    registrationDate: tournamentStartDates[reg.tournament_id] ?? registrationDate,
+                                                    status: reg.status ?? "pending",
+                                                    prelimRank: toNumber(reg.prelim_rank),
+                                                    finalRank: toNumber(reg.final_rank),
+                                                    prelimOverall: toNumber(reg.prelim_overall_result),
+                                                    finalOverall: toNumber(reg.final_overall_result),
+                                                };
+                                            });
                                         return tournaments.length === 0 ? (
                                             <Empty description="No tournament participation records found." />
                                         ) : (
