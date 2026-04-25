@@ -24,7 +24,6 @@ import {
     TournamentTeamRecordSchema,
 } from "../../schema/RecordSchema";
 import {db as firestore} from "./config";
-import {updateUserBestTime} from "./userBestTimesService";
 
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
 type RecordEventType = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
@@ -182,29 +181,6 @@ export const saveRecord = async (data: TournamentRecord): Promise<string> => {
         );
     }
 
-    // Update user's best time after saving the record
-    if (data.participant_global_id && data.best_time > 0 && data.code && data.classification !== "prelim") {
-        // Use the code field directly for best times tracking
-        let eventType: "3-3-3" | "3-6-3" | "Cycle" | null = null;
-
-        if (data.code === "3-3-3") {
-            eventType = "3-3-3";
-        } else if (data.code === "3-6-3") {
-            eventType = "3-6-3";
-        } else if (data.code === "Cycle") {
-            eventType = "Cycle";
-        }
-
-        if (eventType) {
-            try {
-                await updateUserBestTime(data.participant_global_id, eventType, data.best_time);
-            } catch (error) {
-                console.error("Failed to update user best time:", error);
-                // Don't fail the record save if best time update fails
-            }
-        }
-    }
-
     return recordId;
 };
 
@@ -284,24 +260,6 @@ export const saveOverallRecord = async (data: TournamentOverallRecord): Promise<
             TournamentOverallRecordSchema.parse({...data, id: recordId, submitted_at: now, created_at: now, updated_at: now}),
             {merge: true},
         );
-    }
-
-    if (data.participant_global_id && data.classification !== "prelim") {
-        try {
-            // Update individual event best times
-            if (data.three_three_three > 0) {
-                await updateUserBestTime(data.participant_global_id, "3-3-3", data.three_three_three);
-            }
-            if (data.three_six_three > 0) {
-                await updateUserBestTime(data.participant_global_id, "3-6-3", data.three_six_three);
-            }
-            if (data.cycle > 0) {
-                await updateUserBestTime(data.participant_global_id, "Cycle", data.cycle);
-            }
-        } catch (error) {
-            console.error("Failed to update user best times:", error);
-            // Don't fail the record save if best time update fails
-        }
     }
 
     return recordId;
@@ -900,33 +858,6 @@ export const updateOverallRecord = async (
             ...updates,
             updated_at: now,
         });
-
-        const shouldUpdateBestTimes =
-            (updates.three_three_three ?? 0) > 0 || (updates.three_six_three ?? 0) > 0 || (updates.cycle ?? 0) > 0;
-
-        if (shouldUpdateBestTimes) {
-            const recordSnap = await getDoc(recordRef);
-            if (recordSnap.exists()) {
-                const record = recordSnap.data() as TournamentOverallRecord;
-                const globalId = record.participant_global_id;
-
-                if (globalId) {
-                    const threeThreeThree = updates.three_three_three;
-                    const threeSixThree = updates.three_six_three;
-                    const cycle = updates.cycle;
-
-                    if (typeof threeThreeThree === "number" && threeThreeThree > 0) {
-                        await updateUserBestTime(globalId, "3-3-3", threeThreeThree);
-                    }
-                    if (typeof threeSixThree === "number" && threeSixThree > 0) {
-                        await updateUserBestTime(globalId, "3-6-3", threeSixThree);
-                    }
-                    if (typeof cycle === "number" && cycle > 0) {
-                        await updateUserBestTime(globalId, "Cycle", cycle);
-                    }
-                }
-            }
-        }
     } catch (error) {
         console.error(`Failed to update overall record ${recordId}:`, error);
         throw error;
