@@ -117,6 +117,7 @@ type FirestoreEventRecord = {
 };
 
 type BestEventType = "3-3-3" | "3-6-3" | "Cycle";
+type BestTimesRecord = Partial<Record<BestEventType | "Overall", {time: number; updated_at: FirestoreTimestamp; season: string}>>;
 
 type HistoryResultType = "individual" | "team";
 type HistoryParticipantRole = "participant" | "leader" | "member";
@@ -398,6 +399,90 @@ const getBestEventTypeFromRecord = (data: Record<string, unknown>): BestEventTyp
     if (eventName.includes("3-6-3")) return "3-6-3";
     if (eventName.includes("cycle")) return "Cycle";
     return null;
+};
+
+const normalizeBestTime = (value: unknown): number | null => {
+    const numeric = toNumber(value);
+    if (numeric === null || numeric <= 0) {
+        return null;
+    }
+    return Math.round(numeric * 1000) / 1000;
+};
+
+const getCurrentSeasonLabel = (now: FirestoreTimestamp): string => {
+    const jsDate = new Date(now.toMillis());
+    const year = jsDate.getUTCFullYear();
+    const month = jsDate.getUTCMonth();
+    const seasonStartYear = month >= 6 ? year : year - 1;
+    return `${seasonStartYear}-${seasonStartYear + 1}`;
+};
+
+const collectParticipantGlobalIds = (...records: Array<Record<string, unknown> | undefined>): string[] => {
+    const ids = new Set<string>();
+    for (const record of records) {
+        const participantGlobalId = record ? toStringOrNull(record.participant_global_id) : null;
+        if (participantGlobalId) {
+            ids.add(participantGlobalId);
+        }
+    }
+    return Array.from(ids);
+};
+
+const recalculateUserBestTimesByGlobalId = async (participantGlobalId: string): Promise<void> => {
+    const usersSnap = await db.collection("users").where("global_id", "==", participantGlobalId).limit(1).get();
+    if (usersSnap.empty) {
+        console.warn(`User not found with global_id: ${participantGlobalId}`);
+        return;
+    }
+
+    const recordSnap = await db.collection("records").where("participant_global_id", "==", participantGlobalId).get();
+    const bestByEvent: Partial<Record<BestEventType, number>> = {};
+
+    for (const docSnap of recordSnap.docs) {
+        const data = docSnap.data() as Record<string, unknown>;
+        if (isPrelimResult(data)) {
+            continue;
+        }
+
+        const eventType = getBestEventTypeFromRecord(data);
+        if (!eventType) {
+            continue;
+        }
+
+        const bestTime = normalizeBestTime(data.best_time);
+        if (bestTime === null) {
+            continue;
+        }
+
+        const current = bestByEvent[eventType];
+        if (current === undefined || bestTime < current) {
+            bestByEvent[eventType] = bestTime;
+        }
+    }
+
+    const now = FirestoreTimestamp.now();
+    const season = getCurrentSeasonLabel(now);
+    const nextBestTimes: BestTimesRecord = {};
+
+    for (const eventType of ["3-3-3", "3-6-3", "Cycle"] as const) {
+        const bestTime = bestByEvent[eventType];
+        if (bestTime !== undefined) {
+            nextBestTimes[eventType] = {time: bestTime, updated_at: now, season};
+        }
+    }
+
+    if (bestByEvent["3-3-3"] !== undefined && bestByEvent["3-6-3"] !== undefined && bestByEvent.Cycle !== undefined) {
+        nextBestTimes.Overall = {
+            time: Math.round((bestByEvent["3-3-3"] + bestByEvent["3-6-3"] + bestByEvent.Cycle) * 1000) / 1000,
+            updated_at: now,
+            season,
+        };
+    }
+
+    await usersSnap.docs[0].ref.update({
+        best_times: nextBestTimes,
+        updated_at: now,
+    });
 };
 
 const toNumber = (value: unknown): number | null => {
@@ -1228,8 +1313,7 @@ export const updateVerification = onRequest(async (req, res) => {
 });
 
 /**
- * Cloud Function to update user best times when records are created/updated
- * Triggers on: records/{recordId} and overall_records/{recordId}
+ * Cloud Function to recalculate user best times when final records are created, updated, or deleted.
  */
 export const updateUserBestTimes = onDocumentWritten(
     {
@@ -1238,74 +1322,17 @@ export const updateUserBestTimes = onDocumentWritten(
         retry: false,
     },
     async (event) => {
-        const afterData = event.data?.after?.data();
-        if (!afterData) {
-            return;
-        }
-
-        if (isPrelimResult(afterData as Record<string, unknown>)) {
-            return;
-        }
-
-        const participantGlobalId = typeof afterData.participant_global_id === "string" ? afterData.participant_global_id : null;
-        if (!participantGlobalId) {
-            return;
-        }
-
-        const bestTime = typeof afterData.best_time === "number" ? afterData.best_time : null;
-        if (!bestTime || bestTime <= 0) {
-            return;
-        }
-
-        const eventType = getBestEventTypeFromRecord(afterData as Record<string, unknown>);
-
-        if (!eventType) {
+        const beforeData = event.data?.before?.data() as Record<string, unknown> | undefined;
+        const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
+        const affectedGlobalIds = collectParticipantGlobalIds(beforeData, afterData);
+        if (affectedGlobalIds.length === 0) {
             return;
         }
 
         try {
-            const usersSnap = await db.collection("users").where("global_id", "==", participantGlobalId).limit(1).get();
-            if (usersSnap.empty) {
-                console.warn(`User not found with global_id: ${participantGlobalId}`);
-                return;
-            }
-
-            const userDoc = usersSnap.docs[0];
-            const userData = userDoc.data();
-            const currentBestTimes = userData?.best_times || {};
-
-            const extractTime = (entry: unknown): number | null => {
-                if (entry === null || entry === undefined) return null;
-                if (typeof entry === "number") return entry;
-                if (typeof entry === "object" && typeof (entry as {time?: unknown}).time === "number") {
-                    return (entry as {time: number}).time;
-                }
-                return null;
-            };
-
-            const currentBestTime = extractTime(currentBestTimes[eventType]);
-
-            // Update if no current best or new time is better
-            if (currentBestTime === null || currentBestTime === undefined || bestTime < currentBestTime) {
-                const now = FirestoreTimestamp.now();
-                const jsDate = new Date(now.toMillis());
-                const year = jsDate.getUTCFullYear();
-                const month = jsDate.getUTCMonth();
-                const seasonStartYear = month >= 6 ? year : year - 1;
-                const season = `${seasonStartYear}-${seasonStartYear + 1}`;
-
-                const updatedBestTimes = {
-                    ...currentBestTimes,
-                    [eventType]: {time: bestTime, updated_at: now, season},
-                };
-
-                await userDoc.ref.update({
-                    best_times: updatedBestTimes,
-                    updated_at: now,
-                });
-            }
+            await Promise.all(affectedGlobalIds.map((globalId) => recalculateUserBestTimesByGlobalId(globalId)));
         } catch (error) {
-            console.error(`Failed to update best time for user ${participantGlobalId}:`, error);
+            console.error(`Failed to recalculate best times for record ${event.params.recordId}:`, error);
         }
     },
 );
@@ -1380,86 +1407,17 @@ export const updateUserBestTimesFromOverall = onDocumentWritten(
         retry: false,
     },
     async (event) => {
-        const afterData = event.data?.after?.data();
-        if (!afterData) {
-            return;
-        }
-
-        if (isPrelimResult(afterData as Record<string, unknown>)) {
-            return;
-        }
-
-        const participantGlobalId = typeof afterData.participant_global_id === "string" ? afterData.participant_global_id : null;
-        if (!participantGlobalId) {
-            return;
-        }
-
-        const threeTime = typeof afterData.three_three_three === "number" ? afterData.three_three_three : null;
-        const sixTime = typeof afterData.three_six_three === "number" ? afterData.three_six_three : null;
-        const cycleTime = typeof afterData.cycle === "number" ? afterData.cycle : null;
-        const overallTime = typeof afterData.overall_time === "number" ? afterData.overall_time : null;
-
-        if (!threeTime && !sixTime && !cycleTime && !overallTime) {
+        const beforeData = event.data?.before?.data() as Record<string, unknown> | undefined;
+        const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
+        const affectedGlobalIds = collectParticipantGlobalIds(beforeData, afterData);
+        if (affectedGlobalIds.length === 0) {
             return;
         }
 
         try {
-            const usersSnap = await db.collection("users").where("global_id", "==", participantGlobalId).limit(1).get();
-            if (usersSnap.empty) {
-                console.warn(`User not found with global_id: ${participantGlobalId}`);
-                return;
-            }
-
-            const userDoc = usersSnap.docs[0];
-            const userData = userDoc.data();
-            const currentBestTimes = userData?.best_times || {};
-
-            const extractTime = (entry: unknown): number | null => {
-                if (entry === null || entry === undefined) return null;
-                if (typeof entry === "number") return entry;
-                if (typeof entry === "object" && typeof (entry as {time?: unknown}).time === "number") {
-                    return (entry as {time: number}).time;
-                }
-                return null;
-            };
-
-            const now = FirestoreTimestamp.now();
-            const jsDate = new Date(now.toMillis());
-            const year = jsDate.getUTCFullYear();
-            const month = jsDate.getUTCMonth();
-            const seasonStartYear = month >= 6 ? year : year - 1;
-            const season = `${seasonStartYear}-${seasonStartYear + 1}`;
-
-            const updatePayload: Record<string, unknown> = {};
-
-            if (threeTime && threeTime > 0) {
-                const current = extractTime(currentBestTimes["3-3-3"]);
-                if (current === null || current === undefined || threeTime < current) {
-                    updatePayload["best_times.3-3-3"] = {time: threeTime, updated_at: now, season};
-                }
-            }
-            if (sixTime && sixTime > 0) {
-                const current = extractTime(currentBestTimes["3-6-3"]);
-                if (current === null || current === undefined || sixTime < current) {
-                    updatePayload["best_times.3-6-3"] = {time: sixTime, updated_at: now, season};
-                }
-            }
-            if (cycleTime && cycleTime > 0) {
-                const current = extractTime(currentBestTimes.Cycle);
-                if (current === null || current === undefined || cycleTime < current) {
-                    updatePayload["best_times.Cycle"] = {time: cycleTime, updated_at: now, season};
-                }
-            }
-            // Overall best time is no longer tracked in best_times
-
-            if (Object.keys(updatePayload).length > 0) {
-                await userDoc.ref.update({
-                    ...updatePayload,
-                    updated_at: now,
-                });
-            }
+            await Promise.all(affectedGlobalIds.map((globalId) => recalculateUserBestTimesByGlobalId(globalId)));
         } catch (error) {
-            console.error(`Failed to update best times for user ${participantGlobalId}:`, error);
+            console.error(`Failed to recalculate best times for overall record ${event.params.recordId}:`, error);
         }
     },
 );
