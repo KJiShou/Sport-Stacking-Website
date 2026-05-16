@@ -73,7 +73,10 @@ type MemberSearchOption = {
     value: string;
 };
 
-const isParentChildEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "parent & child";
+const isParentChildEvent = (event?: ExpandedEvent) => {
+    const normalized = (event?.type ?? "").toLowerCase();
+    return normalized.includes("parent") && normalized.includes("child");
+};
 const isTeamRelayEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "team relay";
 const isDoubleEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "double";
 const isNonScoringEvent = (event?: ExpandedEvent) => {
@@ -385,9 +388,42 @@ export default function RegisterTournamentPage() {
 
             type Team = NonNullable<RegistrationForm["teams"]>[number];
             const teamsRaw = (values.teams ?? {}) as Record<string, Team>;
+            const selectedTeamEntries = buildTeamEntries(
+                (values.events_registered ?? []).filter((eventId) => eventId !== "Individual"),
+            ).filter((entry) => entry.requiresTeam);
+            const getTeamFieldValue = <T,>(eventId: string, field: keyof Team): T | undefined =>
+                form.getFieldValue(`teams.${eventId}.${String(field)}`) as T | undefined;
+            const getSubmittedTeam = (entry: TeamEntry): Team => {
+                const rawTeam = teamsRaw[entry.eventId] ?? ({} as Team);
+                const event = entry.event ?? findEventByKey(entry.eventId);
+                const isPairEvent = isDoubleEvent(event) || isParentChildEvent(event);
+                const member = rawTeam.member ?? getTeamFieldValue<string[]>(entry.eventId, "member") ?? [];
+                const leader = rawTeam.leader ?? getTeamFieldValue<string>(entry.eventId, "leader") ?? user?.global_id ?? null;
+                const name =
+                    rawTeam.name ??
+                    getTeamFieldValue<string>(entry.eventId, "name") ??
+                    (isPairEvent ? (user?.name ?? "") : "");
 
-            for (const [teamId, team] of Object.entries(teamsRaw)) {
-                const relatedEvent = findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
+                return {
+                    ...rawTeam,
+                    label: rawTeam.label ?? getTeamFieldValue<string>(entry.eventId, "label") ?? entry.label,
+                    name,
+                    leader,
+                    member,
+                    looking_for_team_members:
+                        rawTeam.looking_for_team_members ??
+                        getTeamFieldValue<boolean>(entry.eventId, "looking_for_team_members") ??
+                        false,
+                };
+            };
+            const submittedTeams = selectedTeamEntries.map((entry) => ({
+                eventId: entry.eventId,
+                event: entry.event,
+                team: getSubmittedTeam(entry),
+            }));
+
+            for (const {eventId: teamId, event: entryEvent, team} of submittedTeams) {
+                const relatedEvent = entryEvent ?? findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
                 const eventLabel = getEventLabel(relatedEvent) || team.label || "This event";
                 const leaderId = team.leader ?? null;
                 const memberIds = (team.member ?? []).map((m) => m).filter((id) => id != null) as string[];
@@ -429,7 +465,7 @@ export default function RegisterTournamentPage() {
                     const lowerEventType = (relatedEvent?.type ?? "").toLowerCase();
                     const fallbackTeamSize =
                         relatedEvent?.teamSize ??
-                        (relatedEvent?.type === "Parent & Child"
+                        (isParentChildEvent(relatedEvent)
                             ? 2
                             : lowerEventType === "double"
                               ? 2
@@ -497,8 +533,12 @@ export default function RegisterTournamentPage() {
             const registrationId = await createRegistration(user, registrationData);
             let needsMemberVerification = false;
 
-            for (const [eventId, teamData] of Object.entries(teamsRaw)) {
-                const eventDetails = findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === teamData.label);
+            for (const {eventId, event: entryEvent, team: teamData} of submittedTeams) {
+                if (lookingForTeams.includes(eventId)) {
+                    continue;
+                }
+
+                const eventDetails = entryEvent ?? findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === teamData.label);
                 const eventType = (eventDetails?.type ?? teamData.label ?? "").toLowerCase();
 
                 if (eventType.includes("double") && teamData.looking_for_team_members) {
@@ -528,7 +568,7 @@ export default function RegisterTournamentPage() {
                     continue; // Skip if team name or leader is missing
                 }
                 const members = (teamData.member ?? [])
-                    .map((id) => (id ? {global_id: id, verified: findEventByKey(eventId)?.type.includes("Parent")} : null))
+                    .map((id) => (id ? {global_id: id, verified: isParentChildEvent(eventDetails)} : null))
                     .filter((m): m is {global_id: string; verified: boolean} => m !== null);
 
                 const memberIds = members.map((m) => m.global_id);
@@ -615,7 +655,7 @@ export default function RegisterTournamentPage() {
                     const relatedEvent = findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === eventId);
                     const fallbackTeamSize =
                         relatedEvent?.teamSize ??
-                        (relatedEvent?.type === "Parent & Child"
+                        (isParentChildEvent(relatedEvent)
                             ? 2
                             : relatedEvent?.type?.toLowerCase() === "double"
                               ? 2
