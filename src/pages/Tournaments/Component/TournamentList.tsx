@@ -56,7 +56,6 @@ import {type ReactNode, useEffect, useRef, useState} from "react";
 import {DEFAULT_AGE_BRACKET, DEFAULT_EVENTS} from "@/constants/tournamentDefaults";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {fetchUserByID} from "@/services/firebase/authService";
 import {deleteFile, uploadFile} from "@/services/firebase/storageService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
@@ -149,7 +148,7 @@ export default function TournamentList() {
     const scrollPositionRef = useRef<number>(0);
     const {TabPane} = Tabs;
 
-    const {user, setUser, firebaseUser} = useAuthContext();
+    const {user} = useAuthContext();
     const [form] = Form.useForm();
     const navigate = useNavigate();
 
@@ -907,10 +906,6 @@ export default function TournamentList() {
             ]);
             setCurrentTournaments(currentList);
             setHistoryTournaments(historyList);
-            if (firebaseUser?.uid) {
-                const freshUser = await fetchUserByID(firebaseUser.uid);
-                if (freshUser) setUser(freshUser);
-            }
         } catch (error) {
             console.error("Failed to fetch tournaments:", error);
         } finally {

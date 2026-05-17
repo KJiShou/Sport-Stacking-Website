@@ -5,6 +5,10 @@ import type {FirestoreUser} from "./UserSchema";
 
 export interface AuthContextValue {
     user: FirestoreUser | null;
+    profiles: FirestoreUser[];
+    activeProfileId: string | null;
+    setActiveProfileId: (profileId: string) => void;
+    refreshProfiles: (preferredProfileId?: string) => Promise<void>;
     loading: boolean;
     firebaseUser: User | null;
     hasProfile: boolean;

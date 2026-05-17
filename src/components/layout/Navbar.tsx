@@ -1,21 +1,42 @@
 import * as React from "react";
 
-import {Avatar, Badge, Button, Dropdown, Menu, Message, Modal, Spin} from "@arco-design/web-react";
-import {IconCalendar, IconExport, IconHome, IconNotification, IconUser, IconUserGroup} from "@arco-design/web-react/icon";
+import {Avatar, Badge, Button, Divider, Dropdown, Menu, Message, Modal, Spin} from "@arco-design/web-react";
+import {
+    IconCalendar,
+    IconCheck,
+    IconDown,
+    IconExport,
+    IconHome,
+    IconNotification,
+    IconUser,
+    IconUserAdd,
+    IconUserGroup,
+} from "@arco-design/web-react/icon";
 import {useState} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
 import {logout} from "../../services/firebase/authService";
-import {subscribePendingVerificationCount} from "../../services/firebase/verificationRequestService";
+import {subscribePendingVerificationCountForGlobalIds} from "../../services/firebase/verificationRequestService";
 import LoginForm from "../common/Login";
 
 const AvatarWithLoading = ({src}: {src: string}) => {
     const [loading, setLoading] = useState(true);
+    const [hasImageError, setHasImageError] = useState(false);
     const {user} = useAuthContext();
-    let image = user?.image_url ?? src;
+    const image = user?.image_url?.trim() || src.trim();
+
     React.useEffect(() => {
-        image = user?.image_url ?? src;
-    }, [src, user]);
+        setLoading(Boolean(image));
+        setHasImageError(false);
+    }, [image]);
+
+    if (!image || hasImageError) {
+        return (
+            <Avatar size={40} className="rounded-full overflow-hidden" style={{backgroundColor: "#3370ff"}}>
+                <IconUser />
+            </Avatar>
+        );
+    }
 
     return (
         <div className="relative inline-block">
@@ -29,7 +50,10 @@ const AvatarWithLoading = ({src}: {src: string}) => {
                     src={image}
                     alt="avatar"
                     onLoad={() => setLoading(false)}
-                    onError={() => setLoading(false)}
+                    onError={() => {
+                        setLoading(false);
+                        setHasImageError(true);
+                    }}
                     className="w-full h-full object-cover rounded-full"
                 />
             </Avatar>
@@ -45,7 +69,7 @@ const Navbar: React.FC = () => {
 
     const [visible, setVisible] = React.useState(false);
     const [pendingVerificationCount, setPendingVerificationCount] = React.useState(0);
-    const {firebaseUser, user} = useAuthContext();
+    const {activeProfileId, firebaseUser, profiles, setActiveProfileId, user} = useAuthContext();
     const isRegisterPage = location.pathname === "/register";
     const handleNavigation = (key: string): void => {
         navigate(key);
@@ -68,14 +92,17 @@ const Navbar: React.FC = () => {
     }, [firebaseUser]);
 
     React.useEffect(() => {
-        if (!user?.global_id) {
+        const ownedGlobalIds = profiles
+            .map((profile) => profile.global_id?.trim())
+            .filter((globalId): globalId is string => Boolean(globalId));
+        if (ownedGlobalIds.length === 0) {
             setPendingVerificationCount(0);
             return;
         }
 
-        const unsubscribe = subscribePendingVerificationCount(user.global_id, setPendingVerificationCount);
+        const unsubscribe = subscribePendingVerificationCountForGlobalIds(ownedGlobalIds, setPendingVerificationCount);
         return () => unsubscribe();
-    }, [user?.global_id]);
+    }, [profiles]);
 
     return (
         <div className="fixed top-0 left-0 z-50 w-full h-24 flex items-center justify-between px-6 py-4 bg-[var(--color-bg-2)] border-b border-[var(--color-border)]">
@@ -143,11 +170,59 @@ const Navbar: React.FC = () => {
                     {firebaseUser ? (
                         <Dropdown
                             droplist={
-                                <Menu>
+                                <Menu style={{minWidth: 280, padding: 6}}>
+                                    {profiles.length > 1 && (
+                                        <Menu.Item key="profile-label" disabled style={{height: 28, lineHeight: "28px"}}>
+                                            Profiles
+                                        </Menu.Item>
+                                    )}
+                                    {profiles.length > 1 &&
+                                        profiles.map((profile) => {
+                                            const isCurrentProfile = profile.id === (activeProfileId ?? user?.id);
+
+                                            return (
+                                                <Menu.Item
+                                                    key={`switch-${profile.id}`}
+                                                    onClick={() => setActiveProfileId(profile.id)}
+                                                    style={
+                                                        isCurrentProfile
+                                                            ? {
+                                                                  backgroundColor: "rgba(22, 93, 255, 0.12)",
+                                                                  color: "rgb(var(--primary-6))",
+                                                                  fontWeight: 600,
+                                                                  borderLeft: "3px solid rgb(var(--primary-6))",
+                                                              }
+                                                            : undefined
+                                                    }
+                                                >
+                                                    <div className="flex items-center justify-between gap-3 min-w-[240px]">
+                                                        <span className="flex items-center gap-2 min-w-0">
+                                                            <IconUser className="shrink-0" />
+                                                            <span className="truncate">
+                                                                {profile.global_id} - {profile.name}
+                                                            </span>
+                                                        </span>
+                                                        {isCurrentProfile && (
+                                                            <span className="flex items-center gap-1 text-xs shrink-0">
+                                                                <IconCheck />
+                                                                Current
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </Menu.Item>
+                                            );
+                                        })}
+                                    {profiles.length > 1 && <Divider style={{margin: "6px 0"}} />}
                                     {user && (
                                         <Menu.Item key="verify-requests" onClick={() => navigate("/verify-requests")}>
                                             <IconNotification className="mr-2" />
                                             Verify Requests ({pendingVerificationCount})
+                                        </Menu.Item>
+                                    )}
+                                    {firebaseUser && (
+                                        <Menu.Item key="add-profile" onClick={() => navigate("/register")}>
+                                            <IconUserAdd className="mr-2" />
+                                            Add Participant Profile
                                         </Menu.Item>
                                     )}
                                     {user && (
@@ -175,7 +250,7 @@ const Navbar: React.FC = () => {
                             position="br"
                             trigger="click"
                         >
-                            <div className="cursor-pointer">
+                            <div className="cursor-pointer flex items-center gap-1 rounded-md bg-transparent px-2 py-1 transition-colors hover:bg-[var(--color-fill-2)]">
                                 <Badge count={pendingVerificationCount} offset={[-2, 6]}>
                                     {user?.image_url || firebaseUser?.photoURL ? (
                                         <AvatarWithLoading
@@ -188,6 +263,7 @@ const Navbar: React.FC = () => {
                                         </Avatar>
                                     )}
                                 </Badge>
+                                <IconDown className="text-[var(--color-text-3)]" />
                             </div>
                         </Dropdown>
                     ) : (

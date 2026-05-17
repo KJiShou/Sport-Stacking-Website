@@ -1,6 +1,11 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
-import {deleteUserProfileAdmin, fetchAllUsers, updateUserProfile} from "@/services/firebase/authService";
+import {
+    deleteUserProfileAdmin,
+    fetchAllUsers,
+    transferProfileOwnership,
+    updateUserProfile,
+} from "@/services/firebase/authService";
 import {Button, Form, Input, Message, Modal, Select, Spin, Table, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch} from "@arco-design/web-react/icon";
@@ -18,6 +23,11 @@ const formatBirthdate = (birthdate: FirestoreUser["birthdate"]): string => {
     return "-";
 };
 
+type GmailOption = {
+    label: string;
+    value: string;
+};
+
 export default function UserManagementPage() {
     const {user} = useAuthContext();
     const isAdmin = user?.roles?.modify_admin || false;
@@ -27,8 +37,10 @@ export default function UserManagementPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedUser, setSelectedUser] = useState<FirestoreUser | null>(null);
     const [detailModalVisible, setDetailModalVisible] = useState(false);
+    const [transferModalVisible, setTransferModalVisible] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [editForm] = Form.useForm();
+    const [transferForm] = Form.useForm<{targetEmail: string}>();
 
     const loadUsers = async () => {
         setLoading(true);
@@ -57,9 +69,36 @@ export default function UserManagementPage() {
             const ic = entry.IC?.toLowerCase() ?? "";
             const name = entry.name?.toLowerCase() ?? "";
             const email = entry.email?.toLowerCase() ?? "";
-            return globalId.includes(query) || ic.includes(query) || name.includes(query) || email.includes(query);
+            const primaryOwnerEmail = entry.primary_owner_email?.toLowerCase() ?? "";
+            return (
+                globalId.includes(query) ||
+                ic.includes(query) ||
+                name.includes(query) ||
+                email.includes(query) ||
+                primaryOwnerEmail.includes(query)
+            );
         });
     }, [users, searchTerm]);
+
+    const gmailOptions = useMemo<GmailOption[]>(() => {
+        const selectedOwnerEmail = (selectedUser?.primary_owner_email ?? selectedUser?.email ?? "").toLowerCase();
+        const optionMap = new Map<string, GmailOption>();
+
+        for (const entry of users) {
+            const email = (entry.primary_owner_email ?? entry.email ?? "").trim().toLowerCase();
+            if (!email || email === selectedOwnerEmail || optionMap.has(email)) {
+                continue;
+            }
+
+            const ownerLabel = [entry.name, entry.global_id].filter(Boolean).join(" / ");
+            optionMap.set(email, {
+                value: email,
+                label: ownerLabel ? `${email} - ${ownerLabel}` : email,
+            });
+        }
+
+        return Array.from(optionMap.values()).sort((a, b) => a.value.localeCompare(b.value));
+    }, [selectedUser, users]);
 
     const handleViewDetail = (entry: FirestoreUser) => {
         setSelectedUser(entry);
@@ -71,6 +110,37 @@ export default function UserManagementPage() {
             school: entry.school ?? "",
             gender: entry.gender ?? undefined,
         });
+    };
+
+    const handleOpenTransferModal = () => {
+        if (!selectedUser) return;
+        transferForm.resetFields();
+        setTransferModalVisible(true);
+    };
+
+    const handleTransferOwnership = async () => {
+        if (!selectedUser?.id) return;
+
+        try {
+            const values = await transferForm.validate();
+            setLoading(true);
+            const updatedOwnership = await transferProfileOwnership(selectedUser.id, values.targetEmail);
+            const nextPatch: Partial<FirestoreUser> = {
+                owner_uids: updatedOwnership.owner_uids,
+                email: updatedOwnership.email,
+                primary_owner_email: updatedOwnership.primary_owner_email,
+                account_status: updatedOwnership.account_status,
+            };
+
+            setUsers((prev) => prev.map((entry) => (entry.id === selectedUser.id ? {...entry, ...nextPatch} : entry)));
+            setSelectedUser((prev) => (prev ? {...prev, ...nextPatch} : prev));
+            setTransferModalVisible(false);
+            Message.success("Profile ownership updated");
+        } catch (error) {
+            Message.error(error instanceof Error ? error.message : "Failed to transfer profile ownership");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleDelete = async () => {
@@ -162,6 +232,15 @@ export default function UserManagementPage() {
         {title: "Name", dataIndex: "name", width: 200},
         {title: "Gmail", dataIndex: "email", width: 220},
         {
+            title: "Status",
+            dataIndex: "account_status",
+            width: 120,
+            render: (_, record) => {
+                const status = record.account_status ?? "claimed";
+                return <Tag color={status === "unclaimed" ? "orange" : "green"}>{status}</Tag>;
+            },
+        },
+        {
             title: "Action",
             width: 140,
             render: (_, record) => (
@@ -211,6 +290,7 @@ export default function UserManagementPage() {
                     setDetailModalVisible(false);
                     setSelectedUser(null);
                     setEditMode(false);
+                    setTransferModalVisible(false);
                 }}
                 footer={
                     <div className="flex justify-between items-center w-full">
@@ -225,6 +305,11 @@ export default function UserManagementPage() {
                                     Edit
                                 </Button>
                             )}
+                            <Button onClick={handleOpenTransferModal}>
+                                {(selectedUser?.account_status ?? "claimed") === "unclaimed"
+                                    ? "Assign Gmail"
+                                    : "Transfer Profile"}
+                            </Button>
                             <Button status="danger" onClick={handleDelete}>
                                 Delete Account
                             </Button>
@@ -245,6 +330,18 @@ export default function UserManagementPage() {
                         <div>
                             <Text type="secondary">Email</Text>
                             <div>{selectedUser.email ?? "-"}</div>
+                        </div>
+                        <div>
+                            <Text type="secondary">Ownership</Text>
+                            <div className="flex flex-col gap-1">
+                                <div>
+                                    <Tag color={(selectedUser.account_status ?? "claimed") === "unclaimed" ? "orange" : "green"}>
+                                        {selectedUser.account_status ?? "claimed"}
+                                    </Tag>
+                                    {selectedUser.source && <Tag>{selectedUser.source}</Tag>}
+                                </div>
+                                <div>Primary owner Gmail: {selectedUser.primary_owner_email ?? "-"}</div>
+                            </div>
                         </div>
                         {editMode ? (
                             <Form form={editForm} layout="vertical">
@@ -316,6 +413,45 @@ export default function UserManagementPage() {
                         </div>
                     </div>
                 ) : null}
+            </Modal>
+
+            <Modal
+                title={
+                    selectedUser && (selectedUser.account_status ?? "claimed") === "unclaimed"
+                        ? "Assign Gmail"
+                        : "Transfer Profile"
+                }
+                visible={transferModalVisible}
+                onCancel={() => setTransferModalVisible(false)}
+                onOk={handleTransferOwnership}
+                confirmLoading={loading}
+                okText="Confirm"
+            >
+                <Form form={transferForm} layout="vertical">
+                    <Paragraph>
+                        This will replace the current profile owner. Select a Gmail that already exists in the system.
+                    </Paragraph>
+                    <Form.Item
+                        label="Target Gmail"
+                        field="targetEmail"
+                        rules={[{required: true, message: "Select target Gmail"}]}
+                    >
+                        <Select
+                            showSearch
+                            allowClear
+                            placeholder="Select Gmail"
+                            options={gmailOptions}
+                            filterOption={(inputValue, option) => {
+                                const keyword = inputValue.toLowerCase();
+                                return (
+                                    String(option.props.value).toLowerCase().includes(keyword) ||
+                                    String(option.props.children).toLowerCase().includes(keyword)
+                                );
+                            }}
+                            notFoundContent="No Gmail found"
+                        />
+                    </Form.Item>
+                </Form>
             </Modal>
         </div>
     );

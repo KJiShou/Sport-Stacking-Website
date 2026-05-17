@@ -4,7 +4,7 @@ import {initializeApp} from "firebase/app";
 import {ReCaptchaV3Provider, initializeAppCheck} from "firebase/app-check";
 import {getAuth} from "firebase/auth";
 import {getFirestore} from "firebase/firestore";
-import {getFunctions} from "firebase/functions";
+import {connectFunctionsEmulator, getFunctions} from "firebase/functions";
 import {getStorage} from "firebase/storage";
 
 const firebaseConfig: FirebaseConfig = {
@@ -23,9 +23,19 @@ const appCheck = initializeAppCheck(app, {
     provider: new ReCaptchaV3Provider("6LcRC_0rAAAAADINnR7-KKu56U_F-QiCt0I0I0QQ"),
     isTokenAutoRefreshEnabled: true,
 });
-const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim();
+const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim() || (import.meta.env.DEV ? "develop2" : "");
 export const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
 export const storage = getStorage(app);
 export const auth = getAuth(app);
-const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION;
-export const functions = functionsRegion ? getFunctions(app, functionsRegion) : getFunctions(app);
+const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION?.trim() || "asia-southeast1";
+export const functions = getFunctions(app, functionsRegion);
+
+const useFunctionsEmulator = import.meta.env.DEV && import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === "true";
+if (useFunctionsEmulator) {
+    const emulatorHost =
+        import.meta.env.VITE_FUNCTIONS_EMULATOR_HOST?.trim() ||
+        (typeof window !== "undefined" ? window.location.hostname : "127.0.0.1");
+    const defaultEmulatorPort = typeof window !== "undefined" && window.location.port ? window.location.port : "5000";
+    const emulatorPort = Number.parseInt(import.meta.env.VITE_FUNCTIONS_EMULATOR_PORT ?? defaultEmulatorPort, 10);
+    connectFunctionsEmulator(functions, emulatorHost, Number.isFinite(emulatorPort) ? emulatorPort : 5000);
+}

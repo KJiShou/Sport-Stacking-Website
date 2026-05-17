@@ -32,21 +32,32 @@ const BestTimeRecordSchema = z.object({
         .nullable(),
 });
 
+export const UserIdentityTypeSchema = z.enum(["MYKAD", "PASSPORT", "NONE"]);
+export const UserAccountStatusSchema = z.enum(["claimed", "unclaimed", "claim_review"]);
+export const UserAccountSourceSchema = z.enum(["legacy", "self_registered", "admin_import"]);
+
 export const FirestoreUserSchema = z.object({
     id: z.string(),
     memberId: z.string().optional().nullable(),
     global_id: z.string().optional().nullable(),
     name_search: z.string().optional().nullable(),
     name: z.string(),
-    IC: z.string().regex(/^\d{12}$/, {
-        message: "IC must be 12 digits like 123546121234",
-    }),
-    email: z.string().email(),
+    IC: z.string().min(1).optional().nullable(),
+    email: z.string().email().optional().nullable(),
     phone_number: z.string().optional().nullable(),
     birthdate: z.union([z.instanceof(Timestamp), z.instanceof(Date)]),
     gender: z.enum(["Male", "Female"]),
     country: z.array(z.string(), z.string()),
-    image_url: z.string().url(),
+    image_url: z.string().url().optional().nullable().or(z.literal("")),
+    owner_uids: z.array(z.string()).optional().nullable(),
+    primary_owner_email: z.string().email().optional().nullable(),
+    account_status: UserAccountStatusSchema.optional().nullable(),
+    source: UserAccountSourceSchema.optional().nullable(),
+    identity_type: UserIdentityTypeSchema.optional().nullable(),
+    identity_key: z.string().optional().nullable(),
+    passport_country: z.string().optional().nullable(),
+    import_batch_id: z.string().optional().nullable(),
+    claim_method: z.enum(["identity_match", "admin_review"]).optional().nullable(),
     roles: z
         .object({
             edit_tournament: z.boolean(),

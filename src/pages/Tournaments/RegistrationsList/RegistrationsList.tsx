@@ -1,22 +1,40 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "@/schema";
+import {countries} from "@/schema/Country";
 import {fetchUsersByIds} from "@/services/firebase/authService";
+import {type ImportWorkbookResult, importTournamentWorkbook} from "@/services/firebase/importService";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {findDuplicateEventSelections, groupEventSelections} from "@/utils/tournament/eventUtils";
-import {Button, Dropdown, Input, Message, Popconfirm, type TableColumnProps, Tag} from "@arco-design/web-react";
+import {downloadTournamentImportTemplate} from "@/utils/tournament/importTemplate";
+import {
+    Button,
+    Form,
+    Input,
+    Message,
+    Modal,
+    Popconfirm,
+    Select,
+    Spin,
+    type TableColumnProps,
+    Tabs,
+    Tag,
+    Upload,
+} from "@arco-design/web-react";
 import Table from "@arco-design/web-react/es/Table/table";
 import Title from "@arco-design/web-react/es/Typography/title";
-import {IconDelete, IconEye, IconEyeInvisible, IconUndo} from "@arco-design/web-react/icon";
+import type {UploadItem} from "@arco-design/web-react/es/Upload";
+import {IconDelete, IconDownload, IconImport, IconUndo} from "@arco-design/web-react/icon";
 import type {Timestamp} from "firebase/firestore";
 import {useEffect, useMemo, useRef, useState} from "react";
 import {Link, useLocation, useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
 
 const PAGE_SIZE = 10;
+type ImportResultView = "errors" | "warnings" | "athletes" | "registrations" | "teams";
 
 const parsePositivePage = (value: string | null): number => {
     const parsed = Number.parseInt(value ?? "", 10);
@@ -38,6 +56,7 @@ export default function RegistrationsListPage() {
     const [teams, setTeams] = useState<Team[]>([]);
     const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [userMap, setUserMap] = useState<Record<string, FirestoreUser>>({});
+    const [tournament, setTournament] = useState<Tournament | null>(null);
     const [tournamentTitle, setTournamentTitle] = useState<string>();
     const [searchTerm, setSearchTerm] = useState<string>(() => searchParams.get("search") ?? "");
     const [currentPage, setCurrentPage] = useState<number>(() => parsePositivePage(searchParams.get("page")));
@@ -46,6 +65,14 @@ export default function RegistrationsListPage() {
         const direction = searchParams.get("sortDirection");
         return direction === "ascend" || direction === "descend" ? direction : undefined;
     });
+    const [importForm] = Form.useForm();
+    const [importModalVisible, setImportModalVisible] = useState(false);
+    const [importLoading, setImportLoading] = useState(false);
+    const [templateLoading, setTemplateLoading] = useState(false);
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [importFileList, setImportFileList] = useState<UploadItem[]>([]);
+    const [importResult, setImportResult] = useState<ImportWorkbookResult | null>(null);
+    const [importResultView, setImportResultView] = useState<ImportResultView>("errors");
 
     const teamVerificationByRegistration = useMemo(() => {
         return teams.reduce(
@@ -69,20 +96,20 @@ export default function RegistrationsListPage() {
 
         setLoading(true);
         try {
-            const [tempRegistrations, fetchedTeams, fetchedEvents] = await Promise.all([
+            const [tempRegistrations, fetchedTeams, fetchedEvents, fetchedTournament] = await Promise.all([
                 fetchRegistrations(tournamentId),
                 fetchTeamsByTournament(tournamentId),
                 fetchTournamentEvents(tournamentId),
+                fetchTournamentById(tournamentId),
             ]);
             setRegistrations(tempRegistrations);
             setTeams(fetchedTeams);
             setEvents(fetchedEvents);
+            setTournament(fetchedTournament ?? null);
+            setTournamentTitle(fetchedTournament?.name ?? "");
             const userIds = tempRegistrations.map((registration) => registration.user_id).filter(Boolean);
             const usersById = await fetchUsersByIds(userIds);
             setUserMap(usersById);
-
-            const tournament = await fetchTournamentById(tournamentId);
-            setTournamentTitle(tournament?.name ?? "");
         } catch (error) {
             console.error("Failed to refresh registrations:", error);
         } finally {
@@ -104,6 +131,66 @@ export default function RegistrationsListPage() {
             Message.error("Failed to delete registration.");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fileToBase64 = (file: File): Promise<string> =>
+        new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result ?? ""));
+            reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+            reader.readAsDataURL(file);
+        });
+
+    const handleWorkbookImport = async (mode: "preview" | "commit") => {
+        if (!tournamentId || !importFile) {
+            Message.warning("Please choose an Excel workbook first.");
+            return;
+        }
+        try {
+            const values = await importForm.validate();
+            setImportLoading(true);
+            const result = await importTournamentWorkbook({
+                tournamentId,
+                fileBase64: await fileToBase64(importFile),
+                fileName: importFile.name,
+                mode,
+                defaultCountry: values.defaultCountry || "Malaysia",
+                defaultState: "-",
+            });
+            setImportResult(result);
+            setImportResultView("errors");
+            if (mode === "commit" && result.committed) {
+                Message.success("Workbook imported.");
+                await refreshRegistrationsList();
+            } else if (result.summary.errors > 0) {
+                Message.error("Import has errors. Fix the workbook before committing.");
+            } else {
+                Message.success("Workbook preview completed.");
+            }
+        } catch (error) {
+            console.error("Failed to import workbook:", error);
+            Message.error(error instanceof Error ? error.message : "Failed to import workbook.");
+        } finally {
+            setImportLoading(false);
+        }
+    };
+
+    const handleDownloadTemplate = async () => {
+        if (events.length === 0) {
+            Message.warning("Tournament events are still loading.");
+            return;
+        }
+
+        setTemplateLoading(true);
+        try {
+            await downloadTournamentImportTemplate({tournament, events});
+            Message.success("Import template downloaded.");
+        } catch (error) {
+            console.error("Failed to download import template:", error);
+            Message.error(error instanceof Error ? error.message : "Failed to download import template.");
+        } finally {
+            setTemplateLoading(false);
         }
     };
 
@@ -351,6 +438,20 @@ export default function RegistrationsListPage() {
         const ic = userMap[registration.user_id]?.IC?.toLowerCase() ?? "";
         return globalId.includes(query) || name.includes(query) || ic.includes(query);
     });
+    const canImportWorkbook =
+        user?.roles?.modify_admin === true ||
+        user?.roles?.edit_tournament === true ||
+        user?.global_id === tournament?.editor ||
+        user?.global_id === tournament?.recorder;
+    const importResultRows = useMemo(() => {
+        if (!importResult) {
+            return [];
+        }
+        return importResult.rows.filter((row) => {
+            const category = row.category ?? "errors";
+            return category === importResultView;
+        });
+    }, [importResult, importResultView]);
 
     useEffect(() => {
         if (loading) {
@@ -363,6 +464,16 @@ export default function RegistrationsListPage() {
         }
     }, [currentPage, filteredRegistrations.length, loading]);
 
+    if (!isMounted) {
+        return (
+            <div className="flex flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch min-h-[320px]">
+                <Spin loading tip="Loading tournament detail..." className="w-full">
+                    <div className="min-h-[240px]" />
+                </Spin>
+            </div>
+        );
+    }
+
     return (
         <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
             <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
@@ -371,16 +482,28 @@ export default function RegistrationsListPage() {
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
                 <div className="w-full flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <Title heading={4}>{tournamentTitle}</Title>
-                    <Input
-                        placeholder="Search by name or ID"
-                        allowClear
-                        value={searchTerm}
-                        onChange={(value) => {
-                            setSearchTerm(value);
-                            setCurrentPage(1);
-                        }}
-                        className="md:max-w-[320px]"
-                    />
+                    <div className="flex flex-col md:flex-row gap-2 md:items-center">
+                        {canImportWorkbook && (
+                            <>
+                                <Button icon={<IconDownload />} loading={templateLoading} onClick={handleDownloadTemplate}>
+                                    Template
+                                </Button>
+                                <Button type="primary" icon={<IconImport />} onClick={() => setImportModalVisible(true)}>
+                                    Import Excel
+                                </Button>
+                            </>
+                        )}
+                        <Input
+                            placeholder="Search by name or ID"
+                            allowClear
+                            value={searchTerm}
+                            onChange={(value) => {
+                                setSearchTerm(value);
+                                setCurrentPage(1);
+                            }}
+                            className="md:max-w-[320px]"
+                        />
+                    </div>
                 </div>
                 <Table
                     columns={columns.filter((e): e is TableColumnProps<(typeof registrations)[number]> => !!e)}
@@ -408,6 +531,133 @@ export default function RegistrationsListPage() {
                     })}
                 />
             </div>
+            <Modal
+                title="Import Tournament Excel"
+                visible={importModalVisible}
+                onCancel={() => {
+                    setImportModalVisible(false);
+                    setImportResult(null);
+                    setImportResultView("errors");
+                }}
+                footer={
+                    <div className="flex justify-between w-full gap-2">
+                        <Button onClick={() => setImportModalVisible(false)}>Close</Button>
+                        <div className="flex gap-2">
+                            <Button
+                                loading={importLoading}
+                                disabled={!importFile}
+                                onClick={() => handleWorkbookImport("preview")}
+                            >
+                                Preview
+                            </Button>
+                            <Button
+                                type="primary"
+                                loading={importLoading}
+                                disabled={!importFile || (importResult?.summary.errors ?? 0) > 0}
+                                onClick={() => handleWorkbookImport("commit")}
+                            >
+                                Commit Import
+                            </Button>
+                        </div>
+                    </div>
+                }
+                style={{width: "min(96vw, 1100px)", top: "4vh"}}
+            >
+                <div className="flex flex-col gap-6 py-4 md:px-3 max-h-[76vh] overflow-y-auto">
+                    <Form form={importForm} layout="vertical" initialValues={{defaultCountry: "Malaysia"}}>
+                        <Form.Item label="Workbook" required>
+                            <Upload
+                                accept=".xlsx"
+                                autoUpload={false}
+                                limit={1}
+                                fileList={importFileList}
+                                onChange={(nextFileList, currentFile) => {
+                                    const nextFile = nextFileList[nextFileList.length - 1];
+                                    const file = nextFile?.originFile as File | undefined;
+                                    setImportFile(file ?? null);
+                                    setImportResult(null);
+                                    setImportResultView("errors");
+                                    setImportFileList(
+                                        file && nextFile
+                                            ? [
+                                                  {
+                                                      uid: nextFile.uid,
+                                                      name: nextFile.name,
+                                                      status: "done",
+                                                      originFile: file,
+                                                  },
+                                              ]
+                                            : [],
+                                    );
+                                }}
+                                onRemove={() => {
+                                    setImportFile(null);
+                                    setImportFileList([]);
+                                    setImportResult(null);
+                                    setImportResultView("errors");
+                                    return true;
+                                }}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            label="Default Country"
+                            field="defaultCountry"
+                            rules={[{required: true, message: "Select default country"}]}
+                        >
+                            <Select
+                                showSearch
+                                options={countries.map((country) => ({label: country.label, value: country.value}))}
+                                filterOption={(inputValue, option) =>
+                                    String(option.props.children).toLowerCase().includes(inputValue.toLowerCase())
+                                }
+                            />
+                        </Form.Item>
+                    </Form>
+
+                    {importResult && (
+                        <div className="flex flex-col gap-3">
+                            <div className="flex flex-wrap gap-2">
+                                <Tag color="arcoblue">Athletes: {importResult.summary.athletes}</Tag>
+                                <Tag color="arcoblue">Registrations: {importResult.summary.registrations}</Tag>
+                                <Tag color="arcoblue">Teams: {importResult.summary.teams}</Tag>
+                                <Tag color={importResult.summary.errors > 0 ? "red" : "green"}>
+                                    Errors: {importResult.summary.errors}
+                                </Tag>
+                                <Tag color={importResult.summary.warnings > 0 ? "orange" : "green"}>
+                                    Warnings: {importResult.summary.warnings}
+                                </Tag>
+                                {importResult.committed && <Tag color="green">Committed</Tag>}
+                            </div>
+                            <Tabs
+                                type="capsule"
+                                activeTab={importResultView}
+                                onChange={(key) => setImportResultView(key as ImportResultView)}
+                            >
+                                <Tabs.TabPane key="errors" title={`Errors (${importResult.summary.errors})`} />
+                                <Tabs.TabPane key="warnings" title={`Warnings (${importResult.summary.warnings})`} />
+                                <Tabs.TabPane key="athletes" title={`Athletes (${importResult.summary.athletes})`} />
+                                <Tabs.TabPane
+                                    key="registrations"
+                                    title={`Registrations (${importResult.summary.registrations})`}
+                                />
+                                <Tabs.TabPane key="teams" title={`Teams (${importResult.summary.teams})`} />
+                            </Tabs>
+                            <Table
+                                size="small"
+                                pagination={{pageSize: 6}}
+                                rowKey={(record) => `${record.sheet}-${record.row}-${record.level}-${record.message}`}
+                                columns={[
+                                    {title: "Level", dataIndex: "level", width: 100},
+                                    {title: "Sheet", dataIndex: "sheet", width: 180},
+                                    {title: "Row", dataIndex: "row", width: 80},
+                                    {title: "Message", dataIndex: "message"},
+                                ]}
+                                data={importResultRows}
+                            />
+                        </div>
+                    )}
+                </div>
+            </Modal>
         </div>
     );
 }

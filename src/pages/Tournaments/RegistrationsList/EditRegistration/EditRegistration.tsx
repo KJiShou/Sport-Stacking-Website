@@ -873,6 +873,10 @@ export default function EditTournamentRegistrationPage() {
                                 disabled={!edit}
                                 value={(form.getFieldValue("events_registered") as string[] | undefined) ?? []}
                                 onChange={(selectedEvents: string[]) => {
+                                    if (!edit) {
+                                        return;
+                                    }
+
                                     const tournamentEvents = events ?? [];
                                     const requiredEventIds = getRequiredEventIds(tournamentEvents);
                                     const nextSelectedEvents = Array.from(new Set([...selectedEvents, ...requiredEventIds]));
@@ -972,13 +976,13 @@ export default function EditTournamentRegistrationPage() {
                                         const displayText = getEventLabel(event);
                                         const isRequired = event.type === "Individual";
                                         return (
-                                            <Checkbox key={key} value={key} disabled={isRequired}>
+                                            <Checkbox key={key} value={key} disabled={!edit || isRequired}>
                                                 {displayText} {isRequired && "(Required)"}
                                             </Checkbox>
                                         );
                                     })}
                                     {extraEventIds.map((eventId) => (
-                                        <Checkbox key={`extra-${eventId}`} value={eventId}>
+                                        <Checkbox key={`extra-${eventId}`} value={eventId} disabled={!edit}>
                                             {getEventDisplayLabel(eventId)}
                                         </Checkbox>
                                     ))}

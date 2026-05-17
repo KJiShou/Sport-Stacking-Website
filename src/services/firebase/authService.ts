@@ -15,6 +15,8 @@ import {
 import type {DocumentData, Query, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
 import {
     Timestamp,
+    addDoc,
+    arrayUnion,
     collection,
     deleteDoc,
     doc,
@@ -41,6 +43,7 @@ import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
 
 export type GoogleSignInIntent = "login" | "register";
+export type UserIdentityType = "MYKAD" | "PASSPORT" | "NONE";
 
 const GOOGLE_SIGN_IN_INTENT_KEY = "google-sign-in-intent";
 
@@ -146,6 +149,73 @@ export function normalizeNameSearch(value: string): string {
     return value.trim().toLowerCase();
 }
 
+const normalizeIdentityNumber = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
+
+export const buildIdentityKey = (
+    identityType: UserIdentityType | null | undefined,
+    identityNumber: string | null | undefined,
+    passportCountry?: string | null,
+): string | null => {
+    const normalizedType = identityType ?? "MYKAD";
+    const normalizedNumber = normalizeIdentityNumber(identityNumber ?? "");
+    if (!normalizedNumber || normalizedType === "NONE") {
+        return null;
+    }
+    if (normalizedType === "MYKAD") {
+        return `MYKAD:${normalizedNumber}`;
+    }
+    const normalizedCountry = normalizeIdentityNumber(passportCountry ?? "");
+    return `PASSPORT:${normalizedCountry || "UNKNOWN"}:${normalizedNumber}`;
+};
+
+const toMillis = (value: unknown): number | null => {
+    if (!value) return null;
+    if (value instanceof Timestamp) return value.toDate().setHours(0, 0, 0, 0);
+    if (value instanceof Date) return new Date(value).setHours(0, 0, 0, 0);
+    if (typeof value === "string" || typeof value === "number") {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : parsed.setHours(0, 0, 0, 0);
+    }
+    return null;
+};
+
+const isSameBirthdate = (left: unknown, right: unknown): boolean => {
+    const leftMillis = toMillis(left);
+    const rightMillis = toMillis(right);
+    return leftMillis !== null && rightMillis !== null && leftMillis === rightMillis;
+};
+
+const mapUserDoc = (docSnap: QueryDocumentSnapshot<DocumentData>): FirestoreUser => {
+    const data = docSnap.data();
+    return {
+        id: data.id ?? docSnap.id,
+        global_id: data.global_id ?? null,
+        name_search: data.name_search ?? null,
+        memberId: data.memberId ?? null,
+        name: data.name,
+        IC: data.IC ?? null,
+        email: data.email ?? null,
+        birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
+        gender: data.gender,
+        country: data.country,
+        image_url: data.image_url ?? "",
+        owner_uids: data.owner_uids ?? (docSnap.id ? [docSnap.id] : []),
+        primary_owner_email: data.primary_owner_email ?? data.email ?? null,
+        account_status: data.account_status ?? "claimed",
+        source: data.source ?? "legacy",
+        identity_type: data.identity_type ?? null,
+        identity_key: data.identity_key ?? null,
+        passport_country: data.passport_country ?? null,
+        import_batch_id: data.import_batch_id ?? null,
+        claim_method: data.claim_method ?? null,
+        roles: data.roles ?? null,
+        school: data.school ?? null,
+        phone_number: data.phone_number ?? null,
+        registration_records: data.registration_records ?? [],
+        best_times: data.best_times ?? {},
+    } as FirestoreUser;
+};
+
 // Login user
 export const login = (email: string, password: string) => signInWithEmailAndPassword(auth, email, password);
 
@@ -190,9 +260,50 @@ export const cacheGoogleAvatar = async (photoURL: string): Promise<string> => {
     return data.url;
 };
 
+type TransferProfileOwnershipResult = Pick<
+    FirestoreUser,
+    "email" | "owner_uids" | "primary_owner_email" | "account_status"
+> & {
+    profileId: string;
+};
+
+const resolveCallableErrorMessage = (error: unknown): string => {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    const message = error instanceof Error ? error.message : "";
+
+    switch (code) {
+        case "functions/invalid-argument":
+            return message || "Please enter a valid Gmail.";
+        case "functions/not-found":
+            return message || "Profile or target Gmail was not found.";
+        case "functions/permission-denied":
+            return message || "You do not have permission to manage profile ownership.";
+        case "functions/unauthenticated":
+            return message || "Please log in again before managing profile ownership.";
+        default:
+            return message || "Failed to transfer profile ownership.";
+    }
+};
+
+export const transferProfileOwnership = async (
+    profileId: string,
+    targetEmail: string,
+): Promise<TransferProfileOwnershipResult> => {
+    try {
+        const callable = httpsCallable(functions, "transferProfileOwnership");
+        const result = await callable({profileId, targetEmail});
+        return result.data as TransferProfileOwnershipResult;
+    } catch (error) {
+        throw new Error(resolveCallableErrorMessage(error));
+    }
+};
+
 // Register and create user in Firestore
 export const register = async (userData: Omit<FirestoreUser, "id"> & {password: string}) => {
     const {email, password, IC, ...rest} = userData;
+    if (!email) {
+        throw new Error("Email is required.");
+    }
 
     // ✅ 1. Check if IC already exists
     const q = query(collection(db, "users"), where("IC", "==", IC));
@@ -230,6 +341,14 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
         global_id,
         name_search: normalizeNameSearch(rest.name ?? ""),
         IC,
+        owner_uids: [uid],
+        primary_owner_email: email,
+        account_status: "claimed",
+        source: "self_registered",
+        identity_type: rest.identity_type ?? (/^\d{12}$/.test(IC ?? "") ? "MYKAD" : "PASSPORT"),
+        identity_key:
+            rest.identity_key ??
+            buildIdentityKey(rest.identity_type ?? (/^\d{12}$/.test(IC ?? "") ? "MYKAD" : "PASSPORT"), IC, rest.passport_country),
         registration_records: [],
         created_at: Timestamp.now(),
         ...rest,
@@ -249,6 +368,32 @@ export const registerWithGoogle = async (
     }
 
     const uid = firebaseUser.uid;
+    const identityType = extraData.identity_type ?? (/^\d{12}$/.test(extraData.IC ?? "") ? "MYKAD" : "PASSPORT");
+    const identityKey = extraData.identity_key ?? buildIdentityKey(identityType, extraData.IC, extraData.passport_country);
+
+    if (identityKey) {
+        const identityQuery = query(collection(db, "users"), where("identity_key", "==", identityKey));
+        const identitySnapshot = await getDocs(identityQuery);
+        if (!identitySnapshot.empty) {
+            const existingDoc = identitySnapshot.docs[0];
+            const existingData = existingDoc.data() as FirestoreUser;
+            const owners = existingData.owner_uids ?? (existingDoc.id === uid ? [uid] : []);
+            if (owners.includes(uid)) {
+                return existingDoc.id;
+            }
+            if ((existingData.account_status ?? "claimed") === "unclaimed" && isSameBirthdate(existingData.birthdate, extraData.birthdate)) {
+                await updateDoc(existingDoc.ref, {
+                    owner_uids: arrayUnion(uid),
+                    account_status: "claimed",
+                    primary_owner_email: firebaseUser.email,
+                    email: existingData.email ?? firebaseUser.email,
+                    updated_at: Timestamp.now(),
+                });
+                return existingDoc.id;
+            }
+            throw new Error("This IC/passport is already linked to another account.");
+        }
+    }
 
     // ✅ 1. Check if IC already exists
     const q = query(collection(db, "users"), where("IC", "==", extraData.IC));
@@ -259,19 +404,27 @@ export const registerWithGoogle = async (
         if (matchingDocs.length === 0) {
             throw new Error("This IC is already registered with another email.");
         }
-        await Promise.all(matchingDocs.map((docSnap) => deleteDoc(docSnap.ref)));
+        const claimableDoc = matchingDocs.find((docSnap) => {
+            const data = docSnap.data() as FirestoreUser;
+            return (data.account_status ?? "claimed") === "unclaimed" && isSameBirthdate(data.birthdate, extraData.birthdate);
+        });
+        if (claimableDoc) {
+            await updateDoc(claimableDoc.ref, {
+                owner_uids: arrayUnion(uid),
+                account_status: "claimed",
+                primary_owner_email: firebaseUser.email,
+                email: firebaseUser.email,
+                updated_at: Timestamp.now(),
+            });
+            return claimableDoc.id;
+        }
+        throw new Error("This IC/passport is already registered.");
     }
 
-    // ✅ 2. Check if Firestore record already exists for this UID
-    const userRef = doc(db, "users", uid);
-    const existing = await getDoc(userRef);
-    if (existing.exists()) {
-        const existingData = existing.data() as FirestoreUser;
-        if (existingData.email && existingData.email !== firebaseUser.email) {
-            throw new Error("This user is already registered.");
-        }
-        await deleteDoc(userRef);
-    }
+    // ✅ 2. Use Firebase UID as the first profile doc id, then generated docs for additional profiles.
+    const firstProfileRef = doc(db, "users", uid);
+    const existing = await getDoc(firstProfileRef);
+    const userRef = existing.exists() ? doc(collection(db, "users")) : firstProfileRef;
 
     const imageUrl = imageFile ?? "";
 
@@ -281,43 +434,31 @@ export const registerWithGoogle = async (
     // ✅ 3. Prepare new user
     const userDoc = {
         id: firebaseUser.uid,
+        ...(userRef.id !== firebaseUser.uid ? {id: userRef.id} : {}),
         global_id,
         name_search: normalizeNameSearch(extraData.name ?? ""),
         email: firebaseUser.email,
         image_url: imageUrl,
+        owner_uids: [uid],
+        primary_owner_email: firebaseUser.email,
+        account_status: "claimed",
+        source: "self_registered",
+        identity_type: identityType,
+        identity_key: identityKey,
         registration_records: [],
         created_at: Timestamp.now(),
         ...extraData,
     };
 
     await setDoc(userRef, userDoc);
+    return userRef.id;
 };
 
 export async function fetchAllUsers(): Promise<FirestoreUser[]> {
     const colRef = collection(db, "users");
     const snap = await getDocs(colRef);
 
-    return snap.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-            id: docSnap.id,
-            global_id: data.global_id,
-            name_search: data.name_search ?? null,
-            memberId: data.memberId ?? null,
-            name: data.name,
-            IC: data.IC,
-            email: data.email,
-            birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
-            gender: data.gender,
-            country: data.country,
-            image_url: data.image_url,
-            roles: data.roles ?? null,
-            school: data.school ?? null,
-            phone_number: data.phone_number ?? null,
-            registration_records: data.registration_records ?? [],
-            best_times: data.best_times ?? {},
-        } as FirestoreUser;
-    });
+    return snap.docs.map(mapUserDoc);
 }
 
 export async function fetchUsersByIds(userIds: string[]): Promise<Record<string, FirestoreUser>> {
@@ -334,25 +475,7 @@ export async function fetchUsersByIds(userIds: string[]): Promise<Record<string,
         const q = query(collection(db, "users"), where("id", "in", batch));
         const snapshot = await getDocs(q);
         for (const docSnap of snapshot.docs) {
-            const data = docSnap.data();
-            const user = {
-                id: docSnap.id,
-                global_id: data.global_id ?? null,
-                name_search: data.name_search ?? null,
-                memberId: data.memberId ?? null,
-                name: data.name,
-                IC: data.IC,
-                email: data.email,
-                birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
-                gender: data.gender,
-                country: data.country,
-                image_url: data.image_url,
-                roles: data.roles ?? null,
-                school: data.school ?? null,
-                phone_number: data.phone_number ?? null,
-                registration_records: data.registration_records ?? [],
-                best_times: data.best_times ?? {},
-            } as FirestoreUser;
+            const user = mapUserDoc(docSnap);
 
             results[user.id] = user;
         }
@@ -375,25 +498,7 @@ export async function fetchUsersByGlobalIds(globalIds: string[]): Promise<Record
         const q = query(collection(db, "users"), where("global_id", "in", batch));
         const snapshot = await getDocs(q);
         for (const docSnap of snapshot.docs) {
-            const data = docSnap.data();
-            const user = {
-                id: docSnap.id,
-                global_id: data.global_id ?? null,
-                name_search: data.name_search ?? null,
-                memberId: data.memberId ?? null,
-                name: data.name,
-                IC: data.IC,
-                email: data.email,
-                birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
-                gender: data.gender,
-                country: data.country,
-                image_url: data.image_url,
-                roles: data.roles ?? null,
-                school: data.school ?? null,
-                phone_number: data.phone_number ?? null,
-                registration_records: data.registration_records ?? [],
-                best_times: data.best_times ?? {},
-            } as FirestoreUser;
+            const user = mapUserDoc(docSnap);
 
             if (user.global_id) {
                 results[user.global_id] = user;
@@ -418,27 +523,7 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
 
     // Take the first matching document
     const docSnap: QueryDocumentSnapshot<DocumentData> = snapshot.docs[0];
-    const data = docSnap.data();
-
-    // Map Firestore types to your User interface
-    return {
-        id: docSnap.id,
-        global_id: data.global_id ?? null,
-        name_search: data.name_search ?? null,
-        memberId: data.memberId ?? null,
-        name: data.name,
-        IC: data.IC,
-        email: data.email,
-        birthdate: data.birthdate.toDate(), // convert Firestore Timestamp
-        gender: data.gender,
-        country: data.country,
-        school: data.school,
-        phone_number: data.phone_number,
-        image_url: data.image_url,
-        roles: data.roles,
-        best_times: data.best_times,
-        registration_records: data.registration_records ?? [],
-    };
+    return mapUserDoc(docSnap);
 }
 
 export async function searchUsersByNameOrGlobalIdPrefix(keyword: string, limitCount = 10): Promise<FirestoreUser[]> {
@@ -473,25 +558,7 @@ export async function searchUsersByNameOrGlobalIdPrefix(keyword: string, limitCo
     const mergedUsers = new Map<string, FirestoreUser>();
     for (const snapshot of [globalIdSnapshot, nameSnapshot]) {
         for (const docSnap of snapshot.docs) {
-            const data = docSnap.data();
-            const user = {
-                id: docSnap.id,
-                global_id: data.global_id ?? null,
-                name_search: data.name_search ?? null,
-                memberId: data.memberId ?? null,
-                name: data.name,
-                IC: data.IC,
-                email: data.email,
-                birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
-                gender: data.gender,
-                country: data.country,
-                image_url: data.image_url,
-                roles: data.roles ?? null,
-                school: data.school ?? null,
-                phone_number: data.phone_number ?? null,
-                registration_records: data.registration_records ?? [],
-                best_times: data.best_times ?? {},
-            } as FirestoreUser;
+            const user = mapUserDoc(docSnap);
 
             const uniqueKey = user.global_id ?? user.id;
             mergedUsers.set(uniqueKey, user);
@@ -520,6 +587,61 @@ export async function backfillUserNameSearchField(): Promise<number> {
         }
 
         batch.update(docSnap.ref, {name_search: normalizedName, updated_at: Timestamp.now()});
+        updatedCount += 1;
+        batchOperations += 1;
+
+        if (batchOperations === 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            batchOperations = 0;
+        }
+    }
+
+    if (batchOperations > 0) {
+        await batch.commit();
+    }
+
+    return updatedCount;
+}
+
+export async function backfillUserAccountOwnershipFields(): Promise<number> {
+    const usersSnapshot = await getDocs(collection(db, "users"));
+    let updatedCount = 0;
+    let batch = writeBatch(db);
+    let batchOperations = 0;
+
+    for (const docSnap of usersSnapshot.docs) {
+        const data = docSnap.data() as FirestoreUser;
+        const identityType = data.identity_type ?? (/^\d{12}$/.test(data.IC ?? "") ? "MYKAD" : data.IC ? "PASSPORT" : "NONE");
+        const identityKey = data.identity_key ?? buildIdentityKey(identityType, data.IC, data.passport_country ?? data.country?.[0]);
+        const payload: Partial<FirestoreUser> & {updated_at: Timestamp} = {
+            updated_at: Timestamp.now(),
+        };
+
+        if (!Array.isArray(data.owner_uids)) {
+            payload.owner_uids = [docSnap.id];
+        }
+        if (!data.account_status) {
+            payload.account_status = "claimed";
+        }
+        if (!data.source) {
+            payload.source = "legacy";
+        }
+        if (!data.primary_owner_email && data.email) {
+            payload.primary_owner_email = data.email;
+        }
+        if (!data.identity_type) {
+            payload.identity_type = identityType;
+        }
+        if (!data.identity_key && identityKey) {
+            payload.identity_key = identityKey;
+        }
+
+        if (Object.keys(payload).length <= 1) {
+            continue;
+        }
+
+        batch.update(docSnap.ref, payload);
         updatedCount += 1;
         batchOperations += 1;
 
@@ -586,7 +708,7 @@ export async function getUserByGlobalId(globalId: string) {
         return getRegistrationCount(dataB.registration_records) - getRegistrationCount(dataA.registration_records);
     })[0];
 
-    return bestDoc.data() as FirestoreUser;
+    return mapUserDoc(bestDoc);
 }
 
 export async function getUserEmailByGlobalId(globalId: string) {

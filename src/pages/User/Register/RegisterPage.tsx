@@ -3,7 +3,6 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
 import {countries} from "@/schema/Country";
 import {cacheGoogleAvatar, clearGoogleSignInIntent, registerWithGoogle, signInWithGoogle} from "@/services/firebase/authService";
-import {db} from "@/services/firebase/config";
 import {uploadAvatar} from "@/services/firebase/storageService";
 import {
     Avatar,
@@ -22,7 +21,6 @@ import {IconCamera, IconEmail, IconExclamationCircle, IconLock, IconPhone, IconU
 import dayjs from "dayjs";
 import type {User} from "firebase/auth";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
-import {doc, getDoc} from "firebase/firestore";
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
 
@@ -32,7 +30,7 @@ type RegisterFormData = Omit<FirestoreUser, "id"> & {password: string; confirmPa
 
 const RegisterPage = () => {
     const navigate = useNavigate();
-    const {firebaseUser, isGoogleRegistrationPending, setUser, user} = useAuthContext();
+    const {firebaseUser, refreshProfiles, user} = useAuthContext();
     const [form] = Form.useForm<RegisterFormData>();
     const [loading, setLoading] = useState(false);
     const [isICMode, setIsICMode] = useState(true);
@@ -50,6 +48,7 @@ const RegisterPage = () => {
 
     const handleICChange = (val: string) => {
         form.setFieldValue("IC", val);
+        form.setFieldValue("identity_type", isICMode ? "MYKAD" : "PASSPORT");
         if (!isICMode) return;
 
         const match = RegExp(/^(\d{2})(\d{2})(\d{2})\d{6}$/).exec(val);
@@ -72,18 +71,24 @@ const RegisterPage = () => {
 
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school, phone_number} = values;
+        const resolvedEmail = email ?? firebaseUser?.email ?? "";
         let avatarUrl = "";
-        if (!password || !confirmPassword) {
+        if (!resolvedEmail) {
+            Message.error("Missing Google email for this account.");
+            return;
+        }
+        const isAddingProfile = Boolean(firebaseUser && user);
+        if (!isAddingProfile && (!password || !confirmPassword)) {
             Message.error("Please enter and confirm your password.");
             return;
         }
-        if (password !== confirmPassword) {
+        if (!isAddingProfile && password !== confirmPassword) {
             Message.error("Passwords do not match");
             return;
         }
 
         try {
-            if (!isGoogleRegistrationPending || !firebaseUser) {
+            if (!firebaseUser) {
                 Message.error("Please sign in with Google before registering.");
                 return;
             }
@@ -97,17 +102,19 @@ const RegisterPage = () => {
                     type: blob.type ?? "image/png",
                 });
                 avatarUrl = await uploadAvatar(file, firebaseUser.uid);
-            } else if (isGoogleRegistrationPending && firebaseUser.photoURL) {
+            } else if (firebaseUser.photoURL) {
                 // Already uploaded in useEffect, just use the form value
-                avatarUrl = image_url;
+                avatarUrl = image_url ?? "";
             } else if (image_url) {
                 avatarUrl = image_url;
             }
 
-            await registerWithGoogle(
+            const profileId = await registerWithGoogle(
                 firebaseUser,
                 {
                     IC,
+                    identity_type: isICMode ? "MYKAD" : "PASSPORT",
+                    passport_country: isICMode ? null : country?.[0],
                     name,
                     birthdate,
                     gender,
@@ -119,11 +126,10 @@ const RegisterPage = () => {
                 },
                 avatarUrl,
             );
-            await linkEmailPassword(email, password, firebaseUser);
-            const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-            if (userDoc.exists()) {
-                setUser(userDoc.data() as FirestoreUser);
+            if (!isAddingProfile && password) {
+                await linkEmailPassword(resolvedEmail, password, firebaseUser);
             }
+            await refreshProfiles(profileId ?? firebaseUser.uid);
             clearGoogleSignInIntent();
             Message.success("Registration successful!");
             navigate("/", {replace: true});
@@ -140,11 +146,12 @@ const RegisterPage = () => {
 
     useEffect(() => {
         const fetchAndUploadGoogleAvatar = async () => {
-            if (!isGoogleRegistrationPending || !firebaseUser) {
+            if (!firebaseUser) {
                 return;
             }
 
             form.setFieldValue("email", firebaseUser.email ?? "");
+            form.setFieldValue("identity_type", isICMode ? "MYKAD" : "PASSPORT");
 
             if (firebaseUser.photoURL) {
                 try {
@@ -157,7 +164,7 @@ const RegisterPage = () => {
             }
         };
         fetchAndUploadGoogleAvatar();
-    }, [isGoogleRegistrationPending, firebaseUser, form]);
+    }, [firebaseUser, form, isICMode]);
 
     const handleResetAvatar = async () => {
         if (firebaseUser?.photoURL) {
@@ -184,29 +191,23 @@ const RegisterPage = () => {
         await handleResetAvatar();
     };
 
-    useEffect(() => {
-        if (firebaseUser && user) {
-            navigate("/", {replace: true});
-        }
-    }, [firebaseUser, user, navigate]);
-
     return (
         <div className={`flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10`}>
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
                 <Title heading={3} className="text-center mb-6">
                     <div>
                         Register Participant Account
-                        <Tooltip content="Register for the participant account to participate in the event">
+                        <Tooltip content="Create a participant profile under your Google login. Tournament registration is done from a tournament page.">
                             <IconExclamationCircle style={{margin: "0 8px", color: "rgb(var(--arcoblue-6))"}} />
                         </Tooltip>
                     </div>
                 </Title>
 
-                {!isGoogleRegistrationPending || !firebaseUser ? (
+                {!firebaseUser ? (
                     <div className="flex flex-col items-center gap-4 w-full max-w-xl">
                         <InAppBrowserNotice />
                         <p className="text-center text-gray-600">
-                            Please sign in with Google to start your registration, then complete your participant details.
+                            Please sign in with Google first, then complete the participant profile details.
                         </p>
                         <Button
                             type="primary"
@@ -237,6 +238,9 @@ const RegisterPage = () => {
                 ) : (
                     <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
                         <Form.Item noStyle field="image_url">
+                            <Input type="hidden" />
+                        </Form.Item>
+                        <Form.Item noStyle field="identity_type">
                             <Input type="hidden" />
                         </Form.Item>
 
@@ -346,6 +350,7 @@ const RegisterPage = () => {
                                         onClick={() => {
                                             setIsICMode(!isICMode);
                                             form.setFieldValue("IC", "");
+                                            form.setFieldValue("identity_type", !isICMode ? "MYKAD" : "PASSPORT");
                                         }}
                                     >
                                         Use {isICMode ? "Passport" : "IC"}
@@ -420,7 +425,7 @@ const RegisterPage = () => {
                         <Form.Item
                             field="password"
                             label="Password"
-                            rules={[{required: true, message: "Please enter a password"}]}
+                            rules={user ? [] : [{required: true, message: "Please enter a password"}]}
                         >
                             <Input.Password prefix={<IconLock />} placeholder="Create password" />
                         </Form.Item>
@@ -428,7 +433,7 @@ const RegisterPage = () => {
                         <Form.Item
                             field="confirmPassword"
                             label="Confirm Password"
-                            rules={[{required: true, message: "Please confirm your password"}]}
+                            rules={user ? [] : [{required: true, message: "Please confirm your password"}]}
                         >
                             <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
                         </Form.Item>
