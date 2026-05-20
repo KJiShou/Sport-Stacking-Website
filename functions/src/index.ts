@@ -3,12 +3,7 @@ import cors from "cors";
 import {getApps, initializeApp} from "firebase-admin/app";
 import type {UserRecord} from "firebase-admin/auth";
 import {getAuth} from "firebase-admin/auth";
-import {
-    FieldValue,
-    type QueryDocumentSnapshot,
-    Timestamp as FirestoreTimestamp,
-    getFirestore,
-} from "firebase-admin/firestore";
+import {FieldValue, type QueryDocumentSnapshot, Timestamp as FirestoreTimestamp, getFirestore} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
 import {defineSecret} from "firebase-functions/params";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
@@ -53,6 +48,7 @@ const corsHandler = cors({
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "RankingStack <noreply@rankingstack.com>";
 const RESEND_API_URL = process.env.RESEND_API_URL ?? "https://api.resend.com/emails";
+const PASSWORD_RESET_CONTINUE_URL = process.env.PASSWORD_RESET_CONTINUE_URL ?? "https://rankingstack.com/login";
 
 // AWS SES Secrets for backup email delivery
 const AWS_SES_SMTP_USERNAME = defineSecret("AWS_SES_SMTP_USERNAME");
@@ -166,7 +162,10 @@ const importCellToString = (value: ExcelJS.CellValue): string => {
             return "";
         }
         if ("richText" in value && Array.isArray(value.richText)) {
-            return value.richText.map((item) => item.text).join("").trim();
+            return value.richText
+                .map((item) => item.text)
+                .join("")
+                .trim();
         }
         if ("hyperlink" in value && "text" in value && typeof value.text === "string") {
             return value.text.trim();
@@ -260,10 +259,7 @@ const importWorkbookKey = (athlete: Pick<ImportAthlete, "identityKey" | "name" |
 
 const importFindHeaderRow = (worksheet: ExcelJS.Worksheet): number => {
     for (let rowNumber = 1; rowNumber <= Math.min(worksheet.rowCount, 12); rowNumber += 1) {
-        const rowText = worksheet
-            .getRow(rowNumber)
-            .values.toString()
-            .toLowerCase();
+        const rowText = worksheet.getRow(rowNumber).values.toString().toLowerCase();
         if (rowText.includes("name") && (rowText.includes("birth") || rowText.includes("dob"))) {
             return rowNumber;
         }
@@ -289,7 +285,10 @@ const importFindColumns = (worksheet: ExcelJS.Worksheet, headerRowNumber: number
         if (!value) {
             return;
         }
-        const headerTokens = value.replace(/[^a-z0-9]+/g, " ").split(" ").filter(Boolean);
+        const headerTokens = value
+            .replace(/[^a-z0-9]+/g, " ")
+            .split(" ")
+            .filter(Boolean);
         if (value.includes("name")) columns.name = colNumber;
         if (value.includes("passport") || headerTokens.includes("ic") || value.includes("identity")) columns.identity = colNumber;
         if (value.includes("birth") || value.includes("dob")) columns.birthdate = colNumber;
@@ -325,7 +324,11 @@ const importRowHasParticipantContent = (row: ExcelJS.Row, columns: ReturnType<ty
     return checkedColumns.some((column) => importCellToString(row.getCell(column).value).trim().length > 0);
 };
 
-const importGetLastRelevantRow = (worksheet: ExcelJS.Worksheet, headerRowNumber: number, columns: ReturnType<typeof importFindColumns>): number => {
+const importGetLastRelevantRow = (
+    worksheet: ExcelJS.Worksheet,
+    headerRowNumber: number,
+    columns: ReturnType<typeof importFindColumns>,
+): number => {
     let lastRelevantRow = headerRowNumber;
     worksheet.eachRow({includeEmpty: false}, (row, rowNumber) => {
         if (rowNumber <= headerRowNumber) {
@@ -387,7 +390,9 @@ const importResolveEventForSheet = (
     ];
     const alias = aliases.find(([name]) => normalizedSheet.includes(name))?.[1];
     if (alias) {
-        return events.find((event) => event.type === alias || (alias === "Individual" && event.type.includes("Individual"))) ?? null;
+        return (
+            events.find((event) => event.type === alias || (alias === "Individual" && event.type.includes("Individual"))) ?? null
+        );
     }
 
     return events.find((event) => normalizedSheet.includes(importNormalize(event.type).replace(/&/g, "and"))) ?? null;
@@ -466,7 +471,7 @@ const importReadAthleteFromRow = ({
             ? "Female"
             : genderText.startsWith("m") || genderText.includes("male")
               ? "Male"
-              : inferredGender ?? (eventGender === "Female" ? "Female" : "Male");
+              : (inferredGender ?? (eventGender === "Female" ? "Female" : "Male"));
     if (!genderText && !inferredGender && eventGender !== "Female" && eventGender !== "Male") {
         warnings.push(`${name}: gender missing; defaulted to Male.`);
     }
@@ -494,11 +499,7 @@ const importReadAthleteFromRow = ({
     return {athlete, warnings};
 };
 
-const importMergeAthlete = (
-    parsed: ParsedWorkbookImport,
-    athlete: ImportAthlete,
-    rows: ImportReportRow[],
-): ImportAthlete => {
+const importMergeAthlete = (parsed: ParsedWorkbookImport, athlete: ImportAthlete, rows: ImportReportRow[]): ImportAthlete => {
     const existing = parsed.athletes.get(athlete.workbookKey);
     if (!existing) {
         parsed.athletes.set(athlete.workbookKey, athlete);
@@ -547,7 +548,8 @@ const importParseWorkbook = (
         teams: [],
         rows: [],
     };
-    const individualEvent = events.find((event) => event.type === "Individual") ?? events.find((event) => event.type.includes("Individual"));
+    const individualEvent =
+        events.find((event) => event.type === "Individual") ?? events.find((event) => event.type.includes("Individual"));
     if (!individualEvent) {
         parsed.rows.push({sheet: "Workbook", row: 0, level: "error", message: "Tournament has no Individual event."});
         return parsed;
@@ -882,9 +884,7 @@ const importLegacyProfileMatchesAthlete = (data: ImportUserProfileData, athlete:
     return storedIdentityType == null || storedIdentityType === "NONE";
 };
 
-const importFindExistingUserForAthlete = async (
-    athlete: ImportAthlete,
-): Promise<QueryDocumentSnapshot | null> => {
+const importFindExistingUserForAthlete = async (athlete: ImportAthlete): Promise<QueryDocumentSnapshot | null> => {
     if (athlete.identityKey) {
         const existingSnap = await db.collection("users").where("identity_key", "==", athlete.identityKey).limit(1).get();
         if (!existingSnap.empty) {
@@ -911,10 +911,7 @@ const importFindExistingUserForAthlete = async (
     return null;
 };
 
-const importUseExistingUserForAthlete = async (
-    athlete: ImportAthlete,
-    existingDoc: QueryDocumentSnapshot,
-): Promise<void> => {
+const importUseExistingUserForAthlete = async (athlete: ImportAthlete, existingDoc: QueryDocumentSnapshot): Promise<void> => {
     const data = existingDoc.data() as ImportUserProfileData;
     const nextGlobalId = data.global_id ?? (await importGetNextGlobalId());
     const accountStatus = data.account_status ?? (data.email ? "claimed" : "unclaimed");
@@ -1102,7 +1099,10 @@ const importCommitRegistrationsAndTeams = async ({
     }
 
     if (createdRegistrations > 0) {
-        await db.collection("tournaments").doc(tournamentId).update({participants: FieldValue.increment(createdRegistrations)});
+        await db
+            .collection("tournaments")
+            .doc(tournamentId)
+            .update({participants: FieldValue.increment(createdRegistrations)});
     }
 
     const existingTeamsSnap = await db.collection("teams").where("tournament_id", "==", tournamentId).get();
@@ -1115,7 +1115,9 @@ const importCommitRegistrationsAndTeams = async ({
     );
 
     for (const team of parsed.teams) {
-        const athletes = team.members.map((memberKey) => parsed.athletes.get(memberKey)).filter((value): value is ImportAthlete => Boolean(value));
+        const athletes = team.members
+            .map((memberKey) => parsed.athletes.get(memberKey))
+            .filter((value): value is ImportAthlete => Boolean(value));
         if (athletes.some((athlete) => !athlete.globalId)) {
             continue;
         }
@@ -1128,7 +1130,10 @@ const importCommitRegistrationsAndTeams = async ({
         if (!registrationId || !leader.globalId) {
             continue;
         }
-        const teamKey = `${team.eventId}|${leader.globalId}|${members.map((member) => member.global_id).sort().join(",")}`;
+        const teamKey = `${team.eventId}|${leader.globalId}|${members
+            .map((member) => member.global_id)
+            .sort()
+            .join(",")}`;
         if (existingTeamKeys.has(teamKey)) {
             continue;
         }
@@ -1221,17 +1226,22 @@ const deleteRecruitmentsForVerifiedMember = async ({
     const teamRecruitmentRef = db.collection("team_recruitment");
     const normalizedRegistrationId = registrationId.trim();
     const [individualSnapshot, doubleSnapshot, teamLeaderSnapshot, teamRegistrationSnapshot] = await Promise.all([
-        db.collection("individual_recruitment")
+        db
+            .collection("individual_recruitment")
             .where("tournament_id", "==", tournamentId)
             .where("participant_id", "==", memberId)
             .get(),
-        db.collection("double_recruitment")
+        db
+            .collection("double_recruitment")
             .where("tournament_id", "==", tournamentId)
             .where("participant_id", "==", memberId)
             .get(),
         teamRecruitmentRef.where("tournament_id", "==", tournamentId).where("leader_id", "==", memberId).get(),
         normalizedRegistrationId.length > 0
-            ? teamRecruitmentRef.where("tournament_id", "==", tournamentId).where("registration_id", "==", normalizedRegistrationId).get()
+            ? teamRecruitmentRef
+                  .where("tournament_id", "==", tournamentId)
+                  .where("registration_id", "==", normalizedRegistrationId)
+                  .get()
             : Promise.resolve(null),
     ]);
 
@@ -1447,6 +1457,32 @@ const sanitizeEventCodes = (codes: unknown): string[] =>
     Array.isArray(codes)
         ? codes.filter((code): code is string => typeof code === "string" && code.length > 0 && code !== "Overall")
         : [];
+
+const normalizeEmail = (value: unknown): string => {
+    if (typeof value !== "string") {
+        return "";
+    }
+    return value.trim().toLowerCase();
+};
+
+const buildPasswordResetEmailHtml = (resetLink: string, email: string): string => {
+    const safeResetLink = escapeHtml(resetLink);
+    const safeEmail = escapeHtml(email);
+
+    return `
+        <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6; max-width: 560px;">
+            <p>Hello,</p>
+            <p>Follow this link to reset your Sport Stacking Website password for your ${safeEmail} account.</p>
+            <p style="margin: 24px 0;">
+                <a href="${safeResetLink}" style="background: #165DFF; border-radius: 6px; color: #ffffff; display: inline-block; font-weight: 600; padding: 10px 16px; text-decoration: none;">
+                    Reset password
+                </a>
+            </p>
+            <p>If you did not ask to reset your password, you can ignore this email.</p>
+            <p>Thanks,<br />Sport Stacking Website team</p>
+        </div>
+    `;
+};
 
 const formatEventLabel = (event: FirestoreEventRecord): string | null => {
     if (!event.type) {
@@ -1973,6 +2009,101 @@ async function sendEmailViaSES(
     }
 }
 
+const PASSWORD_RESET_EMAIL_THROTTLE_MS = 60 * 1000;
+
+async function enforcePasswordResetEmailThrottle(email: string): Promise<void> {
+    const db = getFirestore();
+    const throttleRef = db.collection("passwordResetEmailThrottle").doc(encodeURIComponent(email));
+    const nowMs = Date.now();
+
+    await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(throttleRef);
+        const lastAttempt = snapshot.get("lastAttemptAt") as FirestoreTimestamp | undefined;
+        const lastAttemptMs = lastAttempt?.toMillis() ?? 0;
+
+        if (nowMs - lastAttemptMs < PASSWORD_RESET_EMAIL_THROTTLE_MS) {
+            throw new HttpsError("resource-exhausted", "Too many password reset requests. Please wait before trying again.");
+        }
+
+        transaction.set(
+            throttleRef,
+            {
+                email,
+                lastAttemptAt: FirestoreTimestamp.now(),
+            },
+            {merge: true},
+        );
+    });
+}
+
+export const sendPasswordResetEmailWithCustomEmail = onCall(
+    {
+        ...callableFunctionOptions,
+        secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
+    },
+    async (request) => {
+        const email = normalizeEmail(request.data?.email);
+        if (!email) {
+            throw new HttpsError("invalid-argument", "Email is required.");
+        }
+
+        await enforcePasswordResetEmailThrottle(email);
+
+        try {
+            const resetLink = await getAuth().generatePasswordResetLink(email, {
+                url: PASSWORD_RESET_CONTINUE_URL,
+            });
+            const subject = "Reset your password for Sport Stacking Website";
+            const html = buildPasswordResetEmailHtml(resetLink, email);
+            const resendResponse = await fetch(RESEND_API_URL, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${RESEND_API_KEY.value()}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    from: RESEND_FROM_EMAIL,
+                    to: [email],
+                    subject,
+                    html,
+                }),
+            });
+
+            if (!resendResponse.ok) {
+                const payload = await resendResponse.text().catch(() => "");
+                console.error("Resend password reset email failed", resendResponse.status, payload);
+                const sesResult = await sendEmailViaSES(
+                    email,
+                    subject,
+                    html,
+                    AWS_SES_SMTP_USERNAME.value(),
+                    AWS_SES_SMTP_PASSWORD.value(),
+                );
+
+                if (!sesResult.success) {
+                    console.error("AWS SES password reset email failed", sesResult.error);
+                    throw new HttpsError("internal", "Failed to send password reset email.");
+                }
+            }
+        } catch (error: unknown) {
+            const authError = error as {code?: string; message?: string};
+            if (authError.code === "auth/user-not-found") {
+                console.info("Password reset requested for unknown email address.");
+                return {success: true};
+            }
+
+            if (error instanceof HttpsError) {
+                throw error;
+            }
+
+            console.error("Password reset email failed", error);
+            throw new HttpsError("internal", "Failed to send password reset email.");
+        }
+
+        return {success: true};
+    },
+);
+
 export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD]}, (req, res) => {
     corsHandler(req, res, async () => {
         const apiKey = RESEND_API_KEY.value();
@@ -2311,8 +2442,10 @@ export const importTournamentWorkbook = onCall(callableFunctionOptions, async (r
     const tournamentId = typeof payload.tournamentId === "string" ? payload.tournamentId.trim() : "";
     const fileBase64 = typeof payload.fileBase64 === "string" ? payload.fileBase64 : "";
     const mode: ImportMode = payload.mode === "commit" ? "commit" : "preview";
-    const defaultCountry = typeof payload.defaultCountry === "string" && payload.defaultCountry.trim() ? payload.defaultCountry.trim() : "Malaysia";
-    const defaultState = typeof payload.defaultState === "string" && payload.defaultState.trim() ? payload.defaultState.trim() : "-";
+    const defaultCountry =
+        typeof payload.defaultCountry === "string" && payload.defaultCountry.trim() ? payload.defaultCountry.trim() : "Malaysia";
+    const defaultState =
+        typeof payload.defaultState === "string" && payload.defaultState.trim() ? payload.defaultState.trim() : "-";
     const sheetMappings =
         payload.sheetMappings && typeof payload.sheetMappings === "object"
             ? (payload.sheetMappings as Record<string, string>)
@@ -2357,7 +2490,7 @@ export const importTournamentWorkbook = onCall(callableFunctionOptions, async (r
     });
 
     const workbook = new ExcelJS.Workbook();
-    const base64Payload = fileBase64.includes(",") ? fileBase64.split(",").pop() ?? "" : fileBase64;
+    const base64Payload = fileBase64.includes(",") ? (fileBase64.split(",").pop() ?? "") : fileBase64;
     const workbookBuffer = Buffer.from(base64Payload, "base64");
     const workbookArrayBuffer = workbookBuffer.buffer.slice(
         workbookBuffer.byteOffset,
