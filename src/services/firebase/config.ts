@@ -25,7 +25,7 @@ if (!import.meta.env.DEV) {
         isTokenAutoRefreshEnabled: true,
     });
 }
-const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim() || (import.meta.env.DEV ? "develop2" : "");
+const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim();
 export const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
 export const storage = getStorage(app);
 export const auth = getAuth(app);
