@@ -165,6 +165,11 @@ const shouldFallbackToRedirect = (error: unknown): boolean => {
     ].includes(code);
 };
 
+export const requestPasswordResetEmail = async (email: string): Promise<void> => {
+    const callable = httpsCallable(functions, "sendPasswordResetEmailWithCustomEmail");
+    await callable({email});
+};
+
 // Prefer popup in normal browsers, then fall back to redirect where popup is blocked/unsupported.
 export const signInWithGoogle = async (intent: GoogleSignInIntent): Promise<void> => {
     const provider = new GoogleAuthProvider();

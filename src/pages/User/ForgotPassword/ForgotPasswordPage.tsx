@@ -1,14 +1,13 @@
-import {auth} from "@/services/firebase/config"; // ✅ 确保指向你的 firebase `auth`
+import {requestPasswordResetEmail} from "@/services/firebase/authService";
 import {Button, Form, Input, Message, Typography} from "@arco-design/web-react";
 import {IconEmail} from "@arco-design/web-react/icon";
-import {sendPasswordResetEmail} from "firebase/auth";
 
 const {Title} = Typography;
 
 export default function ForgotPasswordPage() {
     const handleReset = async (values: {email: string}) => {
         try {
-            await sendPasswordResetEmail(auth, values.email);
+            await requestPasswordResetEmail(values.email);
             Message.success("Password reset email sent.");
         } catch (error: unknown) {
             Message.error("Failed to send reset email.");

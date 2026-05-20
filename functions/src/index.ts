@@ -6,7 +6,7 @@ import {Timestamp as FirestoreTimestamp, getFirestore} from "firebase-admin/fire
 import {getStorage} from "firebase-admin/storage";
 import {defineSecret} from "firebase-functions/params";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
-import {onCall, onRequest} from "firebase-functions/v2/https";
+import {HttpsError, onCall, onRequest} from "firebase-functions/v2/https";
 import nodemailer from "nodemailer";
 import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
@@ -23,6 +23,7 @@ const allowedOrigins = new Set<string>([
     "http://localhost:4173",
     "http://127.0.0.1:4173",
 ]);
+const callableCorsOrigins = Array.from(allowedOrigins);
 
 const corsHandler = cors({
     origin: (origin, callback) => {
@@ -38,6 +39,7 @@ const corsHandler = cors({
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "RankingStack <noreply@rankingstack.com>";
 const RESEND_API_URL = process.env.RESEND_API_URL ?? "https://api.resend.com/emails";
+const PASSWORD_RESET_CONTINUE_URL = process.env.PASSWORD_RESET_CONTINUE_URL ?? "https://rankingstack.com/login";
 
 // AWS SES Secrets for backup email delivery
 const AWS_SES_SMTP_USERNAME = defineSecret("AWS_SES_SMTP_USERNAME");
@@ -294,6 +296,32 @@ const sanitizeEventCodes = (codes: unknown): string[] =>
     Array.isArray(codes)
         ? codes.filter((code): code is string => typeof code === "string" && code.length > 0 && code !== "Overall")
         : [];
+
+const normalizeEmail = (value: unknown): string => {
+    if (typeof value !== "string") {
+        return "";
+    }
+    return value.trim().toLowerCase();
+};
+
+const buildPasswordResetEmailHtml = (resetLink: string, email: string): string => {
+    const safeResetLink = escapeHtml(resetLink);
+    const safeEmail = escapeHtml(email);
+
+    return `
+        <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6; max-width: 560px;">
+            <p>Hello,</p>
+            <p>Follow this link to reset your Sport Stacking Website password for your ${safeEmail} account.</p>
+            <p style="margin: 24px 0;">
+                <a href="${safeResetLink}" style="background: #165DFF; border-radius: 6px; color: #ffffff; display: inline-block; font-weight: 600; padding: 10px 16px; text-decoration: none;">
+                    Reset password
+                </a>
+            </p>
+            <p>If you did not ask to reset your password, you can ignore this email.</p>
+            <p>Thanks,<br />Sport Stacking Website team</p>
+        </div>
+    `;
+};
 
 const formatEventLabel = (event: FirestoreEventRecord): string | null => {
     if (!event.type) {
@@ -819,6 +847,104 @@ async function sendEmailViaSES(
         };
     }
 }
+
+const PASSWORD_RESET_EMAIL_THROTTLE_MS = 60 * 1000;
+
+async function enforcePasswordResetEmailThrottle(email: string): Promise<void> {
+    const db = getFirestore();
+    const throttleRef = db.collection("passwordResetEmailThrottle").doc(encodeURIComponent(email));
+    const nowMs = Date.now();
+
+    await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(throttleRef);
+        const lastAttempt = snapshot.get("lastAttemptAt") as FirestoreTimestamp | undefined;
+        const lastAttemptMs = lastAttempt?.toMillis() ?? 0;
+
+        if (nowMs - lastAttemptMs < PASSWORD_RESET_EMAIL_THROTTLE_MS) {
+            throw new HttpsError(
+                "resource-exhausted",
+                "Too many password reset requests. Please wait before trying again.",
+            );
+        }
+
+        transaction.set(
+            throttleRef,
+            {
+                email,
+                lastAttemptAt: FirestoreTimestamp.now(),
+            },
+            {merge: true},
+        );
+    });
+}
+
+export const sendPasswordResetEmailWithCustomEmail = onCall(
+    {
+        secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
+        cors: callableCorsOrigins,
+    },
+    async (request) => {
+        const email = normalizeEmail(request.data?.email);
+        if (!email) {
+            throw new HttpsError("invalid-argument", "Email is required.");
+        }
+
+        await enforcePasswordResetEmailThrottle(email);
+
+        try {
+            const resetLink = await getAuth().generatePasswordResetLink(email, {
+                url: PASSWORD_RESET_CONTINUE_URL,
+            });
+            const subject = "Reset your password for Sport Stacking Website";
+            const html = buildPasswordResetEmailHtml(resetLink, email);
+            const resendResponse = await fetch(RESEND_API_URL, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${RESEND_API_KEY.value()}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    from: RESEND_FROM_EMAIL,
+                    to: [email],
+                    subject,
+                    html,
+                }),
+            });
+
+            if (!resendResponse.ok) {
+                const payload = await resendResponse.text().catch(() => "");
+                console.error("Resend password reset email failed", resendResponse.status, payload);
+                const sesResult = await sendEmailViaSES(
+                    email,
+                    subject,
+                    html,
+                    AWS_SES_SMTP_USERNAME.value(),
+                    AWS_SES_SMTP_PASSWORD.value(),
+                );
+
+                if (!sesResult.success) {
+                    console.error("AWS SES password reset email failed", sesResult.error);
+                    throw new HttpsError("internal", "Failed to send password reset email.");
+                }
+            }
+        } catch (error: unknown) {
+            const authError = error as {code?: string; message?: string};
+            if (authError.code === "auth/user-not-found") {
+                console.info("Password reset requested for unknown email address.");
+                return {success: true};
+            }
+
+            if (error instanceof HttpsError) {
+                throw error;
+            }
+
+            console.error("Password reset email failed", error);
+            throw new HttpsError("internal", "Failed to send password reset email.");
+        }
+
+        return {success: true};
+    },
+);
 
 export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD]}, (req, res) => {
     corsHandler(req, res, async () => {
