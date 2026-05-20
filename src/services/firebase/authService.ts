@@ -31,8 +31,8 @@ import {deleteObject, ref} from "firebase/storage";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
-import {updateProfilesForUser} from "./profileService";
 import {auth, db, functions, storage} from "./config";
+import {updateProfilesForUser} from "./profileService";
 
 const ensureAuthReady = (uid: string): Promise<void> =>
     new Promise((resolve, reject) => {
@@ -103,6 +103,11 @@ export const login = (email: string, password: string) => signInWithEmailAndPass
 
 // Logout user
 export const logout = () => signOut(auth);
+
+export const requestPasswordResetEmail = async (email: string): Promise<void> => {
+    const callable = httpsCallable(functions, "sendPasswordResetEmailWithCustomEmail");
+    await callable({email});
+};
 
 // Sign in with Google
 export const signInWithGoogle = () => {
