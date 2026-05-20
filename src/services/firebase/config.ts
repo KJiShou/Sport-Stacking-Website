@@ -19,7 +19,8 @@ const firebaseConfig: FirebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-if (!import.meta.env.DEV) {
+const isLocalhost = typeof window !== "undefined" && ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
+if (!isLocalhost) {
     initializeAppCheck(app, {
         provider: new ReCaptchaV3Provider("6LcRC_0rAAAAADINnR7-KKu56U_F-QiCt0I0I0QQ"),
         isTokenAutoRefreshEnabled: true,

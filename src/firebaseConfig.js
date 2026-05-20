@@ -18,10 +18,13 @@ const firebaseConfig = {
 // Initialize Firebase
 globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 const app = initializeApp(firebaseConfig);
-const appCheck = initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider("6LcRC_0rAAAAADINnR7-KKu56U_F-QiCt0I0I0QQ"),
-    isTokenAutoRefreshEnabled: true,
-});
+const isLocalhost = typeof window !== "undefined" && ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
+if (!isLocalhost) {
+    initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider("6LcRC_0rAAAAADINnR7-KKu56U_F-QiCt0I0I0QQ"),
+        isTokenAutoRefreshEnabled: true,
+    });
+}
 const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim();
 export const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
 export const storage = getStorage(app);
