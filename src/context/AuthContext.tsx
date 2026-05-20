@@ -1,138 +1,141 @@
-import type {AuthContextValue, FirestoreUser, Profile} from "@/schema";
-import {ensureDefaultProfileFromUser, fetchProfilesByOwner} from "@/services/firebase/profileService";
-import {type User, onAuthStateChanged} from "firebase/auth";
-import {doc, getDoc, updateDoc} from "firebase/firestore";
+import type {AuthContextValue, FirestoreUser} from "@/schema";
+import {type User, getRedirectResult, onAuthStateChanged} from "firebase/auth";
+import {doc, getDoc} from "firebase/firestore";
 // src/context/AuthContext.tsx
 import type React from "react";
-import {createContext, useContext, useEffect, useState} from "react";
+import {createContext, useContext, useEffect, useMemo, useState} from "react";
+import {
+    type GoogleSignInIntent,
+    clearGoogleSignInIntent,
+    getGoogleSignInIntent,
+    hasGoogleProvider,
+    isGoogleOnlyUser,
+} from "../services/firebase/authService";
 import {auth, db} from "../services/firebase/config";
+
+let redirectResultPromise: Promise<User | null> | null = null;
+let redirectResultUserCache: User | null | undefined;
+
+const resolveRedirectUserOnce = async (): Promise<User | null> => {
+    if (redirectResultUserCache !== undefined) {
+        return redirectResultUserCache;
+    }
+
+    redirectResultPromise ??= getRedirectResult(auth)
+        .then((redirectResult) => {
+            redirectResultUserCache = redirectResult?.user ?? null;
+            return redirectResultUserCache;
+        })
+        .catch((err) => {
+            redirectResultUserCache = null;
+            throw err;
+        });
+
+    return redirectResultPromise;
+};
+
 const AuthContext = createContext<AuthContextValue>({
     user: null,
-    currentProfile: null,
-    userProfiles: [],
     loading: true,
     firebaseUser: null,
-    setUser: () => undefined,
-    setCurrentProfile: () => undefined,
-    refreshProfiles: async () => Promise.resolve(),
+    hasProfile: false,
+    isGoogleOnlyAuth: false,
+    isGoogleRegistrationPending: false,
+    googleSignInIntent: null,
+    setUser: () => {
+        // default no-op function
+    },
 });
 
 export const AuthProvider = ({children}: {children: React.ReactNode}) => {
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
-    const [currentProfile, _setCurrentProfile] = useState<Profile | null>(null);
-    const [userProfiles, setUserProfiles] = useState<Profile[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [googleSignInIntent, setGoogleSignInIntentState] = useState<GoogleSignInIntent | null>(() => getGoogleSignInIntent());
+    const [isHydratingAuth, setIsHydratingAuth] = useState(true);
+    const [isResolvingRedirect, setIsResolvingRedirect] = useState(true);
 
-    const setCurrentProfile: React.Dispatch<React.SetStateAction<Profile | null>> = (
-        value: Profile | null | ((prevState: Profile | null) => Profile | null),
-    ) => {
-        _setCurrentProfile((prev) => {
-            const newValue = typeof value === "function" ? value(prev) : value;
-            if (newValue && user?.id) {
-                // Persist selection
-                updateDoc(doc(db, "users", user.id), {
-                    last_selected_profile_id: newValue.id,
-                }).catch((err) => console.error("Failed to persist profile selection", err));
-            }
-            return newValue;
-        });
-    };
+    const hydrateProfile = async (nextFirebaseUser: User | null) => {
+        setFirebaseUser(nextFirebaseUser);
+        setGoogleSignInIntentState(getGoogleSignInIntent());
 
-    const refreshProfiles = async () => {
-        if (!user) return;
+        if (!nextFirebaseUser) {
+            setUser(null);
+            return;
+        }
+
         try {
-            const profiles = await fetchProfilesByOwner(user.id);
-            setUserProfiles(profiles);
-
-            // Logic to determine which profile to select
-            let profileToSelect = currentProfile;
-
-            // If we have a persisted choice and no current selection (or a forced refresh scenario), try to use it
-            if (!profileToSelect && user.last_selected_profile_id) {
-                profileToSelect = profiles.find((p) => p.id === user.last_selected_profile_id) ?? null;
-            }
-
-            // Fallback to first profile if selection is invalid or missing
-            if ((!profileToSelect || !profiles.find((p) => p.id === profileToSelect?.id)) && profiles.length > 0) {
-                profileToSelect = profiles[0];
-            }
-
-            if (profileToSelect) {
-                // Update state directly without persisting to avoid double-write loops if relevant
-                _setCurrentProfile(profileToSelect);
+            const userDoc = await getDoc(doc(db, "users", nextFirebaseUser.uid));
+            if (userDoc.exists()) {
+                setUser(userDoc.data() as FirestoreUser);
+                clearGoogleSignInIntent();
+                setGoogleSignInIntentState(null);
             } else {
-                _setCurrentProfile(null);
+                console.warn("No Firestore user found for:", nextFirebaseUser.email);
+                setUser(null);
             }
-        } catch (error) {
-            console.error("Failed to refresh profiles:", error);
+        } catch (err) {
+            console.error("Failed to fetch Firestore user:", err);
+            setUser(null);
         }
     };
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-            setLoading(true);
-            setFirebaseUser(firebaseUser);
+        let isActive = true;
 
-            if (firebaseUser) {
-                try {
-                    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-                    if (userDoc.exists()) {
-                        const fetchedUser = userDoc.data() as FirestoreUser;
-                        fetchedUser.id = userDoc.id; // Ensure ID is present
-                        setUser(fetchedUser);
-
-                        // Fetch profiles immediately after getting user logic
-                        try {
-                            // Ensure default profile exists first
-                            await ensureDefaultProfileFromUser(fetchedUser);
-                            // Then fetch all profiles
-                            const profiles = await fetchProfilesByOwner(fetchedUser.id);
-                            setUserProfiles(profiles);
-
-                            // Determine initial profile
-                            let initialProfile: Profile | null = null;
-                            if (fetchedUser.last_selected_profile_id) {
-                                initialProfile = profiles.find((p) => p.id === fetchedUser.last_selected_profile_id) ?? null;
-                            }
-
-                            if (!initialProfile && profiles.length > 0) {
-                                initialProfile = profiles[0];
-                            }
-
-                            _setCurrentProfile(initialProfile);
-                        } catch (error) {
-                            console.warn("Failed to manage profiles:", error);
-                        }
-                    } else {
-                        console.warn("No Firestore user found for:", firebaseUser.email);
-                        setUser(null);
-                        _setCurrentProfile(null);
-                        setUserProfiles([]);
-                    }
-                } catch (err) {
-                    console.error("Failed to fetch Firestore user:", err);
-                    setUser(null);
+        const resolveRedirectResult = async () => {
+            try {
+                const redirectUser = await resolveRedirectUserOnce();
+                if (isActive && redirectUser) {
+                    setIsHydratingAuth(true);
+                    await hydrateProfile(redirectUser);
+                    setIsHydratingAuth(false);
                 }
-            } else {
-                setUser(null);
-                _setCurrentProfile(null);
-                setUserProfiles([]);
+            } catch (err) {
+                console.error("Failed to resolve Google redirect result:", err);
+            } finally {
+                if (isActive) {
+                    setGoogleSignInIntentState(getGoogleSignInIntent());
+                    setIsResolvingRedirect(false);
+                }
             }
+        };
 
-            setLoading(false);
+        resolveRedirectResult();
+
+        return () => {
+            isActive = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            setIsHydratingAuth(true);
+            await hydrateProfile(firebaseUser);
+            setIsHydratingAuth(false);
         });
 
         return () => unsubscribe();
     }, []);
 
-    return (
-        <AuthContext.Provider
-            value={{user, currentProfile, userProfiles, loading, firebaseUser, setUser, setCurrentProfile, refreshProfiles}}
-        >
-            {children}
-        </AuthContext.Provider>
+    const hasProfile = user !== null;
+    const isGoogleOnlyAuth = isGoogleOnlyUser(firebaseUser);
+    const isGoogleRegistrationPending = Boolean(firebaseUser && !hasProfile && hasGoogleProvider(firebaseUser));
+    const loading = isResolvingRedirect || isHydratingAuth;
+    const contextValue = useMemo(
+        () => ({
+            user,
+            loading,
+            firebaseUser,
+            hasProfile,
+            isGoogleOnlyAuth,
+            isGoogleRegistrationPending,
+            googleSignInIntent,
+            setUser,
+        }),
+        [firebaseUser, googleSignInIntent, hasProfile, isGoogleOnlyAuth, isGoogleRegistrationPending, loading, user],
     );
+
+    return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
 };
 
 export const useAuthContext = () => useContext(AuthContext);

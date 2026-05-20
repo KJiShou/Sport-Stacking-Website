@@ -8,31 +8,75 @@ import {
     reauthenticateWithCredential,
     signInWithEmailAndPassword,
     signInWithPopup,
+    signInWithRedirect,
     signOut,
     updatePassword,
 } from "firebase/auth";
-import {type DocumentData, type QueryDocumentSnapshot, type QuerySnapshot, getFirestore} from "firebase/firestore";
+import type {DocumentData, Query, QueryDocumentSnapshot, QuerySnapshot} from "firebase/firestore";
 import {
     Timestamp,
     collection,
     deleteDoc,
     doc,
+    documentId,
     getDoc,
     getDocs,
     increment,
+    limit,
+    orderBy,
     query,
     runTransaction,
     setDoc,
+    startAfter,
     updateDoc,
     where,
+    writeBatch,
 } from "firebase/firestore";
 import {httpsCallable} from "firebase/functions";
 import {deleteObject, ref} from "firebase/storage";
 import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
+import type {UserTournamentHistory} from "../../schema/UserHistorySchema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
 import {updateProfilesForUser} from "./profileService";
+
+export type GoogleSignInIntent = "login" | "register";
+
+const GOOGLE_SIGN_IN_INTENT_KEY = "google-sign-in-intent";
+
+const canUseSessionStorage = () => typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+
+export const setGoogleSignInIntent = (intent: GoogleSignInIntent): void => {
+    if (!canUseSessionStorage()) {
+        return;
+    }
+    window.sessionStorage.setItem(GOOGLE_SIGN_IN_INTENT_KEY, intent);
+};
+
+export const getGoogleSignInIntent = (): GoogleSignInIntent | null => {
+    if (!canUseSessionStorage()) {
+        return null;
+    }
+
+    const intent = window.sessionStorage.getItem(GOOGLE_SIGN_IN_INTENT_KEY);
+    return intent === "login" || intent === "register" ? intent : null;
+};
+
+export const clearGoogleSignInIntent = (): void => {
+    if (!canUseSessionStorage()) {
+        return;
+    }
+    window.sessionStorage.removeItem(GOOGLE_SIGN_IN_INTENT_KEY);
+};
+
+export const hasGoogleProvider = (user: User | null): boolean =>
+    Boolean(user?.providerData?.some((provider) => provider.providerId === "google.com"));
+
+export const hasPasswordProvider = (user: User | null): boolean =>
+    Boolean(user?.providerData?.some((provider) => provider.providerId === "password"));
+
+export const isGoogleOnlyUser = (user: User | null): boolean => hasGoogleProvider(user) && !hasPasswordProvider(user);
 
 const ensureAuthReady = (uid: string): Promise<void> =>
     new Promise((resolve, reject) => {
@@ -54,7 +98,7 @@ const ensureAuthReady = (uid: string): Promise<void> =>
         );
     });
 
-export async function getNextGlobalId(): Promise<string> {
+async function getNextGlobalId(): Promise<string> {
     const counterRef = doc(db, "counters", "userCounter");
     const newCount = await runTransaction(db, async (tx) => {
         const snap = await tx.get(counterRef);
@@ -88,8 +132,9 @@ function extractActiveRoles(roles: FirestoreUser["roles"] | null | undefined): P
 
     const definedRoles = roles as UserRoles;
     const activeRoles: Partial<UserRoles> = {};
+    const roleKeys: Array<keyof UserRoles> = ["edit_tournament", "record_tournament", "modify_admin", "verify_record"];
 
-    for (const key of Object.keys(definedRoles) as Array<keyof UserRoles>) {
+    for (const key of roleKeys) {
         if (definedRoles[key]) {
             activeRoles[key] = true;
         }
@@ -98,21 +143,47 @@ function extractActiveRoles(roles: FirestoreUser["roles"] | null | undefined): P
     return Object.keys(activeRoles).length > 0 ? activeRoles : null;
 }
 
+export function normalizeNameSearch(value: string): string {
+    return value.trim().toLowerCase();
+}
+
 // Login user
 export const login = (email: string, password: string) => signInWithEmailAndPassword(auth, email, password);
 
 // Logout user
-export const logout = () => signOut(auth);
+export const logout = async () => {
+    clearGoogleSignInIntent();
+    await signOut(auth);
+};
+
+const shouldFallbackToRedirect = (error: unknown): boolean => {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    return [
+        "auth/popup-blocked",
+        "auth/operation-not-supported-in-this-environment",
+        "auth/web-storage-unsupported",
+        "auth/cancelled-popup-request",
+    ].includes(code);
+};
 
 export const requestPasswordResetEmail = async (email: string): Promise<void> => {
     const callable = httpsCallable(functions, "sendPasswordResetEmailWithCustomEmail");
     await callable({email});
 };
 
-// Sign in with Google
-export const signInWithGoogle = () => {
+// Prefer popup in normal browsers, then fall back to redirect where popup is blocked/unsupported.
+export const signInWithGoogle = async (intent: GoogleSignInIntent): Promise<void> => {
     const provider = new GoogleAuthProvider();
-    return signInWithPopup(auth, provider);
+    setGoogleSignInIntent(intent);
+
+    try {
+        await signInWithPopup(auth, provider);
+    } catch (err) {
+        if (!shouldFallbackToRedirect(err)) {
+            throw err;
+        }
+        await signInWithRedirect(auth, provider);
+    }
 };
 
 export const cacheGoogleAvatar = async (photoURL: string): Promise<string> => {
@@ -163,6 +234,7 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
         id: uid,
         email,
         global_id,
+        name_search: normalizeNameSearch(rest.name ?? ""),
         IC,
         registration_records: [],
         created_at: Timestamp.now(),
@@ -216,6 +288,7 @@ export const registerWithGoogle = async (
     const userDoc = {
         id: firebaseUser.uid,
         global_id,
+        name_search: normalizeNameSearch(extraData.name ?? ""),
         email: firebaseUser.email,
         image_url: imageUrl,
         registration_records: [],
@@ -235,6 +308,7 @@ export async function fetchAllUsers(): Promise<FirestoreUser[]> {
         return {
             id: docSnap.id,
             global_id: data.global_id,
+            name_search: data.name_search ?? null,
             memberId: data.memberId ?? null,
             name: data.name,
             IC: data.IC,
@@ -270,6 +344,7 @@ export async function fetchUsersByIds(userIds: string[]): Promise<Record<string,
             const user = {
                 id: docSnap.id,
                 global_id: data.global_id ?? null,
+                name_search: data.name_search ?? null,
                 memberId: data.memberId ?? null,
                 name: data.name,
                 IC: data.IC,
@@ -286,6 +361,49 @@ export async function fetchUsersByIds(userIds: string[]): Promise<Record<string,
             } as FirestoreUser;
 
             results[user.id] = user;
+        }
+    }
+
+    return results;
+}
+
+export async function fetchUsersByGlobalIds(globalIds: string[]): Promise<Record<string, FirestoreUser>> {
+    const ids = globalIds.filter((id) => id && id.trim().length > 0);
+    if (ids.length === 0) {
+        return {};
+    }
+
+    const results: Record<string, FirestoreUser> = {};
+    const batchSize = 10;
+
+    for (let i = 0; i < ids.length; i += batchSize) {
+        const batch = ids.slice(i, i + batchSize);
+        const q = query(collection(db, "users"), where("global_id", "in", batch));
+        const snapshot = await getDocs(q);
+        for (const docSnap of snapshot.docs) {
+            const data = docSnap.data();
+            const user = {
+                id: docSnap.id,
+                global_id: data.global_id ?? null,
+                name_search: data.name_search ?? null,
+                memberId: data.memberId ?? null,
+                name: data.name,
+                IC: data.IC,
+                email: data.email,
+                birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
+                gender: data.gender,
+                country: data.country,
+                image_url: data.image_url,
+                roles: data.roles ?? null,
+                school: data.school ?? null,
+                phone_number: data.phone_number ?? null,
+                registration_records: data.registration_records ?? [],
+                best_times: data.best_times ?? {},
+            } as FirestoreUser;
+
+            if (user.global_id) {
+                results[user.global_id] = user;
+            }
         }
     }
 
@@ -312,6 +430,7 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
     return {
         id: docSnap.id,
         global_id: data.global_id ?? null,
+        name_search: data.name_search ?? null,
         memberId: data.memberId ?? null,
         name: data.name,
         IC: data.IC,
@@ -328,15 +447,155 @@ export async function fetchUserByID(id: string): Promise<FirestoreUser | null> {
     };
 }
 
+export async function searchUsersByNameOrGlobalIdPrefix(keyword: string, limitCount = 10): Promise<FirestoreUser[]> {
+    const trimmedKeyword = keyword.trim();
+    if (!trimmedKeyword) {
+        return [];
+    }
+
+    const normalizedKeyword = normalizeNameSearch(trimmedKeyword);
+    const maxResults = Math.max(1, Math.min(limitCount, 20));
+    const usersRef = collection(db, "users");
+
+    const [globalIdSnapshot, nameSnapshot] = await Promise.all([
+        getDocs(
+            query(
+                usersRef,
+                where("global_id", ">=", trimmedKeyword),
+                where("global_id", "<=", `${trimmedKeyword}\uf8ff`),
+                limit(maxResults),
+            ),
+        ),
+        getDocs(
+            query(
+                usersRef,
+                where("name_search", ">=", normalizedKeyword),
+                where("name_search", "<=", `${normalizedKeyword}\uf8ff`),
+                limit(maxResults),
+            ),
+        ),
+    ]);
+
+    const mergedUsers = new Map<string, FirestoreUser>();
+    for (const snapshot of [globalIdSnapshot, nameSnapshot]) {
+        for (const docSnap of snapshot.docs) {
+            const data = docSnap.data();
+            const user = {
+                id: docSnap.id,
+                global_id: data.global_id ?? null,
+                name_search: data.name_search ?? null,
+                memberId: data.memberId ?? null,
+                name: data.name,
+                IC: data.IC,
+                email: data.email,
+                birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
+                gender: data.gender,
+                country: data.country,
+                image_url: data.image_url,
+                roles: data.roles ?? null,
+                school: data.school ?? null,
+                phone_number: data.phone_number ?? null,
+                registration_records: data.registration_records ?? [],
+                best_times: data.best_times ?? {},
+            } as FirestoreUser;
+
+            const uniqueKey = user.global_id ?? user.id;
+            mergedUsers.set(uniqueKey, user);
+        }
+    }
+
+    return Array.from(mergedUsers.values()).slice(0, maxResults);
+}
+
+export async function backfillUserNameSearchField(): Promise<number> {
+    const usersSnapshot = await getDocs(collection(db, "users"));
+    let updatedCount = 0;
+    let batch = writeBatch(db);
+    let batchOperations = 0;
+
+    for (const docSnap of usersSnapshot.docs) {
+        const userData = docSnap.data() as {name?: unknown; name_search?: unknown};
+        if (typeof userData.name !== "string") {
+            continue;
+        }
+
+        const normalizedName = normalizeNameSearch(userData.name);
+        const currentNameSearch = typeof userData.name_search === "string" ? userData.name_search : "";
+        if (currentNameSearch === normalizedName) {
+            continue;
+        }
+
+        batch.update(docSnap.ref, {name_search: normalizedName, updated_at: Timestamp.now()});
+        updatedCount += 1;
+        batchOperations += 1;
+
+        if (batchOperations === 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            batchOperations = 0;
+        }
+    }
+
+    if (batchOperations > 0) {
+        await batch.commit();
+    }
+
+    return updatedCount;
+}
+
 export async function getUserByGlobalId(globalId: string) {
-    const db = getFirestore();
     const q = query(collection(db, "users"), where("global_id", "==", globalId));
     const snap = await getDocs(q);
-    return snap.docs[0]?.data() as FirestoreUser | undefined;
+    if (snap.empty) {
+        return undefined;
+    }
+
+    const getTimestampMillis = (value: unknown): number => {
+        if (!value) return 0;
+        if (value instanceof Timestamp) return value.toMillis();
+        if (value instanceof Date) return value.getTime();
+        if (typeof value === "string" || typeof value === "number") {
+            const parsed = new Date(value);
+            return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+        }
+        return 0;
+    };
+
+    const getBestTimesCount = (value: unknown): number => {
+        if (!value || typeof value !== "object") {
+            return 0;
+        }
+        const bestTimes = value as Record<string, {time?: unknown} | null | undefined>;
+        const events = ["3-3-3", "3-6-3", "Cycle", "Overall"];
+        return events.reduce((count, event) => {
+            const time = bestTimes[event]?.time;
+            return typeof time === "number" && Number.isFinite(time) && time > 0 ? count + 1 : count;
+        }, 0);
+    };
+
+    const getRegistrationCount = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+
+    const bestDoc = [...snap.docs].sort((a, b) => {
+        const dataA = a.data() as Record<string, unknown>;
+        const dataB = b.data() as Record<string, unknown>;
+
+        const bestTimesDiff = getBestTimesCount(dataB.best_times) - getBestTimesCount(dataA.best_times);
+        if (bestTimesDiff !== 0) {
+            return bestTimesDiff;
+        }
+
+        const updatedDiff = getTimestampMillis(dataB.updated_at) - getTimestampMillis(dataA.updated_at);
+        if (updatedDiff !== 0) {
+            return updatedDiff;
+        }
+
+        return getRegistrationCount(dataB.registration_records) - getRegistrationCount(dataA.registration_records);
+    })[0];
+
+    return bestDoc.data() as FirestoreUser;
 }
 
 export async function getUserEmailByGlobalId(globalId: string) {
-    const db = getFirestore();
     const q = query(collection(db, "users"), where("global_id", "==", globalId));
     const snap = await getDocs(q);
     return snap.docs[0]?.data() as {email: string} | undefined;
@@ -348,47 +607,15 @@ export async function updateUserProfile(id: string, data: Partial<Omit<Firestore
     const validated = UpdateSchema.parse(data);
 
     // 2. 附加 updated_at 字段
-    const payload = {
+    const payload: Partial<FirestoreUser> & {updated_at: Timestamp} = {
         ...validated,
+        ...(typeof validated.name === "string" ? {name_search: normalizeNameSearch(validated.name)} : {}),
         updated_at: Timestamp.now(),
     };
 
     // 3. 更新数据库
     const userRef = doc(db, "users", id);
     await updateDoc(userRef, payload);
-
-    const profileUpdates: Partial<FirestoreUser> = {};
-    if (typeof validated.name !== "undefined") profileUpdates.name = validated.name;
-    if (typeof validated.birthdate !== "undefined") profileUpdates.birthdate = validated.birthdate;
-    if (typeof validated.gender !== "undefined") profileUpdates.gender = validated.gender;
-    if (typeof validated.country !== "undefined") profileUpdates.country = validated.country;
-    if (typeof validated.phone_number !== "undefined") profileUpdates.phone_number = validated.phone_number;
-    if (typeof validated.school !== "undefined") profileUpdates.school = validated.school;
-    if (typeof validated.image_url !== "undefined") profileUpdates.image_url = validated.image_url;
-    if (typeof validated.roles !== "undefined") profileUpdates.roles = validated.roles;
-    if (typeof validated.best_times !== "undefined") profileUpdates.best_times = validated.best_times;
-
-    const hasProfileUpdates = Object.keys(profileUpdates).length > 0;
-    if (hasProfileUpdates) {
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) {
-            const userData = userSnap.data() as FirestoreUser;
-            await updateProfilesForUser(
-                {id, global_id: userData.global_id, IC: userData.IC},
-                {
-                    name: profileUpdates.name,
-                    birthdate: profileUpdates.birthdate,
-                    gender: profileUpdates.gender,
-                    country: profileUpdates.country,
-                    phone_number: profileUpdates.phone_number,
-                    school: profileUpdates.school,
-                    image_url: profileUpdates.image_url,
-                    roles: profileUpdates.roles,
-                    best_times: profileUpdates.best_times,
-                },
-            );
-        }
-    }
 }
 
 export async function updateUserRoles(userId: string, roles: FirestoreUser["roles"]): Promise<void> {
@@ -398,21 +625,12 @@ export async function updateUserRoles(userId: string, roles: FirestoreUser["role
         roles: temp_roles,
         updated_at: Timestamp.now(),
     });
-
-    const userSnap = await getDoc(userRef);
-    if (userSnap.exists()) {
-        const userData = userSnap.data() as FirestoreUser;
-        await updateProfilesForUser({id: userId, global_id: userData.global_id, IC: userData.IC}, {roles: temp_roles});
-    }
 }
 
 /**
  * 增加单条 registration_records（常用）
  */
-export async function addProfileRegistrationRecordWithCapacityCheck(
-    profileId: string,
-    newRecord: UserRegistrationRecord,
-): Promise<void> {
+export async function addUserRegistrationRecord(userId: string, newRecord: UserRegistrationRecord): Promise<void> {
     if (!newRecord.tournament_id) {
         throw new Error("Tournament id is required.");
     }
@@ -434,15 +652,15 @@ export async function addProfileRegistrationRecordWithCapacityCheck(
         throw new Error("Tournament registration is full.");
     }
 
-    const profileRef = doc(db, "profiles", profileId);
-    const profileSnap = await getDoc(profileRef);
+    const userRef = doc(db, "users", userId);
+    const userSnap = await getDoc(userRef);
 
-    if (!profileSnap.exists()) {
-        throw new Error("Profile not found");
+    if (!userSnap.exists()) {
+        throw new Error("User not found");
     }
 
-    const profileData = profileSnap.data();
-    const existingRecords: UserRegistrationRecord[] = profileData.registration_records ?? [];
+    const userData = userSnap.data();
+    const existingRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
 
     const validatedRecord: UserRegistrationRecord = {
         ...newRecord,
@@ -460,26 +678,26 @@ export async function addProfileRegistrationRecordWithCapacityCheck(
 
     const updatedRecords = [...existingRecords, validatedRecord];
 
-    await updateDoc(profileRef, {
+    await updateDoc(userRef, {
         registration_records: updatedRecords,
         updated_at: Timestamp.now(),
     });
 }
 
-export async function updateProfileRegistrationRecordEntry(
-    profileId: string,
+export async function updateUserRegistrationRecord(
+    userId: string,
     recordId: string,
     updatedFields: Partial<UserRegistrationRecord>,
 ): Promise<void> {
-    const profileRef = doc(db, "profiles", profileId);
-    const profileSnap = await getDoc(profileRef);
+    const userRef = doc(db, "users", userId);
+    const userSnap = await getDoc(userRef);
 
-    if (!profileSnap.exists()) {
-        throw new Error("Profile not found");
+    if (!userSnap.exists()) {
+        throw new Error("User not found");
     }
 
-    const profileData = profileSnap.data();
-    const existingRecords: UserRegistrationRecord[] = profileData.registration_records ?? [];
+    const userData = userSnap.data();
+    const existingRecords: UserRegistrationRecord[] = userData.registration_records ?? [];
 
     // Find the record to update
     const recordIndex = existingRecords.findIndex((record) => record.tournament_id === recordId);
@@ -525,7 +743,7 @@ export async function updateProfileRegistrationRecordEntry(
     updatedRecords[recordIndex] = updatedRecord;
 
     // Update the document
-    await updateDoc(profileRef, {
+    await updateDoc(userRef, {
         registration_records: updatedRecords,
         updated_at: Timestamp.now(),
     });
@@ -589,23 +807,71 @@ export async function removeUserRegistrationRecordsByTournament(tournamentId: st
     }
 }
 
+/**
+ * Remove cached tournament history entries for a specific tournament
+ * from user_tournament_history documents.
+ */
+export async function removeUserTournamentHistoryByTournament(tournamentId: string): Promise<void> {
+    try {
+        const pageSize = 200;
+        const writeConcurrency = 20;
+        let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+
+        while (true) {
+            const pageQuery: Query<DocumentData> = lastDoc
+                ? query(collection(db, "user_tournament_history"), orderBy(documentId()), startAfter(lastDoc), limit(pageSize))
+                : query(collection(db, "user_tournament_history"), orderBy(documentId()), limit(pageSize));
+
+            const historySnapshot: QuerySnapshot<DocumentData> = await getDocs(pageQuery);
+            if (historySnapshot.empty) {
+                break;
+            }
+
+            const docsToUpdate: QueryDocumentSnapshot<DocumentData>[] = [];
+            for (const historyDoc of historySnapshot.docs) {
+                const historyData = historyDoc.data() as UserTournamentHistory;
+                const tournaments = Array.isArray(historyData.tournaments) ? historyData.tournaments : [];
+                const filteredTournaments = tournaments.filter((summary) => summary.tournamentId !== tournamentId);
+                if (filteredTournaments.length !== tournaments.length) {
+                    docsToUpdate.push(historyDoc);
+                }
+            }
+
+            for (let i = 0; i < docsToUpdate.length; i += writeConcurrency) {
+                const chunk = docsToUpdate.slice(i, i + writeConcurrency);
+                await Promise.all(
+                    chunk.map(async (historyDoc) => {
+                        const historyData = historyDoc.data() as UserTournamentHistory;
+                        const tournaments = Array.isArray(historyData.tournaments) ? historyData.tournaments : [];
+                        const filteredTournaments = tournaments.filter((summary) => summary.tournamentId !== tournamentId);
+                        const recordCount = filteredTournaments.reduce((total, summary) => {
+                            const results = Array.isArray(summary.results) ? summary.results : [];
+                            return total + results.length;
+                        }, 0);
+
+                        await updateDoc(historyDoc.ref, {
+                            tournaments: filteredTournaments,
+                            tournamentCount: filteredTournaments.length,
+                            recordCount,
+                            updatedAt: Timestamp.now(),
+                        });
+                    }),
+                );
+            }
+
+            lastDoc = historySnapshot.docs[historySnapshot.docs.length - 1];
+            if (historySnapshot.docs.length < pageSize) {
+                break;
+            }
+        }
+    } catch (error) {
+        console.error("Error cleaning up user tournament history:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+}
+
 export async function deleteAccount(userId: string): Promise<void> {
     try {
-        const profilesQuery = query(collection(db, "profiles"), where("owner_uid", "==", userId));
-        const profilesSnapshot = await getDocs(profilesQuery);
-        if (!profilesSnapshot.empty) {
-            await Promise.all(
-                profilesSnapshot.docs.map((profileDoc) =>
-                    updateDoc(profileDoc.ref, {
-                        owner_uid: null,
-                        owner_email: null,
-                        status: "unclaimed",
-                        updated_at: Timestamp.now(),
-                    }),
-                ),
-            );
-        }
-
         // 1. 删除 Firestore 里的用户资料
         await deleteDoc(doc(db, "users", userId));
 
@@ -634,21 +900,6 @@ export async function deleteAccount(userId: string): Promise<void> {
 
 export async function deleteUserProfileAdmin(userId: string): Promise<void> {
     try {
-        const profilesQuery = query(collection(db, "profiles"), where("owner_uid", "==", userId));
-        const profilesSnapshot = await getDocs(profilesQuery);
-        if (!profilesSnapshot.empty) {
-            await Promise.all(
-                profilesSnapshot.docs.map((profileDoc) =>
-                    updateDoc(profileDoc.ref, {
-                        owner_uid: null,
-                        owner_email: null,
-                        status: "unclaimed",
-                        updated_at: Timestamp.now(),
-                    }),
-                ),
-            );
-        }
-
         await deleteDoc(doc(db, "users", userId));
         const avatarRef = ref(storage, `avatars/${userId}`);
         await deleteObject(avatarRef).catch((error) => {

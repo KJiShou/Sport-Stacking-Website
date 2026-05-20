@@ -1,15 +1,12 @@
 // src/pages/ViewTournamentRegistrationPage.tsx
 
 import {useAuthContext} from "@/context/AuthContext";
-import type {DoubleRecruitment, Registration, Tournament, TournamentEvent} from "@/schema";
+import type {DoubleRecruitment, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
-import type {Team} from "@/schema/TeamSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {
-    addProfileRegistrationRecordWithCapacityCheck,
-    getUserByGlobalId,
-    updateProfileRegistrationRecordEntry,
-} from "@/services/firebase/authService";
+import {dedupeTeamsByEvent, resolveTeamEvent, teamMatchesEvent} from "@/utils/teamDeduplication";
+import type {LegacyTeam} from "@/utils/teamDeduplication";
+import {fetchUsersByGlobalIds, getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {
     createDoubleRecruitment,
     deleteDoubleRecruitment,
@@ -17,12 +14,10 @@ import {
 } from "@/services/firebase/doubleRecruitmentService";
 
 import {db} from "@/services/firebase/config";
-
 import {
     deleteIndividualRecruitment,
     getIndividualRecruitmentsByParticipant,
 } from "@/services/firebase/individualRecruitmentService";
-import {fetchProfileByGlobalId} from "@/services/firebase/profileService";
 import {fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {
@@ -33,16 +28,29 @@ import {
 import {
     createTeam,
     deleteTeam,
+    fetchTeamsByRegistrationId,
     fetchTeamsByTournament,
     fetchTournamentById,
     fetchTournamentEvents,
     removeMemberFromTeam,
     updateTeam,
 } from "@/services/firebase/tournamentsService";
+import {
+    deleteVerificationRequestByTournamentTeamMember,
+    deleteVerificationRequestsByTeamId,
+} from "@/services/firebase/verificationRequestService";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
-import {getEventKey, getEventLabel, isTeamEvent, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
+import {
+    getEventKey,
+    getEventLabel,
+    isTeamEvent,
+    matchesAnyEventKey,
+    matchesEventKey,
+    normalizeEventSelections,
+} from "@/utils/tournament/eventUtils";
 import {
     Button,
+    Checkbox,
     Divider,
     Form,
     Input,
@@ -58,73 +66,15 @@ import {
     Upload,
 } from "@arco-design/web-react";
 import type {UploadItem} from "@arco-design/web-react/es/Upload";
-import {IconClose, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import {IconClose, IconDelete, IconPlus, IconUndo} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
-import {Timestamp, collection, doc, getDocs, query, updateDoc, where} from "firebase/firestore";
+import {Timestamp} from "firebase/firestore";
 import {nanoid} from "nanoid";
-import {useEffect, useRef, useState} from "react";
-import {useNavigate, useParams} from "react-router-dom";
+import {useEffect, useMemo, useRef, useState} from "react";
+import {useLocation, useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
 
 const {Title} = Typography;
-const Option = Select.Option;
-
-type LegacyTeam = Team & {
-    event_ids?: string[];
-    events?: string[];
-    largest_age?: number;
-};
-
-const resolveTeamEvent = (
-    team: LegacyTeam,
-    tournamentEvents: TournamentEvent[] | null | undefined,
-): {eventId: string; eventName: string; eventDefinition: TournamentEvent | null} => {
-    const legacyIds = Array.isArray(team.event_ids) ? team.event_ids.filter(Boolean) : [];
-    const legacyNames = Array.isArray(team.events) ? team.events.filter(Boolean) : [];
-
-    let eventId = team.event_id ?? legacyIds[0] ?? "";
-    let eventName = Array.isArray(team.event) && team.event[0] ? (team.event[0] ?? "") : (legacyNames[0] ?? "");
-    let eventDefinition: TournamentEvent | null = null;
-
-    const eventsList = tournamentEvents ?? [];
-
-    if (eventsList.length > 0) {
-        if (eventId) {
-            eventDefinition = eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
-        }
-
-        if (!eventDefinition && eventName) {
-            eventDefinition = eventsList.find((evt) => matchesEventKey(eventName, evt)) ?? null;
-        }
-
-        if (eventDefinition) {
-            const resolvedId = getEventKey(eventDefinition);
-            if (!eventId || !matchesEventKey(eventId, eventDefinition)) {
-                eventId = resolvedId;
-            }
-            if (!eventName) {
-                eventName = getEventLabel(eventDefinition);
-            }
-        }
-    }
-
-    return {
-        eventId,
-        eventName,
-        eventDefinition,
-    };
-};
-
-const teamMatchesEvent = (
-    team: LegacyTeam,
-    event: TournamentEvent,
-    tournamentEvents: TournamentEvent[] | null | undefined,
-): boolean => {
-    const {eventId, eventName} = resolveTeamEvent(team, tournamentEvents);
-    const hasEventIdMatch = Boolean(eventId) && matchesEventKey(eventId, event);
-    const hasEventNameMatch = Boolean(eventName) && matchesEventKey(eventName, event);
-    return hasEventIdMatch || hasEventNameMatch;
-};
 
 const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): string[] => {
     if (selected.length === 0 || events.length === 0) {
@@ -141,10 +91,31 @@ const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): s
     });
 };
 
+const getRequiredEventIds = (events: TournamentEvent[]): string[] =>
+    events.filter((event) => event.type === "Individual").map((event) => getEventKey(event));
+
+const getAdditionalFeeForEvent = (event: TournamentEvent): number => {
+    if (event.additional_fee_enabled !== true) {
+        return 0;
+    }
+    const fee = typeof event.additional_fee === "number" ? event.additional_fee : 0;
+    return fee > 0 ? fee : 0;
+};
+
+const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds: string[]): number =>
+    events.reduce((total, event) => {
+        if (!matchesAnyEventKey(selectedEventIds, event)) {
+            return total;
+        }
+        return total + getAdditionalFeeForEvent(event);
+    }, 0);
+
+
 export default function EditTournamentRegistrationPage() {
     const {tournamentId, registrationId} = useParams();
     const {user} = useAuthContext();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const [form] = Form.useForm();
     const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -159,12 +130,30 @@ export default function EditTournamentRegistrationPage() {
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | File | null>(null);
     const [recruitmentModalVisible, setRecruitmentModalVisible] = useState(false);
     const [recruitmentTeam, setRecruitmentTeam] = useState<LegacyTeam | null>(null);
+    const [participantNameMap, setParticipantNameMap] = useState<Record<string, string>>({});
+    const [registrationOwnerIsMember, setRegistrationOwnerIsMember] = useState<boolean | null>(null);
+    const [duplicateTeamIdsToDelete, setDuplicateTeamIdsToDelete] = useState<string[]>([]);
 
     const [isMounted, setIsMounted] = useState<boolean>(false);
     const mountedRef = useRef(false);
     const initialEventIdsRef = useRef<string[]>([]);
 
     const [recruitmentForm] = Form.useForm();
+    const baseRegistrationFee = useMemo(() => {
+        if (!tournament) {
+            return 0;
+        }
+        if (registrationOwnerIsMember === true) {
+            return tournament.member_registration_fee ?? 0;
+        }
+        return tournament.registration_fee ?? 0;
+    }, [registrationOwnerIsMember, tournament]);
+    const additionalEventFee = useMemo(
+        () => calculateAdditionalEventFee(events, registration?.events_registered ?? []),
+        [events, registration?.events_registered],
+    );
+    const totalRegistrationFee = baseRegistrationFee + additionalEventFee;
+    const requiresPaymentProof = totalRegistrationFee > 0;
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
 
@@ -197,6 +186,7 @@ export default function EditTournamentRegistrationPage() {
                 );
             }
             setPaymentProofUrl(tempPaymentProofUrl);
+            const normalizedEventSelections = normalizeEventSelections(values.events_registered ?? [], events);
             const registrationData: Registration = {
                 id: registrationId,
                 tournament_id: tournamentId ?? "",
@@ -208,7 +198,7 @@ export default function EditTournamentRegistrationPage() {
                 country: registration?.country ?? "MY",
                 phone_number: values.phone_number ?? "",
                 organizer: values?.organizer ?? "",
-                events_registered: values.events_registered ?? [],
+                events_registered: normalizedEventSelections,
                 payment_proof_url: tempPaymentProofUrl,
                 registration_status: values?.registration_status ?? "pending",
                 rejection_reason: values?.registration_status === "rejected" ? rejection_reason : null,
@@ -224,6 +214,17 @@ export default function EditTournamentRegistrationPage() {
             const removedEventIds = (initialEventIdsRef.current ?? []).filter(
                 (eventId) => !registrationData.events_registered.includes(eventId),
             );
+            const removedMembersFromPersistedTeams = initialTeams.flatMap((initialTeam) => {
+                const currentTeam = teams.find((team) => team.id === initialTeam.id);
+                if (!currentTeam) {
+                    return [];
+                }
+
+                const initialMemberIds = new Set((initialTeam.members ?? []).map((member) => member.global_id).filter(Boolean));
+                const currentMemberIds = new Set((currentTeam.members ?? []).map((member) => member.global_id).filter(Boolean));
+                const removedMembers = Array.from(initialMemberIds).filter((memberId) => !currentMemberIds.has(memberId));
+                return removedMembers.map((memberId) => ({teamId: initialTeam.id, memberId}));
+            });
 
             if (removedTeams.length > 0 && registrationIds.length > 0) {
                 await Promise.all(
@@ -231,6 +232,11 @@ export default function EditTournamentRegistrationPage() {
                         const removedLeaderId = stripTeamLeaderPrefix(removedTeam.leader_id);
                         if (registrationIds.includes(removedLeaderId)) {
                             await deleteTeam(removedTeam.id);
+                            try {
+                                await deleteVerificationRequestsByTeamId(removedTeam.id);
+                            } catch (error) {
+                                console.error("Failed to delete verification requests for team:", error);
+                            }
                             try {
                                 const teamRecruitment = teamRecruitments.find(
                                     (recruitment) => recruitment.team_id === removedTeam.id,
@@ -250,6 +256,60 @@ export default function EditTournamentRegistrationPage() {
 
                         if (memberIdToRemove) {
                             await removeMemberFromTeam(removedTeam.id, memberIdToRemove);
+                            if (tournamentId) {
+                                try {
+                                    await deleteVerificationRequestByTournamentTeamMember(
+                                        tournamentId,
+                                        removedTeam.id,
+                                        memberIdToRemove,
+                                    );
+                                } catch (error) {
+                                    console.error("Failed to delete verification request for removed member:", error);
+                                }
+                            }
+                        }
+                    }),
+                );
+            }
+
+            const duplicateCleanupIds = duplicateTeamIdsToDelete.filter(
+                (teamId) => !removedTeams.some((team) => team.id === teamId),
+            );
+            if (duplicateCleanupIds.length > 0) {
+                await Promise.all(
+                    duplicateCleanupIds.map(async (teamId) => {
+                        try {
+                            await deleteTeam(teamId);
+                        } catch (error) {
+                            if (!(error instanceof Error && error.message.includes("Team not found"))) {
+                                console.error("Failed to delete duplicate team:", error);
+                            }
+                        }
+                        try {
+                            await deleteVerificationRequestsByTeamId(teamId);
+                        } catch (error) {
+                            console.error("Failed to delete verification requests for duplicate team:", error);
+                        }
+                        const relatedRecruitment = teamRecruitments.find((recruitment) => recruitment.team_id === teamId);
+                        if (relatedRecruitment) {
+                            try {
+                                await deleteTeamRecruitment(relatedRecruitment.id);
+                            } catch (error) {
+                                console.error("Failed to delete team recruitment for duplicate team:", error);
+                            }
+                        }
+                    }),
+                );
+                setTeamRecruitments((prev) => prev.filter((recruitment) => !duplicateCleanupIds.includes(recruitment.team_id)));
+            }
+
+            if (removedMembersFromPersistedTeams.length > 0 && tournamentId) {
+                await Promise.all(
+                    removedMembersFromPersistedTeams.map(async ({teamId, memberId}) => {
+                        try {
+                            await deleteVerificationRequestByTournamentTeamMember(tournamentId, teamId, memberId);
+                        } catch (error) {
+                            console.error("Failed to delete verification request for changed members:", error);
                         }
                     }),
                 );
@@ -278,6 +338,7 @@ export default function EditTournamentRegistrationPage() {
                 }
             }
             initialEventIdsRef.current = registrationData.events_registered;
+            setDuplicateTeamIdsToDelete([]);
 
             for (const team of teams) {
                 const memberIds = team.members.map((m) => m.global_id);
@@ -285,16 +346,18 @@ export default function EditTournamentRegistrationPage() {
                     memberIds.push(stripTeamLeaderPrefix(team.leader_id));
                 }
 
-                const memberUsers = await Promise.all(
-                    memberIds.map(async (id) => {
-                        const profile = await fetchProfileByGlobalId(id);
-                        if (profile) {
-                            return {birthdate: profile.birthdate};
-                        }
-                        const fallback = await getUserByGlobalId(id);
-                        return fallback ? {birthdate: fallback.birthdate} : null;
-                    }),
-                );
+                const memberUsers = await Promise.all(memberIds.map((id) => getUserByGlobalId(id)));
+                const memberNameById = new Map<string, string>();
+                memberIds.forEach((id, index) => {
+                    const normalizedId = (id ?? "").trim();
+                    if (!normalizedId) {
+                        return;
+                    }
+                    const candidateName = (memberUsers[index]?.name ?? "").trim();
+                    if (candidateName.length > 0) {
+                        memberNameById.set(normalizedId, candidateName);
+                    }
+                });
 
                 const ages = memberUsers
                     .map((memberUser) => {
@@ -345,11 +408,32 @@ export default function EditTournamentRegistrationPage() {
                 const eventDetails = eventDefinition;
                 const nextEventId = eventDetails ? getEventKey(eventDetails) : resolvedEventId;
                 const nextEventName = eventDetails ? getEventLabel(eventDetails) : resolvedEventName;
+                const normalizedEventType = (eventDetails?.type ?? resolvedEventName ?? "").toLowerCase();
+                const isDoubleEvent = normalizedEventType.includes("double");
+                const isParentChildEvent = normalizedEventType.includes("parent") && normalizedEventType.includes("child");
+
+                let resolvedTeamName = team.name;
+                if (isDoubleEvent || isParentChildEvent) {
+                    const leaderId = stripTeamLeaderPrefix(team.leader_id ?? "").trim();
+                    const leaderName = leaderId ? memberNameById.get(leaderId) : undefined;
+                    const partnerNames = (team.members ?? [])
+                        .map((member) => member.global_id?.trim())
+                        .filter((id): id is string => Boolean(id) && id !== leaderId)
+                        .map((id) => memberNameById.get(id))
+                        .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+                    const nameParts = [leaderName, ...partnerNames].filter(
+                        (name): name is string => typeof name === "string" && name.trim().length > 0,
+                    );
+                    if (nameParts.length > 0) {
+                        resolvedTeamName = Array.from(new Set(nameParts)).join(" & ");
+                    }
+                }
 
                 const {event_ids: _legacyEventIds, events: _legacyEvents, largest_age: _legacyLargestAge, ...teamRest} = team;
 
                 const teamData: Team = {
                     ...teamRest,
+                    name: resolvedTeamName,
                     event_id: nextEventId || null,
                     event: nextEventName ? [nextEventName] : Array.isArray(team.event) ? team.event : [],
                     team_age,
@@ -365,93 +449,6 @@ export default function EditTournamentRegistrationPage() {
                 }
             }
 
-            // Ensure team members have the event in registration + user history
-            const uniqueMemberIds = new Set<string>();
-            for (const team of teams) {
-                const teamMemberIds = (team.members ?? []).map((m) => m.global_id).filter(Boolean);
-                const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                if (leaderId) {
-                    teamMemberIds.push(leaderId);
-                }
-                for (const id of teamMemberIds) {
-                    uniqueMemberIds.add(id);
-                }
-            }
-
-            for (const memberId of uniqueMemberIds) {
-                const profile = await fetchProfileByGlobalId(memberId);
-                if (!profile) {
-                    continue;
-                }
-
-                for (const team of teams) {
-                    const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                    const isMember =
-                        leaderId === memberId || (team.members ?? []).some((member) => member.global_id === memberId);
-                    if (!isMember) {
-                        continue;
-                    }
-                    const {eventId, eventName, eventDefinition} = resolveTeamEvent(team, events ?? []);
-                    const resolvedEventKey = eventDefinition ? getEventKey(eventDefinition) : eventId || eventName;
-                    if (resolvedEventKey) {
-                        const registrationQuery = query(
-                            collection(db, "registrations"),
-                            where("tournament_id", "==", tournamentId),
-                            where("profile_id", "==", profile.id ?? ""),
-                        );
-                        const regSnap = await getDocs(registrationQuery);
-                        let registrationDoc = regSnap.docs[0];
-                        if (!registrationDoc) {
-                            const legacyQuery = query(
-                                collection(db, "registrations"),
-                                where("tournament_id", "==", tournamentId),
-                                where("user_global_id", "==", memberId),
-                            );
-                            const legacySnap = await getDocs(legacyQuery);
-                            registrationDoc = legacySnap.docs[0];
-                        }
-
-                        if (!registrationDoc) {
-                            continue;
-                        }
-
-                        const registrationData = registrationDoc.data() as Registration;
-                        const memberEventIds = new Set(registrationData.events_registered ?? []);
-                        memberEventIds.add(resolvedEventKey);
-
-                        const updatedEvents = Array.from(memberEventIds);
-                        if (updatedEvents.length !== (registrationData.events_registered ?? []).length) {
-                            await updateDoc(doc(db, "registrations", registrationDoc.id), {
-                                events_registered: updatedEvents,
-                                updated_at: Timestamp.now(),
-                            });
-                        }
-
-                        if (profile.id) {
-                            try {
-                                await updateProfileRegistrationRecordEntry(profile.id, tournamentId ?? "", {
-                                    events: updatedEvents,
-                                });
-                            } catch (error) {
-                                try {
-                                    await addProfileRegistrationRecordWithCapacityCheck(profile.id, {
-                                        tournament_id: tournamentId ?? "",
-                                        events: updatedEvents,
-                                        registration_date: Timestamp.now(),
-                                        status: registrationData.registration_status ?? "pending",
-                                        rejection_reason: registrationData.rejection_reason ?? null,
-                                        created_at: Timestamp.now(),
-                                        updated_at: Timestamp.now(),
-                                    });
-                                } catch (innerError) {
-                                    console.warn("Failed to update user registration record for member:", innerError);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             const userRegistrationData: Partial<UserRegistrationRecord> = {
                 status: values?.registration_status ?? "pending",
                 tournament_id: tournamentId ?? "",
@@ -462,36 +459,7 @@ export default function EditTournamentRegistrationPage() {
             if (!registrationId || !tournamentId) {
                 throw new Error("Missing registrationId or tournamentId for updating user registration record.");
             }
-            try {
-                const targetProfileId =
-                    registration?.profile_id ??
-                    (registration?.user_global_id ? (await fetchProfileByGlobalId(registration.user_global_id))?.id : null);
-                if (!targetProfileId) {
-                    throw new Error("Profile not found for registration.");
-                }
-                await updateProfileRegistrationRecordEntry(targetProfileId, tournamentId, userRegistrationData);
-            } catch (error) {
-                if (error instanceof Error && error.message === "Registration record not found") {
-                    const targetProfileId =
-                        registration?.profile_id ??
-                        (registration?.user_global_id ? (await fetchProfileByGlobalId(registration.user_global_id))?.id : null);
-                    if (!targetProfileId) {
-                        throw new Error("Profile not found for registration.");
-                    }
-                    const recordDate = registration?.created_at ?? registration?.updated_at ?? Timestamp.now();
-                    await addProfileRegistrationRecordWithCapacityCheck(targetProfileId, {
-                        tournament_id: tournamentId ?? "",
-                        events: userRegistrationData.events ?? [],
-                        registration_date: recordDate,
-                        status: userRegistrationData.status ?? "pending",
-                        rejection_reason: userRegistrationData.rejection_reason ?? null,
-                        created_at: registration?.created_at ?? Timestamp.now(),
-                        updated_at: Timestamp.now(),
-                    });
-                } else {
-                    throw error;
-                }
-            }
+            await updateUserRegistrationRecord(registration?.user_id ?? "", tournamentId, userRegistrationData);
 
             Message.success("Completely save the changes!");
         } catch (err) {
@@ -604,9 +572,42 @@ export default function EditTournamentRegistrationPage() {
         }
     };
 
+    const handleDeleteRecruitment = (recruitment: TeamRecruitment | DoubleRecruitment) => {
+        const isTeamRecruitment = "team_id" in recruitment;
+        const recruitmentLabel = isTeamRecruitment
+            ? `Team · ${recruitment.team_name} · ${recruitment.event_name}`
+            : `Double · ${recruitment.event_name}`;
+
+        Modal.confirm({
+            title: "Delete Recruitment",
+            content: `Are you sure you want to delete this recruitment? (${recruitmentLabel})`,
+            okText: "Delete",
+            okButtonProps: {status: "danger"},
+            onOk: async () => {
+                try {
+                    setLoading(true);
+                    if (isTeamRecruitment) {
+                        await deleteTeamRecruitment(recruitment.id);
+                        setTeamRecruitments((prev) => prev.filter((item) => item.id !== recruitment.id));
+                    } else {
+                        await deleteDoubleRecruitment(recruitment.id);
+                        setDoubleRecruitments((prev) => prev.filter((item) => item.id !== recruitment.id));
+                    }
+                    Message.success("Recruitment deleted.");
+                } catch (error) {
+                    console.error("Failed to delete recruitment:", error);
+                    Message.error("Failed to delete recruitment.");
+                } finally {
+                    setLoading(false);
+                }
+            },
+        });
+    };
+
     const loadData = async () => {
         if (!tournamentId || !user?.global_id || !registrationId) return;
         setLoading(true);
+        setRegistrationOwnerIsMember(null);
         try {
             const tournamentData = await fetchTournamentById(tournamentId);
             setTournament(tournamentData);
@@ -624,18 +625,24 @@ export default function EditTournamentRegistrationPage() {
                 return;
             }
             setRegistration({...userReg, id: registrationId});
+            const registrationOwner = userReg.user_global_id ? await getUserByGlobalId(userReg.user_global_id) : undefined;
+            const hasMemberId = typeof registrationOwner?.memberId === "string" && registrationOwner.memberId.trim().length > 0;
+            setRegistrationOwnerIsMember(hasMemberId);
             initialEventIdsRef.current = userReg.events_registered ?? [];
 
-            const allTeamsData = await fetchTeamsByTournament(tournamentId);
-            // Only show teams where the participant is leader or member (like ViewRegisterTournament)
-            const membershipTeams = allTeamsData.filter((team) => {
-                const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                return (
-                    leaderId === userReg.user_global_id ||
-                    (team.members ?? []).some((m) => m.global_id === userReg.user_global_id)
-                );
-            });
-            const normalizedTeams: LegacyTeam[] = membershipTeams.map((team) => {
+            const registrationTeams = await fetchTeamsByRegistrationId(registrationId);
+            const sourceTeams =
+                registrationTeams.length > 0
+                    ? registrationTeams
+                    : (await fetchTeamsByTournament(tournamentId)).filter((team) => {
+                          const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                          return (
+                              leaderId === userReg.user_global_id ||
+                              (team.members ?? []).some((m) => m.global_id === userReg.user_global_id)
+                          );
+                      });
+
+            const normalizedTeams: LegacyTeam[] = sourceTeams.map((team) => {
                 const legacyTeam = team as LegacyTeam;
                 const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentData?.events ?? []);
                 const normalizedLeaderId =
@@ -650,8 +657,15 @@ export default function EditTournamentRegistrationPage() {
                     event: eventName ? [eventName] : Array.isArray(legacyTeam.event) ? legacyTeam.event : [],
                 };
             });
-            setTeams(normalizedTeams);
-            setInitialTeams(normalizedTeams);
+            const deduped = dedupeTeamsByEvent(normalizedTeams, tournamentData?.events ?? [], registrationId);
+            setTeams(deduped.teams);
+            setInitialTeams(deduped.teams);
+            setDuplicateTeamIdsToDelete(deduped.duplicateTeamIds);
+            if (deduped.duplicateTeamIds.length > 0) {
+                Message.warning(
+                    `Detected ${deduped.duplicateTeamIds.length} duplicate team record(s). They will be removed when you save.`,
+                );
+            }
 
             const [leaderRecruitments, participantDoubleRecruitments] = await Promise.all([
                 getTeamRecruitmentsByLeader(userReg.user_global_id),
@@ -712,6 +726,15 @@ export default function EditTournamentRegistrationPage() {
         return event ? getEventLabel(event) : eventId;
     };
 
+    const getParticipantDisplay = (globalId?: string): string => {
+        const safeId = (globalId ?? "").trim();
+        if (!safeId) {
+            return "-";
+        }
+        const participantName = participantNameMap[safeId]?.trim() || "-";
+        return `${safeId} - ${participantName}`;
+    };
+
     useEffect(() => {
         if (!registration?.user_name || teams.length === 0) return;
         const updatedTeams = teams.map((team) => {
@@ -730,6 +753,39 @@ export default function EditTournamentRegistrationPage() {
         }
     }, [events, registration?.user_name, teams]);
 
+    useEffect(() => {
+        const loadParticipantNames = async () => {
+            const ids = [
+                registration?.user_global_id,
+                ...teams.map((team) => stripTeamLeaderPrefix(team.leader_id)),
+                ...teams.flatMap((team) => team.members.map((member) => member.global_id)),
+            ]
+                .map((id) => (id ?? "").trim())
+                .filter((id): id is string => Boolean(id));
+
+            const uniqueIds = Array.from(new Set(ids));
+            if (uniqueIds.length === 0) {
+                return;
+            }
+
+            try {
+                const usersByGlobalId = await fetchUsersByGlobalIds(uniqueIds);
+                const nextNameMap = uniqueIds.reduce(
+                    (acc, id) => {
+                        acc[id] = usersByGlobalId[id]?.name?.trim() || "-";
+                        return acc;
+                    },
+                    {} as Record<string, string>,
+                );
+                setParticipantNameMap(nextNameMap);
+            } catch (error) {
+                console.error("Failed to load participant names:", error);
+            }
+        };
+
+        void loadParticipantNames();
+    }, [registration?.user_global_id, teams]);
+
     const extraEventIds =
         (form.getFieldValue("events_registered") as string[] | undefined)?.filter(
             (eventId) => !events?.some((event) => getEventKey(event) === eventId),
@@ -744,7 +800,7 @@ export default function EditTournamentRegistrationPage() {
             <Spin loading={loading} tip="Loading…" className={"w-full"}>
                 <Button
                     type="outline"
-                    onClick={() => navigate(`/tournaments/${tournamentId}/registrations`)}
+                    onClick={() => navigate(`/tournaments/${tournamentId}/registrations${location.search}`)}
                     className={`w-fit pt-2 pb-2 mb-4`}
                 >
                     <IconUndo /> Go Back
@@ -813,31 +869,60 @@ export default function EditTournamentRegistrationPage() {
                         </Form.Item>
 
                         <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>
-                            <Select
-                                mode="multiple"
+                            <Checkbox.Group
                                 disabled={!edit}
-                                value={registration?.events_registered}
+                                value={(form.getFieldValue("events_registered") as string[] | undefined) ?? []}
                                 onChange={(selectedEvents: string[]) => {
-                                    form.setFieldValue("events_registered", selectedEvents);
-                                    setRegistration((prev) => (prev ? {...prev, events_registered: selectedEvents} : null));
-
                                     const tournamentEvents = events ?? [];
+                                    const requiredEventIds = getRequiredEventIds(tournamentEvents);
+                                    const nextSelectedEvents = Array.from(new Set([...selectedEvents, ...requiredEventIds]));
+                                    form.setFieldValue("events_registered", nextSelectedEvents);
+                                    setRegistration((prev) =>
+                                        prev ? {...prev, events_registered: nextSelectedEvents} : null,
+                                    );
+
                                     const selectedTeamEvents = tournamentEvents.filter(
                                         (event) =>
-                                            selectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
+                                            nextSelectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
                                     );
-
-                                    const newTeamEvents = selectedTeamEvents.filter(
-                                        (event) => !teams.some((team) => teamMatchesEvent(team, event, tournamentEvents)),
+                                    const registrationLeaderIds = [registration?.user_global_id, registration?.user_id].filter(
+                                        (value): value is string => Boolean(value),
                                     );
+                                    const removedEventIds: string[] = [];
 
-                                    if (newTeamEvents.length > 0) {
-                                        const newTeamsToAdd: LegacyTeam[] = newTeamEvents.map((event) => {
+                                    setTeams((prevTeams) => {
+                                        const retainedTeams = prevTeams.filter((team) => {
+                                            const stillSelected = selectedTeamEvents.some((event) =>
+                                                teamMatchesEvent(team, event, tournamentEvents),
+                                            );
+                                            if (stillSelected) {
+                                                return true;
+                                            }
+
+                                            const ownedByRegistration = registrationLeaderIds.includes(
+                                                stripTeamLeaderPrefix(team.leader_id),
+                                            );
+                                            if (!ownedByRegistration) {
+                                                return true;
+                                            }
+
+                                            const removedEventId = resolveTeamEvent(team, tournamentEvents).eventId;
+                                            if (removedEventId) {
+                                                removedEventIds.push(removedEventId);
+                                            }
+                                            return false;
+                                        });
+
+                                        const nextTeams = [...retainedTeams];
+                                        for (const event of selectedTeamEvents) {
+                                            if (nextTeams.some((team) => teamMatchesEvent(team, event, tournamentEvents))) {
+                                                continue;
+                                            }
                                             const eventKey = getEventKey(event);
                                             const eventType = (event.type ?? "").toLowerCase();
                                             const isDoubleEvent = eventType.includes("double");
                                             const isParentChild = eventType.includes("parent") && eventType.includes("child");
-                                            return {
+                                            nextTeams.push({
                                                 id: nanoid(),
                                                 tournament_id: tournamentId ?? "",
                                                 name: isDoubleEvent || isParentChild ? (registration?.user_name ?? "") : "",
@@ -848,76 +933,67 @@ export default function EditTournamentRegistrationPage() {
                                                 registration_id: registrationId ?? "",
                                                 team_age: 0,
                                                 looking_for_member: false,
-                                            };
-                                        });
-                                        setTeams((prev) => [...prev, ...newTeamsToAdd]);
-                                    }
-
-                                    const removedTeamEvents = teams.filter(
-                                        (team) =>
-                                            !selectedTeamEvents.some((event) => teamMatchesEvent(team, event, tournamentEvents)),
-                                    );
-                                    if (removedTeamEvents.length > 0) {
-                                        const registrationLeaderIds = [
-                                            registration?.user_global_id,
-                                            registration?.user_id,
-                                        ].filter((value): value is string => Boolean(value));
-                                        const removedTeamIds = removedTeamEvents
-                                            .filter((team) =>
-                                                registrationLeaderIds.includes(stripTeamLeaderPrefix(team.leader_id)),
-                                            )
-                                            .map((t) => t.id);
-                                        setTeams((prev) => prev.filter((team) => !removedTeamIds.includes(team.id)));
-
-                                        const removedEventIds = removedTeamEvents
-                                            .map((team) => resolveTeamEvent(team, tournamentEvents).eventId)
-                                            .filter((value): value is string => Boolean(value));
-                                        if (registration?.user_global_id && removedEventIds.length > 0) {
-                                            void (async () => {
-                                                try {
-                                                    const participantRecruitments = await getDoubleRecruitmentsByParticipant(
-                                                        registration.user_global_id,
-                                                    );
-                                                    const toDelete = participantRecruitments.filter(
-                                                        (recruitment) =>
-                                                            recruitment.tournament_id === tournamentId &&
-                                                            removedEventIds.includes(recruitment.event_id),
-                                                    );
-                                                    await Promise.all(
-                                                        toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)),
-                                                    );
-                                                    setDoubleRecruitments((prev) =>
-                                                        prev.filter(
-                                                            (recruitment) => !removedEventIds.includes(recruitment.event_id),
-                                                        ),
-                                                    );
-                                                } catch (error) {
-                                                    console.error("Failed to delete double recruitments:", error);
-                                                }
-                                            })();
+                                            });
                                         }
+
+                                        return nextTeams;
+                                    });
+
+                                    const uniqueRemovedEventIds = Array.from(new Set(removedEventIds));
+                                    if (registration?.user_global_id && uniqueRemovedEventIds.length > 0) {
+                                        void (async () => {
+                                            try {
+                                                const participantRecruitments = await getDoubleRecruitmentsByParticipant(
+                                                    registration.user_global_id,
+                                                );
+                                                const toDelete = participantRecruitments.filter(
+                                                    (recruitment) =>
+                                                        recruitment.tournament_id === tournamentId &&
+                                                        uniqueRemovedEventIds.includes(recruitment.event_id),
+                                                );
+                                                await Promise.all(
+                                                    toDelete.map((recruitment) => deleteDoubleRecruitment(recruitment.id)),
+                                                );
+                                                setDoubleRecruitments((prev) =>
+                                                    prev.filter(
+                                                        (recruitment) => !uniqueRemovedEventIds.includes(recruitment.event_id),
+                                                    ),
+                                                );
+                                            } catch (error) {
+                                                console.error("Failed to delete double recruitments:", error);
+                                            }
+                                        })();
                                     }
                                 }}
                             >
-                                {events?.map((event) => {
-                                    const key = getEventKey(event);
-                                    const displayText = getEventLabel(event);
-                                    return (
-                                        <Option key={key} value={key}>
-                                            {displayText}
-                                        </Option>
-                                    );
-                                })}
-                                {extraEventIds.map((eventId) => (
-                                    <Option key={`extra-${eventId}`} value={eventId}>
-                                        {getEventDisplayLabel(eventId)}
-                                    </Option>
-                                ))}
-                            </Select>
+                                <div className="flex flex-col gap-2">
+                                    {events?.map((event) => {
+                                        const key = getEventKey(event);
+                                        const displayText = getEventLabel(event);
+                                        const isRequired = event.type === "Individual";
+                                        return (
+                                            <Checkbox key={key} value={key} disabled={isRequired}>
+                                                {displayText} {isRequired && "(Required)"}
+                                            </Checkbox>
+                                        );
+                                    })}
+                                    {extraEventIds.map((eventId) => (
+                                        <Checkbox key={`extra-${eventId}`} value={eventId}>
+                                            {getEventDisplayLabel(eventId)}
+                                        </Checkbox>
+                                    ))}
+                                </div>
+                            </Checkbox.Group>
                         </Form.Item>
 
+                        {duplicateTeamIdsToDelete.length > 0 && (
+                            <div className="w-full rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+                                Merged duplicate team records for the same event. The extra records will be removed when you save
+                                this registration.
+                            </div>
+                        )}
                         <Form.Item shouldUpdate noStyle>
-                            <div className="flex flex-row w-full gap-10">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
                                 {teams.map((team) => {
                                     const {eventId, eventName, eventDefinition} = resolveTeamEvent(team, events ?? []);
                                     const teamEventLabel = eventName || "Team Event";
@@ -949,7 +1025,7 @@ export default function EditTournamentRegistrationPage() {
                                             : "";
 
                                     return (
-                                        <div key={team.id} className="border p-4 rounded-md shadow-sm">
+                                        <div key={team.id} className="border p-4 rounded-md shadow-sm min-w-0">
                                             <Title heading={6}>{teamEventLabel}</Title>
                                             <Divider />
                                             <Form.Item label={teamNameLabel}>
@@ -964,14 +1040,17 @@ export default function EditTournamentRegistrationPage() {
                                                 />
                                             </Form.Item>
                                             <Form.Item label={teamLeaderLabel}>
-                                                <Input value={team.leader_id} disabled={!edit} />
+                                                <Input
+                                                    value={getParticipantDisplay(stripTeamLeaderPrefix(team.leader_id))}
+                                                    disabled
+                                                />
                                             </Form.Item>
                                             <Form.Item label={teamMemberLabel}>
                                                 <div className="flex flex-col gap-2">
                                                     {team.members.map((m, i) => (
                                                         <div key={nanoid()} className="flex gap-2 items-center">
                                                             <Tag
-                                                                color={m.verified ? "green" : "red"}
+                                                                color={m.verified ? "arcoblue" : "red"}
                                                                 style={{cursor: edit ? "pointer" : "default"}}
                                                                 onClick={() => {
                                                                     if (edit) {
@@ -996,7 +1075,7 @@ export default function EditTournamentRegistrationPage() {
                                                                     }
                                                                 }}
                                                             >
-                                                                {m.global_id || "N/A"}
+                                                                {getParticipantDisplay(m.global_id)}
                                                             </Tag>
                                                             <Button
                                                                 icon={<IconClose />}
@@ -1030,7 +1109,7 @@ export default function EditTournamentRegistrationPage() {
                                                                 title: "Add New Member",
                                                                 content: (
                                                                     <Input
-                                                                        placeholder="Enter new member's profile ID"
+                                                                        placeholder="Enter new member's global ID"
                                                                         onChange={(v) => {
                                                                             newMemberId = v;
                                                                         }}
@@ -1065,13 +1144,22 @@ export default function EditTournamentRegistrationPage() {
                                             </Form.Item>
                                             <div className="mt-3 flex flex-col gap-2">
                                                 {activeRecruitment ? (
-                                                    <Tag color={activeRecruitment.status === "active" ? "blue" : "gray"}>
-                                                        Recruitment {activeRecruitment.status}
-                                                        {"max_members_needed" in activeRecruitment &&
-                                                        typeof activeRecruitment.max_members_needed === "number"
-                                                            ? ` · Need ${activeRecruitment.max_members_needed}`
-                                                            : ""}
-                                                    </Tag>
+                                                    <div className="flex items-center gap-2">
+                                                        <Tag color={activeRecruitment.status === "active" ? "blue" : "gray"}>
+                                                            Recruitment {activeRecruitment.status}
+                                                            {"max_members_needed" in activeRecruitment &&
+                                                            typeof activeRecruitment.max_members_needed === "number"
+                                                                ? ` · Need ${activeRecruitment.max_members_needed}`
+                                                                : ""}
+                                                        </Tag>
+                                                        <Button
+                                                            size="mini"
+                                                            status="danger"
+                                                            disabled={!edit}
+                                                            icon={<IconDelete />}
+                                                            onClick={() => handleDeleteRecruitment(activeRecruitment)}
+                                                        />
+                                                    </div>
                                                 ) : (
                                                     <Tag color="gray">No recruitment yet</Tag>
                                                 )}
@@ -1102,20 +1190,55 @@ export default function EditTournamentRegistrationPage() {
                             <Form.Item label="Recruitments">
                                 <div className="flex flex-col gap-2">
                                     {doubleRecruitments.map((recruitment) => (
-                                        <Tag key={recruitment.id} color="arcoblue">
-                                            Double · {recruitment.event_name} · {recruitment.status}
-                                        </Tag>
+                                        <div key={recruitment.id} className="flex items-center gap-2">
+                                            <Tag color="arcoblue">
+                                                Double · {recruitment.event_name} · {recruitment.status}
+                                            </Tag>
+                                            <Button
+                                                size="mini"
+                                                status="danger"
+                                                disabled={!edit}
+                                                icon={<IconDelete />}
+                                                onClick={() => handleDeleteRecruitment(recruitment)}
+                                            />
+                                        </div>
                                     ))}
                                     {teamRecruitments.map((recruitment) => (
-                                        <Tag key={recruitment.id} color="green">
-                                            Team · {recruitment.team_name} · {recruitment.event_name} · {recruitment.status}
-                                        </Tag>
+                                        <div key={recruitment.id} className="flex items-center gap-2">
+                                            <Tag color="green">
+                                                Team · {recruitment.team_name} · {recruitment.event_name} · {recruitment.status}
+                                            </Tag>
+                                            <Button
+                                                size="mini"
+                                                status="danger"
+                                                disabled={!edit}
+                                                icon={<IconDelete />}
+                                                onClick={() => handleDeleteRecruitment(recruitment)}
+                                            />
+                                        </div>
                                     ))}
                                 </div>
                             </Form.Item>
                         )}
 
-                        <Form.Item label="Payment Proof" field={`payment_proof_url`}>
+                        <Form.Item
+                            label={
+                                <div className="flex flex-col gap-1">
+                                    <div>Payment Proof</div>
+                                    {requiresPaymentProof && (
+                                        <div className="text-2xl font-bold text-green-600">
+                                            Total Payment: RM{totalRegistrationFee}
+                                        </div>
+                                    )}
+                                    {requiresPaymentProof && additionalEventFee > 0 && (
+                                        <Typography.Text type="secondary">
+                                            Base RM{baseRegistrationFee} + Additional RM{additionalEventFee}
+                                        </Typography.Text>
+                                    )}
+                                </div>
+                            }
+                            field={`payment_proof_url`}
+                        >
                             <Upload
                                 listType="picture-card"
                                 imagePreview

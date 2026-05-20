@@ -51,5 +51,5 @@ export function formatDateSafe(value?: Date | string | number | null): string {
         return "—";
     }
 
-    return date.toLocaleDateString();
+    return date.toLocaleDateString("en-GB");
 }

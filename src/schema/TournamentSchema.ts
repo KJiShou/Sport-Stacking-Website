@@ -29,6 +29,7 @@ export const EventSchema = z.object({
     codes: z.array(z.enum(["3-3-3", "3-6-3", "Cycle"])),
     type: z.enum([
         "Individual",
+        "Open Age Individual",
         "Double",
         "Team Relay",
         "Parent & Child",
@@ -40,6 +41,8 @@ export const EventSchema = z.object({
     gender: EventGenderSchema,
     teamSize: z.number().optional(),
     max_participants: z.number().optional().nullable(),
+    additional_fee_enabled: z.boolean().optional().nullable(),
+    additional_fee: z.number().optional().nullable(),
     age_brackets: z.array(AgeBracketSchema),
 });
 
@@ -61,7 +64,7 @@ export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
 export const TournamentSchema = z.object({
     id: z.string().optional().nullable(),
     name: z.string().optional().nullable(),
-    country: z.array(z.string()).optional().nullable(),
+    country: z.array(z.string(), z.string()).optional().nullable(),
     address: z.string().optional().nullable(),
     venue: z.string().optional().nullable(),
     agenda: z.string().optional().nullable(),

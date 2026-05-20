@@ -8,6 +8,16 @@ import {useEffect, useMemo, useState} from "react";
 
 const {Title, Paragraph, Text} = Typography;
 
+const formatBirthdate = (birthdate: FirestoreUser["birthdate"]): string => {
+    if (birthdate instanceof Date) {
+        return birthdate.toLocaleDateString("en-GB");
+    }
+    if (birthdate && typeof birthdate === "object" && "toDate" in birthdate && typeof birthdate.toDate === "function") {
+        return birthdate.toDate().toLocaleDateString("en-GB");
+    }
+    return "-";
+};
+
 export default function UserManagementPage() {
     const {user} = useAuthContext();
     const isAdmin = user?.roles?.modify_admin || false;
@@ -56,8 +66,10 @@ export default function UserManagementPage() {
         setDetailModalVisible(true);
         setEditMode(false);
         editForm.setFieldsValue({
+            name: entry.name ?? "",
             phone_number: entry.phone_number ?? "",
             school: entry.school ?? "",
+            gender: entry.gender ?? undefined,
         });
     };
 
@@ -93,16 +105,20 @@ export default function UserManagementPage() {
             const values = await editForm.validate();
             setLoading(true);
             await updateUserProfile(selectedUser.id, {
+                name: values.name,
                 phone_number: values.phone_number,
                 school: values.school,
+                gender: values.gender,
             });
             setUsers((prev) =>
                 prev.map((entry) =>
                     entry.id === selectedUser.id
                         ? {
                               ...entry,
+                              name: values.name,
                               phone_number: values.phone_number,
                               school: values.school,
+                              gender: values.gender,
                           }
                         : entry,
                 ),
@@ -111,8 +127,10 @@ export default function UserManagementPage() {
                 prev
                     ? {
                           ...prev,
+                          name: values.name,
                           phone_number: values.phone_number,
                           school: values.school,
+                          gender: values.gender,
                       }
                     : prev,
             );
@@ -230,8 +248,17 @@ export default function UserManagementPage() {
                         </div>
                         {editMode ? (
                             <Form form={editForm} layout="vertical">
+                                <Form.Item label="Name" field="name" rules={[{required: true, message: "Enter name"}]}>
+                                    <Input />
+                                </Form.Item>
                                 <Form.Item label="Phone" field="phone_number">
                                     <Input />
+                                </Form.Item>
+                                <Form.Item label="Gender" field="gender">
+                                    <Select allowClear>
+                                        <Select.Option value="Male">Male</Select.Option>
+                                        <Select.Option value="Female">Female</Select.Option>
+                                    </Select>
                                 </Form.Item>
                                 <Form.Item label="School" field="school">
                                     <Input />
@@ -240,8 +267,28 @@ export default function UserManagementPage() {
                         ) : (
                             <>
                                 <div>
+                                    <Text type="secondary">Name</Text>
+                                    <div>{selectedUser.name ?? "-"}</div>
+                                </div>
+                                <div>
                                     <Text type="secondary">Phone</Text>
                                     <div>{selectedUser.phone_number ?? "-"}</div>
+                                </div>
+                                <div>
+                                    <Text type="secondary">Gender</Text>
+                                    <div>{selectedUser.gender ?? "-"}</div>
+                                </div>
+                                <div>
+                                    <Text type="secondary">Birthdate</Text>
+                                    <div>{formatBirthdate(selectedUser.birthdate)}</div>
+                                </div>
+                                <div>
+                                    <Text type="secondary">Country / State</Text>
+                                    <div>
+                                        {Array.isArray(selectedUser.country)
+                                            ? selectedUser.country.join(" / ")
+                                            : (selectedUser.country ?? "-")}
+                                    </div>
                                 </div>
                                 <div>
                                     <Text type="secondary">School</Text>
@@ -252,20 +299,19 @@ export default function UserManagementPage() {
                         <div>
                             <Text type="secondary">Roles</Text>
                             <div className="flex flex-wrap gap-2">
-                                {selectedUser.roles ? (
+                                {selectedUser.roles &&
                                     Object.entries(selectedUser.roles)
                                         .filter(([, enabled]) => Boolean(enabled))
                                         .map(([role]) => (
                                             <Tag key={role} color="blue">
                                                 {role.replace(/_/g, " ")}
                                             </Tag>
-                                        ))
-                                ) : (
-                                    <Text>-</Text>
-                                )}
-                                {selectedUser.roles && Object.values(selectedUser.roles).every((value) => !value) && (
-                                    <Text>-</Text>
-                                )}
+                                        ))}
+                                {selectedUser.memberId && <Tag color="green">memberId: {selectedUser.memberId}</Tag>}
+                                {!selectedUser.memberId &&
+                                    (!selectedUser.roles || Object.values(selectedUser.roles).every((value) => !value)) && (
+                                        <Text>-</Text>
+                                    )}
                             </div>
                         </div>
                     </div>

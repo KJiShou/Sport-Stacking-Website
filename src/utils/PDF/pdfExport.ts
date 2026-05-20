@@ -33,6 +33,21 @@ import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, Tournam
 // Utility Functions
 const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9_]/g, "");
 
+const formatPDFTime = (value: unknown): string => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value.toFixed(3);
+    }
+
+    if (typeof value === "string") {
+        const parsed = Number.parseFloat(value);
+        if (Number.isFinite(parsed)) {
+            return parsed.toFixed(3);
+        }
+    }
+
+    return "N/A";
+};
+
 const inferImageFormat = (imageDataUrl: string | undefined): jsPDF.ImageFormat => {
     if (!imageDataUrl) {
         return "PNG";
@@ -54,6 +69,14 @@ const getPrimaryEventCode = (event: TournamentEvent): string => {
 };
 
 const isTeamEventType = (type: string): boolean => ["double", "team relay", "parent & child"].includes(type.toLowerCase());
+const isIndividualSheetType = (type: string): boolean => {
+    const normalized = type.trim().toLowerCase();
+    return normalized === "individual" || normalized === "open age individual";
+};
+const isStackOutChampionType = (type: string): boolean => {
+    const normalized = type.trim().toLowerCase();
+    return normalized === "stackout champion" || normalized === "stack up champion";
+};
 
 const createPDFFilename = (parts: string[]): string =>
     parts
@@ -62,14 +85,29 @@ const createPDFFilename = (parts: string[]): string =>
         .toLowerCase();
 
 const openPDFInNewTab = (doc: jsPDF, filename: string): void => {
-    const pdfOutput = doc.output("bloburl");
+    const pdfBlob = doc.output("blob");
+    const pdfUrl = URL.createObjectURL(pdfBlob);
     const newWindow = window.open("", "_blank");
+
     if (newWindow) {
-        newWindow.location.href = pdfOutput.toString();
-        newWindow.document.title = filename;
-    } else {
-        throw new Error("Please allow popups to preview PDF");
+        newWindow.location.href = pdfUrl;
+        try {
+            newWindow.document.title = filename;
+        } catch {
+            // Ignore cross-window title assignment issues.
+        }
+        return;
     }
+
+    const link = document.createElement("a");
+    link.href = pdfUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.download = filename;
+    link.style.display = "none";
+    document.body.append(link);
+    link.click();
+    link.remove();
 };
 
 const HEADER_ICON_Y = 8;
@@ -77,12 +115,47 @@ const HEADER_ICON_SIZE = 30;
 const getHeaderTitleY = (): number => HEADER_ICON_Y + HEADER_ICON_SIZE / 2;
 
 let cachedDefaultIconDataUrl: string | undefined;
+type ImageLoadError = Error & {
+    cause?: unknown;
+    meta?: {
+        logoUrl: string;
+        origin: string;
+        responseStatus?: number;
+        responseStatusText?: string;
+        failureStage?: "fetch" | "response" | "decode";
+        possibleCause?: "cors_or_network_error" | "http_error" | "image_decode_error";
+    };
+};
+
+const getCurrentOrigin = (): string => {
+    if (typeof window === "undefined" || !window.location?.origin) {
+        return "unknown";
+    }
+    return window.location.origin;
+};
+
+const logImageLoadFailure = (label: string, logoUrl: string | null | undefined, error: unknown): void => {
+    const normalizedError = error as ImageLoadError;
+    const meta = normalizedError?.meta;
+    console.error(`[PDF] Failed to load ${label}`, {
+        origin: meta?.origin ?? getCurrentOrigin(),
+        logoUrl: meta?.logoUrl ?? logoUrl ?? null,
+        responseStatus: meta?.responseStatus ?? null,
+        responseStatusText: meta?.responseStatusText ?? null,
+        failureStage: meta?.failureStage ?? "unknown",
+        possibleCause: meta?.possibleCause ?? (normalizedError instanceof TypeError ? "cors_or_network_error" : "unknown"),
+        errorName: normalizedError instanceof Error ? normalizedError.name : typeof error,
+        errorMessage: normalizedError instanceof Error ? normalizedError.message : String(error),
+        cause: normalizedError?.cause,
+    });
+};
+
 const loadDefaultIcon = async (): Promise<string | undefined> => {
     if (cachedDefaultIconDataUrl !== undefined) return cachedDefaultIconDataUrl;
     try {
         cachedDefaultIconDataUrl = await fetchImageFixedOrientation(defaultIconSrc);
     } catch (error) {
-        console.error("Error loading default icon:", error);
+        logImageLoadFailure("default icon", defaultIconSrc, error);
         cachedDefaultIconDataUrl = undefined;
     }
     return cachedDefaultIconDataUrl;
@@ -93,7 +166,7 @@ const loadUserLogo = async (logoUrl?: string | null): Promise<string | undefined
     try {
         return await fetchImageFixedOrientation(logoUrl);
     } catch (error) {
-        console.error("Error loading user logo:", error);
+        logImageLoadFailure("user logo", logoUrl, error);
         return undefined;
     }
 };
@@ -133,7 +206,7 @@ const addPDFFooter = (doc: jsPDF): void => {
         doc.setPage(i);
         doc.setFontSize(8);
         doc.text(
-            `Generated on ${new Date().toLocaleString()} - Page ${i} of ${pageCount}`,
+            `Generated on ${new Date().toLocaleString("en-GB")} - Page ${i} of ${pageCount}`,
             14,
             doc.internal.pageSize.height - 10,
         );
@@ -141,32 +214,78 @@ const addPDFFooter = (doc: jsPDF): void => {
 };
 
 async function fetchImageFixedOrientation(url: string): Promise<string> {
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.statusText}`);
+    let response: Response;
+    try {
+        response = await fetch(url);
+    } catch (error) {
+        const wrappedError = new Error("Failed to fetch image due to a CORS or network error") as ImageLoadError;
+        wrappedError.cause = error;
+        wrappedError.meta = {
+            logoUrl: url,
+            origin: getCurrentOrigin(),
+            failureStage: "fetch",
+            possibleCause: "cors_or_network_error",
+        };
+        throw wrappedError;
     }
+
+    if (!response.ok) {
+        const wrappedError = new Error(`Failed to fetch image: ${response.status} ${response.statusText}`) as ImageLoadError;
+        wrappedError.meta = {
+            logoUrl: url,
+            origin: getCurrentOrigin(),
+            responseStatus: response.status,
+            responseStatusText: response.statusText,
+            failureStage: "response",
+            possibleCause: "http_error",
+        };
+        throw wrappedError;
+    }
+
     const blob = await response.blob();
 
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
+        const objectUrl = URL.createObjectURL(blob);
+        const cleanupObjectUrl = () => URL.revokeObjectURL(objectUrl);
+
         img.onload = () => {
-            // 创建canvas
+            cleanupObjectUrl();
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
-            if (!ctx) return reject("Cannot get 2D context");
+            if (!ctx) {
+                const wrappedError = new Error("Cannot get 2D context for image rendering") as ImageLoadError;
+                wrappedError.meta = {
+                    logoUrl: url,
+                    origin: getCurrentOrigin(),
+                    failureStage: "decode",
+                    possibleCause: "image_decode_error",
+                };
+                reject(wrappedError);
+                return;
+            }
 
-            // 直接以图像尺寸创建canvas
             canvas.width = img.width;
             canvas.height = img.height;
             ctx.drawImage(img, 0, 0);
 
-            // 将画好的canvas导出
             const dataURL = canvas.toDataURL("image/png");
             resolve(dataURL);
         };
-        img.onerror = reject;
-        img.src = URL.createObjectURL(blob);
+        img.onerror = (event) => {
+            cleanupObjectUrl();
+            const wrappedError = new Error("Failed to decode image for PDF export") as ImageLoadError;
+            wrappedError.cause = event;
+            wrappedError.meta = {
+                logoUrl: url,
+                origin: getCurrentOrigin(),
+                failureStage: "decode",
+                possibleCause: "image_decode_error",
+            };
+            reject(wrappedError);
+        };
+        img.src = objectUrl;
     });
 }
 
@@ -259,6 +378,9 @@ const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string
     return teamData;
 };
 
+const registrationMatchesParticipantId = (registration: Registration, participantId: string): boolean =>
+    registration.user_id === participantId || registration.user_global_id === participantId;
+
 // Main Export Functions
 export const exportParticipantListToPDF = async (options: ExportPDFOptions): Promise<void> => {
     const {
@@ -269,6 +391,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         registrations,
         ageMap,
         phoneMap,
+        nameMap: providedNameMap,
         searchTerm = "",
         isTeamEvent,
         team,
@@ -327,7 +450,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
 
         // Generate table data
         const teamEventType = events?.find((evt) => matchesEventKey(eventKey, evt) || getEventKey(evt) === eventKey)?.type ?? "";
-        const nameMap = registrations.reduce(
+        const registrationNameMap = registrations.reduce(
             (acc, registration) => {
                 if (registration.user_global_id) {
                     acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
@@ -336,10 +459,11 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
             },
             {} as Record<string, string>,
         );
+        const resolvedNameMap = {...registrationNameMap, ...(providedNameMap ?? {})};
         const tableData = team
             ? generateSingleTeamTableData(team, phoneMap, teamEventType)
             : isTeamEvent
-              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, nameMap, events ?? [])
+              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, resolvedNameMap, events ?? [])
               : generateIndividualTableData(registrations, bracket, phoneMap);
 
         const headers = team
@@ -468,6 +592,19 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
             return parts.length > 0 ? parts.join(", ") : "None";
         };
 
+        const sortedRegistrations = [...registrations].sort((a, b) => {
+            const globalIdA = (a.user_global_id ?? "").trim();
+            const globalIdB = (b.user_global_id ?? "").trim();
+
+            if (globalIdA && globalIdB) {
+                return globalIdA.localeCompare(globalIdB, undefined, {numeric: true, sensitivity: "base"});
+            }
+            if (globalIdA) return -1;
+            if (globalIdB) return 1;
+
+            return (a.user_name ?? "").localeCompare(b.user_name ?? "", undefined, {sensitivity: "base"});
+        });
+
         // Header
         doc.setFont("times", "bold");
         doc.setFontSize(25);
@@ -486,18 +623,19 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
 
         const startY = currentY;
 
-        const tableData = registrations.map((r, index) => [
+        const tableData = sortedRegistrations.map((r, index) => [
             (index + 1).toString(),
             r.user_global_id || "N/A",
             r.user_name || "N/A",
             ageMap[r.user_id]?.toString() || "N/A",
+            r.organizer?.trim() || r.country?.trim() || "N/A",
             phoneMap[r.user_global_id] || "N/A",
             formatEventsRegistered(r),
         ]);
 
         autoTable(doc, {
             startY,
-            head: [["No.", "Global ID", "Name", "Age", "Phone", "Events Registered"]],
+            head: [["No.", "Global ID", "Name", "Age", "School", "Phone", "Events Registered"]],
             body: tableData,
             theme: "plain",
             styles: {
@@ -516,12 +654,13 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
                 fontStyle: "bold",
             },
             columnStyles: {
-                0: {cellWidth: 10},
-                1: {cellWidth: 25},
-                2: {cellWidth: 40},
-                3: {cellWidth: 15},
+                0: {cellWidth: 8},
+                1: {cellWidth: 22},
+                2: {cellWidth: 32},
+                3: {cellWidth: 12},
                 4: {cellWidth: 30},
-                5: {cellWidth: 65},
+                5: {cellWidth: 22},
+                6: {cellWidth: 56},
             },
         });
 
@@ -623,28 +762,35 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                             for (const code of effectiveCodes) {
                                 const dataKey = `${normalizeCodeKey(code)}Best`;
                                 const value = (r as Record<string, unknown>)[dataKey];
-                                rowData.push(
-                                    typeof value === "number" && Number.isFinite(value)
-                                        ? value.toFixed(3)
-                                        : typeof value === "string"
-                                          ? value
-                                          : "N/A",
-                                );
+                                rowData.push(formatPDFTime(value));
                             }
                         } else {
-                            rowData.push(r.try1?.toFixed(3) ?? "N/A", r.try2?.toFixed(3) ?? "N/A", r.try3?.toFixed(3) ?? "N/A");
+                            rowData.push(formatPDFTime(r.try1), formatPDFTime(r.try2), formatPDFTime(r.try3));
                         }
-                        rowData.push(r.bestTime.toFixed(3));
+                        rowData.push(formatPDFTime(r.bestTime));
                         return rowData;
                     });
 
                     const bracketHighlight =
-                        typeof bracket.highlightFinalists === "boolean" ? bracket.highlightFinalists : highlightFinalists;
+                        typeof bracketResult.highlightFinalists === "boolean"
+                            ? bracketResult.highlightFinalists
+                            : highlightFinalists;
                     const shouldHighlightRows = round !== "Final" && bracketHighlight;
+                    const highlightedRecordClassifications = bracketResult.highlightedRecordClassifications ?? {};
                     const finalCriteria = shouldHighlightRows ? bracket.final_criteria || [] : [];
                     const rankGroups: {classification: string; startRank: number; endRank: number}[] = [];
+                    const classificationColors: {[key: string]: [number, number, number]} = {
+                        advance: [255, 255, 0],
+                        intermediate: [144, 238, 144],
+                        beginner: [173, 216, 230],
+                        prelim: [255, 218, 185],
+                    };
 
-                    if (shouldHighlightRows && finalCriteria.length > 0) {
+                    if (
+                        shouldHighlightRows &&
+                        finalCriteria.length > 0 &&
+                        Object.keys(highlightedRecordClassifications).length === 0
+                    ) {
                         const classificationOrder = ["advance", "intermediate", "beginner", "prelim"];
                         const sortedCriteria = [...finalCriteria].sort(
                             (a, b) =>
@@ -672,17 +818,24 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                         didParseCell: shouldHighlightRows
                             ? (data) => {
                                   if (data.section === "body") {
+                                      const sourceRecord = records[data.row.index];
+                                      const mappedClassification = sourceRecord?.id
+                                          ? highlightedRecordClassifications[String(sourceRecord.id)]
+                                          : undefined;
+
+                                      if (mappedClassification) {
+                                          const color = classificationColors[mappedClassification];
+                                          if (color) {
+                                              data.cell.styles.fillColor = color;
+                                          }
+                                          return;
+                                      }
+
                                       const rawRank = data.row.raw[0];
                                       const rank = typeof rawRank === "number" ? rawRank : Number.parseInt(String(rawRank), 10);
 
                                       for (const group of rankGroups) {
                                           if (rank >= group.startRank && rank <= group.endRank) {
-                                              const classificationColors: {[key: string]: [number, number, number]} = {
-                                                  advance: [255, 255, 0],
-                                                  intermediate: [144, 238, 144],
-                                                  beginner: [173, 216, 230],
-                                                  prelim: [255, 218, 185],
-                                              };
                                               const color = classificationColors[group.classification];
                                               if (color) {
                                                   data.cell.styles.fillColor = color;
@@ -710,8 +863,13 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
 
                     currentY = (doc as jsPDF & {lastAutoTable?: {finalY: number}}).lastAutoTable?.finalY + 10 || currentY + 20;
 
+                    const legendClassifications =
+                        Object.keys(highlightedRecordClassifications).length > 0
+                            ? Array.from(new Set(Object.values(highlightedRecordClassifications)))
+                            : rankGroups.map((group) => group.classification);
+
                     // Add classification legend if we're showing prelim results with highlights
-                    if (shouldHighlightRows && rankGroups.length > 0) {
+                    if (shouldHighlightRows && legendClassifications.length > 0) {
                         // Add some spacing before the legend
                         currentY += 5;
 
@@ -737,19 +895,13 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                             beginner: "Beginner - Entry-level performers (Light Blue)",
                         };
 
-                        const classificationColors: {[key: string]: [number, number, number]} = {
-                            advance: [255, 255, 0],
-                            intermediate: [144, 238, 144],
-                            beginner: [173, 216, 230],
-                        };
-
                         const legendStartX = 25;
                         const boxSize = 4;
                         const boxSpacing = 2;
 
-                        for (const group of rankGroups) {
-                            const label = classificationLabels[group.classification];
-                            const color = classificationColors[group.classification];
+                        for (const classification of legendClassifications) {
+                            const label = classificationLabels[classification];
+                            const color = classificationColors[classification];
 
                             if (label && color) {
                                 // Draw colored box
@@ -917,6 +1069,7 @@ export const exportAllBracketsListToPDF = async (
     teams: Team[],
     ageMap: Record<string, number>,
     phoneMap: Record<string, string>,
+    nameMap: Record<string, string> = {},
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
@@ -967,7 +1120,7 @@ export const exportAllBracketsListToPDF = async (
                 doc.text(`${bracket.name} (Ages ${bracket.min_age}-${bracket.max_age})`, 20, startY);
                 startY += 8;
 
-                const nameMap = registrations.reduce(
+                const registrationNameMap = registrations.reduce(
                     (acc, registration) => {
                         if (registration.user_global_id) {
                             acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
@@ -976,8 +1129,9 @@ export const exportAllBracketsListToPDF = async (
                     },
                     {} as Record<string, string>,
                 );
+                const resolvedNameMap = {...registrationNameMap, ...nameMap};
                 const tableData = isTeamEvent
-                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, nameMap, events ?? [])
+                    ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, resolvedNameMap, events ?? [])
                     : registrations
                           .filter((r) => {
                               const matchesEvent =
@@ -1226,11 +1380,20 @@ export const generateStackingSheetPDF = async (
     participants: Registration[],
     ageMap: Record<string, number>,
     division: string,
-    options: {logoUrl?: string; includeAllParticipants?: boolean; participantId?: string; eventCodes?: string[]} = {},
+    options: {
+        logoUrl?: string;
+        includeAllParticipants?: boolean;
+        participantId?: string;
+        eventCodes?: string[];
+        roundLabel?: string;
+    } = {},
     sheetType = "Individual",
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
+        if (isStackOutChampionType(sheetType)) {
+            throw new Error("StackOut Champion does not require a time sheet.");
+        }
         const targetParticipants = options.participantId
             ? participants.filter((p) => p.user_id === options.participantId)
             : participants;
@@ -1258,6 +1421,8 @@ export const generateStackingSheetPDF = async (
                 sheetType,
                 options.eventCodes ?? [],
                 index % 2, // position: 0 top, 1 bottom
+                undefined,
+                options.roundLabel,
             );
         });
 
@@ -1277,6 +1442,7 @@ export interface TimeSheetEntry {
     division: string;
     sheetType: string;
     eventCodes: string[];
+    roundLabel?: string;
 }
 
 export interface CertificateEntry {
@@ -1300,9 +1466,13 @@ export const exportCombinedTimeSheetsPDF = async (options: {
 }): Promise<void> => {
     const {tournament, entries, ageMap, nameMap, logoUrl, filename} = options;
     const doc = new jsPDF();
+    const filteredEntries = entries.filter((entry) => !isStackOutChampionType(entry.sheetType));
+    if (filteredEntries.length === 0) {
+        throw new Error("No eligible time sheets to generate.");
+    }
     const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(logoUrl ?? tournament.logo)]);
 
-    entries.forEach((entry, index) => {
+    filteredEntries.forEach((entry, index) => {
         if (index > 0 && index % 2 === 0) {
             doc.addPage();
         }
@@ -1318,6 +1488,7 @@ export const exportCombinedTimeSheetsPDF = async (options: {
             entry.eventCodes,
             index % 2,
             nameMap,
+            entry.roundLabel,
         );
     });
 
@@ -1440,11 +1611,14 @@ export const generateTeamStackingSheetPDF = async (
     team: Team,
     ageMap: Record<string, number>,
     division: string,
-    options: {logoUrl?: string; eventCodes?: string[]; nameMap?: Record<string, string>} = {},
+    options: {logoUrl?: string; eventCodes?: string[]; nameMap?: Record<string, string>; roundLabel?: string} = {},
     sheetType = "Team",
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
+        if (isStackOutChampionType(sheetType)) {
+            throw new Error("StackOut Champion does not require a time sheet.");
+        }
         const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(tournament.logo)]);
 
         generateSingleStackingSheet(
@@ -1459,6 +1633,7 @@ export const generateTeamStackingSheetPDF = async (
             options.eventCodes ?? [],
             0,
             options.nameMap,
+            options.roundLabel,
         );
 
         const filename = createPDFFilename([tournament.name, team.name, "timesheet.pdf"]);
@@ -1477,6 +1652,7 @@ const resolveStackLabels = (sheetType: string, eventCodes: string[]): string[] =
 
     switch (sheetType.toLowerCase()) {
         case "individual":
+        case "open age individual":
             return ["3-3-3", "3-6-3", "Cycle"];
         case "double":
         case "parent & child":
@@ -1500,6 +1676,7 @@ const generateSingleStackingSheet = (
     eventCodes: string[] = [],
     position = 0,
     nameMap: Record<string, string> = {},
+    roundLabel = "Prelim",
 ): void => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginX = 5;
@@ -1555,19 +1732,56 @@ const generateSingleStackingSheet = (
         }
     }
 
+    const fitTextToWidth = (
+        value: string,
+        maxWidth: number,
+        preferredSize: number,
+        minSize = 9,
+    ): {text: string; fontSize: number} => {
+        const source = (value ?? "").trim();
+        if (source.length === 0) {
+            return {text: "-", fontSize: preferredSize};
+        }
+
+        let fontSize = preferredSize;
+        doc.setFont("times", "bold");
+        doc.setFontSize(fontSize);
+
+        while (fontSize > minSize && doc.getTextWidth(source) > maxWidth) {
+            fontSize -= 0.5;
+            doc.setFontSize(fontSize);
+        }
+
+        if (doc.getTextWidth(source) <= maxWidth) {
+            return {text: source, fontSize};
+        }
+
+        let truncated = source;
+        while (truncated.length > 0 && doc.getTextWidth(`${truncated}...`) > maxWidth) {
+            truncated = truncated.slice(0, -1);
+        }
+        const display = truncated.length > 0 ? `${truncated}...` : "...";
+        return {text: display, fontSize};
+    };
+
     // Title text (right side, centered vertically)
     doc.setFont("times", "bold");
-    doc.setFontSize(16);
     const titleCenterY = startY + titleHeight / 2;
     const titleCenterX = marginX + logoBoxWidth + (pageWidth - 2 * marginX - logoBoxWidth * 2) / 2;
-    doc.text(`${tournament.venue}`, titleCenterX, titleCenterY - 4, {align: "center"});
-    doc.text(`${tournament.name}`, titleCenterX, titleCenterY + 4, {align: "center"});
+    const titleMaxWidth = pageWidth - marginX * 2 - logoBoxWidth * 2 - 6;
+    const venueTitle = fitTextToWidth(tournament.venue ?? "-", titleMaxWidth, 14);
+    doc.setFontSize(venueTitle.fontSize);
+    doc.text(venueTitle.text, titleCenterX, titleCenterY - 4, {align: "center"});
+    const tournamentTitle = fitTextToWidth(tournament.name ?? "-", titleMaxWidth, 14);
+    doc.setFontSize(tournamentTitle.fontSize);
+    doc.text(tournamentTitle.text, titleCenterX, titleCenterY + 4, {align: "center"});
 
     // === 2. Subtitle ===
     doc.setFontSize(11);
     doc.setFont("times", "bold");
-    doc.text(`${sheetType} Prelim`, marginX, startY + titleHeight + 8);
-    const sheetTypeWidth = marginX + doc.getTextWidth(`${sheetType} Prelim`);
+    const sheetTitle = `${sheetType} ${roundLabel}`;
+    doc.text(sheetTitle, marginX, startY + titleHeight + 8);
+    const sheetTypeWidth = marginX + doc.getTextWidth(sheetTitle);
     doc.setFont("times", "normal");
     doc.text("Time Sheet", sheetTypeWidth + 1, startY + titleHeight + 8);
 
@@ -1575,7 +1789,7 @@ const generateSingleStackingSheet = (
     const infoY = startY + titleHeight + 15;
 
     // Name and ID based on sheet type
-    if (sheetType !== "Individual") {
+    if (!isIndividualSheetType(sheetType)) {
         const team = participant as Team;
         doc.setFont("times", "normal");
         doc.setFontSize(10);
@@ -1583,10 +1797,20 @@ const generateSingleStackingSheet = (
         const nameX = marginX + doc.getTextWidth("Name: ");
         doc.setFont("times", "bold");
         doc.setFontSize(14);
-        const allMembers = [team.leader_id, ...(team.members || []).map((m) => m.global_id)].filter(Boolean);
+        const allMembers = [stripTeamLeaderPrefix(team.leader_id), ...(team.members || []).map((m) => m.global_id)].filter(
+            Boolean,
+        );
         const memberNames = allMembers.map((memberId) => nameMap[memberId] ?? memberId);
         const normalizedSheetType = sheetType.toLowerCase();
-        const nameSeparator = normalizedSheetType === "double" || normalizedSheetType === "parent & child" ? " & " : ", ";
+        const nameSeparator = (() => {
+            switch (normalizedSheetType) {
+                case "double":
+                case "parent & child":
+                    return " & ";
+                default:
+                    return ", ";
+            }
+        })();
         const memberNamesValue = memberNames.length > 0 ? memberNames.join(nameSeparator) : "________________________";
         const memberNameLines = doc.splitTextToSize(memberNamesValue, pageWidth - marginX * 2 - nameX);
         doc.text(memberNameLines, nameX, infoY);
@@ -1621,8 +1845,17 @@ const generateSingleStackingSheet = (
         // Other information - normal size, positioned below the name
         doc.setFont("times", "normal");
         doc.setFontSize(10);
-        doc.text(`Division: ${division || "___"}`, marginX, infoY + sectionSpacing);
-        doc.text(`Age: ${(ageMap[individual.user_id] || "___").toString()}`, marginX + 80, infoY + sectionSpacing);
+        const divisionY = infoY + sectionSpacing;
+        const divisionText = `Division: ${division || "___"}`;
+        doc.text(divisionText, marginX, divisionY);
+
+        const ageText = `Age: ${(ageMap[individual.user_id] || "___").toString()}`;
+        const agePadding = 8;
+        const ageX = marginX + doc.getTextWidth(divisionText) + agePadding;
+        const ageMaxX = pageWidth - marginX - doc.getTextWidth(ageText);
+        const ageY = ageX <= ageMaxX ? divisionY : divisionY + sectionSpacing;
+        const resolvedAgeX = ageX <= ageMaxX ? ageX : marginX;
+        doc.text(ageText, resolvedAgeX, ageY);
         const schoolOrCountry =
             individual.organizer && individual.organizer.trim().length > 0 ? individual.organizer : individual.country;
         const schoolLabel = "School/Organizer: ";
@@ -1630,7 +1863,7 @@ const generateSingleStackingSheet = (
         const schoolLabelWidth = doc.getTextWidth(schoolLabel);
         const schoolMaxWidth = pageWidth - marginX * 2 - schoolLabelWidth;
         const schoolLines = doc.splitTextToSize(schoolValue, schoolMaxWidth);
-        const schoolY = infoY + sectionSpacing * 2;
+        const schoolY = ageY + sectionSpacing;
         doc.text(schoolLabel, marginX, schoolY);
         if (schoolLines.length > 0) {
             doc.text(schoolLines[0], marginX + schoolLabelWidth, schoolY);
@@ -1845,7 +2078,10 @@ const filterRegistrations = (
         );
 
         return registrationList.filter((registration) => {
-            if (!teamUserIds.has(registration.user_id)) {
+            const hasParticipantMatch = Array.from(teamUserIds).some((participantId) =>
+                registrationMatchesParticipantId(registration, participantId),
+            );
+            if (!hasParticipantMatch) {
                 return false;
             }
 
@@ -1897,9 +2133,13 @@ export const generateAllTeamStackingSheetsPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
+        const filteredTeams = isStackOutChampionType(sheetType) ? [] : teams;
+        if (filteredTeams.length === 0) {
+            throw new Error("No eligible time sheets to generate.");
+        }
         const [leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([loadDefaultIcon(), loadUserLogo(tournament.logo)]);
 
-        teams.forEach((team, index) => {
+        filteredTeams.forEach((team, index) => {
             if (index > 0) doc.addPage();
             generateSingleStackingSheet(
                 doc,

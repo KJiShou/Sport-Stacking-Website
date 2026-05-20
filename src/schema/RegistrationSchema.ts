@@ -6,7 +6,6 @@ export const RegistrationSchema = z.object({
     tournament_id: z.string(),
     user_id: z.string(),
     user_global_id: z.string(),
-    profile_id: z.string().optional().nullable(),
     user_name: z.string(),
     age: z.number(),
     gender: z.enum(["Male", "Female"]).optional(),
@@ -39,9 +38,6 @@ export const RegistrationSchema = z.object({
         .optional()
         .nullable(),
     final_status: z.string().optional().nullable(),
-    registered_by_admin: z.boolean().optional().nullable(),
-    registered_by_admin_id: z.string().optional().nullable(),
-    auto_verified_by_admin: z.boolean().optional().nullable(),
     created_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
 });
@@ -52,7 +48,6 @@ export const RegistrationFormSchema = z.object({
     id: z.string().optional().nullable(),
     tournament_id: z.string(),
     user_global_id: z.string(),
-    profile_id: z.string().optional().nullable(),
     user_name: z.string(),
     age: z.number(),
     gender: z.enum(["Male", "Female"]).optional(),
@@ -77,9 +72,6 @@ export const RegistrationFormSchema = z.object({
         .optional()
         .nullable(),
     final_status: z.string().optional().nullable(),
-    registered_by_admin: z.boolean().optional().nullable(),
-    registered_by_admin_id: z.string().optional().nullable(),
-    auto_verified_by_admin: z.boolean().optional().nullable(),
     created_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
 });

@@ -1,6 +1,6 @@
-name: ⚙️ CI - Lint, Format, Build
+name: ⚙️ CI - Validate & Build
 
-run-name: 🚀 Deploy triggered by @${{ github.actor }}
+run-name: ✅ CI triggered by @${{ github.actor }}
 
 on:
   push:
@@ -14,10 +14,9 @@ permissions:
   pull-requests: write
 
 jobs:
-  lint_and_build:
-    name: Lint & Build on ${{ github.ref_name }}
+  validate_and_build:
+    name: Validate & Build on ${{ github.ref_name }}
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
     steps:
       # Step 1: Checkout Code
@@ -53,39 +52,22 @@ jobs:
       - name: 📦 Install dependencies
         run: yarn install --immutable
 
-      # Step 5: Format Code with Biome
-      - name: 🧹 Format Code
-        run: yarn format
+      # Step 5: Validate (typecheck + lint)
+      - name: 🧪 Run validate
+        run: yarn validate
 
-      # Step 6: Biome Check (optional but recommended)
-      - name: 🧪 Run Biome check
-        run: yarn check
-
-      # Step 7: Lint Code
-      - name: 🔍 Run lint
-        run: yarn lint
-
-      # Step 8: Inject Firebase & API Keys to .env
-      - name: 🔑 Inject Firebase & API Keys to .env
+      # Step 6: Inject placeholder env values for build-time variables
+      - name: 🔧 Create .env for CI build
         run: |
-          echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}" >> .env
-          echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}" >> .env
-          echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}" >> .env
-          echo "VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}" >> .env
-          echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}" >> .env
-          echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}" >> .env
-          echo "VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}" >> .env
-          echo "VITE_GOOGLE_MAPS_API_KEY=${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" >> .env
+          echo "VITE_FIREBASE_API_KEY=ci-placeholder" >> .env
+          echo "VITE_FIREBASE_AUTH_DOMAIN=ci-placeholder.firebaseapp.com" >> .env
+          echo "VITE_FIREBASE_PROJECT_ID=ci-placeholder" >> .env
+          echo "VITE_FIREBASE_STORAGE_BUCKET=ci-placeholder.appspot.com" >> .env
+          echo "VITE_FIREBASE_MESSAGING_SENDER_ID=000000000000" >> .env
+          echo "VITE_FIREBASE_APP_ID=1:000000000000:web:placeholder" >> .env
+          echo "VITE_FIREBASE_MEASUREMENT_ID=G-PLACEHOLDER" >> .env
+          echo "VITE_GOOGLE_MAPS_API_KEY=ci-placeholder" >> .env
 
-      # Step 9: Build the Project
+      # Step 7: Build the project
       - name: 🏗️ Build Project
         run: yarn build
-
-      # Step 10: Deploy to Firebase Hosting
-      - name: 🚀 Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPORT_STACKING_WEBSITE }}
-          channelId: live
-          projectId: sport-stacking-website

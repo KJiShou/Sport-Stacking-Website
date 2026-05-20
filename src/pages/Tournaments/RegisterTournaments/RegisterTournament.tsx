@@ -2,22 +2,27 @@
 
 import LoginForm from "@/components/common/Login";
 import {useAuthContext} from "@/context/AuthContext";
-import type {ExpandedEvent, Profile, Registration, Tournament, TournamentEvent} from "@/schema";
+import type {ExpandedEvent, Registration, Tournament, TournamentEvent} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {addProfileRegistrationRecordWithCapacityCheck, getUserByGlobalId} from "@/services/firebase/authService";
-import {createDoubleRecruitment} from "@/services/firebase/doubleRecruitmentService";
-import {createIndividualRecruitment} from "@/services/firebase/individualRecruitmentService";
 import {
-    fetchAllProfiles,
-    fetchProfileByGlobalId,
-    fetchProfilesByOwner,
-    getProfileContactEmailByGlobalId,
-} from "@/services/firebase/profileService";
-import {createRegistration, deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
+    addUserRegistrationRecord,
+    getUserByGlobalId,
+    getUserEmailByGlobalId,
+    searchUsersByNameOrGlobalIdPrefix,
+} from "@/services/firebase/authService";
+import {createDoubleRecruitment, getDoubleRecruitmentsByTournament, updateDoubleRecruitmentStatus} from "@/services/firebase/doubleRecruitmentService";
+import {createIndividualRecruitment} from "@/services/firebase/individualRecruitmentService";
+import {createRegistration, fetchRegistrations} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService";
-import {createTeam, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {
+    createTeam,
+    fetchOccupiedParticipantIdsByTournamentEvent,
+    fetchTournamentById,
+    fetchTournamentEvents,
+    fetchUnavailableParticipantIdsByEvent,
+} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
@@ -44,11 +49,13 @@ import {
     Upload,
 } from "@arco-design/web-react";
 import {IconCalendar, IconExclamationCircle, IconLaunch} from "@arco-design/web-react/icon";
+import type {UploadItem} from "@arco-design/web-react/es/Upload";
 import MDEditor from "@uiw/react-md-editor";
 import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import {FirebaseError} from "firebase/app";
 import {Timestamp} from "firebase/firestore";
-import {type ReactNode, useEffect, useState} from "react";
+import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
 import remarkBreaks from "remark-breaks";
 dayjs.extend(isSameOrAfter);
@@ -61,7 +68,15 @@ type TeamEntry = {
     event?: ExpandedEvent;
 };
 
-const isParentChildEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "parent & child";
+type MemberSearchOption = {
+    label: string;
+    value: string;
+};
+
+const isParentChildEvent = (event?: ExpandedEvent) => {
+    const normalized = (event?.type ?? "").toLowerCase();
+    return normalized.includes("parent") && normalized.includes("child");
+};
 const isTeamRelayEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "team relay";
 const isDoubleEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "double";
 const isNonScoringEvent = (event?: ExpandedEvent) => {
@@ -74,17 +89,35 @@ const isNonScoringEvent = (event?: ExpandedEvent) => {
     );
 };
 
+const getAdditionalFeeForEvent = (event: ExpandedEvent): number => {
+    if (event.additional_fee_enabled !== true) {
+        return 0;
+    }
+    const fee = typeof event.additional_fee === "number" ? event.additional_fee : 0;
+    return fee > 0 ? fee : 0;
+};
+
+const calculateAdditionalEventFee = (events: ExpandedEvent[], selectedEventIds: string[]): number =>
+    events.reduce((total, event) => {
+        if (!matchesAnyEventKey(selectedEventIds, event)) {
+            return total;
+        }
+        return total + getAdditionalFeeForEvent(event);
+    }, 0);
+
 export default function RegisterTournamentPage() {
     const {tournamentId} = useParams();
     const [form] = Form.useForm();
-    const {firebaseUser, user, currentProfile} = useAuthContext();
+    const {firebaseUser, user} = useAuthContext();
     const navigate = useNavigate();
     const location = useLocation();
     const deviceBreakpoint = useDeviceBreakpoint();
     const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
     const eventSelectWidth = isSmallScreen ? 200 : 345;
     const [tournament, setTournament] = useState<Tournament | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [pageLoading, setPageLoading] = useState(true);
+    const [submitLoading, setSubmitLoading] = useState(false);
+    const [paymentUploadLoading, setPaymentUploadLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [options, setOptions] = useState<ExpandedEvent[]>([]);
     const [availableEvents, setAvailableEvents] = useState<ExpandedEvent[]>([]);
@@ -92,51 +125,26 @@ export default function RegisterTournamentPage() {
     const [tournamentData, setTournamentData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
     const [requiredKeys, setRequiredKeys] = useState<string[]>([]);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
-    const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
+    const [paymentProofFileList, setPaymentProofFileList] = useState<UploadItem[]>([]);
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
-    const [price, setPrice] = useState<number | null>(null);
+    const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
     const [lookingForTeams, setLookingForTeams] = useState<string[]>([]); // Events user is looking for teams
     const [loginModalVisible, setLoginModalVisible] = useState(false);
-    const [profiles, setProfiles] = useState<Profile[]>([]);
-
-    // Auto-fill form and refresh profile list when profile changes
-    useEffect(() => {
-        if (currentProfile) {
-            form.setFieldsValue({
-                global_id: currentProfile.global_id,
-                name: currentProfile.name,
-                gender: currentProfile.gender,
-                phone: currentProfile.phone_number,
-                ic: currentProfile.IC,
-                birthDate:
-                    currentProfile.birthdate instanceof Timestamp
-                        ? currentProfile.birthdate.toDate().toISOString()
-                        : dayjs(currentProfile.birthdate).toISOString(),
-            });
-        } else if (user) {
-            // Fallback to use User data if for some reason no profile is selected (e.g. creating first profile logic not triggered yet?)
-            // But ideally currentProfile is always set if user exists and has profiles.
-            form.setFieldsValue({
-                // global_id: user.global_id, // Might not exist on user if old schema
-                name: user.name,
-                gender: user.gender,
-                phone: user.phone_number,
-                ic: user.IC,
-                birthDate:
-                    user.birthdate instanceof Timestamp
-                        ? user.birthdate.toDate().toISOString()
-                        : dayjs(user.birthdate).toISOString(),
-            });
-        }
-    }, [currentProfile, user, form]);
-    const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-    const [registerAsAdmin, setRegisterAsAdmin] = useState(false);
-    const [autoVerifyTeams, setAutoVerifyTeams] = useState(true);
-    const isAdmin = user?.roles?.modify_admin || user?.roles?.edit_tournament || false;
-    const requiresPaymentProof = (price ?? 0) > 0;
-    const shouldRequirePaymentProof = requiresPaymentProof && !(registerAsAdmin && isAdmin);
-    const showPaymentProofSection = requiresPaymentProof;
-    const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null;
+    const [occupiedIdsByEvent, setOccupiedIdsByEvent] = useState<Record<string, Set<string>>>({});
+    const [fullEventIds, setFullEventIds] = useState<Set<string>>(new Set());
+    const [memberSearchLoadingByEvent, setMemberSearchLoadingByEvent] = useState<Record<string, boolean>>({});
+    const [memberSearchOptionsByEvent, setMemberSearchOptionsByEvent] = useState<Record<string, MemberSearchOption[]>>({});
+    const memberSearchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+    const baseRegistrationFee = useMemo(
+        () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee) ?? 0,
+        [tournament, user],
+    );
+    const additionalEventFee = useMemo(
+        () => calculateAdditionalEventFee(availableEvents, selectedEventIds),
+        [availableEvents, selectedEventIds],
+    );
+    const totalRegistrationFee = baseRegistrationFee + additionalEventFee;
+    const requiresPaymentProof = totalRegistrationFee > 0;
 
     useEffect(() => {
         if (!firebaseUser) {
@@ -145,58 +153,6 @@ export default function RegisterTournamentPage() {
             setLoginModalVisible(false);
         }
     }, [firebaseUser]);
-
-    useEffect(() => {
-        if (!isAdmin) {
-            return;
-        }
-        const params = new URLSearchParams(location.search);
-        const adminParam = params.get("admin");
-        if (adminParam === "1" || adminParam === "true") {
-            setRegisterAsAdmin(true);
-        }
-    }, [isAdmin, location.search]);
-
-    useEffect(() => {
-        if (!firebaseUser) {
-            setProfiles([]);
-            setSelectedProfileId(null);
-            return;
-        }
-
-        const loadProfiles = async () => {
-            try {
-                if (registerAsAdmin && isAdmin) {
-                    const allProfiles = await fetchAllProfiles();
-                    setProfiles(allProfiles);
-                    if (!selectedProfileId && allProfiles.length > 0) {
-                        setSelectedProfileId(allProfiles[0].id ?? null);
-                    }
-                    return;
-                }
-
-                const ownedProfiles = await fetchProfilesByOwner(firebaseUser.uid);
-                setProfiles(ownedProfiles);
-                if (!selectedProfileId && ownedProfiles.length > 0) {
-                    setSelectedProfileId(ownedProfiles[0].id ?? null);
-                }
-            } catch (error) {
-                console.error("Failed to load profiles:", error);
-            }
-        };
-
-        loadProfiles();
-    }, [firebaseUser, user, registerAsAdmin, isAdmin]);
-
-    useEffect(() => {
-        if (!profiles.length) {
-            return;
-        }
-        const exists = profiles.some((profile) => profile.id === selectedProfileId);
-        if (!exists) {
-            setSelectedProfileId(profiles[0].id ?? null);
-        }
-    }, [profiles, selectedProfileId]);
 
     const findEventByKey = (eventKey: string): ExpandedEvent | undefined =>
         availableEvents.find((event) => getEventKey(event) === eventKey || event.type === eventKey);
@@ -213,6 +169,85 @@ export default function RegisterTournamentPage() {
                 requiresTeam: event ? isTeamEvent(event) : false,
             };
         });
+
+    const ensureOccupiedIdsForEvent = async (eventId: string): Promise<Set<string>> => {
+        const normalizedEventId = eventId.trim();
+        if (!normalizedEventId || !tournamentId) {
+            return new Set<string>();
+        }
+
+        const cached = occupiedIdsByEvent[normalizedEventId];
+        if (cached) {
+            return cached;
+        }
+
+        const occupiedIds = await fetchOccupiedParticipantIdsByTournamentEvent(tournamentId, normalizedEventId);
+        setOccupiedIdsByEvent((prev) => ({...prev, [normalizedEventId]: occupiedIds}));
+        return occupiedIds;
+    };
+
+    const handleTeamMemberSearch = (eventId: string, keyword: string, selectedMemberIds: string[]) => {
+        const normalizedEventId = eventId.trim();
+        if (!normalizedEventId) {
+            return;
+        }
+
+        const existingTimer = memberSearchDebounceRef.current[normalizedEventId];
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+        }
+
+        const trimmedKeyword = keyword.trim();
+        if (trimmedKeyword.length < 2) {
+            setMemberSearchOptionsByEvent((prev) => ({...prev, [normalizedEventId]: []}));
+            setMemberSearchLoadingByEvent((prev) => ({...prev, [normalizedEventId]: false}));
+            return;
+        }
+
+        memberSearchDebounceRef.current[normalizedEventId] = setTimeout(async () => {
+            setMemberSearchLoadingByEvent((prev) => ({...prev, [normalizedEventId]: true}));
+            try {
+                const [occupiedIds, users] = await Promise.all([
+                    ensureOccupiedIdsForEvent(normalizedEventId),
+                    searchUsersByNameOrGlobalIdPrefix(trimmedKeyword, 10),
+                ]);
+                const isParentChild = isParentChildEvent(findEventByKey(normalizedEventId));
+
+                const selectedIds = new Set(selectedMemberIds.map((id) => id.trim()).filter(Boolean));
+                const currentUserId = (user?.global_id ?? "").trim();
+
+                const options = users
+                    .map((candidate) => {
+                        const globalId = (candidate.global_id ?? "").trim();
+                        if (!globalId) {
+                            return null;
+                        }
+                        if (currentUserId && globalId === currentUserId) {
+                            return null;
+                        }
+                        if (!isParentChild && occupiedIds.has(globalId)) {
+                            return null;
+                        }
+                        if (selectedIds.has(globalId)) {
+                            return null;
+                        }
+
+                        const candidateName = candidate.name?.trim() || "-";
+                        return {
+                            value: globalId,
+                            label: `${globalId} - ${candidateName}`,
+                        } as MemberSearchOption;
+                    })
+                    .filter((option): option is MemberSearchOption => Boolean(option));
+
+                setMemberSearchOptionsByEvent((prev) => ({...prev, [normalizedEventId]: options.slice(0, 10)}));
+            } catch (error) {
+                console.error("Failed to search team members:", error);
+            } finally {
+                setMemberSearchLoadingByEvent((prev) => ({...prev, [normalizedEventId]: false}));
+            }
+        }, 350);
+    };
 
     useEffect(() => {
         if (haveTeam.length === 0) return;
@@ -244,8 +279,32 @@ export default function RegisterTournamentPage() {
         const nextEvents = Array.from(new Set([...currentEvents, ...requiredKeys]));
         if (nextEvents.length !== currentEvents.length) {
             form.setFieldValue("events_registered", nextEvents);
+            setSelectedEventIds(nextEvents);
         }
     }, [form, requiredKeys]);
+
+    useEffect(() => {
+        const teamEventIds = haveTeam.filter((entry) => entry.requiresTeam).map((entry) => entry.eventId);
+        if (teamEventIds.length === 0) {
+            return;
+        }
+
+        void Promise.all(
+            teamEventIds.map(async (eventId) => {
+                if (!occupiedIdsByEvent[eventId]) {
+                    await ensureOccupiedIdsForEvent(eventId);
+                }
+            }),
+        );
+    }, [haveTeam]);
+
+    useEffect(() => {
+        return () => {
+            for (const timer of Object.values(memberSearchDebounceRef.current)) {
+                clearTimeout(timer);
+            }
+        };
+    }, []);
 
     const getAgeAtTournament = (birthdate: Timestamp | string | Date, tournamentStart: Timestamp | string | Date) => {
         const birth = birthdate instanceof Timestamp ? dayjs(birthdate.toDate()) : dayjs(birthdate);
@@ -261,6 +320,33 @@ export default function RegisterTournamentPage() {
         }
 
         return age;
+    };
+
+    const resolveUploadErrorMessage = (error: unknown): string => {
+        if (error instanceof Error && error.message === "UPLOAD_TIMEOUT") {
+            return "Upload timed out. Please retry with a stable network.";
+        }
+
+        if (error instanceof FirebaseError) {
+            switch (error.code) {
+                case "storage/unauthorized":
+                    return "Upload was blocked by Firebase permissions. Please sign in again and retry.";
+                case "storage/retry-limit-exceeded":
+                    return "Upload failed after several retries. Please check network and try again.";
+                case "storage/canceled":
+                    return "Upload canceled. Please retry.";
+                case "storage/quota-exceeded":
+                    return "Storage quota reached. Please contact admin.";
+                case "storage/invalid-checksum":
+                    return "Upload failed due to file integrity check. Please retry.";
+                case "storage/unknown":
+                    return "Upload failed due to an unknown Firebase error. Please retry.";
+                default:
+                    return `Upload failed (${error.code}). Please retry.`;
+            }
+        }
+
+        return "Failed to upload file. Please retry.";
     };
 
     const handleRegister = async (values: RegistrationForm) => {
@@ -287,49 +373,91 @@ export default function RegisterTournamentPage() {
             return;
         }
 
-        setLoading(true);
+        setSubmitLoading(true);
 
         try {
             if (!user) {
                 Message.error("You must be logged in to register.");
                 return;
             }
-            if (!selectedProfile) {
-                Message.error("Please select a profile before registering.");
-                setLoading(false);
-                return;
-            }
-            if (registerAsAdmin && !selectedProfile.id) {
-                Message.error("Selected profile is missing an ID. Please refresh and try again.");
-                setLoading(false);
-                return;
-            }
 
-            const registrantProfile = selectedProfile;
-            const registrantGlobalId = registrantProfile.global_id ?? "";
+            if (requiresPaymentProof && paymentProofFileList.length === 0) {
+                Message.error("Payment proof is required. Please upload your payment receipt.");
+                return;
+            }
 
             type Team = NonNullable<RegistrationForm["teams"]>[number];
             const teamsRaw = (values.teams ?? {}) as Record<string, Team>;
+            const selectedTeamEntries = buildTeamEntries(
+                (values.events_registered ?? []).filter((eventId) => eventId !== "Individual"),
+            ).filter((entry) => entry.requiresTeam);
+            const getTeamFieldValue = <T,>(eventId: string, field: keyof Team): T | undefined =>
+                form.getFieldValue(`teams.${eventId}.${String(field)}`) as T | undefined;
+            const getSubmittedTeam = (entry: TeamEntry): Team => {
+                const rawTeam = teamsRaw[entry.eventId] ?? ({} as Team);
+                const event = entry.event ?? findEventByKey(entry.eventId);
+                const isPairEvent = isDoubleEvent(event) || isParentChildEvent(event);
+                const member = rawTeam.member ?? getTeamFieldValue<string[]>(entry.eventId, "member") ?? [];
+                const leader = rawTeam.leader ?? getTeamFieldValue<string>(entry.eventId, "leader") ?? user?.global_id ?? null;
+                const name =
+                    rawTeam.name ??
+                    getTeamFieldValue<string>(entry.eventId, "name") ??
+                    (isPairEvent ? (user?.name ?? "") : "");
 
-            for (const [teamId, team] of Object.entries(teamsRaw)) {
-                const relatedEvent = findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
+                return {
+                    ...rawTeam,
+                    label: rawTeam.label ?? getTeamFieldValue<string>(entry.eventId, "label") ?? entry.label,
+                    name,
+                    leader,
+                    member,
+                    looking_for_team_members:
+                        rawTeam.looking_for_team_members ??
+                        getTeamFieldValue<boolean>(entry.eventId, "looking_for_team_members") ??
+                        false,
+                };
+            };
+            const submittedTeams = selectedTeamEntries.map((entry) => ({
+                eventId: entry.eventId,
+                event: entry.event,
+                team: getSubmittedTeam(entry),
+            }));
+
+            for (const {eventId: teamId, event: entryEvent, team} of submittedTeams) {
+                const relatedEvent = entryEvent ?? findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
                 const eventLabel = getEventLabel(relatedEvent) || team.label || "This event";
                 const leaderId = team.leader ?? null;
                 const memberIds = (team.member ?? []).map((m) => m).filter((id) => id != null) as string[];
                 const isLookingForMembers = team.looking_for_team_members === true;
                 const isLookingForTeammates = lookingForTeams.includes(teamId);
+                const shouldCheckOccupiedParticipants = !isLookingForTeammates && !isParentChildEvent(relatedEvent);
 
                 if (!isLookingForMembers && leaderId && memberIds.includes(leaderId)) {
                     Message.error(`${eventLabel}: team leader cannot be included in team members.`);
-                    setLoading(false);
                     throw new Error(`${eventLabel}: team leader cannot be included in team members.`);
                 }
 
-                const userInTeam = leaderId === registrantGlobalId || memberIds.includes(registrantGlobalId);
+                const userInTeam = leaderId === user.global_id || memberIds.includes(user.global_id ?? "");
                 if (!isLookingForMembers && !userInTeam) {
                     Message.error(`${eventLabel}: you must be either leader or one of the members.`);
-                    setLoading(false);
                     throw new Error(`${eventLabel}: you must be either leader or one of the members.`);
+                }
+
+                if (shouldCheckOccupiedParticipants) {
+                    const participantIds = [leaderId, ...memberIds].filter((id): id is string => Boolean(id));
+                    if (participantIds.length > 0) {
+                        const unavailableIds = await fetchUnavailableParticipantIdsByEvent(tournamentId, teamId);
+                        const conflictedParticipantId = participantIds.find((participantId) =>
+                            unavailableIds.has(participantId),
+                        );
+                        if (conflictedParticipantId) {
+                            Message.error(
+                                `${eventLabel}: participant ${conflictedParticipantId} is already in this event or has an active recruitment.`,
+                            );
+                            throw new Error(
+                                `${eventLabel}: participant ${conflictedParticipantId} is already in this event or has an active recruitment.`,
+                            );
+                        }
+                    }
                 }
 
                 // Only check member count if NOT looking for members/teammates
@@ -337,7 +465,7 @@ export default function RegisterTournamentPage() {
                     const lowerEventType = (relatedEvent?.type ?? "").toLowerCase();
                     const fallbackTeamSize =
                         relatedEvent?.teamSize ??
-                        (relatedEvent?.type === "Parent & Child"
+                        (isParentChildEvent(relatedEvent)
                             ? 2
                             : lowerEventType === "double"
                               ? 2
@@ -353,7 +481,6 @@ export default function RegisterTournamentPage() {
                             const additionalMessage = expectedMembers > 0 ? `` : "No additional members should be listed.";
 
                             Message.error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
-                            setLoading(false);
                             throw new Error(
                                 `${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`,
                             );
@@ -379,139 +506,48 @@ export default function RegisterTournamentPage() {
                     ).length;
                     if (count >= maxParticipants) {
                         Message.error(`${getEventLabel(event)} has reached the maximum participants.`);
-                        setLoading(false);
                         return;
                     }
                 }
             }
 
-            const registrantAge = tournament?.start_date
-                ? getAgeAtTournament(registrantProfile.birthdate, tournament.start_date)
-                : form.getFieldValue("age");
-            const registrationCountry =
-                registrantProfile.country?.[0] ?? user?.country?.[0] ?? registrantProfile.country?.[1] ?? "Malaysia";
-
             const registrationData: Registration = {
                 tournament_id: tournamentId,
-                user_id: registrantProfile.owner_uid ?? user?.id ?? "",
-                user_global_id: registrantGlobalId,
-                profile_id: registrantProfile.id ?? null,
-                user_name: registrantProfile.name,
-                age: registrantAge,
-                country: registrationCountry,
-                phone_number: registrantProfile.phone_number ?? values.phone_number,
-                gender: registrantProfile.gender,
-                organizer: registrantProfile.school ?? values.organizer ?? "",
+                user_id: user?.id ?? "",
+                user_global_id: user?.global_id ?? "",
+                user_name: values.user_name,
+                age: form.getFieldValue("age"),
+                country: user?.country?.[0] ?? "",
+                phone_number: values.phone_number,
+                gender: values.gender,
+                organizer: values.organizer ?? "",
                 events_registered: sanitizedEventsRegistered,
                 payment_proof_url: paymentProofUrl,
                 registration_status: "pending",
                 rejection_reason: null,
                 final_status: null,
-                registered_by_admin: registerAsAdmin && isAdmin,
-                registered_by_admin_id: registerAsAdmin && isAdmin ? user.id : null,
-                auto_verified_by_admin: registerAsAdmin && isAdmin && autoVerifyTeams,
                 created_at: Timestamp.now(),
                 updated_at: Timestamp.now(),
             };
 
-            const eventTeamAges = new Map<string, number>();
+            const registrationId = await createRegistration(user, registrationData);
+            let needsMemberVerification = false;
 
-            for (const [eventId, teamData] of Object.entries(teamsRaw)) {
-                const eventDetails = findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === teamData.label);
-                const eventType = (eventDetails?.type ?? teamData.label ?? "").toLowerCase();
-
-                if (eventType.includes("double") && teamData.looking_for_team_members) {
+            for (const {eventId, event: entryEvent, team: teamData} of submittedTeams) {
+                if (lookingForTeams.includes(eventId)) {
                     continue;
                 }
 
-                if (!teamData.name || !teamData.leader) {
-                    continue; // Skip if team name or leader is missing
-                }
-                const members = (teamData.member ?? [])
-                    .map((id) => {
-                        if (!id) return null;
-                        const isParentChild = findEventByKey(eventId)?.type.includes("Parent");
-                        const shouldAutoVerify = registerAsAdmin && isAdmin && autoVerifyTeams;
-                        return {global_id: id, verified: Boolean(isParentChild && !shouldAutoVerify)};
-                    })
-                    .filter((m): m is {global_id: string; verified: boolean} => m !== null);
-
-                const memberIds = members.map((m) => m.global_id);
-                if (teamData.leader) {
-                    memberIds.push(teamData.leader);
-                }
-
-                const memberUsers = await Promise.all(
-                    memberIds.map(async (id) => {
-                        const profile = await fetchProfileByGlobalId(id);
-                        if (profile) {
-                            return {birthdate: profile.birthdate};
-                        }
-                        const fallbackUser = await getUserByGlobalId(id);
-                        return fallbackUser ? {birthdate: fallbackUser.birthdate} : null;
-                    }),
-                );
-
-                const ages = memberUsers
-                    .map((memberUser) => {
-                        if (memberUser?.birthdate && tournament?.start_date) {
-                            return getAgeAtTournament(memberUser.birthdate, tournament.start_date);
-                        }
-                        return 0;
-                    })
-                    .filter((age) => age > 0);
-
-                let team_age = 0;
-
-                if (ages.length > 0) {
-                    if (eventType.includes("team relay")) {
-                        // Team relay: use average age
-                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
-                    } else if (eventType.includes("double")) {
-                        // Double: use average age but check 10-year range constraint
-                        const minAge = Math.min(...ages);
-                        const maxAge = Math.max(...ages);
-                        if (maxAge - minAge > 10) {
-                            throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
-                        }
-                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
-                    } else if (eventType.includes("parent") && eventType.includes("child")) {
-                        // Parent & Child: use child's age (registrant's age)
-                        team_age = registrantAge;
-                    } else {
-                        // Default: use largest age (for backward compatibility)
-                        team_age = Math.max(...ages);
-                    }
-                }
-
-                if (eventDetails?.age_brackets?.length && team_age > 0) {
-                    const isInRange = eventDetails.age_brackets.some(
-                        (bracket) => team_age >= bracket.min_age && team_age <= bracket.max_age,
-                    );
-                    if (!isInRange) {
-                        throw new Error(`${eventDetails.type} team age ${team_age} is outside the allowed range for this event.`);
-                    }
-                }
-
-                eventTeamAges.set(eventId, team_age);
-            }
-
-            const registrationId = await createRegistration(user, registrationData, {
-                skipUserIdCheck: registerAsAdmin && isAdmin,
-            });
-            let needsMemberVerification = false;
-
-            for (const [eventId, teamData] of Object.entries(teamsRaw)) {
-                const eventDetails = findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === teamData.label);
+                const eventDetails = entryEvent ?? findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === teamData.label);
                 const eventType = (eventDetails?.type ?? teamData.label ?? "").toLowerCase();
 
                 if (eventType.includes("double") && teamData.looking_for_team_members) {
                     try {
                         await createDoubleRecruitment({
-                            participant_id: registrantGlobalId,
+                            participant_id: user.global_id ?? "",
                             tournament_id: tournamentId,
-                            participant_name: registrantProfile.name ?? "",
-                            age: registrantAge,
+                            participant_name: user.name ?? "",
+                            age: getAgeAtTournament(user.birthdate ?? new Date(), tournament.start_date ?? new Date()),
                             gender: (registrationData.gender ?? "Male") as "Male" | "Female",
                             country: registrationData.country ?? "",
                             event_id: eventId,
@@ -532,12 +568,7 @@ export default function RegisterTournamentPage() {
                     continue; // Skip if team name or leader is missing
                 }
                 const members = (teamData.member ?? [])
-                    .map((id) => {
-                        if (!id) return null;
-                        const isParentChild = findEventByKey(eventId)?.type.includes("Parent");
-                        const shouldAutoVerify = registerAsAdmin && isAdmin && autoVerifyTeams;
-                        return {global_id: id, verified: Boolean(isParentChild && !shouldAutoVerify)};
-                    })
+                    .map((id) => (id ? {global_id: id, verified: isParentChildEvent(eventDetails)} : null))
                     .filter((m): m is {global_id: string; verified: boolean} => m !== null);
 
                 const memberIds = members.map((m) => m.global_id);
@@ -545,7 +576,52 @@ export default function RegisterTournamentPage() {
                     memberIds.push(teamData.leader);
                 }
 
-                const team_age = eventTeamAges.get(eventId) ?? 0;
+                const memberUsers = await Promise.all(memberIds.map((id) => getUserByGlobalId(id)));
+
+                const ages = memberUsers
+                    .map((memberUser) => {
+                        if (memberUser?.birthdate && tournament?.start_date) {
+                            return getAgeAtTournament(memberUser.birthdate, tournament.start_date);
+                        }
+                        return 0;
+                    })
+                    .filter((age) => age > 0);
+
+                // Calculate team age based on event type
+                const teamEventKeys = new Set<string>([eventId]);
+                if (eventDetails) {
+                    teamEventKeys.add(eventDetails.type);
+                    for (const code of sanitizeEventCodes(eventDetails.codes)) {
+                        teamEventKeys.add(code);
+                        teamEventKeys.add(`${code}-${eventDetails.type}`);
+                    }
+                }
+                let team_age = 0;
+
+                if (ages.length > 0) {
+                    if (eventType.includes("team relay")) {
+                        // Team relay: use average age
+                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                    } else if (eventType.includes("double")) {
+                        // Double: use average age but check 10-year range constraint
+                        const minAge = Math.min(...ages);
+                        const maxAge = Math.max(...ages);
+                        if (maxAge - minAge > 10) {
+                            throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
+                        }
+                        team_age = Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length);
+                    } else if (eventType.includes("parent") && eventType.includes("child")) {
+                        // Parent & Child: use child's age (registrant's age)
+                        const registrantAge =
+                            user?.birthdate && tournament?.start_date
+                                ? getAgeAtTournament(user.birthdate, tournament.start_date)
+                                : 0;
+                        team_age = registrantAge;
+                    } else {
+                        // Default: use largest age (for backward compatibility)
+                        team_age = Math.max(...ages);
+                    }
+                }
 
                 // Create the team first
                 const teamId = await createTeam(tournamentId, {
@@ -558,40 +634,18 @@ export default function RegisterTournamentPage() {
                     looking_for_member: false,
                 });
 
-                const shouldAutoVerify = registerAsAdmin && isAdmin && autoVerifyTeams;
-                if (shouldAutoVerify && members.length > 0) {
-                    if (!firebaseUser) {
-                        await deleteRegistrationById(tournamentId, registrationId, {adminDelete: true});
-                        throw new Error("Please sign in before auto-verifying team members.");
-                    }
-                    const token = await firebaseUser.getIdToken();
-                    const verificationUrl =
-                        import.meta.env.VITE_UPDATE_VERIFICATION_PROFILE_URL ??
-                        import.meta.env.VITE_UPDATE_VERIFICATION_URL ??
-                        "https://updateverification-jzbhzqtcdq-uc.a.run.app";
-                    try {
-                        for (const member of members) {
-                            const res = await fetch(verificationUrl, {
-                                method: "POST",
-                                headers: {
-                                    Authorization: `Bearer ${token}`,
-                                    "Content-Type": "application/json",
-                                },
-                                body: JSON.stringify({
-                                    tournamentId,
-                                    teamId,
-                                    memberId: member.global_id,
-                                    registrationId,
-                                }),
-                            });
-                            if (!res.ok) {
-                                const data = (await res.json()) as {error?: string};
-                                throw new Error(data.error || "Failed to auto-verify team member.");
-                            }
-                        }
-                    } catch (error) {
-                        await deleteRegistrationById(tournamentId, registrationId, {adminDelete: true});
-                        throw error;
+                // Close any active DoubleRecruitment for team members (they're now in a team)
+                const allMemberIds: string[] = memberIds.filter(Boolean);
+                if (teamData.leader) {
+                    allMemberIds.push(teamData.leader);
+                }
+                const activeRecruitments = await getDoubleRecruitmentsByTournament(tournamentId);
+                for (const memberId of allMemberIds) {
+                    const memberRecruitment = activeRecruitments.find(
+                        (r) => r.participant_id === memberId && r.event_id === eventId && r.status === "active",
+                    );
+                    if (memberRecruitment) {
+                        await updateDoubleRecruitmentStatus(memberRecruitment.id, "matched", undefined, teamId);
                     }
                 }
 
@@ -601,7 +655,7 @@ export default function RegisterTournamentPage() {
                     const relatedEvent = findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === eventId);
                     const fallbackTeamSize =
                         relatedEvent?.teamSize ??
-                        (relatedEvent?.type === "Parent & Child"
+                        (isParentChildEvent(relatedEvent)
                             ? 2
                             : relatedEvent?.type?.toLowerCase() === "double"
                               ? 2
@@ -624,28 +678,27 @@ export default function RegisterTournamentPage() {
                 }
 
                 const toNotify: string[] = [];
-                if (teamData.leader && teamData.leader !== registrantGlobalId) {
+                if (teamData.leader && teamData.leader !== user.global_id) {
                     toNotify.push(teamData.leader);
                 }
                 for (const memberId of teamData.member ?? []) {
-                    if (memberId && memberId !== registrantGlobalId) {
+                    if (memberId && memberId !== user.global_id) {
                         toNotify.push(memberId);
                     }
                 }
-                if (toNotify.length > 0 && !(registerAsAdmin && isAdmin && autoVerifyTeams)) {
+                if (toNotify.length > 0) {
                     needsMemberVerification = true;
                 }
 
-                if (!(registerAsAdmin && isAdmin && autoVerifyTeams)) {
-                    for (const globalId of toNotify) {
-                        try {
-                            const email = await getProfileContactEmailByGlobalId(globalId);
-                            if (email) {
-                                await sendProtectedEmail(email, tournamentId, teamId, globalId, registrationId);
-                            }
-                        } catch (err) {
-                            console.error(`❌ Failed to send verification to ${globalId}`, err);
+                for (const globalId of toNotify) {
+                    try {
+                        const userSnap = await getUserEmailByGlobalId(globalId);
+                        const email = userSnap?.email;
+                        if (email) {
+                            await sendProtectedEmail(email, tournamentId, teamId, globalId, registrationId);
                         }
+                    } catch (err) {
+                        console.error(`❌ Failed to send verification to ${globalId}`, err);
                     }
                 }
             }
@@ -657,10 +710,10 @@ export default function RegisterTournamentPage() {
                     for (const eventId of lookingForTeams) {
                         const eventObj = findEventByKey(eventId);
                         await createIndividualRecruitment({
-                            participant_id: registrantGlobalId,
+                            participant_id: user.global_id ?? "",
                             tournament_id: tournamentId,
-                            participant_name: registrantProfile.name ?? "",
-                            age: registrantAge,
+                            participant_name: user.name ?? "",
+                            age: getAgeAtTournament(user.birthdate ?? new Date(), tournament.start_date ?? new Date()),
                             gender: (registrationData.gender ?? "Male") as "Male" | "Female",
                             country: registrationData.country ?? "",
                             event_id: eventId,
@@ -686,9 +739,7 @@ export default function RegisterTournamentPage() {
                 updated_at: Timestamp.now(),
             };
 
-            if (registrantProfile.id) {
-                await addProfileRegistrationRecordWithCapacityCheck(registrantProfile.id, registrationRecord);
-            }
+            await addUserRegistrationRecord(user.id ?? "", registrationRecord);
 
             if (needsMemberVerification) {
                 Modal.info({
@@ -702,50 +753,42 @@ export default function RegisterTournamentPage() {
                 navigate("/tournaments");
             }
         } catch (error) {
-            console.error(error);
+            console.error("Tournament registration failed", {
+                error,
+                tournamentId: tournamentId ?? null,
+                userGlobalId: user?.global_id ?? null,
+                timestamp: new Date().toISOString(),
+            });
             const errorMessage = error instanceof Error ? error.message : "Failed to register.";
             Message.error(errorMessage);
         } finally {
-            setLoading(false);
+            setSubmitLoading(false);
         }
     };
 
     useEffect(() => {
         if (!tournamentId) return;
+
+        // If there is no user, stop page loading and surface an error instead of an infinite spinner.
+        if (!user) {
+            setPageLoading(false);
+            setError("You must be signed in with a valid player profile to register for this tournament.");
+            return;
+        }
         const fetch = async () => {
-            setLoading(true);
+            setPageLoading(true);
             try {
-                const profileContext =
-                    selectedProfile ??
-                    (user
-                        ? {
-                              id: null,
-                              owner_uid: user.id,
-                              owner_email: user.email,
-                              global_id: user.global_id ?? "",
-                              name: user.name,
-                              IC: user.IC,
-                              birthdate: user.birthdate,
-                              gender: user.gender,
-                              country: user.country,
-                              phone_number: user.phone_number ?? null,
-                              school: user.school ?? null,
-                          }
-                        : null);
                 const comp = await fetchTournamentById(tournamentId);
                 const fetchedEvents = comp?.events?.length ? comp.events : await fetchTournamentEvents(tournamentId);
                 const registrations = await fetchRegistrations(tournamentId);
-                const age =
-                    profileContext?.birthdate && comp?.start_date
-                        ? getAgeAtTournament(profileContext.birthdate, comp.start_date)
-                        : 0;
+                const age = user?.birthdate && comp?.start_date ? getAgeAtTournament(user.birthdate, comp.start_date) : 0;
                 const normalizeGender = (value: unknown): "Male" | "Female" | "Mixed" => {
                     if (value === "Male" || value === "Female") {
                         return value;
                     }
                     return "Mixed";
                 };
-                const userGender = normalizeGender(profileContext?.gender);
+                const userGender = normalizeGender(user?.gender);
 
                 // Filter events by age brackets and keep them as grouped events
                 const availableGroupedEvents: ExpandedEvent[] = [];
@@ -770,42 +813,36 @@ export default function RegisterTournamentPage() {
                 }
 
                 const registrationCounts: Record<string, number> = {};
+                const nextFullEventIds = new Set<string>();
                 for (const event of availableGroupedEvents) {
                     const eventKey = getEventKey(event);
                     registrationCounts[eventKey] = registrations.filter((registration) =>
                         matchesAnyEventKey(registration.events_registered, event),
                     ).length;
+
+                    const maxParticipants = typeof event.max_participants === "number" ? event.max_participants : 0;
+                    if (isNonScoringEvent(event) && maxParticipants > 0 && registrationCounts[eventKey] >= maxParticipants) {
+                        nextFullEventIds.add(eventKey);
+                    }
                 }
 
-                const filteredEvents = availableGroupedEvents.filter((event) => {
-                    if (!isNonScoringEvent(event)) {
-                        return true;
-                    }
-                    const maxParticipants = typeof event.max_participants === "number" ? event.max_participants : 0;
-                    if (!maxParticipants || maxParticipants <= 0) {
-                        return true;
-                    }
-                    const count = registrationCounts[getEventKey(event)] ?? 0;
-                    return count < maxParticipants;
-                });
+                // Keep all events in availableEvents so the validation check can run for all non-scoring events
+                // (including those that are at capacity - they will be rejected during validation)
+                setAvailableEvents(availableGroupedEvents);
+                setOptions(availableGroupedEvents);
+                setFullEventIds(nextFullEventIds);
 
-                // 找出 required keys (individual events) - now using the grouped format
-                const requiredEventIds = filteredEvents
-                    .filter((event) => getEventLabel(event).toLowerCase().includes("individual"))
+                // Required event IDs for Individual events
+                const requiredEventIds = availableGroupedEvents
+                    .filter((event) => event.type === "Individual")
                     .map((event) => getEventKey(event));
-
-                // 设置所有可用事件，而不是排除required的
-                setAvailableEvents(filteredEvents);
-                setOptions(filteredEvents);
 
                 if (comp) {
                     setTournament(comp);
-                    const registrationPrice = user?.memberId ? comp.member_registration_fee : comp.registration_fee;
-                    setPrice(registrationPrice ?? 0);
                     setTournamentData([
                         {
-                            label: "Registration Price",
-                            value: <div>RM{registrationPrice}</div>,
+                            label: "Base Registration Price",
+                            value: <div>RM{user?.memberId ? comp.member_registration_fee : comp.registration_fee}</div>,
                         },
                         {
                             label: "Location",
@@ -887,32 +924,32 @@ export default function RegisterTournamentPage() {
                 }
 
                 form.setFieldsValue({
-                    user_name: profileContext?.name ?? user?.name,
-                    id: profileContext?.global_id ?? user?.global_id,
+                    user_name: user?.name,
+                    id: user?.global_id,
                     age: age,
-                    gender: profileContext?.gender ?? user?.gender,
+                    gender: user?.gender,
                     events_registered: requiredEventIds, // 一开始强制先选上 required events
-                    phone_number: profileContext?.phone_number ?? user?.phone_number,
-                    organizer: profileContext?.school ?? user?.school ?? "",
+                    phone_number: user?.phone_number,
+                    organizer: user?.school ?? "",
                 });
 
                 // 初始化团队状态
                 setHaveTeam(buildTeamEntries(requiredEventIds, availableGroupedEvents));
+                setSelectedEventIds(requiredEventIds);
 
                 setRequiredKeys(requiredEventIds); // 存起来供后续使用
             } catch (e) {
                 setError("Failed to load tournament.");
                 console.error(e);
             } finally {
-                setLoading(false);
+                setPageLoading(false);
             }
         };
         fetch();
-    }, [tournamentId, user, selectedProfile]);
+    }, [tournamentId, user]);
 
     useEffect(() => {
-        const profileName = selectedProfile?.name ?? user?.name ?? "";
-        if (!profileName || haveTeam.length === 0) return;
+        if (!user?.name || haveTeam.length === 0) return;
         for (const entry of haveTeam) {
             const eventType = entry.event?.type ?? "";
             const isParentChild = eventType === "Parent & Child";
@@ -921,25 +958,11 @@ export default function RegisterTournamentPage() {
                 continue;
             }
             const teamNameField = `teams.${entry.eventId}.name`;
-            if (form.getFieldValue(teamNameField) !== profileName) {
-                form.setFieldValue(teamNameField, profileName);
+            if (form.getFieldValue(teamNameField) !== user.name) {
+                form.setFieldValue(teamNameField, user.name);
             }
         }
-    }, [form, haveTeam, user?.name, selectedProfile?.name]);
-
-    useEffect(() => {
-        const profileId = selectedProfile?.global_id ?? "";
-        if (!profileId || haveTeam.length === 0) return;
-        for (const entry of haveTeam) {
-            if (!entry.requiresTeam) {
-                continue;
-            }
-            const leaderField = `teams.${entry.eventId}.leader`;
-            if (form.getFieldValue(leaderField) !== profileId) {
-                form.setFieldValue(leaderField, profileId);
-            }
-        }
-    }, [form, haveTeam, selectedProfile?.global_id]);
+    }, [form, haveTeam, user?.name]);
 
     if (!firebaseUser) {
         return (
@@ -966,6 +989,13 @@ export default function RegisterTournamentPage() {
         );
     }
 
+    if (pageLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-[40vh] text-gray-500">
+                Loading tournament registration details...
+            </div>
+        );
+    }
     if (error) return <Result status="error" title="Error" subTitle={error} />;
     return (
         <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
@@ -1008,52 +1038,6 @@ export default function RegisterTournamentPage() {
                 <div className="w-full">
                     <Title heading={5}>Register for Event</Title>
                     <Form requiredSymbol={false} form={form} layout="vertical" onSubmit={handleRegister}>
-                        {isAdmin && (
-                            <Form.Item label="Admin Registration">
-                                <div className="flex flex-col gap-2">
-                                    <Checkbox checked={registerAsAdmin} onChange={(checked) => setRegisterAsAdmin(checked)}>
-                                        Register on behalf of a profile
-                                    </Checkbox>
-                                    {registerAsAdmin && (
-                                        <Checkbox checked={autoVerifyTeams} onChange={(checked) => setAutoVerifyTeams(checked)}>
-                                            Auto-verify team members (skip email verification)
-                                        </Checkbox>
-                                    )}
-                                </div>
-                            </Form.Item>
-                        )}
-                        <Form.Item label="Profile" required>
-                            <Select
-                                placeholder={registerAsAdmin ? "Select profile to register" : "Select your profile"}
-                                value={selectedProfileId ?? undefined}
-                                allowClear={false}
-                                showSearch
-                                onChange={(value) => setSelectedProfileId(value)}
-                                filterOption={(inputValue, option) => {
-                                    const query = inputValue.toLowerCase();
-                                    const props = option?.props ?? {};
-                                    const valueText = String(props.value ?? "").toLowerCase();
-                                    const childrenText = String(props.children ?? "").toLowerCase();
-                                    return valueText.includes(query) || childrenText.includes(query);
-                                }}
-                            >
-                                {profiles.map((profile) => {
-                                    const labelParts = [
-                                        profile.name,
-                                        profile.IC ? `IC: ${profile.IC}` : null,
-                                        profile.global_id ? `ID: ${profile.global_id}` : null,
-                                        profile.status === "unclaimed" ? "Unclaimed" : null,
-                                    ]
-                                        .filter(Boolean)
-                                        .join(" • ");
-                                    return (
-                                        <Option key={profile.id ?? profile.global_id} value={profile.id ?? ""}>
-                                            {labelParts}
-                                        </Option>
-                                    );
-                                })}
-                            </Select>
-                        </Form.Item>
                         <Form.Item disabled label="ID" field="id" rules={[{required: true, message: "ID is required."}]}>
                             <Input disabled placeholder="Enter your ID" />
                         </Form.Item>
@@ -1102,50 +1086,61 @@ export default function RegisterTournamentPage() {
                             <div className="flex flex-col gap-2">
                                 <Typography.Text type="secondary">
                                     For Double and Team Relay, only the team leader selects the event here. For Parent & Child,
-                                    only the child registers and enters the parent's Profile ID; the system auto-verifies the
+                                    only the child registers and enters the parent's Global ID; the system auto-verifies the
                                     parent.
                                 </Typography.Text>
-                                <Select
-                                    placeholder="Select events"
-                                    style={{width: eventSelectWidth}}
-                                    mode="multiple"
-                                    className="select-wrap"
+                                {fullEventIds.size > 0 && (
+                                    <Typography.Text type="secondary">
+                                        Some events are marked as full because pending registrations also reserve slots.
+                                    </Typography.Text>
+                                )}
+                                <Checkbox.Group
                                     value={form.getFieldValue("events_registered") || []}
                                     onChange={(value: string[]) => {
                                         if (!availableEvents) return;
-                                        // 确保个人赛事项不能被取消选择
-                                        const finalValue = Array.from(new Set([...value, ...requiredKeys]));
+                                        // Ensure individual events cannot be deselected
+                                        const finalValue = Array.from(
+                                            new Set(
+                                                [...value, ...requiredKeys].filter(
+                                                    (eventId) => requiredKeys.includes(eventId) || !fullEventIds.has(eventId),
+                                                ),
+                                            ),
+                                        );
 
-                                        // 更新表单值
+                                        // Update form value
                                         form.setFieldsValue({events_registered: finalValue});
 
-                                        // 更新团队事件的状态
+                                        // Update team event state
                                         setHaveTeam(buildTeamEntries(finalValue));
+                                        setSelectedEventIds(finalValue);
 
-                                        // 清理已取消选择的"寻找队伍"记录
+                                        // Clean up "looking for team" records for deselected events
                                         setLookingForTeams((prev) => prev.filter((eventId) => finalValue.includes(eventId)));
                                     }}
-                                    notFoundContent={<Empty description="No Available Events" />}
                                 >
-                                    {options?.map((option) => {
-                                        const key = getEventKey(option);
-                                        const isRequired = requiredKeys.includes(key);
-                                        const displayText = getEventLabel(option);
-                                        return (
-                                            <Option
-                                                key={key}
-                                                value={key}
-                                                disabled={isRequired}
-                                                style={{
-                                                    opacity: isRequired ? 0.6 : 1,
-                                                    backgroundColor: isRequired ? "#f5f5f5" : "transparent",
-                                                }}
-                                            >
-                                                {displayText} {isRequired && "(Required)"}
-                                            </Option>
-                                        );
-                                    })}
-                                </Select>
+                                    <div className="flex flex-col gap-2">
+                                        {options?.map((option) => {
+                                            const key = getEventKey(option);
+                                            const isRequired = requiredKeys.includes(key);
+                                            const isFull = fullEventIds.has(key);
+                                            const displayText = getEventLabel(option);
+                                            const fullReason = "Full (pending approvals included)";
+                                            return (
+                                                <Tooltip key={key} content={isFull ? fullReason : undefined}>
+                                                    <Checkbox
+                                                        value={key}
+                                                        disabled={isRequired || isFull}
+                                                        style={{
+                                                            opacity: isRequired || isFull ? 0.6 : 1,
+                                                        }}
+                                                    >
+                                                        {displayText} {isRequired && "(Required)"} {isFull && `(${fullReason})`}
+                                                    </Checkbox>
+                                                </Tooltip>
+                                            );
+                                        })}
+                                    </div>
+                                </Checkbox.Group>
                             </div>
                         </Form.Item>
 
@@ -1217,7 +1212,7 @@ export default function RegisterTournamentPage() {
                         </Form.Item>
 
                         <Form.Item shouldUpdate noStyle>
-                            <div className="flex flex-row w-full gap-10">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
                                 {haveTeam
                                     .filter((entry) => entry.requiresTeam)
                                     .map((entry) => {
@@ -1241,14 +1236,14 @@ export default function RegisterTournamentPage() {
                                         const isPairEvent = isDoubleEvent || isParentChild;
                                         const teamNameLabel = isPairEvent ? "Name" : "Team Name";
                                         const teamLeaderLabel = isParentChild
-                                            ? "Child Profile ID"
+                                            ? "Child Global ID"
                                             : isDoubleEvent
-                                              ? "Double Leader Profile ID"
-                                              : "Team Leader Profile ID";
+                                              ? "Double Leader Global ID"
+                                              : "Team Leader Global ID";
                                         const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
-                                            <div key={eventId}>
+                                            <div key={eventId} className="min-w-0 border p-4 rounded-md shadow-sm">
                                                 <div className="text-center">{eventLabel}</div>
                                                 <Divider />
                                                 <Form.Item field={`teams.${eventId}.label`} initialValue={eventLabel} noStyle>
@@ -1318,7 +1313,7 @@ export default function RegisterTournamentPage() {
                                                                         ? [{required: true, message: "Team leader is required."}]
                                                                         : []
                                                                 }
-                                                                initialValue={selectedProfile?.global_id ?? ""}
+                                                                initialValue={user?.global_id ?? ""}
                                                             >
                                                                 <Input
                                                                     disabled
@@ -1342,12 +1337,17 @@ export default function RegisterTournamentPage() {
                                                             true;
                                                         const shouldDisableMembers =
                                                             isLookingTopLevel || (isDoubleEvent && isLookingForMembers);
+                                                        const selectedMembers =
+                                                            (form.getFieldValue(`teams.${eventId}.member`) as string[] | undefined) ??
+                                                            [];
+                                                        const memberOptions = memberSearchOptionsByEvent[eventId] ?? [];
+                                                        const isSearchingMembers = memberSearchLoadingByEvent[eventId] ?? false;
                                                         return (
                                                             <Form.Item
                                                                 field={`teams.${eventId}.member`}
                                                                 label={
                                                                     <div>
-                                                                        {isParentChild ? "Parent Profile ID" : teamMemberLabel}
+                                                                        {isParentChild ? "Parent Global ID" : teamMemberLabel}
                                                                         <Tooltip
                                                                             content={
                                                                                 requiredMemberCount !== undefined
@@ -1355,8 +1355,8 @@ export default function RegisterTournamentPage() {
                                                                                           requiredMemberCount === 1 ? "" : "s"
                                                                                       } (excluding the leader)`
                                                                                     : isParentChild
-                                                                                      ? "Enter parent's Profile ID. The system will auto-verify the parent."
-                                                                                      : "Must Enter Team Member Profile ID. Not include Team Leader Profile ID"
+                                                                                      ? "Enter parent's Global ID. The system will auto-verify the parent."
+                                                                                      : "Must Enter Team Member Global ID. Not include Team Leader Global ID"
                                                                             }
                                                                         >
                                                                             <IconExclamationCircle
@@ -1371,21 +1371,30 @@ export default function RegisterTournamentPage() {
                                                             >
                                                                 <Select
                                                                     mode="multiple"
-                                                                    allowCreate={{
-                                                                        formatter: (inputValue: string, creating: boolean) => ({
-                                                                            value: inputValue,
-                                                                            label: `${creating ? "Enter to create: " : ""}${inputValue}`,
-                                                                        }),
-                                                                    }}
                                                                     placeholder={
                                                                         isParentChild
-                                                                            ? "Input Parent Profile ID"
-                                                                            : "Input Team Member Profile ID"
+                                                                            ? "Input Parent Global ID"
+                                                                            : "Input Team Member Global ID"
                                                                     }
                                                                     allowClear
                                                                     disabled={shouldDisableMembers}
+                                                                    showSearch
+                                                                    filterOption={false}
+                                                                    loading={isSearchingMembers}
+                                                                    onFocus={() => {
+                                                                        void ensureOccupiedIdsForEvent(eventId);
+                                                                    }}
+                                                                    onSearch={(inputValue) => {
+                                                                        handleTeamMemberSearch(eventId, inputValue, selectedMembers);
+                                                                    }}
                                                                     style={{width: 345, flex: 1}}
-                                                                />
+                                                                >
+                                                                    {memberOptions.map((option) => (
+                                                                        <Option key={`${eventId}-${option.value}`} value={option.value}>
+                                                                            {option.label}
+                                                                        </Option>
+                                                                    ))}
+                                                                </Select>
                                                             </Form.Item>
                                                         );
                                                     }}
@@ -1402,11 +1411,8 @@ export default function RegisterTournamentPage() {
                                                             onChange={(checked: boolean) => {
                                                                 if (checked && isDoubleEvent) {
                                                                     form.setFieldValue(`teams.${eventId}.member`, []);
-                                                                } else if (!checked && isDoubleEvent && selectedProfile?.name) {
-                                                                    form.setFieldValue(
-                                                                        `teams.${eventId}.name`,
-                                                                        selectedProfile.name,
-                                                                    );
+                                                                } else if (!checked && isDoubleEvent && user?.name) {
+                                                                    form.setFieldValue(`teams.${eventId}.name`, user.name);
                                                                 }
                                                                 // Uncheck 'Looking for Teammates' when checking this
                                                                 setLookingForTeams((prev) =>
@@ -1432,7 +1438,7 @@ export default function RegisterTournamentPage() {
                                 </Title>
                                 <Paragraph type="secondary" className="mb-4 text-base">
                                     Please use one of the following payment methods to complete your registration fee of{" "}
-                                    <strong>RM{price}</strong>
+                                    <strong>RM{totalRegistrationFee}</strong>
                                 </Paragraph>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1480,87 +1486,128 @@ export default function RegisterTournamentPage() {
                             </div>
                         )}
 
-                        {showPaymentProofSection && (
-                            <Form.Item
-                                label={
-                                    <div>
-                                        Payment Proof
-                                        <Tooltip content="Please upload a picture of your payment proof.">
-                                            <IconExclamationCircle
-                                                style={{
-                                                    margin: "0 8px",
-                                                    color: "rgb(var(--arcoblue-6))",
-                                                }}
-                                            />
-                                        </Tooltip>
-                                    </div>
-                                }
-                                field="payment_proof"
-                                rules={[
-                                    {
-                                        required: shouldRequirePaymentProof && !paymentProofUrl,
-                                        message: "Payment proof is required.",
-                                    },
-                                ]}
-                            >
-                                <Upload
-                                    className={"w-full flex flex-col items-center justify-center mb-10"}
-                                    drag
-                                    multiple={false}
-                                    limit={1}
-                                    accept="image/jpeg,image/png,image/gif"
-                                    customRequest={async (option: {
-                                        file: File;
-                                        onSuccess?: (file: File) => void;
-                                        onError?: (error: Error) => void;
-                                        onProgress?: (progress: number) => void;
-                                    }) => {
-                                        const {file, onSuccess, onError, onProgress} = option;
-                                        const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-                                        const validTypes = ["image/jpeg", "image/png", "image/gif"];
+                        {requiresPaymentProof && (
+                            <>
+                                <Form.Item field="payment_proof" hidden>
+                                    <Input />
+                                </Form.Item>
+                                <Form.Item
+                                    label={
+                                        <div className="flex flex-col gap-1">
+                                            <div>
+                                                Payment Proof
+                                                <Tooltip content="Please upload a picture of your payment proof.">
+                                                    <IconExclamationCircle
+                                                        style={{
+                                                            margin: "0 8px",
+                                                            color: "rgb(var(--arcoblue-6))",
+                                                        }}
+                                                    />
+                                                </Tooltip>
+                                            </div>
+                                            <div className="text-2xl font-bold text-green-600">Total Payment: RM{totalRegistrationFee}</div>
+                                        </div>
+                                    }
+                                >
+                                    <Upload
+                                        className={"w-full flex flex-col items-center justify-center mb-10"}
+                                        drag
+                                        multiple={false}
+                                        limit={1}
+                                        accept="image/jpeg,image/png,image/gif"
+                                        disabled={paymentUploadLoading}
+                                        fileList={paymentProofFileList}
+                                        onChange={(fileList) => {
+                                            setPaymentProofFileList(fileList);
+                                        }}
+                                        onRemove={() => {
+                                            setPaymentProofFileList([]);
+                                            setPaymentProofUrl(null);
+                                            form.setFieldValue("payment_proof", undefined);
+                                        }}
+                                        customRequest={async (option: {
+                                            file: File;
+                                            onSuccess?: (response?: object) => void;
+                                            onError?: (error?: object) => void;
+                                            onProgress?: (progress: number) => void;
+                                        }) => {
+                                            const {file, onSuccess, onError, onProgress} = option;
+                                            const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+                                            const validTypes = ["image/jpeg", "image/png", "image/gif"];
 
-                                        if (!validTypes.includes(file.type)) {
-                                            Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
-                                            onError?.(new Error("Invalid file type"));
-                                            return;
-                                        }
+                                            if (!validTypes.includes(file.type)) {
+                                                Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
+                                                onError?.(new Error("Invalid file type"));
+                                                return;
+                                            }
 
-                                        if (file.size > MAX_SIZE) {
-                                            Message.error("File size exceeds 10MB limit");
-                                            onError?.(new Error("File size exceeds 10MB limit"));
-                                            return;
-                                        }
+                                            if (file.size > MAX_SIZE) {
+                                                Message.error("File size exceeds 10MB limit");
+                                                onError?.(new Error("File size exceeds 10MB limit"));
+                                                return;
+                                            }
 
-                                        if (!selectedProfile?.global_id) {
-                                            Message.error("Profile not selected");
-                                            onError?.(new Error("User not authenticated"));
-                                            return;
-                                        }
-                                        try {
-                                            setLoading(true);
-                                            const downloadURL = await uploadFile(
-                                                file as File,
-                                                `tournaments/${tournamentId}/registrations/payment_proof`,
-                                                selectedProfile.global_id,
-                                                (progress) => {
-                                                    onProgress?.(progress);
-                                                },
-                                            );
-                                            setPaymentProofUrl(downloadURL);
-                                            setLoading(false);
-                                            onSuccess?.(file);
-                                        } catch (err) {
-                                            Message.error("Failed to upload file.");
-                                            onError?.(err as Error);
-                                        }
-                                    }}
-                                    tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
-                                />
-                            </Form.Item>
+                                            if (!user?.global_id) {
+                                                Message.error("User not authenticated");
+                                                onError?.(new Error("User not authenticated"));
+                                                return;
+                                            }
+
+                                            try {
+                                                setPaymentUploadLoading(true);
+                                                const downloadURL = await uploadFile(
+                                                    file,
+                                                    `tournaments/${tournamentId}/registrations/payment_proof`,
+                                                    user.global_id,
+                                                    {
+                                                        timeoutMs: 120000,
+                                                        onProgress: (progress) => {
+                                                            onProgress?.(progress);
+                                                        },
+                                                    },
+                                                );
+
+                                                setPaymentProofUrl(downloadURL);
+                                                form.setFieldValue("payment_proof", downloadURL);
+                                                setPaymentProofFileList([
+                                                    {
+                                                        uid: user.global_id,
+                                                        name: file.name,
+                                                        status: "done",
+                                                        url: downloadURL,
+                                                    },
+                                                ]);
+                                                onSuccess?.({url: downloadURL});
+                                            } catch (err) {
+                                                const errorMessage = resolveUploadErrorMessage(err);
+                                                console.error("Payment proof upload failed", {
+                                                    error: err,
+                                                    firebaseCode: err instanceof FirebaseError ? err.code : null,
+                                                    fileSize: file.size,
+                                                    tournamentId: tournamentId ?? null,
+                                                    userGlobalId: user?.global_id ?? null,
+                                                    timestamp: new Date().toISOString(),
+                                                });
+                                                Message.error(errorMessage);
+                                                onError?.(err instanceof Error ? err : new Error(errorMessage));
+                                            } finally {
+                                                setPaymentUploadLoading(false);
+                                            }
+                                        }}
+                                        tip="Only pictures can be uploaded. (JPG, PNG, GIF)"
+                                    />
+                                </Form.Item>
+                            </>
                         )}
 
                         <Form.Item>
-                            <Button type="primary" htmlType="submit" long loading={loading} disabled={loading}>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                long
+                                loading={submitLoading}
+                                disabled={submitLoading || paymentUploadLoading || pageLoading}
+                            >
                                 Register
                             </Button>
                         </Form.Item>

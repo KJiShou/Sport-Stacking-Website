@@ -1,11 +1,10 @@
 import {Button, Form, Input, Link, Message, Typography} from "@arco-design/web-react";
 import {IconEmail, IconLock} from "@arco-design/web-react/icon";
-import {doc, getDoc} from "firebase/firestore";
 import React, {useRef, useState, useEffect} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
 import {login, signInWithGoogle} from "../../services/firebase/authService";
-import {db} from "../../services/firebase/config";
+import InAppBrowserNotice from "./InAppBrowserNotice";
 
 const {Text} = Typography;
 
@@ -61,29 +60,9 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
     const handleGoogleLogin = async () => {
         setLoading(true);
         try {
-            const result = await signInWithGoogle();
-            const uid = result.user.uid;
-
-            // Check if Firestore user exists
-            const userRef = doc(db, "users", uid);
-            const userSnap = await getDoc(userRef);
-
-            if (userSnap.exists()) {
-                Message.success("Google sign-in successful. You are now signed in.");
-                if (redirectTo && redirectTo !== location.pathname) {
-                    navigate(redirectTo, {replace: true});
-                }
-                if (onClose) onClose();
-            } else {
-                Message.info("Sign-in complete. Please finish registration to continue.");
-                navigate("/register", {
-                    state: {
-                        email: result.user.email ?? "",
-                        fromGoogle: true,
-                    },
-                });
-                if (onClose) onClose();
-            }
+            // Prefer popup in normal browsers and fall back to redirect only when needed.
+            // onAuthStateChanged handles the successful login state either way.
+            await signInWithGoogle("login");
         } catch (err: unknown) {
             const message = getLoginErrorMessage(err);
             console.error("Google sign-in error:", err);
@@ -95,6 +74,8 @@ const LoginForm = ({onClose, redirectTo}: {onClose?: () => void; redirectTo?: st
 
     return (
         <Form layout="vertical" requiredSymbol={false} onSubmit={handleLogin}>
+            <InAppBrowserNotice />
+
             <Form.Item field="email" rules={[{required: true, message: "Please enter your email"}]} label="Email">
                 <Input prefix={<IconEmail />} placeholder="example@mail.com" autoComplete="email" />
             </Form.Item>

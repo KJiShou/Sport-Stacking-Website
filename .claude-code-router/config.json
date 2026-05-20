@@ -8,9 +8,18 @@
       "transformer": {
         "use": ["gemini"]
       }
+    },
+    {
+      "name": "minimax",
+      "api_base_url": "https://api.minimax.io/anthropic",
+      "api_key": "sk-cp-qrZdQlW9fwXmiXIQbPUyvSBPvGoKysEt8hLFBLl2TMjfUgMfGKdXRRJu5vKaWbobVME0gmAU1FNEN46nCWpzKyCpIKtTkFkh119aQMrFORBHOlHNCSdSj5M",
+      "models": ["MiniMax-M2.7"],
+      "transformer": {
+        "use": ["minimax"]
+      }
     }
   ],
   "Router": {
-    "default": "gemini,gemini-2.5-pro"
+    "default": "minimax,MiniMax-M2.7"
   }
 }

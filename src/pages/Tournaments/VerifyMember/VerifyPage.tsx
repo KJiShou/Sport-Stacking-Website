@@ -1,12 +1,17 @@
 import type {Team} from "@/schema";
+import {getUserByGlobalId} from "@/services/firebase/authService";
 import {db} from "@/services/firebase/config";
-import {fetchProfileByGlobalId} from "@/services/firebase/profileService";
 import {fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {
+    MEMBER_NOT_REGISTERED_CODE,
+    VerificationError,
+    verifyTeamMembership,
+} from "@/services/firebase/verificationService";
 import {getTeamEventLabels} from "@/utils/tournament/eventUtils";
-import {Result, Spin, Typography} from "@arco-design/web-react";
-import {getAuth} from "firebase/auth";
-import {collection, doc, getDoc, getDocs, query, where} from "firebase/firestore";
+import {Button, Result, Spin, Typography} from "@arco-design/web-react";
+import {doc, getDoc} from "firebase/firestore";
 import {useEffect, useState} from "react";
+import {useNavigate} from "react-router-dom";
 
 const {Paragraph} = Typography;
 
@@ -17,11 +22,13 @@ type VerificationDetails = {
 };
 
 export default function VerifyPage() {
+    const navigate = useNavigate();
     const [status, setStatus] = useState<"loading" | "success" | "error" | "unauthorized" | "missing" | "not_registered">(
         "loading",
     );
     const [errorMessage, setErrorMessage] = useState<string>("");
     const [verificationDetails, setVerificationDetails] = useState<VerificationDetails | null>(null);
+    const [registerTournamentId, setRegisterTournamentId] = useState<string | null>(null);
 
     const loadVerificationDetails = async (tournamentId: string, teamId: string) => {
         try {
@@ -42,8 +49,8 @@ export default function VerifyPage() {
             const eventLabel = eventLabels.length > 0 ? eventLabels.join(", ") : fallbackEventLabel || fallbackEventId;
 
             const leaderId = teamData.leader_id ?? "";
-            const leaderProfile = leaderId ? await fetchProfileByGlobalId(leaderId) : undefined;
-            const leaderLabel = leaderProfile?.name ? `${leaderProfile.name} (${leaderId})` : leaderId;
+            const leaderUser = leaderId ? await getUserByGlobalId(leaderId) : undefined;
+            const leaderLabel = leaderUser?.name ? `${leaderUser.name} (${leaderId})` : leaderId;
 
             setVerificationDetails({
                 eventLabel: eventLabel || undefined,
@@ -93,72 +100,49 @@ export default function VerifyPage() {
                 setStatus("missing");
                 return;
             }
+            setRegisterTournamentId(tournamentId);
 
             void loadVerificationDetails(tournamentId, teamId);
 
-            const auth = getAuth();
-            const token = await auth.currentUser?.getIdToken();
-            if (!token) {
-                setStatus("unauthorized");
-                return;
-            }
+            const user = await getUserByGlobalId(memberId);
 
-            const profile = await fetchProfileByGlobalId(memberId);
-            if (!profile) {
+            if (!user) {
                 setStatus("error");
-                setErrorMessage("Profile not found.");
+                setErrorMessage("User not found.");
                 return;
             }
 
-            const registrationQuery = query(
-                collection(db, "registrations"),
-                where("tournament_id", "==", tournamentId),
-                where("profile_id", "==", profile.id ?? ""),
-            );
-            const registrationSnapshot = await getDocs(registrationQuery);
-            if (registrationSnapshot.empty) {
-                const legacyQuery = query(
-                    collection(db, "registrations"),
-                    where("tournament_id", "==", tournamentId),
-                    where("user_global_id", "==", memberId),
-                );
-                const legacySnapshot = await getDocs(legacyQuery);
-                if (legacySnapshot.empty) {
-                    setStatus("not_registered");
-                    return;
-                }
+            const registrationRecord = user.registration_records?.find((rec) => rec.tournament_id === tournamentId);
+
+            if (!registrationRecord) {
+                setStatus("not_registered");
+                return;
             }
 
             try {
-                const verificationUrl =
-                    import.meta.env.VITE_UPDATE_VERIFICATION_PROFILE_URL ??
-                    import.meta.env.VITE_UPDATE_VERIFICATION_URL ??
-                    "https://updateverification-jzbhzqtcdq-uc.a.run.app";
-                const res = await fetch(verificationUrl, {
-                    method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
+                await verifyTeamMembership({
                         tournamentId,
                         teamId,
                         memberId,
                         registrationId,
-                    }),
                 });
-
-                const data = await res.json();
-                if (res.ok) {
-                    setStatus("success");
-                } else {
-                    setErrorMessage(data.error || "Unknown error");
-                    setStatus("error");
-                }
+                setStatus("success");
             } catch (err) {
-                console.error(err);
+                console.error("Verification request failed:", err);
+                if (err instanceof VerificationError && err.code === MEMBER_NOT_REGISTERED_CODE) {
+                    setStatus("not_registered");
+                    return;
+                }
+                if (err instanceof VerificationError && err.status === 401) {
+                    setStatus("unauthorized");
+                    return;
+                }
+                if (err instanceof Error && err.message.includes("signed in")) {
+                    setStatus("unauthorized");
+                    return;
+                }
                 setStatus("error");
-                setErrorMessage("Network or server error.");
+                setErrorMessage(err instanceof Error ? err.message : "Network or server error.");
             }
         };
 
@@ -230,6 +214,11 @@ export default function VerifyPage() {
                 subTitle={
                     <div>
                         <Paragraph>You have not registered for this tournament, so you cannot be verified.</Paragraph>
+                        {registerTournamentId ? (
+                            <Button type="primary" onClick={() => navigate(`/tournaments/${registerTournamentId}/register`)}>
+                                Register Now
+                            </Button>
+                        ) : null}
                         {renderVerificationDetails()}
                     </div>
                 }

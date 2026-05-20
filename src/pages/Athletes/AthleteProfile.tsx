@@ -17,10 +17,9 @@ import {
 import {IconUndo} from "@arco-design/web-react/icon";
 import type {Timestamp} from "firebase/firestore";
 
-import type {Profile} from "@/schema/ProfileSchema";
-import type {UserRegistrationRecord} from "@/schema/UserSchema";
+import type {FirestoreUser} from "@/schema/UserSchema";
 import {type EventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
-import {fetchProfileByGlobalId} from "@/services/firebase/profileService";
+import {fetchUserByID, getUserByGlobalId} from "@/services/firebase/authService";
 import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatDateSafe, formatStackingTime} from "@/utils/time";
 
@@ -40,7 +39,6 @@ interface TournamentRecord {
     events: string[];
     registrationDate: Date | null;
     status: string;
-    classification?: string | null;
     prelimRank: number | null;
     finalRank: number | null;
     prelimOverall: number | null;
@@ -65,11 +63,22 @@ const toDate = (value: Date | Timestamp | null | undefined): Date | null => {
     return null;
 };
 
+const getBestTimesCount = (user: FirestoreUser | null | undefined): number => {
+    if (!user?.best_times) {
+        return 0;
+    }
+    const events: EventType[] = ["3-3-3", "3-6-3", "Cycle", "Overall"];
+    return events.reduce((count, event) => {
+        const time = user.best_times?.[event]?.time;
+        return typeof time === "number" && Number.isFinite(time) && time > 0 ? count + 1 : count;
+    }, 0);
+};
+
 const AthleteProfilePage = () => {
     const {athleteId} = useParams<{athleteId: string}>();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [user, setUser] = useState<Profile | null>(null);
+    const [user, setUser] = useState<FirestoreUser | null>(null);
     const [rankings, setRankings] = useState<Record<EventType, number | null>>({
         "3-3-3": null,
         "3-6-3": null,
@@ -88,8 +97,19 @@ const AthleteProfilePage = () => {
         setLoading(true);
         setError(null);
 
+        const loadAthlete = async (): Promise<FirestoreUser | null> => {
+            const byGlobalId = await getUserByGlobalId(athleteId);
+            if (byGlobalId) {
+                return byGlobalId;
+            }
+
+            // Fallback for routes that pass Firebase UID instead of global_id.
+            const byUid = await fetchUserByID(athleteId);
+            return byUid;
+        };
+
         Promise.all([
-            fetchProfileByGlobalId(athleteId),
+            loadAthlete(),
             getTopAthletesByEvent("3-3-3", 1000),
             getTopAthletesByEvent("3-6-3", 1000),
             getTopAthletesByEvent("Cycle", 1000),
@@ -97,15 +117,36 @@ const AthleteProfilePage = () => {
         ])
             .then(([userData, rankings333, rankings363, rankingsCycle, rankingsOverall]) => {
                 if (!cancelled) {
-                    setUser(userData ?? null);
-                    if (!userData) {
+                    const rankingUsers = [...rankings333, ...rankings363, ...rankingsCycle, ...rankingsOverall];
+                    const fallbackFromRankings =
+                        userData && getBestTimesCount(userData) > 0
+                            ? userData
+                            : (rankingUsers.find(
+                                  (entry) =>
+                                      entry.global_id === athleteId ||
+                                      entry.id === athleteId ||
+                                      (userData?.global_id ? entry.global_id === userData.global_id : false) ||
+                                      (userData?.id ? entry.id === userData.id : false),
+                              ) ?? null);
+
+                    const resolvedUser = fallbackFromRankings ?? userData ?? null;
+                    setUser(resolvedUser);
+                    if (!resolvedUser) {
                         setError("No athlete data found.");
                     } else {
+                        const athleteGlobalId = resolvedUser.global_id ?? null;
+                        const athleteUid = resolvedUser.id ?? null;
+                        const isSameAthlete = (entry: FirestoreUser): boolean =>
+                            (athleteGlobalId ? entry.global_id === athleteGlobalId : false) ||
+                            (athleteUid ? entry.id === athleteUid : false) ||
+                            entry.global_id === athleteId ||
+                            entry.id === athleteId;
+
                         // Calculate rankings
-                        const rank333 = rankings333.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
-                        const rank363 = rankings363.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
-                        const rankCycle = rankingsCycle.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
-                        const rankOverall = rankingsOverall.findIndex((u) => u.global_id === athleteId || u.id === athleteId);
+                        const rank333 = rankings333.findIndex(isSameAthlete);
+                        const rank363 = rankings363.findIndex(isSameAthlete);
+                        const rankCycle = rankingsCycle.findIndex(isSameAthlete);
+                        const rankOverall = rankingsOverall.findIndex(isSameAthlete);
 
                         setRankings({
                             "3-3-3": rank333 >= 0 ? rank333 + 1 : null,
@@ -154,19 +195,16 @@ const AthleteProfilePage = () => {
     }, [user, rankings]);
 
     const tournaments = useMemo<TournamentRecord[]>(() => {
-        const registrationRecords =
-            (user as unknown as {registration_records?: UserRegistrationRecord[] | null})?.registration_records ?? [];
-        if (!registrationRecords || registrationRecords.length === 0) return [];
+        if (!user?.registration_records) return [];
 
         // Only show approved registrations
-        return registrationRecords
+        return user.registration_records
             .filter((reg) => reg.status === "approved")
             .map((reg) => ({
                 tournamentId: reg.tournament_id,
                 events: reg.events ?? [],
                 registrationDate: toDate(reg.updated_at) ?? toDate(reg.registration_date),
                 status: reg.status ?? "pending",
-                classification: reg.classification ?? null,
                 prelimRank: reg.prelim_rank ?? null,
                 finalRank: reg.final_rank ?? null,
                 prelimOverall: reg.prelim_overall_result ?? null,
@@ -237,12 +275,6 @@ const AthleteProfilePage = () => {
                 render: (time: number | null) => (time ? formatStackingTime(time) : "—"),
             },
             {
-                title: "Classification",
-                dataIndex: "classification",
-                width: 140,
-                render: (value: string | null | undefined) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : "—"),
-            },
-            {
                 title: "Final Rank",
                 dataIndex: "finalRank",
                 width: 120,
@@ -295,7 +327,6 @@ const AthleteProfilePage = () => {
         : null;
 
     const country = Array.isArray(user.country) && user.country.length > 0 ? user.country[0] : (user.country ?? "—");
-    const overallRankLabel = rankings.Overall ? `#${rankings.Overall}` : "—";
 
     return (
         <div className="flex flex-col bg-ghostwhite p-4 sm:p-6 xl:p-10 gap-6">
@@ -309,19 +340,15 @@ const AthleteProfilePage = () => {
                         {user.image_url ? <img src={user.image_url} alt={user.name} /> : user.name.charAt(0)}
                     </Avatar>
                     <div className="flex flex-col gap-4 flex-1">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                             <Title heading={2} className="flex flex-wrap items-center gap-3">
                                 {user.name}
                                 <Tag color="arcoblue" className="text-sm sm:text-base">
                                     ID: {user.global_id ?? user.id}
                                 </Tag>
                             </Title>
-                            <div className="flex flex-col items-start sm:items-end">
-                                <span className="text-xs uppercase tracking-[0.2em] text-neutral-500">Overall Rank</span>
-                                <span className="text-4xl sm:text-6xl font-extrabold text-amber-600">{overallRankLabel}</span>
-                            </div>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 text-base">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 text-base">
                             <div className="flex flex-col gap-1">
                                 <Text type="secondary" className="text-sm">
                                     Country
@@ -341,14 +368,6 @@ const AthleteProfilePage = () => {
                                     Age
                                 </Text>
                                 <Text className="font-semibold text-lg">{age ?? "—"}</Text>
-                            </div>
-                            <div className="flex flex-col gap-1">
-                                <Text type="secondary" className="text-sm">
-                                    Email
-                                </Text>
-                                <Text className="font-semibold text-base break-all">
-                                    {user.contact_email ?? user.owner_email ?? "—"}
-                                </Text>
                             </div>
                         </div>
                     </div>
@@ -377,11 +396,9 @@ const AthleteProfilePage = () => {
                 <Divider style={{margin: 0}} />
 
                 <div className="w-full">
-                    <div className="flex items-center justify-between gap-4 !mb-4">
-                        <Title heading={4} className="!mb-0">
-                            Tournament Participation
-                        </Title>
-                    </div>
+                    <Title heading={4} className="!mb-4">
+                        Tournament Participation
+                    </Title>
                     {tournaments.length === 0 ? (
                         <Empty description="No tournament participation records found." />
                     ) : (

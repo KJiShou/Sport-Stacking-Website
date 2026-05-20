@@ -1,21 +1,27 @@
 import {useAuthContext} from "@/context/AuthContext";
-import type {FirestoreUser, Registration, Team, Tournament} from "@/schema";
+import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import {fetchUsersByIds} from "@/services/firebase/authService";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTeamsByTournament, fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
+import {findDuplicateEventSelections, groupEventSelections} from "@/utils/tournament/eventUtils";
 import {Button, Dropdown, Input, Message, Popconfirm, type TableColumnProps, Tag} from "@arco-design/web-react";
 import Table from "@arco-design/web-react/es/Table/table";
 import Title from "@arco-design/web-react/es/Typography/title";
 import {IconDelete, IconEye, IconEyeInvisible, IconUndo} from "@arco-design/web-react/icon";
 import type {Timestamp} from "firebase/firestore";
-import {ref} from "firebase/storage";
 import {useEffect, useMemo, useRef, useState} from "react";
-import {Link, useLocation, useNavigate, useParams} from "react-router-dom";
+import {Link, useLocation, useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
-import {set} from "zod";
+
+const PAGE_SIZE = 10;
+
+const parsePositivePage = (value: string | null): number => {
+    const parsed = Number.parseInt(value ?? "", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+};
 
 export default function RegistrationsListPage() {
     const {tournamentId} = useParams();
@@ -23,15 +29,23 @@ export default function RegistrationsListPage() {
     const navigate = useNavigate();
     const deviceBreakpoint = useDeviceBreakpoint();
     const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const [loading, setLoading] = useState<boolean>(true);
     const [isMounted, setIsMounted] = useState<boolean>(false);
     const mountedRef = useRef(false);
     const [registrations, setRegistrations] = useState<Registration[]>([]); // Replace 'any' with your actual registration type
     const [teams, setTeams] = useState<Team[]>([]);
+    const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [userMap, setUserMap] = useState<Record<string, FirestoreUser>>({});
     const [tournamentTitle, setTournamentTitle] = useState<string>();
-    const [searchTerm, setSearchTerm] = useState<string>("");
+    const [searchTerm, setSearchTerm] = useState<string>(() => searchParams.get("search") ?? "");
+    const [currentPage, setCurrentPage] = useState<number>(() => parsePositivePage(searchParams.get("page")));
+    const [sortField, setSortField] = useState<string>(() => searchParams.get("sortField") ?? "");
+    const [sortDirection, setSortDirection] = useState<"ascend" | "descend" | undefined>(() => {
+        const direction = searchParams.get("sortDirection");
+        return direction === "ascend" || direction === "descend" ? direction : undefined;
+    });
 
     const teamVerificationByRegistration = useMemo(() => {
         return teams.reduce(
@@ -55,12 +69,14 @@ export default function RegistrationsListPage() {
 
         setLoading(true);
         try {
-            const [tempRegistrations, fetchedTeams] = await Promise.all([
+            const [tempRegistrations, fetchedTeams, fetchedEvents] = await Promise.all([
                 fetchRegistrations(tournamentId),
                 fetchTeamsByTournament(tournamentId),
+                fetchTournamentEvents(tournamentId),
             ]);
             setRegistrations(tempRegistrations);
             setTeams(fetchedTeams);
+            setEvents(fetchedEvents);
             const userIds = tempRegistrations.map((registration) => registration.user_id).filter(Boolean);
             const usersById = await fetchUsersByIds(userIds);
             setUserMap(usersById);
@@ -107,6 +123,54 @@ export default function RegistrationsListPage() {
         handleMount().finally(() => setIsMounted(true));
     });
 
+    useEffect(() => {
+        const nextParams = new URLSearchParams(searchParams);
+
+        if (searchTerm.trim()) {
+            nextParams.set("search", searchTerm.trim());
+        } else {
+            nextParams.delete("search");
+        }
+
+        if (currentPage > 1) {
+            nextParams.set("page", `${currentPage}`);
+        } else {
+            nextParams.delete("page");
+        }
+
+        if (sortField && sortDirection) {
+            nextParams.set("sortField", sortField);
+            nextParams.set("sortDirection", sortDirection);
+        } else {
+            nextParams.delete("sortField");
+            nextParams.delete("sortDirection");
+        }
+
+        if (searchParams.toString() !== nextParams.toString()) {
+            setSearchParams(nextParams, {replace: true});
+        }
+    }, [currentPage, searchParams, searchTerm, setSearchParams, sortDirection, sortField]);
+
+    const registrationEventDebugMap = useMemo(() => {
+        return registrations.reduce(
+            (acc, registration) => {
+                const groups = groupEventSelections(registration.events_registered, events);
+                acc[registration.id ?? ""] = {
+                    groups,
+                    duplicates: findDuplicateEventSelections(registration.events_registered, events),
+                };
+                return acc;
+            },
+            {} as Record<
+                string,
+                {
+                    groups: ReturnType<typeof groupEventSelections>;
+                    duplicates: ReturnType<typeof findDuplicateEventSelections>;
+                }
+            >,
+        );
+    }, [events, registrations]);
+
     const columns: (TableColumnProps<(typeof registrations)[number]> | false)[] = [
         {
             title: "ID",
@@ -127,7 +191,8 @@ export default function RegistrationsListPage() {
             title: "Created At",
             dataIndex: "created_at",
             width: 200,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+            sortOrder: sortField === "created_at" ? sortDirection : undefined,
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
             sorter: (a: Registration, b: Registration) => {
                 const aTime = a.created_at?.toDate?.()?.getTime?.() ?? 0;
                 const bTime = b.created_at?.toDate?.()?.getTime?.() ?? 0;
@@ -138,6 +203,7 @@ export default function RegistrationsListPage() {
             title: "Status",
             dataIndex: "registration_status",
             width: 200,
+            sortOrder: sortField === "registration_status" ? sortDirection : undefined,
             sorter: (a: Registration, b: Registration) => {
                 const statusOrder = ["pending", "approved", "rejected"];
                 const getSortRank = (record: Registration) => {
@@ -182,6 +248,56 @@ export default function RegistrationsListPage() {
                         <Tag color={color}>{status}</Tag>
                         {teamsForRegistration.length > 0 &&
                             (teamVerified ? <Tag color="green">Team Verified</Tag> : <Tag color="red">Team Not Verified</Tag>)}
+                    </div>
+                );
+            },
+        },
+        {
+            title: "Events",
+            width: 360,
+            sortOrder: sortField === "events" ? sortDirection : undefined,
+            sorter: (a: Registration, b: Registration) => {
+                const debugA = a.id ? registrationEventDebugMap[a.id] : undefined;
+                const debugB = b.id ? registrationEventDebugMap[b.id] : undefined;
+                const duplicateCountA = debugA?.duplicates.length ?? 0;
+                const duplicateCountB = debugB?.duplicates.length ?? 0;
+
+                if (duplicateCountA !== duplicateCountB) {
+                    return duplicateCountB - duplicateCountA;
+                }
+
+                const labelA = (debugA?.groups ?? [])
+                    .map((group) => group.label)
+                    .join(", ")
+                    .toLowerCase();
+                const labelB = (debugB?.groups ?? [])
+                    .map((group) => group.label)
+                    .join(", ")
+                    .toLowerCase();
+
+                if (labelA !== labelB) {
+                    return labelA.localeCompare(labelB);
+                }
+
+                return (a.user_name ?? "").localeCompare(b.user_name ?? "", undefined, {sensitivity: "base"});
+            },
+            render: (_: string, record: Registration) => {
+                const debugInfo = record.id ? registrationEventDebugMap[record.id] : undefined;
+                const groups = debugInfo?.groups ?? [];
+                const duplicates = debugInfo?.duplicates ?? [];
+
+                return (
+                    <div className="flex flex-wrap gap-2">
+                        {groups.length > 0 ? (
+                            groups.map((group) => <Tag key={`${record.id}-${group.canonicalKey}`}>{group.label}</Tag>)
+                        ) : (
+                            <span>-</span>
+                        )}
+                        {duplicates.map((group) => (
+                            <Tag key={`${record.id}-${group.canonicalKey}-duplicate`} color="red">
+                                Duplicate: {group.label} ({group.values.join(" / ")})
+                            </Tag>
+                        ))}
                     </div>
                 );
             },
@@ -236,6 +352,17 @@ export default function RegistrationsListPage() {
         return globalId.includes(query) || name.includes(query) || ic.includes(query);
     });
 
+    useEffect(() => {
+        if (loading) {
+            return;
+        }
+
+        const totalPages = Math.max(1, Math.ceil(filteredRegistrations.length / PAGE_SIZE));
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, filteredRegistrations.length, loading]);
+
     return (
         <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
             <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
@@ -248,20 +375,35 @@ export default function RegistrationsListPage() {
                         placeholder="Search by name or ID"
                         allowClear
                         value={searchTerm}
-                        onChange={setSearchTerm}
+                        onChange={(value) => {
+                            setSearchTerm(value);
+                            setCurrentPage(1);
+                        }}
                         className="md:max-w-[320px]"
                     />
                 </div>
                 <Table
                     columns={columns.filter((e): e is TableColumnProps<(typeof registrations)[number]> => !!e)}
                     data={filteredRegistrations}
-                    pagination={{pageSize: 10}}
+                    pagination={{pageSize: PAGE_SIZE, current: currentPage}}
                     className="my-4"
                     rowKey={(record) => record.id ?? ""}
                     rowClassName={() => "cursor-pointer hover:bg-gray-50"}
+                    onChange={(pagination, sorter) => {
+                        setCurrentPage(pagination.current ?? 1);
+
+                        if (!Array.isArray(sorter) && sorter.field && sorter.direction) {
+                            setSortField(String(sorter.field));
+                            setSortDirection(sorter.direction);
+                            return;
+                        }
+
+                        setSortField("");
+                        setSortDirection(undefined);
+                    }}
                     onRow={(record) => ({
                         onClick: () => {
-                            navigate(`/tournaments/${tournamentId}/registrations/${record.id}/edit`);
+                            navigate(`/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`);
                         },
                     })}
                 />

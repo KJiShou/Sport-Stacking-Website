@@ -10,9 +10,6 @@ export type {AgeBracket, FinalCriterion, PaymentMethod, Tournament, TournamentEv
 export {FirestoreUserSchema} from "./UserSchema";
 export type {FirestoreUser} from "./UserSchema";
 
-export {ProfileSchema} from "./ProfileSchema";
-export type {Profile} from "./ProfileSchema";
-
 export type {AuthContextValue} from "./AuthSchema";
 
 export {RoleSchema} from "./RoleSchema";
@@ -107,6 +104,13 @@ export type {
 } from "./PdfSchema";
 
 export type {AvatarUploaderProps, AllTimeStat, OnlineBest, RecordItem} from "./UserProfileSchema";
+export type {
+    ShareRound,
+    ShareResultRow,
+    ShareBracketSection,
+    ShareEventSection,
+    ShareScoreSheetPayload,
+} from "./ShareScoreSheetSchema";
 
 export type {
     AppRoute,
@@ -118,3 +122,5 @@ export type {
 
 export {HomeCarouselImageSchema} from "./HomeCarouselSchema";
 export type {HomeCarouselImage} from "./HomeCarouselSchema";
+export {VerificationRequestSchema} from "./VerificationRequestSchema";
+export type {VerificationRequest} from "./VerificationRequestSchema";

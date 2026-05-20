@@ -1,11 +1,12 @@
 import type {EventFieldProps} from "@/schema";
-import {Button, Card, Form, InputNumber, Select, Typography} from "@arco-design/web-react";
+import {Button, Card, Form, InputNumber, Select, Switch, Typography} from "@arco-design/web-react";
 import {IconDelete, IconEdit} from "@arco-design/web-react/icon";
 
 const {Title} = Typography;
 
 const EVENT_TYPES = {
     Individual: ["3-3-3", "3-6-3", "Cycle"],
+    "Open Age Individual": ["3-3-3", "3-6-3", "Cycle"],
     Double: ["Cycle"],
     "Team Relay": ["3-6-3", "Cycle"],
     "Parent & Child": ["Cycle"],
@@ -23,6 +24,9 @@ const DEFAULT_TEAM_SIZE: Partial<Record<keyof typeof EVENT_TYPES, number>> = {
 const NON_SCORING_EVENT_TYPES = new Set(["StackOut Champion", "Blindfolded Cycle", "Stack Up Champion"]);
 
 export default function EventFields({index, onEditAgeBrackets, onRemove}: EventFieldProps) {
+    const isIndividualLikeEventType = (eventType: string): boolean =>
+        eventType === "Individual" || eventType === "Open Age Individual";
+
     return (
         <Card className="mb-4">
             <div className="space-y-4">
@@ -42,6 +46,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                         <Form.Item field={`events.${index}.type`} rules={[{required: true}]}>
                             <Select placeholder="Select Event Type" className="w-full">
                                 <Select.Option value="Individual">Individual</Select.Option>
+                                <Select.Option value="Open Age Individual">Open Age Individual</Select.Option>
                                 <Select.Option value="Double">Double</Select.Option>
                                 <Select.Option value="Team Relay">Team Relay</Select.Option>
                                 <Select.Option value="Parent & Child">Parent & Child</Select.Option>
@@ -77,11 +82,12 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
 
                 <Form.Item
                     shouldUpdate={(prev, next) => {
-                        // Check if event type changed
-                        if (prev.events?.[index]?.type !== next.events?.[index]?.type) {
-                            return true;
-                        }
-                        return false;
+                        const prevEvent = prev.events?.[index];
+                        const nextEvent = next.events?.[index];
+                        return (
+                            prevEvent?.type !== nextEvent?.type ||
+                            prevEvent?.additional_fee_enabled !== nextEvent?.additional_fee_enabled
+                        );
                     }}
                 >
                     {(_, form) => {
@@ -89,6 +95,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                         const prevEventType = form.getFieldValue(`events.${index}.__prevType`);
                         const availableCodes = eventType ? EVENT_TYPES[eventType as keyof typeof EVENT_TYPES] || [] : [];
                         const requiresTeamSize = eventType && TEAM_EVENT_TYPES.includes(eventType as keyof typeof EVENT_TYPES);
+                        const isIndividualLike = eventType ? isIndividualLikeEventType(eventType) : false;
                         const isNonScoringEvent = NON_SCORING_EVENT_TYPES.has(eventType);
                         const currentCodesRaw = form.getFieldValue(`events.${index}.codes`);
                         const currentCodes = Array.isArray(currentCodesRaw)
@@ -119,10 +126,18 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                             }
                         }
 
+                        const additionalFeeEnabled = form.getFieldValue(`events.${index}.additional_fee_enabled`) === true;
+                        if (!additionalFeeEnabled) {
+                            const currentAdditionalFee = form.getFieldValue(`events.${index}.additional_fee`);
+                            if (currentAdditionalFee !== undefined) {
+                                form.setFieldValue(`events.${index}.additional_fee`, undefined);
+                            }
+                        }
+
                         // Clear codes if event type changed
                         if (eventType && eventType !== prevEventType) {
                             const validCodes = currentCodes.filter((code: string) => availableCodes.includes(code));
-                            if (eventType === "Individual") {
+                            if (isIndividualLike) {
                                 if (!Array.isArray(currentCodesRaw) || validCodes.length !== currentCodes.length) {
                                     form.setFieldValue(`events.${index}.codes`, validCodes);
                                 }
@@ -139,16 +154,14 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                             <>
                                 <div>
                                     <Title heading={6} className="mb-2">
-                                        Select Event Code{eventType === "Individual" ? "s" : ""}
+                                        Select Event Code{isIndividualLike ? "s" : ""}
                                     </Title>
                                     <Form.Item field={`events.${index}.codes`} rules={[{required: true}]}>
                                         <Select
                                             placeholder={
-                                                eventType === "Individual"
-                                                    ? "Select one or more event codes"
-                                                    : "Select an event code"
+                                                isIndividualLike ? "Select one or more event codes" : "Select an event code"
                                             }
-                                            mode={eventType === "Individual" ? "multiple" : undefined}
+                                            mode={isIndividualLike ? "multiple" : undefined}
                                             className="w-full"
                                         >
                                             {availableCodes.map((code) => (
@@ -197,6 +210,33 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                                         </Form.Item>
                                     </div>
                                 )}
+
+                                <div>
+                                    <Title heading={6} className="mb-2">
+                                        Additional Fee
+                                    </Title>
+                                    {eventType === "Open Age Individual" && (
+                                        <div className="mb-2 text-sm text-gray-500">
+                                            Optional event: enable this if Open Age Individual should have an extra charge.
+                                        </div>
+                                    )}
+                                    <Form.Item field={`events.${index}.additional_fee_enabled`} triggerPropName="checked">
+                                        <Switch />
+                                    </Form.Item>
+                                    {additionalFeeEnabled && (
+                                        <Form.Item
+                                            field={`events.${index}.additional_fee`}
+                                            rules={[
+                                                {
+                                                    required: true,
+                                                    message: "Please enter additional fee amount",
+                                                },
+                                            ]}
+                                        >
+                                            <InputNumber min={0} placeholder="Enter additional fee amount" className="w-full" />
+                                        </Form.Item>
+                                    )}
+                                </div>
                             </>
                         ) : null;
                     }}

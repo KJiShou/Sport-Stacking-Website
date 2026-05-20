@@ -2,6 +2,7 @@ import {z} from "zod";
 
 export const EventCategorySchema = z.enum([
     "Individual",
+    "Open Age Individual",
     "Double",
     "Team Relay",
     "Parent & Child",

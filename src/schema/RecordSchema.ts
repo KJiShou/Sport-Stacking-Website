@@ -140,8 +140,8 @@ export const RecordDisplaySchema = z.object({
     recordId: z.string().optional(),
     participantId: z.string().optional(),
     teamName: z.string().optional(),
-    tournamentId: z.string().optional(),
     tournament_name: z.string().optional().nullable(),
+    tournamentId: z.string().optional(),
     // Team-specific display fields
     members: z.array(z.string()).optional(),
     leaderId: z.string().optional(),

@@ -1,6 +1,13 @@
 import type {Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/schema";
+import {fetchUsersByGlobalIds} from "@/services/firebase/authService";
 import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
-import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {
+    dedupeTeamsForTournament,
+    fetchTeamsByTournament,
+    fetchTournamentById,
+    fetchTournamentEvents,
+    updateTeamNamesForTournament,
+} from "@/services/firebase/tournamentsService";
 import {
     exportAllBracketsListToPDF,
     exportCombinedTimeSheetsPDF,
@@ -31,24 +38,35 @@ import type {TableColumnProps} from "@arco-design/web-react";
 import {IconUndo} from "@arco-design/web-react/icon";
 import {nanoid} from "nanoid";
 // src/pages/ParticipantListPage.tsx
-import React, {useState, useRef} from "react";
-import {useNavigate, useParams} from "react-router-dom";
+import React, {useEffect, useRef, useState} from "react";
+import {useLocation, useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
 
 const {Title, Text} = Typography;
 const {TabPane} = Tabs;
+const PAGE_SIZE_INDIVIDUAL = 10;
+const PAGE_SIZE_TEAM = 5;
+
+const parsePositivePage = (value: string | null): number => {
+    const parsed = Number.parseInt(value ?? "", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+};
 
 export default function ParticipantListPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
     const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [registrationList, setRegistrationList] = useState<Registration[]>([]);
     const [teamList, setTeamList] = useState<Team[]>([]);
-    const [searchTerm, setSearchTerm] = useState("");
-    const [currentEventTab, setCurrentEventTab] = useState<string>("");
-    const [currentBracketTab, setCurrentBracketTab] = useState<string>("");
+    const [supplementalNameMap, setSupplementalNameMap] = useState<Record<string, string>>({});
+    const [searchTerm, setSearchTerm] = useState(() => searchParams.get("search") ?? "");
+    const [currentEventTab, setCurrentEventTab] = useState<string>(() => searchParams.get("event") ?? "");
+    const [currentBracketTab, setCurrentBracketTab] = useState<string>(() => searchParams.get("bracket") ?? "");
+    const [currentPage, setCurrentPage] = useState<number>(() => parsePositivePage(searchParams.get("page")));
     const mountedRef = useRef(false);
     const sortedEvents = [...events].sort((a, b) => {
         const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
@@ -79,6 +97,11 @@ export default function ParticipantListPage() {
         },
         {} as Record<string, string>,
     );
+    const combinedNameMap: Record<string, string> = {...nameMap, ...supplementalNameMap};
+    const isStackOutChampionEvent = (event: TournamentEvent): boolean =>
+        event.type.toLowerCase() === "stackout champion" || event.type.toLowerCase() === "stack up champion";
+    const registrationMatchesParticipantId = (registration: Registration, participantId: string): boolean =>
+        registration.user_id === participantId || registration.user_global_id === participantId;
 
     const refreshParticipantList = async () => {
         if (!tournamentId) return;
@@ -93,21 +116,61 @@ export default function ParticipantListPage() {
                 if (orderDiff !== 0) return orderDiff;
                 return a.type.localeCompare(b.type);
             });
-            setCurrentEventTab(sortedEventList[0]?.id ?? sortedEventList[0]?.type ?? "");
-            const firstBracket = sortedEventList[0]?.age_brackets?.[0];
-            setCurrentBracketTab(firstBracket ? firstBracket.name : "");
+
+            const requestedEventTab = searchParams.get("event") ?? currentEventTab;
+            const selectedEvent =
+                sortedEventList.find((evt) => evt.id === requestedEventTab) ||
+                sortedEventList.find((evt) => evt.type === requestedEventTab) ||
+                sortedEventList[0];
+            const resolvedEventTab = selectedEvent?.id ?? selectedEvent?.type ?? "";
+            setCurrentEventTab(resolvedEventTab);
+
+            const requestedBracketTab = searchParams.get("bracket") ?? currentBracketTab;
+            const selectedBracket =
+                selectedEvent?.age_brackets?.find((bracket) => bracket.name === requestedBracketTab) ??
+                selectedEvent?.age_brackets?.[0];
+            setCurrentBracketTab(selectedBracket?.name ?? "");
+
             const regs = await fetchApprovedRegistrations(tournamentId);
             const teams = await fetchTeamsByTournament(tournamentId);
+            const verifiedTeams = teams.filter((team) => {
+                if (!isTeamFullyVerified(team)) {
+                    return false;
+                }
+                const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                return regs.some((r) => r.user_global_id === leaderId || r.user_id === leaderId);
+            });
             setRegistrationList(regs);
-            setTeamList(
-                teams.filter((team) => {
-                    if (!isTeamFullyVerified(team)) {
-                        return false;
+            setTeamList(verifiedTeams);
+
+            const approvedNameMap = regs.reduce(
+                (acc, registration) => {
+                    if (registration.user_global_id) {
+                        acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
                     }
-                    const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                    return regs.some((r) => r.user_global_id === leaderId || r.user_id === leaderId);
-                }),
+                    return acc;
+                },
+                {} as Record<string, string>,
             );
+            const missingGlobalIds = Array.from(
+                new Set(
+                    verifiedTeams.flatMap((team) => [
+                        stripTeamLeaderPrefix(team.leader_id),
+                        ...(team.members ?? []).map((member) => member.global_id),
+                    ]),
+                ),
+            ).filter((globalId) => globalId && !approvedNameMap[globalId]);
+
+            if (missingGlobalIds.length > 0) {
+                const usersByGlobalId = await fetchUsersByGlobalIds(missingGlobalIds);
+                const fetchedNameMap: Record<string, string> = {};
+                for (const [globalId, user] of Object.entries(usersByGlobalId)) {
+                    fetchedNameMap[globalId] = user.name || globalId;
+                }
+                setSupplementalNameMap(fetchedNameMap);
+            } else {
+                setSupplementalNameMap({});
+            }
         } catch {
             Message.error("Unable to fetch participants");
         } finally {
@@ -140,6 +203,38 @@ export default function ParticipantListPage() {
         refreshParticipantList();
     });
 
+    useEffect(() => {
+        const nextParams = new URLSearchParams(searchParams);
+
+        if (searchTerm.trim()) {
+            nextParams.set("search", searchTerm.trim());
+        } else {
+            nextParams.delete("search");
+        }
+
+        if (currentEventTab) {
+            nextParams.set("event", currentEventTab);
+        } else {
+            nextParams.delete("event");
+        }
+
+        if (currentBracketTab) {
+            nextParams.set("bracket", currentBracketTab);
+        } else {
+            nextParams.delete("bracket");
+        }
+
+        if (currentPage > 1) {
+            nextParams.set("page", `${currentPage}`);
+        } else {
+            nextParams.delete("page");
+        }
+
+        if (nextParams.toString() !== searchParams.toString()) {
+            setSearchParams(nextParams, {replace: true});
+        }
+    }, [currentBracketTab, currentEventTab, currentPage, searchParams, searchTerm, setSearchParams]);
+
     const filterRegistrations = (evtKey: string, isTeam: boolean, event?: TournamentEvent) => {
         const normalizedSearch = searchTerm.trim().toLowerCase();
 
@@ -169,7 +264,9 @@ export default function ParticipantListPage() {
                 ]),
             );
 
-            return registrationList.filter((r) => teamUserIds.has(r.user_id));
+            return registrationList.filter(
+                (registration) => teamUserIds.has(registration.user_id) || teamUserIds.has(registration.user_global_id ?? ""),
+            );
         }
 
         return registrationList.filter((r) => {
@@ -191,6 +288,7 @@ export default function ParticipantListPage() {
 
     const handleEventTabChange = (key: string) => {
         setCurrentEventTab(key);
+        setCurrentPage(1);
 
         if (!events) {
             return;
@@ -230,6 +328,9 @@ export default function ParticipantListPage() {
         try {
             const entries = [];
             for (const event of events) {
+                if (isStackOutChampionEvent(event)) {
+                    continue;
+                }
                 const eventCodes = sanitizeEventCodes(event.codes);
                 const eventKey = getEventKey(event);
                 const isTeam = isTeamEvent(event);
@@ -279,7 +380,7 @@ export default function ParticipantListPage() {
                 tournament,
                 entries,
                 ageMap,
-                nameMap,
+                nameMap: combinedNameMap,
                 logoUrl: tournament.logo ?? "",
             });
             Message.success("Time sheets opened for all events");
@@ -320,7 +421,15 @@ export default function ParticipantListPage() {
         }
         setLoading(true);
         try {
-            await exportAllBracketsListToPDF(tournament, events ?? [], registrationList, teamList, ageMap, phoneMap);
+            await exportAllBracketsListToPDF(
+                tournament,
+                events ?? [],
+                registrationList,
+                teamList,
+                ageMap,
+                phoneMap,
+                combinedNameMap,
+            );
             Message.success("All brackets list PDF opened");
         } catch (error) {
             Message.error("Failed to generate PDF");
@@ -329,9 +438,47 @@ export default function ParticipantListPage() {
         }
     };
 
+    const handleUpdateTeamNames = async () => {
+        if (!tournamentId) {
+            Message.warning("Tournament ID is missing");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            // Deduplicate teams first, then update names
+            const deletedCount = await dedupeTeamsForTournament(tournamentId);
+            const updatedCount = await updateTeamNamesForTournament(tournamentId);
+
+            const parts: string[] = [];
+            if (deletedCount > 0) {
+                parts.push(`Removed ${deletedCount} duplicate team(s).`);
+            }
+            if (updatedCount > 0) {
+                parts.push(`Updated ${updatedCount} team name(s).`);
+            }
+            if (parts.length === 0) {
+                Message.success("All team names are already up to date.");
+            } else {
+                Message.success(parts.join(" "));
+            }
+            await refreshParticipantList();
+        } catch (error) {
+            Message.error("Failed to update team names");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     if (!tournament) return null;
 
     const tournamentEvents = events ?? [];
+    const currentEvent =
+        sortedEvents.find((evt) => (evt.id ?? evt.type) === currentEventTab) ??
+        sortedEvents.find((evt) => evt.type === currentEventTab) ??
+        sortedEvents[0];
+    const currentEventIsTeam = currentEvent ? isTeamEvent(currentEvent) : false;
+    const currentPageSize = currentEventIsTeam ? PAGE_SIZE_TEAM : PAGE_SIZE_INDIVIDUAL;
 
     const individualColumns: TableColumnProps<Registration>[] = [
         {title: "Global ID", dataIndex: "user_global_id", width: 150},
@@ -365,7 +512,12 @@ export default function ParticipantListPage() {
                             type="text"
                             className={`text-left`}
                             loading={loading}
+                            disabled={isStackOutChampionEvent(event)}
                             onClick={async () => {
+                                if (isStackOutChampionEvent(event)) {
+                                    Message.info("StackOut Champion does not require a time sheet.");
+                                    return;
+                                }
                                 setLoading(true);
                                 await generateStackingSheetPDF(
                                     tournament,
@@ -381,7 +533,9 @@ export default function ParticipantListPage() {
                                 setLoading(false);
                             }}
                         >
-                            Print Time Sheet
+                            {event.type.toLowerCase() === "stackout champion" || event.type.toLowerCase() === "stack up champion"
+                                ? "Time Sheet Not Required"
+                                : "Print Time Sheet"}
                         </Button>
                     </div>
                 );
@@ -416,7 +570,11 @@ export default function ParticipantListPage() {
                             placeholder="Search by name or ID"
                             allowClear
                             style={{width: 300}}
-                            onChange={(val) => setSearchTerm(val.trim())}
+                            value={searchTerm}
+                            onChange={(val) => {
+                                setSearchTerm(val);
+                                setCurrentPage(1);
+                            }}
                         />
                         <Dropdown.Button
                             type="primary"
@@ -457,6 +615,9 @@ export default function ParticipantListPage() {
                                     >
                                         Time Sheet
                                     </Button>
+                                    <Button type="text" loading={loading} className={`text-left`} onClick={handleUpdateTeamNames}>
+                                        Update Team Name
+                                    </Button>
                                 </div>
                             }
                             buttonProps={{
@@ -483,7 +644,10 @@ export default function ParticipantListPage() {
                                     tabPosition="top"
                                     destroyOnHide
                                     activeTab={currentBracketTab}
-                                    onChange={(key) => setCurrentBracketTab(key)}
+                                    onChange={(key) => {
+                                        setCurrentBracketTab(key);
+                                        setCurrentPage(1);
+                                    }}
                                 >
                                     {evt.age_brackets.map((br) => {
                                         if (isTeamEventForTab) {
@@ -522,11 +686,13 @@ export default function ParticipantListPage() {
                                                             {[
                                                                 {
                                                                     id: stripTeamLeaderPrefix(record.leader_id),
-                                                                    name: nameMap[stripTeamLeaderPrefix(record.leader_id)],
+                                                                    name: combinedNameMap[
+                                                                        stripTeamLeaderPrefix(record.leader_id)
+                                                                    ],
                                                                 },
                                                                 ...record.members.map((member) => ({
                                                                     id: member.global_id,
-                                                                    name: nameMap[member.global_id],
+                                                                    name: combinedNameMap[member.global_id],
                                                                 })),
                                                             ]
                                                                 .filter((entry) => entry.id)
@@ -558,8 +724,8 @@ export default function ParticipantListPage() {
                                                     width: 200,
                                                     render: (_, rec) => {
                                                         const teamMembers = rec.members.map((member) => {
-                                                            const registration = registrationList.find(
-                                                                (r) => r.user_id === member.global_id,
+                                                            const registration = registrationList.find((r) =>
+                                                                registrationMatchesParticipantId(r, member.global_id),
                                                             );
                                                             return {
                                                                 ...member,
@@ -586,6 +752,7 @@ export default function ParticipantListPage() {
                                                                             registrations: registrationList,
                                                                             ageMap,
                                                                             phoneMap,
+                                                                            nameMap: combinedNameMap,
                                                                             isTeamEvent: true,
                                                                             team: rec,
                                                                             logoDataUrl: tournament.logo ?? "",
@@ -608,7 +775,7 @@ export default function ParticipantListPage() {
                                                                             br.name,
                                                                             {
                                                                                 logoUrl: tournament.logo ?? "",
-                                                                                nameMap,
+                                                                                nameMap: combinedNameMap,
                                                                                 eventCodes: sanitizeEventCodes(evt.codes),
                                                                             },
                                                                             evt.type,
@@ -631,7 +798,7 @@ export default function ParticipantListPage() {
                                                                     buttonProps={{
                                                                         onClick: () =>
                                                                             window.open(
-                                                                                `/tournaments/${tournamentId}/registrations/${rec.registration_id}/edit`,
+                                                                                `/tournaments/${tournamentId}/registrations/${rec.registration_id}/edit${location.search}`,
                                                                                 "_blank",
                                                                             ),
                                                                     }}
@@ -649,10 +816,15 @@ export default function ParticipantListPage() {
                                                         style={{width: "100%"}}
                                                         columns={teamColumns}
                                                         data={rowsForBracket}
-                                                        pagination={{pageSize: 5, showTotal: true}}
+                                                        pagination={{
+                                                            pageSize: PAGE_SIZE_TEAM,
+                                                            current: currentPage,
+                                                            showTotal: true,
+                                                        }}
                                                         loading={loading}
                                                         rowKey={(rec) => `${rec.id}`}
                                                         pagePosition="bottomCenter"
+                                                        onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
                                                     />
                                                 </TabPane>
                                             );
@@ -664,10 +836,15 @@ export default function ParticipantListPage() {
                                                     style={{width: "100%"}}
                                                     columns={individualColumns}
                                                     data={individualRows}
-                                                    pagination={{pageSize: 10, showTotal: true}}
+                                                    pagination={{
+                                                        pageSize: PAGE_SIZE_INDIVIDUAL,
+                                                        current: currentPage,
+                                                        showTotal: true,
+                                                    }}
                                                     loading={loading}
                                                     rowKey={(r) => r.id ?? r.user_id ?? nanoid()}
                                                     pagePosition="bottomCenter"
+                                                    onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
                                                 />
                                             </TabPane>
                                         );

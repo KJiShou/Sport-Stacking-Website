@@ -14,18 +14,15 @@ import {
 import {getCountryFlag} from "@/utils/countryFlags";
 import {
     Button,
-    Card,
     Cascader,
     DatePicker,
     Descriptions,
-    Divider,
     Drawer,
     Dropdown,
     Form,
     Image,
     Input,
     InputNumber,
-    Link,
     Message,
     Modal,
     Popconfirm,
@@ -47,7 +44,6 @@ import {
     IconEdit,
     IconExclamationCircle,
     IconEye,
-    IconLaunch,
     IconPlayArrow,
     IconPlus,
     IconSearch,
@@ -62,7 +58,6 @@ import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {fetchUserByID} from "@/services/firebase/authService";
 import {deleteFile, uploadFile} from "@/services/firebase/storageService";
-import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import Title from "@arco-design/web-react/es/Typography/title";
@@ -111,18 +106,19 @@ const cloneEvent = (event: TournamentEvent): TournamentEvent => ({
     age_brackets: cloneAgeBrackets(event.age_brackets),
 });
 
-const EVENT_TYPE_OPTIONS: TournamentEvent["type"][] = [
+const EVENT_TYPE_OPTIONS = new Set<TournamentEvent["type"]>([
     "Individual",
+    "Open Age Individual",
     "Double",
     "Team Relay",
     "Parent & Child",
     "Special Need",
     "StackOut Champion",
     "Blindfolded Cycle",
-];
+]);
 
 const isTournamentEventType = (value: unknown): value is TournamentEvent["type"] =>
-    typeof value === "string" && EVENT_TYPE_OPTIONS.includes(value as TournamentEvent["type"]);
+    typeof value === "string" && EVENT_TYPE_OPTIONS.has(value as TournamentEvent["type"]);
 
 const EVENT_CODE_OPTIONS = ["3-3-3", "3-6-3", "Cycle"] as const;
 type EventCode = (typeof EVENT_CODE_OPTIONS)[number];
@@ -130,9 +126,22 @@ type EventCode = (typeof EVENT_CODE_OPTIONS)[number];
 const isEventCode = (value: unknown): value is EventCode =>
     typeof value === "string" && (EVENT_CODE_OPTIONS as readonly string[]).includes(value);
 
+const normalizeDraftEventCodes = (codes: DraftTournamentEvent["codes"]): EventCode[] => {
+    if (Array.isArray(codes)) {
+        return codes.filter(isEventCode);
+    }
+    if (typeof codes === "string" && isEventCode(codes)) {
+        return [codes];
+    }
+    return [];
+};
+
 // Temporary type for UI tracking with unique ID
 type AgeBracketWithId = TournamentEvent["age_brackets"][number] & {_id?: string};
 type FinalCriterionWithId = FinalCriterion & {_tempId?: string};
+
+const hasRegistered = (user: FirestoreUser, tournamentId: string): boolean =>
+    (user.registration_records ?? []).some((record) => record.tournament_id === tournamentId);
 
 export default function TournamentList() {
     // Ref and state for scroll position preservation
@@ -178,14 +187,11 @@ export default function TournamentList() {
     const [currentTournaments, setCurrentTournaments] = useState<Tournament[]>([]);
     const [historyTournaments, setHistoryTournaments] = useState<Tournament[]>([]);
     const [activeTab, setActiveTab] = useState("current");
-    const [tournamentData, setTournamentData] = useState<{label?: ReactNode; value?: ReactNode}[]>([]);
 
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [loginModalVisible, setLoginModalVisible] = useState(false);
     const [viewModalVisible, setViewModalVisible] = useState(false);
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
-
-    const [editingEventIndex, setEditingEventIndex] = useState<number | null>(null);
 
     const [loading, setLoading] = useState(true);
     const mountedRef = useRef(false);
@@ -199,10 +205,6 @@ export default function TournamentList() {
     const [searchTerm, setSearchTerm] = useState("");
     const [dateFilter, setDateFilter] = useState<[dayjs.Dayjs, dayjs.Dayjs] | undefined>(undefined);
     const isAdmin = user?.roles?.edit_tournament || user?.roles?.modify_admin;
-
-    function hasRegistered(user: FirestoreUser, tournamentId: string): boolean {
-        return (user.registration_records ?? []).some((record) => record.tournament_id === tournamentId);
-    }
 
     const getUserRegistration = (user: FirestoreUser, tournamentId: string): UserRegistrationRecord | undefined => {
         return user.registration_records?.find((record) => record.tournament_id === tournamentId);
@@ -229,6 +231,126 @@ export default function TournamentList() {
             </Button>
         </Tooltip>
     );
+
+    const tournamentData: {label?: ReactNode; value?: ReactNode}[] = selectedTournament
+        ? [
+              {
+                  label: "Registration Price",
+                  value: <div>RM{selectedTournament.registration_fee}</div>,
+              },
+              {
+                  label: "Member Registration Price",
+                  value: <div>RM{selectedTournament.member_registration_fee}</div>,
+              },
+              {
+                  label: "Location",
+                  value: (
+                      <div>
+                          {selectedTournament.address} ({selectedTournament.country?.join(" / ")})
+                      </div>
+                  ),
+              },
+              {
+                  label: "Venue",
+                  value: <div>{selectedTournament.venue}</div>,
+              },
+              {
+                  label: "Max Participants",
+                  value: <div>{selectedTournament.max_participants === 0 ? "No Limit" : selectedTournament.max_participants}</div>,
+              },
+          ]
+        : [];
+
+    const updateBracketCriteria = (
+        bracketIndex: number,
+        criteriaIndex: number,
+        updater: (criteria: FinalCriterionWithId) => void,
+    ) => {
+        const updated = [...ageBrackets];
+        const targetBracket = updated[bracketIndex];
+        if (!targetBracket) {
+            return;
+        }
+        targetBracket.final_criteria ??= [];
+        const targetCriteria = targetBracket.final_criteria[criteriaIndex];
+        if (!targetCriteria) {
+            return;
+        }
+        updater(targetCriteria);
+        setAgeBrackets(updated);
+    };
+
+    const updateBracketField = (
+        bracketIndex: number,
+        updater: (bracket: AgeBracketWithId) => void,
+    ) => {
+        const updated = [...ageBrackets];
+        const targetBracket = updated[bracketIndex] as AgeBracketWithId | undefined;
+        if (!targetBracket) {
+            return;
+        }
+        updater(targetBracket);
+        setAgeBrackets(updated);
+    };
+
+    const handleBracketNameChange = (bracketIndex: number, value: string) => {
+        updateBracketField(bracketIndex, (bracket) => {
+            bracket.name = value;
+        });
+    };
+
+    const handleBracketMinAgeChange = (bracketIndex: number, value?: number) => {
+        updateBracketField(bracketIndex, (bracket) => {
+            bracket.min_age = value ?? 0;
+        });
+    };
+
+    const handleBracketMaxAgeChange = (bracketIndex: number, value?: number) => {
+        updateBracketField(bracketIndex, (bracket) => {
+            bracket.max_age = value ?? 0;
+        });
+    };
+
+    const handleCriteriaClassificationChange = (
+        bracketIndex: number,
+        criteriaIndex: number,
+        value: FinalCriterion["classification"],
+    ) => {
+        updateBracketCriteria(bracketIndex, criteriaIndex, (targetCriteria) => {
+            targetCriteria.classification = value;
+        });
+    };
+
+    const handleCriteriaNumberChange = (bracketIndex: number, criteriaIndex: number, value?: number) => {
+        updateBracketCriteria(bracketIndex, criteriaIndex, (targetCriteria) => {
+            targetCriteria.number = value ?? 0;
+        });
+    };
+
+    const removeBracketCriteria = (bracketIndex: number, criteriaIndex: number) => {
+        const updated = [...ageBrackets];
+        const targetBracket = updated[bracketIndex];
+        if (!targetBracket?.final_criteria) {
+            return;
+        }
+        targetBracket.final_criteria.splice(criteriaIndex, 1);
+        setAgeBrackets(updated);
+    };
+
+    const addBracketCriteria = (bracketIndex: number) => {
+        const updated = [...ageBrackets];
+        const targetBracket = updated[bracketIndex];
+        if (!targetBracket) {
+            return;
+        }
+        targetBracket.final_criteria ??= [];
+        targetBracket.final_criteria.push({
+            classification: "intermediate",
+            number: 10,
+            _tempId: crypto.randomUUID(),
+        } as FinalCriterionWithId);
+        setAgeBrackets(updated);
+    };
 
     // Filter tournaments based on search term and date range
     const filterTournaments = (tournaments: Tournament[]) => {
@@ -298,19 +420,19 @@ export default function TournamentList() {
             title: "Registration Start",
             dataIndex: "registration_start_date",
             width: 180,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
             title: "Registration End",
             dataIndex: "registration_end_date",
             width: 180,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
         },
         {
             title: "Tournament Start",
             dataIndex: "start_date",
             width: 180,
-            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString() ?? "-",
+            render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
         },
         deviceBreakpoint > DeviceBreakpoint.md && {
             title: "Status",
@@ -324,6 +446,7 @@ export default function TournamentList() {
                 let rejectionReason: string | undefined;
                 let tooltipMessage = "";
                 const tournamentFull = isTournamentFull(tournament);
+                const isActiveOrEnded = tournament.status === "On Going" || tournament.status === "End";
 
                 if (tournament.isDraft) {
                     color = "gray";
@@ -382,7 +505,7 @@ export default function TournamentList() {
                         displayText = "Rejected";
                         tooltipMessage = rejectionReason ? `Rejected: ${rejectionReason}` : "Your registration was rejected.";
                     }
-                } else if (tournamentFull) {
+                } else if (tournamentFull && !isActiveOrEnded) {
                     color = "red";
                     displayText = "Full";
                     tooltipMessage = "Participant limit reached.";
@@ -401,15 +524,9 @@ export default function TournamentList() {
             width: 220,
             render: (_: unknown, tournament: Tournament) => {
                 const tournamentFull = isTournamentFull(tournament);
-                if (tournament.status === "End") {
-                    return (
-                        <Button type="primary" loading={loading} onClick={async () => handleView(tournament)}>
-                            <IconEye /> View Tournament
-                        </Button>
-                    );
-                }
+                const isActiveOrEnded = tournament.status === "On Going" || tournament.status === "End";
                 if (!user) {
-                    if (tournamentFull) {
+                    if (tournamentFull && !isActiveOrEnded) {
                         return renderFullAction(tournament);
                     }
                     return (
@@ -463,16 +580,6 @@ export default function TournamentList() {
                                         >
                                             <IconEye /> View Tournament
                                         </Button>
-                                        {isAdmin && (
-                                            <Button
-                                                type="text"
-                                                loading={loading}
-                                                className={`text-left`}
-                                                onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                            >
-                                                <IconUser /> Admin Register
-                                            </Button>
-                                        )}
                                         <Button
                                             type="text"
                                             loading={loading}
@@ -549,16 +656,6 @@ export default function TournamentList() {
                                         >
                                             <IconEye /> View Tournament
                                         </Button>
-                                        {isAdmin && (
-                                            <Button
-                                                type="text"
-                                                loading={loading}
-                                                className={`text-left`}
-                                                onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                            >
-                                                <IconUser /> Admin Register
-                                            </Button>
-                                        )}
                                         <Button
                                             type="text"
                                             loading={loading}
@@ -632,16 +729,6 @@ export default function TournamentList() {
                                         >
                                             <IconEye /> View Tournament
                                         </Button>
-                                        {isAdmin && (
-                                            <Button
-                                                type="text"
-                                                loading={loading}
-                                                className={`text-left`}
-                                                onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                            >
-                                                <IconUser /> Admin Register
-                                            </Button>
-                                        )}
                                         <Button
                                             type="text"
                                             loading={loading}
@@ -719,16 +806,6 @@ export default function TournamentList() {
                                     >
                                         <IconEye /> View Tournament
                                     </Button>
-                                    {isAdmin && (
-                                        <Button
-                                            type="text"
-                                            loading={loading}
-                                            className={`text-left`}
-                                            onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                        >
-                                            <IconUser /> Admin Register
-                                        </Button>
-                                    )}
                                 </div>
                             }
                         >
@@ -739,7 +816,7 @@ export default function TournamentList() {
                 if (!tournament.registration_start_date || !tournament.registration_end_date) {
                     return;
                 }
-                if (tournamentFull) {
+                if (tournamentFull && !isActiveOrEnded) {
                     return renderFullAction(tournament);
                 }
                 if (tournament.registration_end_date > Timestamp.now()) {
@@ -763,16 +840,6 @@ export default function TournamentList() {
                                     >
                                         <IconEye /> View Tournament
                                     </Button>
-                                    {isAdmin && (
-                                        <Button
-                                            type="text"
-                                            loading={loading}
-                                            className={`text-left`}
-                                            onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                        >
-                                            <IconUser /> Admin Register
-                                        </Button>
-                                    )}
                                 </div>
                             }
                         >
@@ -796,16 +863,6 @@ export default function TournamentList() {
                                 >
                                     <IconEye /> View Tournament
                                 </Button>
-                                {isAdmin && (
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={() => handleAdminRegister(tournament.id ?? undefined)}
-                                    >
-                                        <IconUser /> Admin Register
-                                    </Button>
-                                )}
                             </div>
                         }
                     >
@@ -882,11 +939,7 @@ export default function TournamentList() {
             for (let i = 0; i < rawEvents.length; i++) {
                 const event = rawEvents[i];
                 if (event.type) {
-                    const normalizedCodes = Array.isArray(event.codes)
-                        ? event.codes.filter(isEventCode)
-                        : typeof event.codes === "string" && isEventCode(event.codes)
-                          ? [event.codes]
-                          : [];
+                    const normalizedCodes = normalizeDraftEventCodes(event.codes);
                     const genderKey = normalizeEventGender(event.gender);
                     for (const code of normalizedCodes) {
                         const signature = `${event.type}-${code}-${genderKey}`;
@@ -907,7 +960,18 @@ export default function TournamentList() {
 
             for (let i = 0; i < rawEvents.length; i++) {
                 const rawEvent = rawEvents[i];
-                const {__prevType: _ignored, age_brackets, id, type, codes, teamSize, gender, max_participants} = rawEvent;
+                const {
+                    __prevType: _ignored,
+                    age_brackets,
+                    id,
+                    type,
+                    codes,
+                    teamSize,
+                    gender,
+                    max_participants,
+                    additional_fee_enabled,
+                    additional_fee,
+                } = rawEvent;
 
                 if (!isTournamentEventType(type)) {
                     invalidEvents.push(`Event ${i + 1}: Invalid event type "${type}"`);
@@ -915,11 +979,7 @@ export default function TournamentList() {
                 }
 
                 // Ensure codes is an array before filtering
-                const normalizedCodes = Array.isArray(codes)
-                    ? codes.filter(isEventCode)
-                    : typeof codes === "string" && isEventCode(codes)
-                      ? [codes]
-                      : [];
+                const normalizedCodes = normalizeDraftEventCodes(codes);
                 if (normalizedCodes.length === 0) {
                     invalidEvents.push(`Event ${i + 1}: No valid event codes selected for "${type}"`);
                     continue;
@@ -939,6 +999,10 @@ export default function TournamentList() {
                 }
                 if (typeof max_participants === "number") {
                     sanitizedEvent.max_participants = max_participants;
+                }
+                sanitizedEvent.additional_fee_enabled = additional_fee_enabled === true;
+                if (additional_fee_enabled === true && typeof additional_fee === "number" && additional_fee >= 0) {
+                    sanitizedEvent.additional_fee = additional_fee;
                 }
 
                 sanitizedEvents.push(sanitizedEvent);
@@ -1121,20 +1185,12 @@ export default function TournamentList() {
         navigate(`/tournaments/${tournamentId}/register`);
     };
 
-    const handleAdminRegister = (tournamentId?: string) => {
-        if (!tournamentId) {
-            Message.error("Invalid tournament ID.");
-            return;
-        }
-        navigate(`/tournaments/${tournamentId}/register?admin=1`);
-    };
-
     const handleCopyRegisterLink = async (tournamentId?: string) => {
         if (!tournamentId) {
             Message.error("Invalid tournament ID.");
             return;
         }
-        const registerLink = `${window.location.origin}/tournaments/${tournamentId}/view`;
+        const registerLink = `${globalThis.location.origin}/tournaments/${tournamentId}/view`;
         try {
             await navigator.clipboard.writeText(registerLink);
             Message.success("Register link copied.");
@@ -1238,6 +1294,7 @@ export default function TournamentList() {
                 />
                 <RangePicker
                     prefix={<IconCalendar />}
+                    format="DD/MM/YYYY"
                     placeholder={["Start Date", "End Date"]}
                     value={dateFilter ?? undefined}
                     onChange={(value) => {
@@ -1334,6 +1391,7 @@ export default function TournamentList() {
 
                                 <Form.Item label="Tournament Date Range" field="date_range" rules={[{required: true}]}>
                                     <RangePicker
+                                        format="DD/MM/YYYY HH:mm"
                                         showTime={{
                                             defaultValue: ["08:00", "18:00"],
                                             format: "HH:mm",
@@ -1410,13 +1468,13 @@ export default function TournamentList() {
                                             }
                                         }}
                                         onCountryChange={(countryPath) => {
-                                            if (!isValidCountryPath(countryPath)) {
+                                            if (isValidCountryPath(countryPath)) {
+                                                form.setFieldValue("country", countryPath);
+                                            } else {
                                                 Message.warning(
                                                     "This location is not in the selectable list. Please choose manually.",
                                                 );
                                                 form.resetFields(["country"]);
-                                            } else {
-                                                form.setFieldValue("country", countryPath);
                                             }
                                         }}
                                     />
@@ -1439,6 +1497,7 @@ export default function TournamentList() {
                                     ]}
                                 >
                                     <RangePicker
+                                        format="DD/MM/YYYY HH:mm"
                                         showTime={{
                                             defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
                                             format: "HH:mm",
@@ -1613,28 +1672,21 @@ export default function TournamentList() {
                                                         } else if (bracket.max_age < bracket.min_age) {
                                                             maxAgeHelp = "Max age < Min age";
                                                         }
+                                                        const hasBracketName = Boolean(bracket.name);
                                                         return (
                                                             <div key={bracketId} className="border p-4 mb-4 rounded">
                                                                 <div className="flex gap-4 mb-4 w-full">
                                                                     <Form.Item
                                                                         label="Bracket Name"
                                                                         required
-                                                                        validateStatus={!bracket.name ? "error" : undefined}
-                                                                        help={
-                                                                            !bracket.name
-                                                                                ? "Please enter bracket name"
-                                                                                : undefined
-                                                                        }
+                                                                        validateStatus={hasBracketName ? undefined : "error"}
+                                                                        help={hasBracketName ? undefined : "Please enter bracket name"}
                                                                         className="w-1/3"
                                                                         layout="vertical"
                                                                     >
                                                                         <Input
                                                                             value={bracket.name}
-                                                                            onChange={(v) => {
-                                                                                const updated = [...ageBrackets];
-                                                                                updated[id].name = v;
-                                                                                setAgeBrackets(updated);
-                                                                            }}
+                                                                            onChange={(value) => handleBracketNameChange(id, value)}
                                                                             placeholder="Bracket Name"
                                                                         />
                                                                     </Form.Item>
@@ -1649,11 +1701,7 @@ export default function TournamentList() {
                                                                         <InputNumber
                                                                             value={bracket.min_age}
                                                                             min={0}
-                                                                            onChange={(v) => {
-                                                                                const updated = [...ageBrackets];
-                                                                                updated[id].min_age = v ?? 0;
-                                                                                setAgeBrackets(updated);
-                                                                            }}
+                                                                            onChange={(value) => handleBracketMinAgeChange(id, value)}
                                                                             placeholder="Min Age"
                                                                         />
                                                                     </Form.Item>
@@ -1668,11 +1716,7 @@ export default function TournamentList() {
                                                                         <InputNumber
                                                                             value={bracket.max_age}
                                                                             min={0}
-                                                                            onChange={(v) => {
-                                                                                const updated = [...ageBrackets];
-                                                                                updated[id].max_age = v ?? 0;
-                                                                                setAgeBrackets(updated);
-                                                                            }}
+                                                                            onChange={(value) => handleBracketMaxAgeChange(id, value)}
                                                                             placeholder="Max Age"
                                                                         />
                                                                     </Form.Item>
@@ -1701,24 +1745,9 @@ export default function TournamentList() {
                                                                                 <Select
                                                                                     value={criteria.classification}
                                                                                     placeholder="Classification"
-                                                                                    onChange={(value) => {
-                                                                                        const updated = [...ageBrackets];
-                                                                                        const targetBracket = updated[id];
-                                                                                        if (!targetBracket) {
-                                                                                            return;
-                                                                                        }
-                                                                                        if (!targetBracket.final_criteria) {
-                                                                                            targetBracket.final_criteria = [];
-                                                                                        }
-                                                                                        const targetCriteria =
-                                                                                            targetBracket.final_criteria[
-                                                                                                criteriaIndex
-                                                                                            ];
-                                                                                        if (targetCriteria) {
-                                                                                            targetCriteria.classification = value;
-                                                                                        }
-                                                                                        setAgeBrackets(updated);
-                                                                                    }}
+                                                                                    onChange={(value) =>
+                                                                                        handleCriteriaClassificationChange(id, criteriaIndex, value)
+                                                                                    }
                                                                                     style={{width: 150}}
                                                                                 >
                                                                                     <Select.Option value="advance">
@@ -1735,39 +1764,15 @@ export default function TournamentList() {
                                                                                     value={criteria.number}
                                                                                     placeholder="Number"
                                                                                     min={0}
-                                                                                    onChange={(value) => {
-                                                                                        const updated = [...ageBrackets];
-                                                                                        const targetBracket = updated[id];
-                                                                                        if (!targetBracket) {
-                                                                                            return;
-                                                                                        }
-                                                                                        if (!targetBracket.final_criteria) {
-                                                                                            targetBracket.final_criteria = [];
-                                                                                        }
-                                                                                        const targetCriteria =
-                                                                                            targetBracket.final_criteria[
-                                                                                                criteriaIndex
-                                                                                            ];
-                                                                                        if (targetCriteria) {
-                                                                                            targetCriteria.number = value ?? 0;
-                                                                                        }
-                                                                                        setAgeBrackets(updated);
-                                                                                    }}
+                                                                                    onChange={(value) =>
+                                                                                        handleCriteriaNumberChange(id, criteriaIndex, value)
+                                                                                    }
                                                                                     style={{width: 100}}
                                                                                 />
                                                                                 <Button
                                                                                     status="danger"
                                                                                     onClick={() => {
-                                                                                        const updated = [...ageBrackets];
-                                                                                        const targetBracket = updated[id];
-                                                                                        if (!targetBracket?.final_criteria) {
-                                                                                            return;
-                                                                                        }
-                                                                                        targetBracket.final_criteria.splice(
-                                                                                            criteriaIndex,
-                                                                                            1,
-                                                                                        );
-                                                                                        setAgeBrackets(updated);
+                                                                                        removeBracketCriteria(id, criteriaIndex);
                                                                                     }}
                                                                                 >
                                                                                     <IconDelete />
@@ -1778,22 +1783,7 @@ export default function TournamentList() {
                                                                     <Button
                                                                         type="text"
                                                                         size="small"
-                                                                        onClick={() => {
-                                                                            const updated = [...ageBrackets];
-                                                                            const targetBracket = updated[id];
-                                                                            if (!targetBracket) {
-                                                                                return;
-                                                                            }
-                                                                            if (!targetBracket.final_criteria) {
-                                                                                targetBracket.final_criteria = [];
-                                                                            }
-                                                                            targetBracket.final_criteria.push({
-                                                                                classification: "intermediate",
-                                                                                number: 10,
-                                                                                _tempId: crypto.randomUUID(),
-                                                                            } as FinalCriterionWithId);
-                                                                            setAgeBrackets(updated);
-                                                                        }}
+                                                                        onClick={() => addBracketCriteria(id)}
                                                                         disabled={(bracket.final_criteria?.length ?? 0) >= 4}
                                                                     >
                                                                         <IconPlus /> Add Final Criteria

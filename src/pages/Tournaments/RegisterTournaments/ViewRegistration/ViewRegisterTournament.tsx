@@ -4,13 +4,21 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {Registration, Tournament, TournamentEvent} from "@/schema";
 import type {DoubleRecruitment, TeamRecruitment} from "@/schema";
 import type {Team} from "@/schema/TeamSchema";
+import {dedupeTeamsByEvent, type LegacyTeam, resolveTeamEvent} from "@/utils/teamDeduplication";
+import {fetchUsersByGlobalIds, getUserByGlobalId} from "@/services/firebase/authService";
 import {getDoubleRecruitmentsByParticipant} from "@/services/firebase/doubleRecruitmentService";
 import {deleteRegistrationById, fetchUserRegistration} from "@/services/firebase/registerService";
 import {getTeamRecruitmentsByLeader} from "@/services/firebase/teamRecruitmentService";
-import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
+import {
+    fetchTeamsByRegistrationId,
+    fetchTeamsByTournament,
+    fetchTournamentById,
+    fetchTournamentEvents,
+} from "@/services/firebase/tournamentsService";
 import {getEventKey, getEventLabel, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
 import {
     Button,
+    Checkbox,
     Divider,
     Form,
     Image,
@@ -33,47 +41,6 @@ import {useNavigate, useParams} from "react-router-dom";
 const {Title} = Typography;
 const Option = Select.Option;
 
-type LegacyTeam = Team & {
-    event_ids?: string[];
-    events?: string[];
-};
-
-const resolveTeamEvent = (
-    team: LegacyTeam,
-    tournamentEvents: TournamentEvent[] | null | undefined,
-): {eventId: string; eventName: string} => {
-    const legacyIds = Array.isArray(team.event_ids) ? team.event_ids.filter(Boolean) : [];
-    const legacyNames = Array.isArray(team.events) ? team.events.filter(Boolean) : [];
-
-    let eventId = team.event_id ?? legacyIds[0] ?? "";
-    let eventName = Array.isArray(team.event) && team.event[0] ? (team.event[0] ?? "") : (legacyNames[0] ?? "");
-
-    const eventsList = tournamentEvents ?? [];
-
-    if (eventsList.length > 0) {
-        if (eventId) {
-            const matchById = eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
-            if (matchById) {
-                eventId = getEventKey(matchById);
-                if (!eventName) {
-                    eventName = getEventLabel(matchById);
-                }
-                return {eventId, eventName};
-            }
-        }
-
-        if (eventName) {
-            const matchByName = eventsList.find((evt) => matchesEventKey(eventName, evt)) ?? null;
-            if (matchByName) {
-                eventId = getEventKey(matchByName);
-                eventName = getEventLabel(matchByName);
-            }
-        }
-    }
-
-    return {eventId, eventName};
-};
-
 const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): string[] => {
     if (selected.length === 0 || events.length === 0) {
         return selected;
@@ -89,6 +56,22 @@ const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): s
     });
 };
 
+const getAdditionalFeeForEvent = (event: TournamentEvent): number => {
+    if (event.additional_fee_enabled !== true) {
+        return 0;
+    }
+    const fee = typeof event.additional_fee === "number" ? event.additional_fee : 0;
+    return fee > 0 ? fee : 0;
+};
+
+const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds: string[]): number =>
+    events.reduce((total, event) => {
+        if (!matchesAnyEventKey(selectedEventIds, event)) {
+            return total;
+        }
+        return total + getAdditionalFeeForEvent(event);
+    }, 0);
+
 export default function ViewTournamentRegistrationPage() {
     const {tournamentId} = useParams();
     const {user} = useAuthContext();
@@ -103,10 +86,25 @@ export default function ViewTournamentRegistrationPage() {
     const [loading, setLoading] = useState(true);
     const [paymentProofUrl, setPaymentProofUrl] = useState<string | null>(null);
     const [availableEventsState, setAvailableEventsState] = useState<TournamentEvent[]>([]);
-    const registrationPrice = useMemo(
-        () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee),
-        [tournament, user],
+    const [participantNameMap, setParticipantNameMap] = useState<Record<string, string>>({});
+    const [registrationOwnerIsMember, setRegistrationOwnerIsMember] = useState<boolean | null>(null);
+    const baseRegistrationFee = useMemo(() => {
+        if (!tournament) {
+            return 0;
+        }
+        if (registrationOwnerIsMember === true) {
+            return tournament.member_registration_fee ?? 0;
+        }
+        if (registrationOwnerIsMember === false) {
+            return tournament.registration_fee ?? 0;
+        }
+        return (user?.memberId ? tournament.member_registration_fee : tournament.registration_fee) ?? 0;
+    }, [registrationOwnerIsMember, tournament, user?.memberId]);
+    const additionalEventFee = useMemo(
+        () => calculateAdditionalEventFee(availableEventsState, registration?.events_registered ?? []),
+        [availableEventsState, registration?.events_registered],
     );
+    const registrationPrice = baseRegistrationFee + additionalEventFee;
     const requiresPaymentProof = (registrationPrice ?? 0) > 0;
 
     const parseDate = (date: Tournament["registration_start_date"]): dayjs.Dayjs | null => {
@@ -169,14 +167,20 @@ export default function ViewTournamentRegistrationPage() {
                     return;
                 }
                 setRegistration(userReg);
+                const registrationOwner = userReg.user_global_id ? await getUserByGlobalId(userReg.user_global_id) : undefined;
+                const hasMemberId = typeof registrationOwner?.memberId === "string" && registrationOwner.memberId.trim().length > 0;
+                setRegistrationOwnerIsMember(hasMemberId);
 
-                const teamsData = await fetchTeamsByTournament(tournamentId);
-
-                const membershipTeams = teamsData.filter(
-                    (team) =>
-                        team.leader_id === user.global_id || (team.members ?? []).some((m) => m.global_id === user.global_id),
-                );
-                const normalizedTeams = membershipTeams.map((team) => {
+                const registrationTeams = userReg.id ? await fetchTeamsByRegistrationId(userReg.id) : [];
+                const sourceTeams =
+                    registrationTeams.length > 0
+                        ? registrationTeams
+                        : (await fetchTeamsByTournament(tournamentId)).filter(
+                              (team) =>
+                                  team.leader_id === user.global_id ||
+                                  (team.members ?? []).some((m) => m.global_id === user.global_id),
+                          );
+                const normalizedTeams = sourceTeams.map((team) => {
                     const legacyTeam = team as LegacyTeam;
                     const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentEvents);
 
@@ -186,7 +190,8 @@ export default function ViewTournamentRegistrationPage() {
                         event: eventName ? [eventName] : Array.isArray(legacyTeam.event) ? legacyTeam.event : [],
                     };
                 });
-                setTeams(normalizedTeams);
+                const {teams: dedupedTeams} = dedupeTeamsByEvent(normalizedTeams, tournamentEvents);
+                setTeams(dedupedTeams);
                 const [leaderRecruitments, participantDoubleRecruitments] = await Promise.all([
                     getTeamRecruitmentsByLeader(user.global_id),
                     getDoubleRecruitmentsByParticipant(user.global_id),
@@ -219,6 +224,39 @@ export default function ViewTournamentRegistrationPage() {
         loadData();
     }, [tournamentId, user]);
 
+    useEffect(() => {
+        const loadParticipantNames = async () => {
+            const ids = [
+                registration?.user_global_id,
+                ...teams.map((team) => team.leader_id),
+                ...teams.flatMap((team) => team.members.map((member) => member.global_id)),
+            ]
+                .map((id) => (id ?? "").trim())
+                .filter((id): id is string => Boolean(id));
+
+            const uniqueIds = Array.from(new Set(ids));
+            if (uniqueIds.length === 0) {
+                return;
+            }
+
+            try {
+                const usersByGlobalId = await fetchUsersByGlobalIds(uniqueIds);
+                const nextNameMap = uniqueIds.reduce(
+                    (acc, id) => {
+                        acc[id] = usersByGlobalId[id]?.name?.trim() || "-";
+                        return acc;
+                    },
+                    {} as Record<string, string>,
+                );
+                setParticipantNameMap(nextNameMap);
+            } catch (error) {
+                console.error("Failed to load participant names:", error);
+            }
+        };
+
+        void loadParticipantNames();
+    }, [registration?.user_global_id, teams]);
+
     if (!loading && !registration) {
         return <Result status="404" title="Not Registered" subTitle="You haven't registered for this tournament." />;
     }
@@ -226,6 +264,15 @@ export default function ViewTournamentRegistrationPage() {
     const getEventDisplayLabel = (eventId: string): string => {
         const event = availableEventsState.find((evt) => getEventKey(evt) === eventId);
         return event ? getEventLabel(event) : eventId;
+    };
+
+    const getParticipantDisplay = (globalId?: string): string => {
+        const safeId = (globalId ?? "").trim();
+        if (!safeId) {
+            return "-";
+        }
+        const participantName = participantNameMap[safeId]?.trim() || "-";
+        return `${safeId} - ${participantName}`;
     };
 
     const extraEventIds =
@@ -260,26 +307,27 @@ export default function ViewTournamentRegistrationPage() {
                         </Form.Item>
 
                         <Form.Item label="Selected Events" field="events_registered" rules={[{required: true}]}>
-                            <Select mode="multiple" disabled>
-                                {availableEventsState.map((event) => {
-                                    const key = getEventKey(event);
-                                    const displayText = getEventLabel(event);
-                                    return (
-                                        <Option key={key} value={key}>
-                                            {displayText}
-                                        </Option>
-                                    );
-                                })}
-                                {extraEventIds.map((eventId) => (
-                                    <Option key={`extra-${eventId}`} value={eventId}>
-                                        {getEventDisplayLabel(eventId)}
-                                    </Option>
-                                ))}
-                            </Select>
+                            <Checkbox.Group disabled value={registration?.events_registered || []}>
+                                <div className="flex flex-col gap-2">
+                                    {availableEventsState.map((event) => {
+                                        const key = getEventKey(event);
+                                        const displayText = getEventLabel(event);
+                                        return (
+                                            <Checkbox key={key} value={key}>
+                                                {displayText}
+                                            </Checkbox>
+                                        );
+                                    })}
+                                    {extraEventIds.map((eventId) => (
+                                        <Checkbox key={`extra-${eventId}`} value={eventId}>
+                                            {getEventDisplayLabel(eventId)}
+                                        </Checkbox>
+                                    ))}
+                                </div>
+                            </Checkbox.Group>
                         </Form.Item>
-
                         <Form.Item shouldUpdate noStyle>
-                            <div className={`flex flex-row w-full gap-10`}>
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 w-full">
                                 {teams.map((team) => {
                                     const {eventId, eventName} = resolveTeamEvent(team, availableEventsState);
                                     const teamEventLabel = eventName || "Team Event";
@@ -303,14 +351,14 @@ export default function ViewTournamentRegistrationPage() {
                                         : undefined;
                                     const activeRecruitment = activeDoubleRecruitment ?? activeTeamRecruitment;
                                     return (
-                                        <div key={team.id}>
+                                        <div key={team.id} className="min-w-0 border p-4 rounded-md shadow-sm">
                                             <div className={`text-center font-semibold mb-2`}>{teamEventLabel}</div>
                                             <Divider />
                                             <Form.Item label={teamNameLabel}>
                                                 <Input value={team.name} disabled />
                                             </Form.Item>
                                             <Form.Item label={teamLeaderLabel}>
-                                                <Input value={team.leader_id} disabled />
+                                                <Input value={getParticipantDisplay(team.leader_id)} disabled />
                                             </Form.Item>
                                             <Form.Item label={teamMemberLabel}>
                                                 <div className="flex flex-col gap-2">
@@ -320,7 +368,7 @@ export default function ViewTournamentRegistrationPage() {
                                                             status={m.verified ? "success" : "danger"}
                                                             disabled
                                                         >
-                                                            {m.global_id ?? "N/A"}
+                                                            {getParticipantDisplay(m.global_id)}
                                                         </Button>
                                                     ))}
                                                 </div>
@@ -356,7 +404,21 @@ export default function ViewTournamentRegistrationPage() {
                         )}
 
                         {requiresPaymentProof ? (
-                            <Form.Item label="Payment Proof">
+                            <Form.Item
+                                label={
+                                    <div className="flex flex-col gap-1">
+                                        <div>Payment Proof</div>
+                                        <div className="text-2xl font-bold text-green-600">
+                                            Total Payment: RM{registrationPrice}
+                                        </div>
+                                        {additionalEventFee > 0 && (
+                                            <Typography.Text type="secondary">
+                                                Base RM{baseRegistrationFee} + Additional RM{additionalEventFee}
+                                            </Typography.Text>
+                                        )}
+                                    </div>
+                                }
+                            >
                                 {paymentProofUrl ? (
                                     <Image width={200} src={paymentProofUrl} alt="Payment Proof" />
                                 ) : (

@@ -18,12 +18,20 @@ import {
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import {EventSchema, TournamentSchema} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
-import {removeUserRegistrationRecordsByTournament} from "./authService";
+import {dedupeTeamsByEvent, type LegacyTeam} from "../../utils/teamDeduplication";
+import {getTeamEvents, normalizeEventSelections, teamMatchesEventKey} from "../../utils/tournament/eventUtils";
+import {
+    fetchUsersByGlobalIds,
+    removeUserRegistrationRecordsByTournament,
+    removeUserTournamentHistoryByTournament,
+} from "./authService";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByTournament} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByTournament} from "./individualRecruitmentService";
 import {deleteTournamentStorage} from "./storageService";
 import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
+import {recalculateUserBestTimesByGlobalIds} from "./userBestTimesService";
+import {deleteVerificationRequestsByTeamId} from "./verificationRequestService";
 
 // Utility function to check if a string is a UUID v4
 function isUUID(value: string): boolean {
@@ -31,6 +39,152 @@ function isUUID(value: string): boolean {
     const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     return uuidV4Regex.test(value);
 }
+
+const getNormalizedTeamEventType = (
+    teamData: Partial<Pick<Team, "event_id" | "event">>,
+    tournamentEvents: TournamentEvent[],
+): string => {
+    const matchedEventType = getTeamEvents(teamData, tournamentEvents)[0]?.type;
+    if (typeof matchedEventType === "string" && matchedEventType.trim().length > 0) {
+        return matchedEventType.trim().toLowerCase();
+    }
+
+    const rawReferences = [
+        ...(Array.isArray(teamData.event) ? teamData.event : [teamData.event]).filter(
+            (value): value is string => typeof value === "string" && value.trim().length > 0,
+        ),
+        ...(typeof teamData.event_id === "string" && teamData.event_id.trim().length > 0 ? [teamData.event_id] : []),
+    ];
+
+    return rawReferences.join(" ").trim().toLowerCase();
+};
+
+const calculateTeamAge = (ages: number[], eventType: string, options: {enforceDoubleRange?: boolean} = {}): number => {
+    const validAges = ages.filter((age) => Number.isFinite(age) && age > 0);
+    if (validAges.length === 0) {
+        return 0;
+    }
+
+    if (eventType.includes("team relay")) {
+        return Math.round(validAges.reduce((sum, age) => sum + age, 0) / validAges.length);
+    }
+
+    if (eventType.includes("double")) {
+        const minAge = Math.min(...validAges);
+        const maxAge = Math.max(...validAges);
+        if (options.enforceDoubleRange !== false && maxAge - minAge > 10) {
+            throw new Error(`Double event age range cannot exceed 10 years (current range: ${minAge}-${maxAge})`);
+        }
+        return Math.round(validAges.reduce((sum, age) => sum + age, 0) / validAges.length);
+    }
+
+    if (eventType.includes("parent") && eventType.includes("child")) {
+        return Math.min(...validAges);
+    }
+
+    return Math.max(...validAges);
+};
+
+const buildRegistrationLookup = (registrations: Registration[]): Map<string, Registration> => {
+    const registrationMap = new Map<string, Registration>();
+
+    for (const registration of registrations) {
+        const globalId = registration.user_global_id?.trim();
+        if (globalId) {
+            registrationMap.set(globalId, registration);
+        }
+
+        const userId = registration.user_id?.trim();
+        if (userId && !registrationMap.has(userId)) {
+            registrationMap.set(userId, registration);
+        }
+    }
+
+    return registrationMap;
+};
+
+const normalizeParticipantId = (value: string | null | undefined): string => value?.trim() ?? "";
+
+const buildTeamParticipantIds = (team: Team | LegacyTeam): string[] => {
+    const participantIds = new Set<string>();
+    const leaderId = stripTeamLeaderPrefix(team.leader_id ?? "").trim();
+    if (leaderId) {
+        participantIds.add(leaderId);
+    }
+
+    for (const member of team.members ?? []) {
+        const memberId = normalizeParticipantId(member.global_id);
+        if (memberId) {
+            participantIds.add(memberId);
+        }
+    }
+
+    return Array.from(participantIds);
+};
+
+const buildRegistrationParticipantLookup = (registrations: Registration[]): Map<string, string[]> => {
+    const participantLookup = new Map<string, string[]>();
+
+    for (const registration of registrations) {
+        const registrationId = normalizeParticipantId(registration.id ?? "");
+        if (!registrationId) {
+            continue;
+        }
+
+        const participantIds = [
+            normalizeParticipantId(registration.user_global_id),
+            normalizeParticipantId(registration.user_id),
+        ].filter(Boolean);
+
+        for (const participantId of participantIds) {
+            const registrationIds = participantLookup.get(participantId) ?? [];
+            if (!registrationIds.includes(registrationId)) {
+                registrationIds.push(registrationId);
+                participantLookup.set(participantId, registrationIds);
+            }
+        }
+    }
+
+    return participantLookup;
+};
+
+const resolveTeamRegistrationId = (
+    team: Team | LegacyTeam,
+    registrationParticipantLookup: Map<string, string[]>,
+): string | null => {
+    const directRegistrationId = normalizeParticipantId(team.registration_id);
+    if (directRegistrationId) {
+        return directRegistrationId;
+    }
+
+    const matchedRegistrationIds = new Set<string>();
+    for (const participantId of buildTeamParticipantIds(team)) {
+        for (const registrationId of registrationParticipantLookup.get(participantId) ?? []) {
+            matchedRegistrationIds.add(registrationId);
+        }
+    }
+
+    if (matchedRegistrationIds.size === 1) {
+        return Array.from(matchedRegistrationIds)[0];
+    }
+
+    return null;
+};
+
+const buildRegistrationTeamPayload = (team: Team | LegacyTeam) => ({
+    team_id: team.id,
+    label: team.name,
+    name: team.name,
+    member: (team.members ?? []).map((member) => ({
+        global_id: normalizeParticipantId(member.global_id) || null,
+        verified: Boolean(member.verified),
+    })),
+    leader: {
+        global_id: normalizeParticipantId(stripTeamLeaderPrefix(team.leader_id ?? "")) || null,
+        verified: true,
+    },
+    looking_for_team_members: Boolean(team.looking_for_member),
+});
 
 export async function createTournament(
     user: FirestoreUser,
@@ -337,6 +491,8 @@ export async function deleteTournamentById(user: FirestoreUser, tournamentId: st
 }
 
 async function deleteTournamentCascade(tournamentId: string): Promise<void> {
+    const affectedAthleteGlobalIds = new Set<string>();
+
     // 1. Delete all registrations
     try {
         const registrationsQuery = query(collection(db, "registrations"), where("tournament_id", "==", tournamentId));
@@ -370,6 +526,19 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
             getDocs(query(collection(db, "prelim_records"), where("tournament_id", "==", tournamentId))),
             getDocs(query(collection(db, "overall_records"), where("tournament_id", "==", tournamentId))),
         ]);
+
+        for (const docSnapshot of recordsSnapshot.docs) {
+            const globalId = docSnapshot.data()?.participant_global_id;
+            if (typeof globalId === "string" && globalId.trim().length > 0) {
+                affectedAthleteGlobalIds.add(globalId.trim());
+            }
+        }
+        for (const docSnapshot of overallRecordsSnapshot.docs) {
+            const globalId = docSnapshot.data()?.participant_global_id;
+            if (typeof globalId === "string" && globalId.trim().length > 0) {
+                affectedAthleteGlobalIds.add(globalId.trim());
+            }
+        }
 
         const recordDeletePromises = [
             ...recordsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref)),
@@ -411,6 +580,17 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
     } catch (error) {
         console.error("Error deleting global result records:", error);
         // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+
+    // 4.1 Recalculate best performance after record/global cleanup.
+    // Best performance is based on non-prelim results only.
+    try {
+        if (affectedAthleteGlobalIds.size > 0) {
+            await recalculateUserBestTimesByGlobalIds(affectedAthleteGlobalIds);
+        }
+    } catch (error) {
+        console.error("Error recalculating athlete best times after tournament deletion:", error);
+        // Don't throw here as recalculation is post-delete consistency work
     }
 
     // 5. Delete scoring/results data if they exist in subcollections
@@ -471,6 +651,14 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         // Don't throw here as this is cleanup - the main deletion should still succeed
     }
 
+    // 9.1 Clean up cached user tournament history
+    try {
+        await removeUserTournamentHistoryByTournament(tournamentId);
+    } catch (error) {
+        console.error("Error cleaning up user tournament history:", error);
+        // Don't throw here as this is cleanup - the main deletion should still succeed
+    }
+
     // 10. Delete tournament events stored in the shared events collection
     try {
         const eventSnapshots = await getDocs(query(collection(db, "events"), where("tournament_id", "==", tournamentId)));
@@ -504,11 +692,12 @@ export async function createTeam(tournamentId: string, teamData: Omit<Team, "id"
 
     const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
     const ages: number[] = [];
+    const tournamentEvents = await fetchTournamentEvents(tournamentId);
     for (const id of memberIds) {
         const registrationQuery = query(
             collection(db, "registrations"),
             where("tournament_id", "==", tournamentId),
-            where("user_id", "==", id),
+            where("user_global_id", "==", id),
         );
         const registrationSnapshot = await getDocs(registrationQuery);
         const registration = registrationSnapshot.docs[0]?.data() as Registration | undefined;
@@ -517,8 +706,12 @@ export async function createTeam(tournamentId: string, teamData: Omit<Team, "id"
         }
     }
 
+    const eventType = getNormalizedTeamEventType(teamData, tournamentEvents);
+    const resolvedTeamAge = calculateTeamAge(ages, eventType);
+
     const docRef = await addDoc(teamsCollectionRef, {
         ...teamData,
+        team_age: resolvedTeamAge,
         tournament_id: tournamentId,
         event_id: teamData.event_id ?? null,
     });
@@ -550,6 +743,69 @@ export async function fetchTeamsByTournament(tournamentId: string): Promise<Team
         const data = docSnap.data() as Team;
         return {...data, id: docSnap.id};
     });
+}
+
+export async function fetchOccupiedParticipantIdsByTournamentEvent(tournamentId: string, eventId: string): Promise<Set<string>> {
+    const occupiedIds = new Set<string>();
+    const normalizedEventId = eventId.trim();
+    if (!normalizedEventId) {
+        return occupiedIds;
+    }
+
+    const teamsCollectionRef = collection(db, "teams");
+    const scopedQuery = query(
+        teamsCollectionRef,
+        where("tournament_id", "==", tournamentId),
+        where("event_id", "==", normalizedEventId),
+    );
+    const scopedSnapshot = await getDocs(scopedQuery);
+
+    const addTeamMembersToSet = (team: Team) => {
+        const leaderId = stripTeamLeaderPrefix(team.leader_id ?? "").trim();
+        if (leaderId) {
+            occupiedIds.add(leaderId);
+        }
+        for (const member of team.members ?? []) {
+            const memberId = (member.global_id ?? "").trim();
+            if (memberId) {
+                occupiedIds.add(memberId);
+            }
+        }
+    };
+
+    for (const docSnap of scopedSnapshot.docs) {
+        addTeamMembersToSet(docSnap.data() as Team);
+    }
+
+    if (occupiedIds.size > 0) {
+        return occupiedIds;
+    }
+
+    const fallbackSnapshot = await getDocs(query(teamsCollectionRef, where("tournament_id", "==", tournamentId)));
+    for (const docSnap of fallbackSnapshot.docs) {
+        const team = docSnap.data() as Team;
+        if (!teamMatchesEventKey(team, normalizedEventId, [])) {
+            continue;
+        }
+        addTeamMembersToSet(team);
+    }
+
+    return occupiedIds;
+}
+
+export async function fetchUnavailableParticipantIdsByEvent(tournamentId: string, eventId: string): Promise<Set<string>> {
+    const [occupiedTeamIds, recruitmentData] = await Promise.all([
+        fetchOccupiedParticipantIdsByTournamentEvent(tournamentId, eventId),
+        getDoubleRecruitmentsByTournament(tournamentId),
+    ]);
+
+    const unavailable = new Set(occupiedTeamIds);
+    for (const r of recruitmentData) {
+        if (r.event_id === eventId && r.status === "active") {
+            unavailable.add(r.participant_id);
+        }
+    }
+    return unavailable;
 }
 
 export async function fetchTeamsByRegistrationId(registrationId: string): Promise<Team[]> {
@@ -657,6 +913,7 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
 
     const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
     const ages: number[] = [];
+    const tournamentEvents = await fetchTournamentEvents(tournamentId);
 
     // Normalize event names and get event ids (if present)
     const normalizedEventNames = Array.isArray(teamData.event)
@@ -681,7 +938,7 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
         const registrationQuery = query(
             collection(db, "registrations"),
             where("tournament_id", "==", tournamentId),
-            where("user_id", "==", id),
+            where("user_global_id", "==", id),
         );
         const registrationSnapshot = await getDocs(registrationQuery);
         const registrationDoc = registrationSnapshot.docs[0];
@@ -694,21 +951,15 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
             const regEvents: string[] = Array.isArray(registration.events_registered)
                 ? registration.events_registered.filter((e: string) => typeof e === "string" && e.length > 0)
                 : [];
-            let updated = false;
-            for (const eid of eventIds) {
-                if (!regEvents.includes(eid)) {
-                    regEvents.push(eid);
-                    updated = true;
-                }
-            }
-            if (updated) {
-                await updateDoc(registrationDoc.ref, {events_registered: regEvents});
+            const normalizedEvents = normalizeEventSelections([...regEvents, ...eventIds], tournamentEvents);
+            if (JSON.stringify(normalizedEvents) !== JSON.stringify(regEvents)) {
+                await updateDoc(registrationDoc.ref, {events_registered: normalizedEvents});
             }
         }
     }
 
     const {id, tournament_id: _ignoredTournamentId, ...restTeamData} = teamData;
-    const teamAge = restTeamData.team_age ?? (ages.length > 0 ? Math.max(...ages) : 0);
+    const teamAge = calculateTeamAge(ages, getNormalizedTeamEventType(teamData, tournamentEvents));
 
     await updateDoc(teamRef, {
         ...restTeamData,
@@ -721,16 +972,39 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
 export async function updateTeamNamesForTournament(tournamentId: string): Promise<number> {
     const teamsCollectionRef = collection(db, "teams");
     const registrationsCollectionRef = collection(db, "registrations");
-    const [teamsSnapshot, registrationsSnapshot] = await Promise.all([
+    const [teamsSnapshot, registrationsSnapshot, tournamentEvents] = await Promise.all([
         getDocs(query(teamsCollectionRef, where("tournament_id", "==", tournamentId))),
         getDocs(query(registrationsCollectionRef, where("tournament_id", "==", tournamentId))),
+        fetchTournamentEvents(tournamentId),
     ]);
+    const registrationMap = buildRegistrationLookup(registrationsSnapshot.docs.map((docSnap) => docSnap.data() as Registration));
 
     const nameMap = new Map<string, string>();
     for (const docSnap of registrationsSnapshot.docs) {
         const registration = docSnap.data() as Registration;
         if (registration.user_global_id && registration.user_name) {
             nameMap.set(registration.user_global_id, registration.user_name);
+        }
+    }
+    const missingGlobalIds = Array.from(
+        new Set(
+            teamsSnapshot.docs.flatMap((docSnap) => {
+                const team = docSnap.data() as Team;
+                const leaderId = stripTeamLeaderPrefix(team.leader_id ?? "").trim();
+                const memberIds = (team.members ?? [])
+                    .map((member) => (member.global_id ?? "").trim())
+                    .filter((memberId) => memberId.length > 0);
+                return leaderId ? [leaderId, ...memberIds] : memberIds;
+            }),
+        ),
+    ).filter((globalId) => !nameMap.has(globalId));
+    if (missingGlobalIds.length > 0) {
+        const usersByGlobalId = await fetchUsersByGlobalIds(missingGlobalIds);
+        for (const [globalId, user] of Object.entries(usersByGlobalId)) {
+            const candidateName = (user.name ?? "").trim();
+            if (candidateName.length > 0) {
+                nameMap.set(globalId, candidateName);
+            }
         }
     }
 
@@ -746,13 +1020,66 @@ export async function updateTeamNamesForTournament(tournamentId: string): Promis
             .filter((name): name is string => Boolean(name));
 
         const nameParts = [leaderName, ...memberNames].filter((name): name is string => Boolean(name));
-        if (nameParts.length === 0) {
-            continue;
+        const nextName = nameParts.length > 0 ? nameParts.join(" & ") : team.name;
+        const teamMemberAges = [leaderId, ...(team.members ?? []).map((member) => member.global_id)]
+            .map((id) => registrationMap.get(id ?? "")?.age)
+            .filter((age): age is number => typeof age === "number" && Number.isFinite(age));
+        const nextTeamAge = calculateTeamAge(teamMemberAges, getNormalizedTeamEventType(team, tournamentEvents), {
+            enforceDoubleRange: false,
+        });
+
+        let teamDocumentUpdated = false;
+        if (nextName !== team.name || nextTeamAge !== team.team_age) {
+            await updateDoc(docSnap.ref, {
+                name: nextName,
+                team_age: nextTeamAge,
+            });
+            teamDocumentUpdated = true;
         }
 
-        const nextName = nameParts.join(" & ");
-        if (nextName !== team.name) {
-            await updateDoc(docSnap.ref, {name: nextName});
+        let registrationEntriesUpdated = 0;
+        for (const registrationDoc of registrationsSnapshot.docs) {
+            const registration = registrationDoc.data() as Registration;
+            const registrationTeams = Array.isArray(registration.teams) ? registration.teams : [];
+            let registrationChanged = false;
+
+            const nextRegistrationTeams = registrationTeams.map((registrationTeam) => {
+                if (registrationTeam.team_id !== team.id) {
+                    return registrationTeam;
+                }
+
+                const currentLeader = registrationTeam.leader?.global_id?.trim();
+                const currentMembers = Array.isArray(registrationTeam.member) ? registrationTeam.member : [];
+                const normalizedMemberIds = currentMembers
+                    .map((member) => member.global_id?.trim())
+                    .filter((memberId): memberId is string => Boolean(memberId));
+                const sameLeader = currentLeader === leaderId;
+                const sameMemberCount = normalizedMemberIds.length === (team.members ?? []).length;
+                const sameMembers =
+                    sameMemberCount &&
+                    normalizedMemberIds.every((memberId, index) => memberId === (team.members?.[index]?.global_id ?? "").trim());
+
+                const nextRegistrationTeam = {
+                    ...registrationTeam,
+                    name: nextName,
+                    label: nextName,
+                };
+
+                if (!sameLeader || !sameMembers || registrationTeam.name !== nextName || registrationTeam.label !== nextName) {
+                    registrationChanged = true;
+                    registrationEntriesUpdated += 1;
+                    return nextRegistrationTeam;
+                }
+
+                return registrationTeam;
+            });
+
+            if (registrationChanged) {
+                await updateDoc(registrationDoc.ref, {teams: nextRegistrationTeams});
+            }
+        }
+
+        if (teamDocumentUpdated || registrationEntriesUpdated > 0) {
             updatedCount += 1;
         }
     }
@@ -774,4 +1101,174 @@ export async function updateTournamentStatus(
         status: status,
         updated_at: Timestamp.now(),
     });
+}
+
+/**
+ * Deduplicates teams within a tournament by event, deleting extras.
+ *
+ * Groups teams by event, keeps the most complete team, and deletes the rest
+ * along with their verification requests and related recruitments.
+ *
+ * @returns The number of duplicate teams deleted.
+ */
+export async function dedupeTeamsForTournament(tournamentId: string): Promise<number> {
+    const teamsCollectionRef = collection(db, "teams");
+    const registrationsCollectionRef = collection(db, "registrations");
+    const [tournamentEvents, teamsSnapshot, registrationsSnapshot, teamRecruitments] = await Promise.all([
+        fetchTournamentEvents(tournamentId),
+        getDocs(query(teamsCollectionRef, where("tournament_id", "==", tournamentId))),
+        getDocs(query(registrationsCollectionRef, where("tournament_id", "==", tournamentId))),
+        getActiveTeamRecruitments(tournamentId),
+    ]);
+
+    const registrations = registrationsSnapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Registration),
+    }));
+    const registrationParticipantLookup = buildRegistrationParticipantLookup(registrations);
+    const teamRecruitmentMap = new Map(teamRecruitments.map((recruitment) => [recruitment.team_id ?? "", recruitment]));
+
+    const teamsByRegistration = new Map<string, LegacyTeam[]>();
+    const teamsWithoutRegistration: LegacyTeam[] = [];
+
+    for (const teamDoc of teamsSnapshot.docs) {
+        const team = {
+            ...(teamDoc.data() as Team),
+            id: teamDoc.id,
+        } as LegacyTeam;
+        const resolvedRegistrationId = resolveTeamRegistrationId(team, registrationParticipantLookup);
+
+        if (!resolvedRegistrationId) {
+            teamsWithoutRegistration.push(team);
+            continue;
+        }
+
+        const normalizedTeam: LegacyTeam = {
+            ...team,
+            registration_id: resolvedRegistrationId,
+        };
+        const bucket = teamsByRegistration.get(resolvedRegistrationId) ?? [];
+        bucket.push(normalizedTeam);
+        teamsByRegistration.set(resolvedRegistrationId, bucket);
+    }
+
+    const canonicalTeamsById = new Map<string, LegacyTeam>();
+    const duplicateTeamIds = new Set<string>();
+
+    for (const [registrationId, registrationTeams] of teamsByRegistration.entries()) {
+        const {teams: dedupedTeams, duplicateTeamIds: dedupedIds} = dedupeTeamsByEvent(
+            registrationTeams,
+            tournamentEvents,
+            registrationId,
+        );
+
+        for (const canonicalTeam of dedupedTeams) {
+            canonicalTeamsById.set(canonicalTeam.id, canonicalTeam);
+        }
+        for (const duplicateTeamId of dedupedIds) {
+            duplicateTeamIds.add(duplicateTeamId);
+        }
+    }
+
+    if (duplicateTeamIds.size === 0) {
+        return 0;
+    }
+
+    for (const [teamId, canonicalTeam] of canonicalTeamsById.entries()) {
+        if (duplicateTeamIds.has(teamId)) {
+            continue;
+        }
+
+        const teamDoc = teamsSnapshot.docs.find((docSnap) => docSnap.id === teamId);
+        if (!teamDoc) {
+            continue;
+        }
+
+        const currentTeam = {
+            ...(teamDoc.data() as Team),
+            id: teamDoc.id,
+        };
+        const nextEvent = Array.isArray(canonicalTeam.event)
+            ? canonicalTeam.event.map((value) => value.trim()).filter((value) => value.length > 0)
+            : [];
+        const nextLeaderId = canonicalTeam.leader_id ?? currentTeam.leader_id;
+        const nextRegistrationId = canonicalTeam.registration_id ?? currentTeam.registration_id;
+        const currentEvent = Array.isArray(currentTeam.event)
+            ? currentTeam.event.map((value) => value.trim()).filter((value) => value.length > 0)
+            : [];
+        const membersChanged = JSON.stringify(canonicalTeam.members ?? []) !== JSON.stringify(currentTeam.members ?? []);
+        const eventChanged = JSON.stringify(nextEvent) !== JSON.stringify(currentEvent);
+        const eventIdChanged = (canonicalTeam.event_id ?? null) !== (currentTeam.event_id ?? null);
+        const leaderChanged = nextLeaderId !== currentTeam.leader_id;
+        const registrationChanged = nextRegistrationId !== currentTeam.registration_id;
+
+        if (membersChanged || eventChanged || eventIdChanged || leaderChanged || registrationChanged) {
+            await updateDoc(teamDoc.ref, {
+                members: canonicalTeam.members ?? [],
+                event: nextEvent,
+                event_id: canonicalTeam.event_id ?? null,
+                leader_id: nextLeaderId,
+                registration_id: nextRegistrationId,
+            });
+        }
+    }
+
+    for (const registrationDoc of registrationsSnapshot.docs) {
+        const registration = {
+            id: registrationDoc.id,
+            ...(registrationDoc.data() as Registration),
+        };
+        const registrationId = normalizeParticipantId(registration.id ?? "");
+        if (!registrationId) {
+            continue;
+        }
+
+        const registrationTeams = Array.isArray(registration.teams) ? registration.teams : [];
+        const canonicalTeams = (teamsByRegistration.get(registrationId) ?? [])
+            .map((team) => canonicalTeamsById.get(team.id))
+            .filter((team): team is LegacyTeam => Boolean(team))
+            .filter((team, index, source) => source.findIndex((candidate) => candidate.id === team.id) === index);
+
+        const canonicalTeamIds = new Set(canonicalTeams.map((team) => team.id));
+        const filteredExistingTeams = registrationTeams.filter(
+            (registrationTeam) =>
+                !duplicateTeamIds.has(registrationTeam.team_id) &&
+                (!canonicalTeamIds.has(registrationTeam.team_id) || canonicalTeams.length === 0),
+        );
+        const nextRegistrationTeams = [
+            ...filteredExistingTeams,
+            ...canonicalTeams.map((team) => buildRegistrationTeamPayload(team)),
+        ];
+
+        if (JSON.stringify(nextRegistrationTeams) !== JSON.stringify(registrationTeams)) {
+            await updateDoc(registrationDoc.ref, {teams: nextRegistrationTeams});
+        }
+    }
+
+    for (const teamId of duplicateTeamIds) {
+        try {
+            await deleteTeam(teamId);
+        } catch (error) {
+            if (!(error instanceof Error && error.message.includes("Team not found"))) {
+                console.error("Failed to delete duplicate team:", error);
+            }
+        }
+
+        try {
+            await deleteVerificationRequestsByTeamId(teamId);
+        } catch (error) {
+            console.error("Failed to delete verification requests for duplicate team:", error);
+        }
+
+        const relatedTeamRecruitment = teamRecruitmentMap.get(teamId);
+        if (relatedTeamRecruitment) {
+            try {
+                await deleteTeamRecruitment(relatedTeamRecruitment.id);
+            } catch (error) {
+                console.error("Failed to delete team recruitment for duplicate team:", error);
+            }
+        }
+    }
+
+    return duplicateTeamIds.size;
 }

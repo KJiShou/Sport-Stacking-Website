@@ -8,17 +8,33 @@ import {
     getDocs,
     increment,
     query,
+    runTransaction,
     setDoc,
     updateDoc,
     where,
 } from "firebase/firestore";
 import type {FirestoreUser, Registration, Team, Tournament, UserTournamentHistory} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
+import {matchesAnyEventKey} from "../../utils/tournament/eventUtils";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByParticipant} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
-import {fetchProfileByGlobalId, fetchProfileById, updateProfileRegistrationRecord} from "./profileService";
 import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
+import {
+    deleteVerificationRequestByTournamentTeamMember,
+    deleteVerificationRequestsByRegistrationId,
+    deleteVerificationRequestsByTeamId,
+    deleteVerificationRequestsByTournamentAndMember,
+} from "./verificationRequestService";
+
+const isNonScoringEventType = (type: string): boolean => {
+    const normalized = type?.toLowerCase() ?? "";
+    return (
+        normalized === "stackout champion" ||
+        normalized === "stack up champion" ||
+        normalized === "blindfolded cycle"
+    );
+};
 
 async function getApprovedRegistrationCount(tournamentId: string): Promise<number> {
     const registrationsRef = query(
@@ -52,11 +68,7 @@ async function ensureTournamentHasCapacity(tournamentId: string, maxParticipants
     }
 }
 
-export async function createRegistration(
-    user: FirestoreUser,
-    data: Registration,
-    options?: {skipUserIdCheck?: boolean},
-): Promise<string> {
+export async function createRegistration(user: FirestoreUser, data: Registration): Promise<string> {
     if (!user?.id) {
         throw new Error("User global_id is missing.");
     }
@@ -65,49 +77,14 @@ export async function createRegistration(
         throw new Error("User id is required in registration payload.");
     }
 
-    if (data.profile_id) {
-        const profile = await fetchProfileById(data.profile_id);
-        if (profile) {
-            const existingByProfileIdQuery = query(
-                collection(db, "registrations"),
-                where("tournament_id", "==", data.tournament_id),
-                where("profile_id", "==", profile.id ?? data.profile_id),
-            );
-            const existingByProfileIdSnapshot = await getDocs(existingByProfileIdQuery);
-            if (!existingByProfileIdSnapshot.empty) {
-                throw new Error("This IC has already registered for this tournament.");
-            }
-
-            const existingByGlobalIdQuery = query(
-                collection(db, "registrations"),
-                where("tournament_id", "==", data.tournament_id),
-                where("user_global_id", "==", profile.global_id),
-            );
-            const existingByGlobalIdSnapshot = await getDocs(existingByGlobalIdQuery);
-            if (!existingByGlobalIdSnapshot.empty) {
-                throw new Error("This IC has already registered for this tournament.");
-            }
-        }
-
-        const existingByProfileQuery = query(
-            collection(db, "registrations"),
-            where("tournament_id", "==", data.tournament_id),
-            where("profile_id", "==", data.profile_id),
-        );
-        const existingByProfileSnapshot = await getDocs(existingByProfileQuery);
-        if (!existingByProfileSnapshot.empty) {
-            throw new Error("This IC has already registered for this tournament.");
-        }
-    } else if (!options?.skipUserIdCheck) {
-        const existingByUserIdQuery = query(
-            collection(db, "registrations"),
-            where("tournament_id", "==", data.tournament_id),
-            where("user_id", "==", data.user_id),
-        );
-        const existingByUserIdSnapshot = await getDocs(existingByUserIdQuery);
-        if (!existingByUserIdSnapshot.empty) {
-            throw new Error("You have already registered for this tournament.");
-        }
+    const existingByUserIdQuery = query(
+        collection(db, "registrations"),
+        where("tournament_id", "==", data.tournament_id),
+        where("user_id", "==", data.user_id),
+    );
+    const existingByUserIdSnapshot = await getDocs(existingByUserIdQuery);
+    if (!existingByUserIdSnapshot.empty) {
+        throw new Error("You have already registered for this tournament.");
     }
 
     if (data.user_global_id) {
@@ -122,29 +99,58 @@ export async function createRegistration(
         }
     }
 
+    // Read tournament and registrations outside transaction for event-level limit checking
+    // The transaction ensures atomic write - if concurrent registration slips through,
+    // transaction will fail and user can retry
     const tournamentDoc = await getDoc(doc(db, "tournaments", data.tournament_id));
     const tournament = tournamentDoc.data();
     if (!tournament) {
         throw new Error("Tournament not found");
     }
-    await ensureTournamentHasCapacity(
-        data.tournament_id,
-        typeof tournament.max_participants === "number" ? tournament.max_participants : null,
+
+    const registrationsSnapshot = await getDocs(
+        query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", data.tournament_id),
+        ),
     );
+    const existingRegistrations = registrationsSnapshot.docs.map((d) => d.data() as Registration);
 
-    // 确保 created_at / updated_at 都有填入
-    const payload: Omit<Registration, "id"> = {
-        ...data,
-        created_at: data.created_at ?? Timestamp.now(),
-        updated_at: Timestamp.now(),
-    };
+    // Check event-level limits for non-scoring events
+    const events = tournament.events ?? [];
+    for (const eventId of data.events_registered ?? []) {
+        const event = events.find(
+            (e: {id?: string | null; type: string}) => e.id === eventId || e.type === eventId,
+        );
 
-    const ref = await addDoc(collection(db, "registrations"), {
-        ...data,
-        created_at: data.created_at ?? Timestamp.now(),
-        updated_at: Timestamp.now(),
+        if (event && isNonScoringEventType(event.type)) {
+            const eventMaxParticipants = event.max_participants;
+            if (typeof eventMaxParticipants === "number" && eventMaxParticipants > 0) {
+                const count = existingRegistrations.filter((reg) =>
+                    matchesAnyEventKey(reg.events_registered, event),
+                ).length;
+
+                if (count >= eventMaxParticipants) {
+                    throw new Error(`${event.type} has reached the maximum participants.`);
+                }
+            }
+        }
+    }
+
+    // Use transaction for atomic write to prevent race conditions on the write itself
+    const ref = await runTransaction(db, async (transaction) => {
+        // Create the registration
+        const newRef = doc(collection(db, "registrations"));
+        const now = Timestamp.now();
+        transaction.set(newRef, {
+            ...data,
+            created_at: data.created_at ?? now,
+            updated_at: now,
+        });
+        return newRef;
     });
-    // Ensure the document has its generated ID in the Firestore document
+
+    // Update the document to ensure it has its generated ID
     await updateDoc(ref, {id: ref.id});
     return ref.id;
 }
@@ -271,17 +277,6 @@ export async function updateRegistration(data: Registration): Promise<void> {
     await updateDoc(registrationRef, toUpdate);
 
     if (statusChanged) {
-        const profileId =
-            data.profile_id ??
-            old.profile_id ??
-            (data.user_global_id ? (await fetchProfileByGlobalId(data.user_global_id))?.id : null) ??
-            null;
-        if (profileId) {
-            await updateProfileRegistrationRecord(profileId, data.tournament_id, {status: nextStatus});
-        }
-    }
-
-    if (statusChanged) {
         const tournamentRef = doc(db, "tournaments", data.tournament_id);
         const delta = nextStatus === "approved" ? 1 : currentStatus === "approved" ? -1 : 0;
         if (delta !== 0) {
@@ -340,7 +335,7 @@ const buildNormalizedEventSet = (values: string[]): Set<string> => {
 const filterEventList = (events: string[], toRemove: Set<string>): string[] =>
     events.filter((event) => !toRemove.has(normalizeEventValue(event)));
 
-const removeTeamEventsFromProfileRegistration = async (
+const removeTeamEventsFromUserRegistration = async (
     globalId: string,
     tournamentId: string,
     eventKeys: string[],
@@ -354,14 +349,14 @@ const removeTeamEventsFromProfileRegistration = async (
         return;
     }
 
-    const profileQuery = query(collection(db, "profiles"), where("global_id", "==", globalId));
-    const profileSnapshot = await getDocs(profileQuery);
-    const profileDoc = profileSnapshot.empty ? null : profileSnapshot.docs[0];
+    const userQuery = query(collection(db, "users"), where("global_id", "==", globalId));
+    const userSnapshot = await getDocs(userQuery);
+    const userDoc = userSnapshot.empty ? null : userSnapshot.docs[0];
     const now = Timestamp.now();
 
-    if (profileDoc) {
-        const profileData = profileDoc.data() as FirestoreUser;
-        const registrationRecords = profileData.registration_records ?? [];
+    if (userDoc) {
+        const userData = userDoc.data() as FirestoreUser;
+        const registrationRecords = userData.registration_records ?? [];
         const recordIndex = registrationRecords.findIndex((record) => record.tournament_id === tournamentId);
         if (recordIndex !== -1) {
             const record = registrationRecords[recordIndex];
@@ -376,7 +371,7 @@ const removeTeamEventsFromProfileRegistration = async (
                 const updatedRecords = [...registrationRecords];
                 updatedRecords[recordIndex] = updatedRecord;
 
-                await updateDoc(profileDoc.ref, {
+                await updateDoc(userDoc.ref, {
                     registration_records: updatedRecords,
                     updated_at: now,
                 });
@@ -464,7 +459,7 @@ const removeTeamEventsFromUserHistory = async (globalId: string, tournamentId: s
 
 const removeTeamEventsForMember = async (globalId: string, tournamentId: string, eventKeys: string[]): Promise<void> => {
     try {
-        await removeTeamEventsFromProfileRegistration(globalId, tournamentId, eventKeys);
+        await removeTeamEventsFromUserRegistration(globalId, tournamentId, eventKeys);
     } catch (error) {
         console.error(`Failed to remove team events from registration for ${globalId}:`, error);
     }
@@ -521,6 +516,11 @@ export async function deleteRegistrationById(
                         await removeTeamEventsForMember(member.global_id, tournamentId, eventKeys);
                     }
                 }
+                try {
+                    await deleteVerificationRequestsByTeamId(team.id ?? teamDoc.id);
+                } catch (error) {
+                    console.error("Error deleting verification requests for removed team:", error);
+                }
                 await deleteDoc(teamDoc.ref);
             } else if (memberIds.includes(registrationData.user_global_id)) {
                 if (adminDelete) {
@@ -542,6 +542,15 @@ export async function deleteRegistrationById(
                         (member) => member.global_id !== registrationData.user_global_id,
                     );
                     await updateDoc(teamDoc.ref, {members: updatedMembers});
+                }
+                try {
+                    await deleteVerificationRequestByTournamentTeamMember(
+                        tournamentId,
+                        team.id ?? teamDoc.id,
+                        registrationData.user_global_id,
+                    );
+                } catch (error) {
+                    console.error("Error deleting verification request for removed member:", error);
                 }
             }
         }
@@ -586,6 +595,20 @@ export async function deleteRegistrationById(
 
         // Delete the registration document
         await deleteDoc(registrationRef);
+
+        try {
+            await deleteVerificationRequestsByRegistrationId(regSnap.id);
+        } catch (error) {
+            console.error("Error deleting verification requests by registration id:", error);
+        }
+
+        try {
+            if (registrationData.user_global_id) {
+                await deleteVerificationRequestsByTournamentAndMember(tournamentId, registrationData.user_global_id);
+            }
+        } catch (error) {
+            console.error("Error deleting verification requests by tournament/member:", error);
+        }
 
         if (registrationData.registration_status === "approved") {
             const tournamentRef = doc(db, "tournaments", tournamentId);

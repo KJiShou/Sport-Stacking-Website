@@ -1,15 +1,21 @@
 import * as React from "react";
 
-import {Avatar, Button, Dropdown, Menu, Message, Modal, Spin} from "@arco-design/web-react";
-import {IconCalendar, IconExport, IconHome, IconUser, IconUserGroup} from "@arco-design/web-react/icon";
+import {Avatar, Badge, Button, Dropdown, Menu, Message, Modal, Spin} from "@arco-design/web-react";
+import {IconCalendar, IconExport, IconHome, IconNotification, IconUser, IconUserGroup} from "@arco-design/web-react/icon";
 import {useState} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
 import {logout} from "../../services/firebase/authService";
+import {subscribePendingVerificationCount} from "../../services/firebase/verificationRequestService";
 import LoginForm from "../common/Login";
 
-const AvatarWithLoading = ({src}: {src?: string | null}) => {
+const AvatarWithLoading = ({src}: {src: string}) => {
     const [loading, setLoading] = useState(true);
+    const {user} = useAuthContext();
+    let image = user?.image_url ?? src;
+    React.useEffect(() => {
+        image = user?.image_url ?? src;
+    }, [src, user]);
 
     return (
         <div className="relative inline-block">
@@ -20,7 +26,7 @@ const AvatarWithLoading = ({src}: {src?: string | null}) => {
             )}
             <Avatar size={40} className="rounded-full overflow-hidden" style={{visibility: loading ? "hidden" : "visible"}}>
                 <img
-                    src={src ?? ""}
+                    src={image}
                     alt="avatar"
                     onLoad={() => setLoading(false)}
                     onError={() => setLoading(false)}
@@ -38,10 +44,9 @@ const Navbar: React.FC = () => {
     const location = useLocation();
 
     const [visible, setVisible] = React.useState(false);
-    const {firebaseUser, user, currentProfile, userProfiles, setCurrentProfile} = useAuthContext();
+    const [pendingVerificationCount, setPendingVerificationCount] = React.useState(0);
+    const {firebaseUser, user} = useAuthContext();
     const isRegisterPage = location.pathname === "/register";
-    const isAdmin = currentProfile?.roles?.modify_admin ?? false;
-    const avatarSrc = currentProfile?.image_url ?? user?.image_url ?? firebaseUser?.photoURL ?? "";
     const handleNavigation = (key: string): void => {
         navigate(key);
     };
@@ -61,6 +66,16 @@ const Navbar: React.FC = () => {
             setVisible(false);
         }
     }, [firebaseUser]);
+
+    React.useEffect(() => {
+        if (!user?.global_id) {
+            setPendingVerificationCount(0);
+            return;
+        }
+
+        const unsubscribe = subscribePendingVerificationCount(user.global_id, setPendingVerificationCount);
+        return () => unsubscribe();
+    }, [user?.global_id]);
 
     return (
         <div className="fixed top-0 left-0 z-50 w-full h-24 flex items-center justify-between px-6 py-4 bg-[var(--color-bg-2)] border-b border-[var(--color-border)]">
@@ -88,7 +103,7 @@ const Navbar: React.FC = () => {
                     <IconCalendar />
                     Records
                 </MenuItem>
-                {isAdmin && (
+                {user?.roles?.modify_admin && (
                     <SubMenu
                         key="admin-menu"
                         title={
@@ -100,16 +115,26 @@ const Navbar: React.FC = () => {
                     >
                         <MenuItem key="/admins">
                             <IconUser />
-                            Admin Dashboard
+                            Permissions
                         </MenuItem>
                         <MenuItem key="/admin/team-recruitment">
                             <IconUserGroup />
                             Team Recruitment
                         </MenuItem>
+                        <MenuItem key="/admin/users">
+                            <IconUserGroup />
+                            User Management
+                        </MenuItem>
                         <MenuItem key="/admin/carousel">
                             <IconUserGroup />
                             Carousel Management
                         </MenuItem>
+                        {user?.global_id === "00001" && (
+                            <MenuItem key="/admin/developer-setting">
+                                <IconUserGroup />
+                                Developer Setting
+                            </MenuItem>
+                        )}
                     </SubMenu>
                 )}
             </Menu>
@@ -119,61 +144,18 @@ const Navbar: React.FC = () => {
                         <Dropdown
                             droplist={
                                 <Menu>
-                                    <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 mb-2 cursor-default bg-transparent">
-                                        <div className="flex flex-col">
-                                            <span className="font-bold truncate" style={{color: "var(--color-text-1)"}}>
-                                                {currentProfile?.name ?? user?.name}
-                                            </span>
-                                            <span className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                                                {user?.email}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Profile Management Link */}
-                                    <Menu.Item
-                                        key="profile"
-                                        onClick={() => {
-                                            const targetId = currentProfile?.id ?? user?.id;
-                                            if (targetId) {
-                                                navigate(`/users/${targetId}`);
-                                            }
-                                        }}
-                                    >
-                                        <IconUser className="mr-2" />
-                                        Manage Profile
-                                    </Menu.Item>
-
-                                    {/* Profile Switcher Section */}
-                                    {userProfiles.length > 1 && (
-                                        <SubMenu
-                                            key="switch_profile"
-                                            title={
-                                                <span>
-                                                    <IconUserGroup className="mr-2" />
-                                                    Switch Profile
-                                                </span>
-                                            }
-                                        >
-                                            {userProfiles.map((p) => (
-                                                <Menu.Item
-                                                    key={p.id ?? "unknown"}
-                                                    onClick={() => setCurrentProfile(p)}
-                                                    className={
-                                                        p.id === currentProfile?.id ? "bg-blue-50 dark:bg-blue-900/20" : ""
-                                                    }
-                                                >
-                                                    <div className="flex items-center">
-                                                        <Avatar size={24} className="mr-2">
-                                                            {p.name.charAt(0)}
-                                                        </Avatar>
-                                                        {p.name}
-                                                    </div>
-                                                </Menu.Item>
-                                            ))}
-                                        </SubMenu>
+                                    {user && (
+                                        <Menu.Item key="verify-requests" onClick={() => navigate("/verify-requests")}>
+                                            <IconNotification className="mr-2" />
+                                            Verify Requests ({pendingVerificationCount})
+                                        </Menu.Item>
                                     )}
-
+                                    {user && (
+                                        <Menu.Item key="profile" onClick={() => navigate(`/users/${user.id}`)}>
+                                            <IconUser className="mr-2" />
+                                            Profile
+                                        </Menu.Item>
+                                    )}
                                     <Menu.Item
                                         key="logout"
                                         onClick={async () => {
@@ -194,13 +176,18 @@ const Navbar: React.FC = () => {
                             trigger="click"
                         >
                             <div className="cursor-pointer">
-                                {avatarSrc ? (
-                                    <AvatarWithLoading src={avatarSrc} key={avatarSrc || "avatar"} />
-                                ) : (
-                                    <Avatar style={{backgroundColor: "#3370ff"}}>
-                                        <IconUser />
-                                    </Avatar>
-                                )}
+                                <Badge count={pendingVerificationCount} offset={[-2, 6]}>
+                                    {user?.image_url || firebaseUser?.photoURL ? (
+                                        <AvatarWithLoading
+                                            src={user?.image_url ?? firebaseUser?.photoURL ?? ""}
+                                            key={user?.image_url ?? firebaseUser?.photoURL ?? "avatar"}
+                                        />
+                                    ) : (
+                                        <Avatar style={{backgroundColor: "#3370ff"}}>
+                                            <IconUser />
+                                        </Avatar>
+                                    )}
+                                </Badge>
                             </div>
                         </Dropdown>
                     ) : (

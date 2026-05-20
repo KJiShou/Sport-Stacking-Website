@@ -2,18 +2,22 @@ import TournamentView from "@/pages/Tournaments/Component/TournamentView";
 import FinalResultsPage from "@/pages/Tournaments/FinalResults/FinalResultsPage";
 import ParticipantListPage from "@/pages/Tournaments/ParticipantList/ParticipantListPage";
 import PrelimResultsPage from "@/pages/Tournaments/PrelimResults/PrelimResultsPage";
+import PrintResultsPage from "@/pages/Tournaments/PrintResults/PrintResultsPage";
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
 import EditTournamentRegistrationPage from "@/pages/Tournaments/RegistrationsList/EditRegistration/EditRegistration";
 import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/RegistrationsList";
+import ScoreSheetPage from "@/pages/Tournaments/ScoreSheet/ScoreSheetPage";
 import FinalScoringPage from "@/pages/Tournaments/Scoring/FinalScoringPage";
 import ScoringPage from "@/pages/Tournaments/Scoring/ScoringPage";
 import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
-import ClaimProfilePage from "@/pages/User/ClaimProfile";
+import VerificationRequestsPage from "@/pages/Tournaments/VerifyMember/VerificationRequestsPage";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type {AppRoute} from "@/schema";
-import AdminDashboardPage from "../pages/Admin/AdminDashboard";
+import AdminPermissionsPage from "../pages/Admin/AdminPermission";
 import {CarouselManagement} from "../pages/Admin/CarouselManagement";
+import DeveloperSettingPage from "../pages/Admin/DeveloperSetting";
 import TeamRecruitmentManagement from "../pages/Admin/TeamRecruitmentManagement";
+import UserManagementPage from "../pages/Admin/UserManagement";
 import AthleteProfilePage from "../pages/Athletes/AthleteProfile";
 import Athletes from "../pages/Athletes/Athletes";
 import Home from "../pages/Home/Home";
@@ -34,6 +38,7 @@ const routes: AppRoute[] = [
         component: TournamentView,
     },
     {path: "/", component: Home},
+    {path: "/score-sheet/:tournamentId/:round", component: ScoreSheetPage},
     {path: "/athletes", component: Athletes},
     {path: "/athletes/:athleteId", component: AthleteProfilePage},
     {path: "/tournaments", component: Tournaments},
@@ -75,19 +80,26 @@ const routes: AppRoute[] = [
         component: FinalResultsPage,
     },
     {
+        path: "/tournaments/:tournamentId/print-results",
+        component: PrintResultsPage,
+    },
+    {
         path: "/verify",
         component: VerifyPage,
+    },
+    {
+        path: "/verify-requests",
+        component: VerificationRequestsPage,
     },
     {path: "/records", component: RecordsIndex},
     {path: "/register", component: RegisterPage},
     {path: "/users/:id", component: UserProfile},
-    {path: "/admins", component: AdminDashboardPage},
+    {path: "/admins", component: AdminPermissionsPage},
     {path: "/admin/team-recruitment", component: TeamRecruitmentManagement},
     {path: "/admin/carousel", component: CarouselManagement},
-    {path: "/admin/users", component: AdminDashboardPage},
-    {path: "/admin/profiles", component: AdminDashboardPage},
+    {path: "/admin/users", component: UserManagementPage},
+    {path: "/admin/developer-setting", component: DeveloperSettingPage},
     {path: "/forgot-password", component: ForgotPasswordPage},
-    {path: "/profiles/claim/:profileId", component: ClaimProfilePage},
 ];
 
 export default routes;

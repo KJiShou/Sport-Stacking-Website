@@ -35,12 +35,37 @@ import {useMount} from "react-use";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
+const MESSAGE_DURATION_SECONDS = 5;
+const VALIDATION_PREVIEW_LIMIT = 20;
 
 const isTeamTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentTeamRecord =>
     "team_id" in record;
 
 const isIndividualTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentRecord =>
     "participant_id" in record;
+
+const showValidationErrorsModal = (title: string, errors: string[], intro: string) => {
+    const previewErrors = errors.slice(0, VALIDATION_PREVIEW_LIMIT);
+    const remainingCount = errors.length - previewErrors.length;
+
+    Modal.warning({
+        title,
+        content: (
+            <div>
+                <p style={{marginBottom: 12}}>{intro}</p>
+                <ul style={{paddingLeft: 20, marginBottom: remainingCount > 0 ? 12 : 0}}>
+                    {previewErrors.map((error) => (
+                        <li key={error} style={{marginBottom: 8}}>
+                            {error}
+                        </li>
+                    ))}
+                </ul>
+                {remainingCount > 0 && <p>And {remainingCount} more issue(s).</p>}
+            </div>
+        ),
+        okText: "OK",
+    });
+};
 
 /**
  * Helper function to determine age group based on participant age
@@ -657,8 +682,11 @@ export default function ScoringPage() {
 
         const validationErrors = validateModalRecord();
         if (validationErrors.length > 0) {
-            const errorMessage = `Validation Failed:\n${validationErrors.join("\n")}`;
-            Message.error(errorMessage);
+            showValidationErrorsModal(
+                "Validation Failed",
+                validationErrors,
+                "Please fix the following score entries before saving this record.",
+            );
             return;
         }
 
@@ -761,11 +789,15 @@ export default function ScoringPage() {
                 setRegistrationList(nextRegistrationList);
 
                 // If individual event, try to calculate overall
-                if (event.type === "Individual") {
+                if (event.type === "Individual" || event.type === "Open Age Individual") {
                     await calculateAndSaveOverallResults(nextRegistrationList);
                 }
 
-                Message.success(`Record saved for ${selectedParticipant.user_name}!`);
+                Message.success({
+                    content: `Record saved for ${selectedParticipant.user_name}!`,
+                    closable: true,
+                    duration: MESSAGE_DURATION_SECONDS,
+                });
                 closeModal();
             } else if (selectedTeam && event) {
                 const updatedModalScores: Record<string, Score> = {...modalScores};
@@ -858,12 +890,20 @@ export default function ScoringPage() {
                 // Update the team in the list with new scores
                 setTeamScoreList((prev) => prev.map((t) => (t.id === selectedTeam.id ? {...t, scores: updatedModalScores} : t)));
 
-                Message.success(`Record saved for team ${selectedTeam.name}!`);
+                Message.success({
+                    content: `Record saved for team ${selectedTeam.name}!`,
+                    closable: true,
+                    duration: MESSAGE_DURATION_SECONDS,
+                });
                 closeModal();
             }
         } catch (error) {
             console.error("Failed to save record:", error);
-            Message.error("Failed to save record. Please try again.");
+            Message.error({
+                content: "Failed to save record. Please try again.",
+                closable: true,
+                duration: MESSAGE_DURATION_SECONDS,
+            });
         } finally {
             setLoading(false);
         }
@@ -874,7 +914,10 @@ export default function ScoringPage() {
 
         const individualEvents = (events ?? []).filter(
             (e) =>
-                e.type === "Individual" && e.codes?.includes("3-3-3") && e.codes?.includes("3-6-3") && e.codes?.includes("Cycle"),
+                (e.type === "Individual" || e.type === "Open Age Individual") &&
+                e.codes?.includes("3-3-3") &&
+                e.codes?.includes("3-6-3") &&
+                e.codes?.includes("Cycle"),
         );
 
         if (individualEvents.length === 0) return;
@@ -887,25 +930,25 @@ export default function ScoringPage() {
                 const individualParticipants = participants.filter(
                     (p) =>
                         registrationMatchesEvent(p.events_registered, individualEvent, p.gender) &&
-                        p.scores["3-3-3-Individual"] &&
-                        p.scores["3-3-3-Individual"].try1 &&
-                        p.scores["3-3-3-Individual"].try2 &&
-                        p.scores["3-3-3-Individual"].try3 &&
-                        p.scores["3-6-3-Individual"] &&
-                        p.scores["3-6-3-Individual"].try1 &&
-                        p.scores["3-6-3-Individual"].try2 &&
-                        p.scores["3-6-3-Individual"].try3 &&
-                        p.scores["Cycle-Individual"] &&
-                        p.scores["Cycle-Individual"].try1 &&
-                        p.scores["Cycle-Individual"].try2 &&
-                        p.scores["Cycle-Individual"].try3,
+                        p.scores[`3-3-3-${individualEvent.type}`] &&
+                        p.scores[`3-3-3-${individualEvent.type}`].try1 &&
+                        p.scores[`3-3-3-${individualEvent.type}`].try2 &&
+                        p.scores[`3-3-3-${individualEvent.type}`].try3 &&
+                        p.scores[`3-6-3-${individualEvent.type}`] &&
+                        p.scores[`3-6-3-${individualEvent.type}`].try1 &&
+                        p.scores[`3-6-3-${individualEvent.type}`].try2 &&
+                        p.scores[`3-6-3-${individualEvent.type}`].try3 &&
+                        p.scores[`Cycle-${individualEvent.type}`] &&
+                        p.scores[`Cycle-${individualEvent.type}`].try1 &&
+                        p.scores[`Cycle-${individualEvent.type}`].try2 &&
+                        p.scores[`Cycle-${individualEvent.type}`].try3,
                 );
 
                 // Calculate overall results and save them
                 const overallPromises = individualParticipants.map(async (p) => {
-                    const threeScores = p.scores["3-3-3-Individual"];
-                    const threeSixThreeScores = p.scores["3-6-3-Individual"];
-                    const cycleScores = p.scores["Cycle-Individual"];
+                    const threeScores = p.scores[`3-3-3-${individualEvent.type}`];
+                    const threeSixThreeScores = p.scores[`3-6-3-${individualEvent.type}`];
+                    const cycleScores = p.scores[`Cycle-${individualEvent.type}`];
 
                     // Get best times for each event
                     const threeBest = Math.min(
@@ -975,22 +1018,32 @@ export default function ScoringPage() {
 
     // Filter function for search
     const filterParticipants = (participants: ParticipantScore[]) => {
-        if (!searchTerm.trim()) return participants;
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) return participants;
         return participants.filter(
             (p) =>
-                p.user_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                p.user_name.toLowerCase().includes(searchTerm.toLowerCase()),
+                p.user_global_id?.toLowerCase().includes(normalizedSearch) ||
+                p.user_id?.toLowerCase().includes(normalizedSearch) ||
+                p.user_name?.toLowerCase().includes(normalizedSearch),
         );
     };
 
     const filterTeams = (teams: TeamScore[]) => {
-        if (!searchTerm.trim()) return teams;
-        return teams.filter(
-            (t) =>
-                t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                stripTeamLeaderPrefix(t.leader_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
-                t.members.some((m) => m.global_id.toLowerCase().includes(searchTerm.toLowerCase())),
-        );
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) return teams;
+        return teams.filter((team) => {
+            const leaderId = stripTeamLeaderPrefix(team.leader_id).toLowerCase();
+            const formattedLeaderId = formatTeamLeaderId(team.leader_id, currentEvent?.type).toLowerCase();
+            const memberMatches = team.members.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch));
+
+            return (
+                team.name?.toLowerCase().includes(normalizedSearch) ||
+                team.id?.toLowerCase().includes(normalizedSearch) ||
+                leaderId.includes(normalizedSearch) ||
+                formattedLeaderId.includes(normalizedSearch) ||
+                memberMatches
+            );
+        });
     };
 
     const getExpandableColumns = (codes: string[], eventId: string, eventType: string): TableColumnProps<ParticipantScore>[] => [
@@ -1077,7 +1130,7 @@ export default function ScoringPage() {
     ];
 
     const getIndividualColumns = (eventId: string, eventType: string): TableColumnProps<ParticipantScore>[] => [
-        {title: "Global ID", dataIndex: "user_id", width: 150},
+        {title: "Global ID", dataIndex: "user_global_id", width: 150},
         {title: "Name", dataIndex: "user_name", width: 200},
         {
             title: "Status",
@@ -1289,15 +1342,6 @@ export default function ScoringPage() {
                                             )}
                                             <div className="flex justify-end mt-4">
                                                 <Button
-                                                    type="outline"
-                                                    onClick={() => {
-                                                        if (!tournamentId) return;
-                                                        navigate(`/tournaments/${tournamentId}/record/prelim`);
-                                                    }}
-                                                >
-                                                    View Prelim Results
-                                                </Button>
-                                                <Button
                                                     type="primary"
                                                     status="success"
                                                     loading={loading}
@@ -1305,126 +1349,112 @@ export default function ScoringPage() {
                                                         if (!tournamentId) return;
                                                         setLoading(true);
                                                         try {
-                                                            // Validate ALL events and ALL brackets before allowing completion
+                                                            // Validate only the current age bracket before allowing completion
                                                             const validationErrors: string[] = [];
 
                                                             // Get all preliminary records once
                                                             const allPrelimRecords =
                                                                 await getTournamentPrelimRecords(tournamentId);
 
-                                                            // Check every event
-                                                            for (const event of events ?? []) {
-                                                                const eventType = event.type;
-                                                                const eventId = event.id;
-                                                                const eventCodes = sanitizeEventCodes(event.codes);
-                                                                const isTeamEventType = [
-                                                                    "double",
-                                                                    "team relay",
-                                                                    "parent & child",
-                                                                ].includes(eventType.toLowerCase());
+                                                            const event = evt;
+                                                            const eventType = event.type;
+                                                            const eventId = event.id;
+                                                            const eventCodes = sanitizeEventCodes(event.codes);
+                                                            const isTeamEventType = [
+                                                                "double",
+                                                                "team relay",
+                                                                "parent & child",
+                                                            ].includes(eventType.toLowerCase());
 
-                                                                // Check every age bracket within this event
-                                                                for (const bracket of event.age_brackets) {
-                                                                    if (isTeamEventType) {
-                                                                        // Validate team events
-                                                                        const teamsForBracket = teamScoreList.filter((t) => {
-                                                                            const teamAge = getTeamMaxAge(t);
-                                                                            return (
-                                                                                teamMatchesEvent(t, event) &&
-                                                                                teamAge !== undefined &&
-                                                                                teamAge >= bracket.min_age &&
-                                                                                teamAge <= bracket.max_age
+                                                            const bracket = br;
+                                                            if (isTeamEventType) {
+                                                                const teamsForBracket = teamScoreList.filter((t) => {
+                                                                    const teamAge = getTeamMaxAge(t);
+                                                                    return (
+                                                                        teamMatchesEvent(t, event) &&
+                                                                        teamAge !== undefined &&
+                                                                        teamAge >= bracket.min_age &&
+                                                                        teamAge <= bracket.max_age
+                                                                    );
+                                                                });
+
+                                                                for (const team of teamsForBracket) {
+                                                                    if (eventCodes.length > 0) {
+                                                                        for (const code of eventCodes) {
+                                                                            const hasRecord = allPrelimRecords.some(
+                                                                                (record) =>
+                                                                                    isTeamTournamentRecord(record) &&
+                                                                                    record.team_id === team.id &&
+                                                                                    (eventId
+                                                                                        ? record.event_id === eventId
+                                                                                        : record.event === eventType) &&
+                                                                                    record.code === code,
                                                                             );
-                                                                        });
-
-                                                                        for (const team of teamsForBracket) {
-                                                                            if (eventCodes.length > 0) {
-                                                                                // Check each code
-                                                                                for (const code of eventCodes) {
-                                                                                    const hasRecord = allPrelimRecords.some(
-                                                                                        (record) =>
-                                                                                            isTeamTournamentRecord(record) &&
-                                                                                            record.team_id === team.id &&
-                                                                                            (eventId
-                                                                                                ? record.event_id === eventId
-                                                                                                : record.event === eventType) &&
-                                                                                            record.code === code,
-                                                                                    );
-                                                                                    if (!hasRecord) {
-                                                                                        validationErrors.push(
-                                                                                            `Team "${team.name}" missing ${code} record for ${eventType} (${bracket.name})`,
-                                                                                        );
-                                                                                    }
-                                                                                }
-                                                                            } else {
-                                                                                // No codes, just check event
-                                                                                const hasRecord = allPrelimRecords.some(
-                                                                                    (record) =>
-                                                                                        isTeamTournamentRecord(record) &&
-                                                                                        record.team_id === team.id &&
-                                                                                        (eventId
-                                                                                            ? record.event_id === eventId
-                                                                                            : record.event === eventType),
+                                                                            if (!hasRecord) {
+                                                                                validationErrors.push(
+                                                                                    `Team "${team.name}" missing ${code} record for ${eventType} (${bracket.name})`,
                                                                                 );
-                                                                                if (!hasRecord) {
-                                                                                    validationErrors.push(
-                                                                                        `Team "${team.name}" missing record for ${eventType} (${bracket.name})`,
-                                                                                    );
-                                                                                }
                                                                             }
                                                                         }
                                                                     } else {
-                                                                        // Validate individual events
-                                                                        const participantsForBracket = registrationList.filter(
-                                                                            (r) =>
-                                                                                registrationMatchesEvent(
-                                                                                    r.events_registered,
-                                                                                    event,
-                                                                                    r.gender,
-                                                                                ) &&
-                                                                                r.age >= bracket.min_age &&
-                                                                                r.age <= bracket.max_age,
+                                                                        const hasRecord = allPrelimRecords.some(
+                                                                            (record) =>
+                                                                                isTeamTournamentRecord(record) &&
+                                                                                record.team_id === team.id &&
+                                                                                (eventId
+                                                                                    ? record.event_id === eventId
+                                                                                    : record.event === eventType),
                                                                         );
+                                                                        if (!hasRecord) {
+                                                                            validationErrors.push(
+                                                                                `Team "${team.name}" missing record for ${eventType} (${bracket.name})`,
+                                                                            );
+                                                                        }
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                const participantsForBracket = registrationList.filter(
+                                                                    (r) =>
+                                                                        registrationMatchesEvent(
+                                                                            r.events_registered,
+                                                                            event,
+                                                                            r.gender,
+                                                                        ) &&
+                                                                        r.age >= bracket.min_age &&
+                                                                        r.age <= bracket.max_age,
+                                                                );
 
-                                                                        for (const participant of participantsForBracket) {
-                                                                            if (eventCodes.length > 0) {
-                                                                                // Check each code
-                                                                                for (const code of eventCodes) {
-                                                                                    const hasRecord = allPrelimRecords.some(
-                                                                                        (record) =>
-                                                                                            isIndividualTournamentRecord(
-                                                                                                record,
-                                                                                            ) &&
-                                                                                            record.participant_id ===
-                                                                                                participant.user_id &&
-                                                                                            (eventId
-                                                                                                ? record.event_id === eventId
-                                                                                                : record.event === eventType) &&
-                                                                                            record.code === code,
-                                                                                    );
-                                                                                    if (!hasRecord) {
-                                                                                        validationErrors.push(
-                                                                                            `${participant.user_name} (${participant.user_global_id}) missing ${code} record for ${eventType} (${bracket.name})`,
-                                                                                        );
-                                                                                    }
-                                                                                }
-                                                                            } else {
-                                                                                // No codes, just check event
-                                                                                const hasRecord = allPrelimRecords.some(
-                                                                                    (record) =>
-                                                                                        isIndividualTournamentRecord(record) &&
-                                                                                        record.participant_id ===
-                                                                                            participant.user_id &&
-                                                                                        (eventId
-                                                                                            ? record.event_id === eventId
-                                                                                            : record.event === eventType),
+                                                                for (const participant of participantsForBracket) {
+                                                                    if (eventCodes.length > 0) {
+                                                                        for (const code of eventCodes) {
+                                                                            const hasRecord = allPrelimRecords.some(
+                                                                                (record) =>
+                                                                                    isIndividualTournamentRecord(record) &&
+                                                                                    record.participant_id === participant.user_id &&
+                                                                                    (eventId
+                                                                                        ? record.event_id === eventId
+                                                                                        : record.event === eventType) &&
+                                                                                    record.code === code,
+                                                                            );
+                                                                            if (!hasRecord) {
+                                                                                validationErrors.push(
+                                                                                    `${participant.user_name} (${participant.user_global_id}) missing ${code} record for ${eventType} (${bracket.name})`,
                                                                                 );
-                                                                                if (!hasRecord) {
-                                                                                    validationErrors.push(
-                                                                                        `${participant.user_name} (${participant.user_global_id}) missing record for ${eventType} (${bracket.name})`,
-                                                                                    );
-                                                                                }
                                                                             }
+                                                                        }
+                                                                    } else {
+                                                                        const hasRecord = allPrelimRecords.some(
+                                                                            (record) =>
+                                                                                isIndividualTournamentRecord(record) &&
+                                                                                record.participant_id === participant.user_id &&
+                                                                                (eventId
+                                                                                    ? record.event_id === eventId
+                                                                                    : record.event === eventType),
+                                                                        );
+                                                                        if (!hasRecord) {
+                                                                            validationErrors.push(
+                                                                                `${participant.user_name} (${participant.user_global_id}) missing record for ${eventType} (${bracket.name})`,
+                                                                            );
                                                                         }
                                                                     }
                                                                 }
@@ -1433,10 +1463,11 @@ export default function ScoringPage() {
                                                             // If there are validation errors, show them
 
                                                             if (validationErrors.length > 0) {
-                                                                for (const error of validationErrors) {
-                                                                    const errorMessage = `Cannot complete preliminary round. Missing records:\n${error}`;
-                                                                    Message.error(errorMessage);
-                                                                }
+                                                                showValidationErrorsModal(
+                                                                    `Cannot complete preliminary round for ${eventType}`,
+                                                                    validationErrors,
+                                                                    "The current age bracket still has missing preliminary records.",
+                                                                );
                                                                 setLoading(false);
                                                                 return;
                                                             }

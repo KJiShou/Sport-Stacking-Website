@@ -29,6 +29,32 @@ import {useMount} from "react-use";
 
 const {Title} = Typography;
 const {TabPane} = Tabs;
+const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
+const MESSAGE_DURATION_SECONDS = 5;
+const VALIDATION_PREVIEW_LIMIT = 20;
+
+const showValidationErrorsModal = (title: string, errors: string[], intro: string) => {
+    const previewErrors = errors.slice(0, VALIDATION_PREVIEW_LIMIT);
+    const remainingCount = errors.length - previewErrors.length;
+
+    Modal.warning({
+        title,
+        content: (
+            <div>
+                <p style={{marginBottom: 12}}>{intro}</p>
+                <ul style={{paddingLeft: 20, marginBottom: remainingCount > 0 ? 12 : 0}}>
+                    {previewErrors.map((error) => (
+                        <li key={error} style={{marginBottom: 8}}>
+                            {error}
+                        </li>
+                    ))}
+                </ul>
+                {remainingCount > 0 && <p>And {remainingCount} more issue(s).</p>}
+            </div>
+        ),
+        okText: "OK",
+    });
+};
 
 /**
  * Helper function to determine age group based on participant age
@@ -166,10 +192,10 @@ export default function FinalScoringPage() {
             setFinalist(finalists);
             const recordsData = await getTournamentFinalRecords(tournamentId);
             const parsedRecords: (TournamentRecord | TournamentTeamRecord)[] = recordsData.map((record) => {
-                if (record.event === "Individual") {
-                    return TournamentRecordSchema.parse(record);
+                if (TEAM_EVENT_TYPES.has(record.event)) {
+                    return TournamentTeamRecordSchema.parse(record);
                 }
-                return TournamentTeamRecordSchema.parse(record);
+                return TournamentRecordSchema.parse(record);
             });
             setRecords(parsedRecords);
 
@@ -219,22 +245,32 @@ export default function FinalScoringPage() {
     });
 
     const filterParticipants = (participants: Registration[]) => {
-        if (!searchTerm.trim()) return participants;
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) return participants;
         return participants.filter(
             (p) =>
-                p.user_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                p.user_name.toLowerCase().includes(searchTerm.toLowerCase()),
+                p.user_global_id?.toLowerCase().includes(normalizedSearch) ||
+                p.user_id?.toLowerCase().includes(normalizedSearch) ||
+                p.user_name?.toLowerCase().includes(normalizedSearch),
         );
     };
 
     const filterTeams = (teams: Team[]) => {
-        if (!searchTerm.trim()) return teams;
-        return teams.filter(
-            (t) =>
-                t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                stripTeamLeaderPrefix(t.leader_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
-                t.members.some((m) => m.global_id.toLowerCase().includes(searchTerm.toLowerCase())),
-        );
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) return teams;
+        return teams.filter((team) => {
+            const leaderId = stripTeamLeaderPrefix(team.leader_id).toLowerCase();
+            const formattedLeaderId = formatTeamLeaderId(team.leader_id, currentEvent?.type).toLowerCase();
+            const memberMatches = team.members.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch));
+
+            return (
+                team.name?.toLowerCase().includes(normalizedSearch) ||
+                team.id?.toLowerCase().includes(normalizedSearch) ||
+                leaderId.includes(normalizedSearch) ||
+                formattedLeaderId.includes(normalizedSearch) ||
+                memberMatches
+            );
+        });
     };
 
     const getExpandableColumns = (
@@ -444,7 +480,7 @@ export default function FinalScoringPage() {
         return Math.min(...vals).toFixed(3);
     };
 
-    const checkAllFinalistsAndNavigate = async () => {
+    const checkAllFinalistsAndNavigate = async (targetEvent: TournamentEvent, bracketName: string) => {
         if (!tournamentId) return;
         setLoading(true);
         try {
@@ -457,7 +493,23 @@ export default function FinalScoringPage() {
                 return evtDef?.codes ?? [];
             };
 
-            for (const g of finalist) {
+            const currentEventFinalists = finalist.filter((g) => {
+                if (g.bracket_name !== bracketName) {
+                    return false;
+                }
+                if (targetEvent.id && g.event_id) {
+                    return g.event_id === targetEvent.id;
+                }
+                return g.event_type === targetEvent.type;
+            });
+
+            if (currentEventFinalists.length === 0) {
+                Message.info(`No finalists found for ${getEventLabel(targetEvent)} in ${bracketName}.`);
+                setLoading(false);
+                return;
+            }
+
+            for (const g of currentEventFinalists) {
                 const isTeam = g.participant_type === "Team";
                 const codes = getCodesForGroup(g);
                 const eventType = g.event_type;
@@ -507,7 +559,7 @@ export default function FinalScoringPage() {
                             updateParticipantRankingsAndResults(tournamentId, classification),
                         ),
                     );
-                    Message.success("Participant rankings updated for all classifications! Redirecting to results…");
+                    Message.success(`${getEventLabel(targetEvent)} ${bracketName} is complete. Redirecting to results...`);
                 } catch (updateError) {
                     console.error("Error updating rankings:", updateError);
                     Message.warning("Records complete but failed to update some rankings.");
@@ -537,7 +589,7 @@ export default function FinalScoringPage() {
                     .map((m) => `${resolveName(m.id, m.eventType)} [${m.code} - ${getEventName(m)}]`)
                     .join(", ");
                 const more = missing.length > 12 ? ` and ${missing.length - 12} more` : "";
-                Message.warning(`Some finalists are missing scores: ${preview}${more}`);
+                Message.warning(`Some finalists in ${bracketName} are missing scores: ${preview}${more}`);
             }
         } catch (error) {
             console.error("Failed to check records:", error);
@@ -574,7 +626,11 @@ export default function FinalScoringPage() {
             }
 
             if (validationErrors.length > 0) {
-                Message.error(`Invalid times: ${validationErrors.join(", ")}`);
+                showValidationErrorsModal(
+                    "Invalid Final Scores",
+                    validationErrors,
+                    "Please fix the following score entries before saving this record.",
+                );
                 setLoading(false);
                 return;
             }
@@ -688,7 +744,7 @@ export default function FinalScoringPage() {
             if (
                 isIndividual &&
                 selectedParticipant &&
-                currentEvent.type === "Individual" &&
+                (currentEvent.type === "Individual" || currentEvent.type === "Open Age Individual") &&
                 (["3-3-3", "3-6-3", "Cycle"] as const).every((c) => new Set(currentEvent.codes ?? []).has(c))
             ) {
                 // Ensure we have best times for all three codes from modal, otherwise try to derive from existing records
@@ -697,7 +753,7 @@ export default function FinalScoringPage() {
                     if (bestTimes[c] == null) {
                         const existing = records.find(
                             (r) =>
-                                r.event === "Individual" &&
+                                r.event === currentEvent.type &&
                                 r.code === c &&
                                 (r as TournamentRecord).participant_id === selectedParticipant.user_id,
                         ) as TournamentRecord | undefined;
@@ -753,10 +809,18 @@ export default function FinalScoringPage() {
             setSelectedParticipant(null);
             setSelectedTeam(null);
             setModalScores({});
-            Message.success("Record(s) saved.");
+            Message.success({
+                content: "Record(s) saved.",
+                closable: true,
+                duration: MESSAGE_DURATION_SECONDS,
+            });
         } catch (error) {
             console.error(error);
-            Message.error("Failed to save record(s).");
+            Message.error({
+                content: "Failed to save record(s).",
+                closable: true,
+                duration: MESSAGE_DURATION_SECONDS,
+            });
         } finally {
             setLoading(false);
         }
@@ -890,16 +954,10 @@ export default function FinalScoringPage() {
                                             </Tabs>
                                             <div className="flex justify-end mt-4">
                                                 <Button
-                                                    type="outline"
-                                                    onClick={() => navigate(`/tournaments/${tournamentId}/record/final`)}
-                                                >
-                                                    View Final Results
-                                                </Button>
-                                                <Button
                                                     type="primary"
                                                     status="success"
                                                     loading={loading}
-                                                    onClick={checkAllFinalistsAndNavigate}
+                                                    onClick={() => checkAllFinalistsAndNavigate(evt, br.name)}
                                                     style={{marginLeft: 8}}
                                                 >
                                                     Final Done
