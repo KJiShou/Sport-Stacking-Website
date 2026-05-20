@@ -39,7 +39,6 @@ import {FirestoreUserSchema} from "../../schema";
 import type {UserTournamentHistory} from "../../schema/UserHistorySchema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {auth, db, functions, storage} from "./config";
-import {updateProfilesForUser} from "./profileService";
 
 export type GoogleSignInIntent = "login" | "register";
 
