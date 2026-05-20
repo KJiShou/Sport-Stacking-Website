@@ -881,7 +881,6 @@ async function enforcePasswordResetEmailThrottle(email: string): Promise<void> {
 export const sendPasswordResetEmailWithCustomEmail = onCall(
     {
         secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
-        enforceAppCheck: true,
         cors: callableCorsOrigins,
     },
     async (request) => {
