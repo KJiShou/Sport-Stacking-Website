@@ -350,13 +350,48 @@ async function sendEmailViaSES(
     }
 }
 
+const PASSWORD_RESET_EMAIL_THROTTLE_MS = 60 * 1000;
+
+async function enforcePasswordResetEmailThrottle(email: string): Promise<void> {
+    const db = getFirestore();
+    const throttleRef = db.collection("passwordResetEmailThrottle").doc(encodeURIComponent(email));
+    const nowMs = Date.now();
+
+    await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(throttleRef);
+        const lastAttempt = snapshot.get("lastAttemptAt") as FirestoreTimestamp | undefined;
+        const lastAttemptMs = lastAttempt?.toMillis() ?? 0;
+
+        if (nowMs - lastAttemptMs < PASSWORD_RESET_EMAIL_THROTTLE_MS) {
+            throw new HttpsError(
+                "resource-exhausted",
+                "Too many password reset requests. Please wait before trying again.",
+            );
+        }
+
+        transaction.set(
+            throttleRef,
+            {
+                email,
+                lastAttemptAt: FirestoreTimestamp.now(),
+            },
+            {merge: true},
+        );
+    });
+}
+
 export const sendPasswordResetEmailWithCustomEmail = onCall(
-    {secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD]},
+    {
+        secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
+        enforceAppCheck: true,
+    },
     async (request) => {
         const email = normalizeEmail(request.data?.email);
         if (!email) {
             throw new HttpsError("invalid-argument", "Email is required.");
         }
+
+        await enforcePasswordResetEmailThrottle(email);
 
         try {
             const resetLink = await getAuth().generatePasswordResetLink(email, {
