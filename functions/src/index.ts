@@ -23,6 +23,7 @@ const allowedOrigins = new Set<string>([
     "http://localhost:4173",
     "http://127.0.0.1:4173",
 ]);
+const callableCorsOrigins = Array.from(allowedOrigins);
 
 const corsHandler = cors({
     origin: (origin, callback) => {
@@ -881,6 +882,7 @@ export const sendPasswordResetEmailWithCustomEmail = onCall(
     {
         secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
         enforceAppCheck: true,
+        cors: callableCorsOrigins,
     },
     async (request) => {
         const email = normalizeEmail(request.data?.email);
