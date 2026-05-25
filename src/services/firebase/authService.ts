@@ -40,6 +40,7 @@ import type {FirestoreUser} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
 import type {UserTournamentHistory} from "../../schema/UserHistorySchema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
+import {isSameBirthdateDay, normalizeBirthdateForWrite, parseBirthdate} from "../../utils/birthdate";
 import {auth, db, functions, storage} from "./config";
 
 export type GoogleSignInIntent = "login" | "register";
@@ -168,21 +169,8 @@ export const buildIdentityKey = (
     return `PASSPORT:${normalizedCountry || "UNKNOWN"}:${normalizedNumber}`;
 };
 
-const toMillis = (value: unknown): number | null => {
-    if (!value) return null;
-    if (value instanceof Timestamp) return value.toDate().setHours(0, 0, 0, 0);
-    if (value instanceof Date) return new Date(value).setHours(0, 0, 0, 0);
-    if (typeof value === "string" || typeof value === "number") {
-        const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? null : parsed.setHours(0, 0, 0, 0);
-    }
-    return null;
-};
-
 const isSameBirthdate = (left: unknown, right: unknown): boolean => {
-    const leftMillis = toMillis(left);
-    const rightMillis = toMillis(right);
-    return leftMillis !== null && rightMillis !== null && leftMillis === rightMillis;
+    return isSameBirthdateDay(left, right);
 };
 
 const mapUserDoc = (docSnap: QueryDocumentSnapshot<DocumentData>): FirestoreUser => {
@@ -195,7 +183,7 @@ const mapUserDoc = (docSnap: QueryDocumentSnapshot<DocumentData>): FirestoreUser
         name: data.name,
         IC: data.IC ?? null,
         email: data.email ?? null,
-        birthdate: data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate,
+        birthdate: parseBirthdate(data.birthdate) ?? null,
         gender: data.gender,
         country: data.country,
         image_url: data.image_url ?? "",
@@ -304,8 +292,12 @@ export const transferProfileOwnership = async (
 };
 
 // Register and create user in Firestore
-export const register = async (userData: Omit<FirestoreUser, "id"> & {password: string}) => {
-    const {email, password, IC, ...rest} = userData;
+type RegisterUserData = Omit<FirestoreUser, "id" | "birthdate"> & {birthdate: unknown; password: string};
+type GoogleRegisterData = Omit<FirestoreUser, "id" | "email" | "image_url" | "birthdate"> & {birthdate: unknown};
+type UpdateUserProfileData = Partial<Omit<FirestoreUser, "email" | "IC" | "id" | "birthdate">> & {birthdate?: unknown};
+
+export const register = async (userData: RegisterUserData) => {
+    const {email, password, IC, birthdate, ...rest} = userData;
     if (!email) {
         throw new Error("Email is required.");
     }
@@ -355,8 +347,9 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
             rest.identity_key ??
             buildIdentityKey(rest.identity_type ?? (/^\d{12}$/.test(IC ?? "") ? "MYKAD" : "PASSPORT"), IC, rest.passport_country),
         registration_records: [],
-        created_at: Timestamp.now(),
         ...rest,
+        birthdate: normalizeBirthdateForWrite(birthdate),
+        created_at: Timestamp.now(),
     };
 
     await setDoc(doc(db, "users", uid), newUser);
@@ -365,7 +358,7 @@ export const register = async (userData: Omit<FirestoreUser, "id"> & {password: 
 
 export const registerWithGoogle = async (
     firebaseUser: User,
-    extraData: Omit<FirestoreUser, "id" | "email" | "image_url">,
+    extraData: GoogleRegisterData,
     imageFile?: string,
 ) => {
     if (!firebaseUser.email) {
@@ -375,6 +368,10 @@ export const registerWithGoogle = async (
     const uid = firebaseUser.uid;
     const identityType = extraData.identity_type ?? (/^\d{12}$/.test(extraData.IC ?? "") ? "MYKAD" : "PASSPORT");
     const identityKey = extraData.identity_key ?? buildIdentityKey(identityType, extraData.IC, extraData.passport_country);
+    const normalizedExtraData = {
+        ...extraData,
+        birthdate: normalizeBirthdateForWrite(extraData.birthdate),
+    };
 
     if (identityKey) {
         const identityQuery = query(collection(db, "users"), where("identity_key", "==", identityKey));
@@ -386,7 +383,10 @@ export const registerWithGoogle = async (
             if (owners.includes(uid)) {
                 return existingDoc.id;
             }
-            if ((existingData.account_status ?? "claimed") === "unclaimed" && isSameBirthdate(existingData.birthdate, extraData.birthdate)) {
+            if (
+                (existingData.account_status ?? "claimed") === "unclaimed" &&
+                isSameBirthdate(existingData.birthdate, normalizedExtraData.birthdate)
+            ) {
                 await updateDoc(existingDoc.ref, {
                     owner_uids: arrayUnion(uid),
                     account_status: "claimed",
@@ -411,7 +411,10 @@ export const registerWithGoogle = async (
         }
         const claimableDoc = matchingDocs.find((docSnap) => {
             const data = docSnap.data() as FirestoreUser;
-            return (data.account_status ?? "claimed") === "unclaimed" && isSameBirthdate(data.birthdate, extraData.birthdate);
+            return (
+                (data.account_status ?? "claimed") === "unclaimed" &&
+                isSameBirthdate(data.birthdate, normalizedExtraData.birthdate)
+            );
         });
         if (claimableDoc) {
             await updateDoc(claimableDoc.ref, {
@@ -452,7 +455,7 @@ export const registerWithGoogle = async (
         identity_key: identityKey,
         registration_records: [],
         created_at: Timestamp.now(),
-        ...extraData,
+        ...normalizedExtraData,
     };
 
     await setDoc(userRef, userDoc);
@@ -722,10 +725,14 @@ export async function getUserEmailByGlobalId(globalId: string) {
     return snap.docs[0]?.data() as {email: string} | undefined;
 }
 
-export async function updateUserProfile(id: string, data: Partial<Omit<FirestoreUser, "email" | "IC" | "id">>): Promise<void> {
+export async function updateUserProfile(id: string, data: UpdateUserProfileData): Promise<void> {
     // 1. 校验允许更新的字段
     const UpdateSchema = FirestoreUserSchema.partial().omit({email: true, IC: true, id: true});
-    const validated = UpdateSchema.parse(data);
+    const normalizedData = {
+        ...data,
+        ...("birthdate" in data ? {birthdate: normalizeBirthdateForWrite(data.birthdate)} : {}),
+    };
+    const validated = UpdateSchema.parse(normalizedData);
 
     // 2. 附加 updated_at 字段
     const payload: Partial<FirestoreUser> & {updated_at: Timestamp} = {

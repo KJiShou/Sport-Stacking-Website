@@ -4,6 +4,7 @@ import type {FirestoreUser} from "@/schema";
 import {countries} from "@/schema/Country";
 import {cacheGoogleAvatar, clearGoogleSignInIntent, registerWithGoogle, signInWithGoogle} from "@/services/firebase/authService";
 import {uploadAvatar} from "@/services/firebase/storageService";
+import {isBirthdateMatchingMykad, parseBirthdate} from "@/utils/birthdate";
 import {
     Avatar,
     Button,
@@ -72,9 +73,18 @@ const RegisterPage = () => {
     const handleSubmit = async (values: RegisterFormData) => {
         const {email, password, confirmPassword, name, IC, birthdate, country, gender, image_url, school, phone_number} = values;
         const resolvedEmail = email ?? firebaseUser?.email ?? "";
+        const normalizedBirthdate = parseBirthdate(birthdate);
         let avatarUrl = "";
         if (!resolvedEmail) {
             Message.error("Missing Google email for this account.");
+            return;
+        }
+        if (!normalizedBirthdate) {
+            Message.error("Select a valid birthdate.");
+            return;
+        }
+        if (isICMode && !isBirthdateMatchingMykad(IC, normalizedBirthdate)) {
+            Message.error("Birthdate must match the IC number.");
             return;
         }
         const isAddingProfile = Boolean(firebaseUser && user);
@@ -116,7 +126,7 @@ const RegisterPage = () => {
                     identity_type: isICMode ? "MYKAD" : "PASSPORT",
                     passport_country: isICMode ? null : country?.[0],
                     name,
-                    birthdate,
+                    birthdate: normalizedBirthdate,
                     gender,
                     country,
                     school: school || "",

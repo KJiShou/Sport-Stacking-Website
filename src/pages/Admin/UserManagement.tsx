@@ -6,22 +6,31 @@ import {
     transferProfileOwnership,
     updateUserProfile,
 } from "@/services/firebase/authService";
-import {Button, Form, Input, Message, Modal, Select, Spin, Table, Tag, Typography} from "@arco-design/web-react";
+import {
+    Button,
+    DatePicker,
+    Form,
+    Input,
+    Message,
+    Modal,
+    Select,
+    Spin,
+    Table,
+    Tag,
+    Typography,
+} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch} from "@arco-design/web-react/icon";
+import {
+    deriveBirthdateFromMykad,
+    formatBirthdateForDisplay,
+    isBirthdateMatchingMykad,
+    parseBirthdate,
+} from "@/utils/birthdate";
+import dayjs from "dayjs";
 import {useEffect, useMemo, useState} from "react";
 
 const {Title, Paragraph, Text} = Typography;
-
-const formatBirthdate = (birthdate: FirestoreUser["birthdate"]): string => {
-    if (birthdate instanceof Date) {
-        return birthdate.toLocaleDateString("en-GB");
-    }
-    if (birthdate && typeof birthdate === "object" && "toDate" in birthdate && typeof birthdate.toDate === "function") {
-        return birthdate.toDate().toLocaleDateString("en-GB");
-    }
-    return "-";
-};
 
 type GmailOption = {
     label: string;
@@ -101,6 +110,7 @@ export default function UserManagementPage() {
     }, [selectedUser, users]);
 
     const handleViewDetail = (entry: FirestoreUser) => {
+        const birthdate = parseBirthdate(entry.birthdate) ?? deriveBirthdateFromMykad(entry.IC);
         setSelectedUser(entry);
         setDetailModalVisible(true);
         setEditMode(false);
@@ -109,6 +119,7 @@ export default function UserManagementPage() {
             phone_number: entry.phone_number ?? "",
             school: entry.school ?? "",
             gender: entry.gender ?? undefined,
+            birthdate,
         });
     };
 
@@ -173,12 +184,22 @@ export default function UserManagementPage() {
         if (!selectedUser?.id) return;
         try {
             const values = await editForm.validate();
+            const birthdate = parseBirthdate(values.birthdate);
+            if (!birthdate) {
+                Message.error("Select a valid birthdate");
+                return;
+            }
+            if (/^\d{12}$/.test(selectedUser.IC ?? "") && !isBirthdateMatchingMykad(selectedUser.IC, birthdate)) {
+                Message.error("Birthdate must match the IC number");
+                return;
+            }
             setLoading(true);
             await updateUserProfile(selectedUser.id, {
                 name: values.name,
                 phone_number: values.phone_number,
                 school: values.school,
                 gender: values.gender,
+                birthdate,
             });
             setUsers((prev) =>
                 prev.map((entry) =>
@@ -189,6 +210,7 @@ export default function UserManagementPage() {
                               phone_number: values.phone_number,
                               school: values.school,
                               gender: values.gender,
+                              birthdate,
                           }
                         : entry,
                 ),
@@ -201,6 +223,7 @@ export default function UserManagementPage() {
                           phone_number: values.phone_number,
                           school: values.school,
                           gender: values.gender,
+                          birthdate,
                       }
                     : prev,
             );
@@ -357,6 +380,17 @@ export default function UserManagementPage() {
                                         <Select.Option value="Female">Female</Select.Option>
                                     </Select>
                                 </Form.Item>
+                                <Form.Item
+                                    label="Birthdate"
+                                    field="birthdate"
+                                    rules={[{required: true, message: "Select birthdate"}]}
+                                >
+                                    <DatePicker
+                                        format="DD/MM/YYYY"
+                                        style={{width: "100%"}}
+                                        disabledDate={(current) => current.isAfter(dayjs())}
+                                    />
+                                </Form.Item>
                                 <Form.Item label="School" field="school">
                                     <Input />
                                 </Form.Item>
@@ -377,7 +411,7 @@ export default function UserManagementPage() {
                                 </div>
                                 <div>
                                     <Text type="secondary">Birthdate</Text>
-                                    <div>{formatBirthdate(selectedUser.birthdate)}</div>
+                                    <div>{formatBirthdateForDisplay(selectedUser.birthdate, selectedUser.IC)}</div>
                                 </div>
                                 <div>
                                     <Text type="secondary">Country / State</Text>

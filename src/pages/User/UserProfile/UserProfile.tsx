@@ -4,6 +4,12 @@ import type {AllTimeStat, FirestoreUser, FirestoreUserSchema, OnlineBest, Record
 import {countries} from "@/schema/Country";
 import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {
+    deriveBirthdateFromMykad,
+    formatBirthdateForDisplay,
+    isBirthdateMatchingMykad,
+    parseBirthdate,
+} from "@/utils/birthdate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {Avatar, Spin} from "@arco-design/web-react";
@@ -51,7 +57,7 @@ const AvatarWithLoading = ({src}: {src: string}) => {
 };
 import dayjs from "dayjs";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
-import {Timestamp} from "firebase/firestore";
+import type {Timestamp} from "firebase/firestore";
 import {useEffect, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import type {z} from "zod";
@@ -137,9 +143,7 @@ export default function RegisterPage() {
         {label: "School/University/College", value: user?.school ?? "-"},
         {
             label: "Birthdate",
-            value: user?.birthdate
-                ? dayjs(user.birthdate instanceof Timestamp ? user.birthdate.toDate() : user.birthdate).format("DD/MM/YYYY")
-                : "-",
+            value: formatBirthdateForDisplay(user?.birthdate, user?.IC),
             span: 2,
         },
     ];
@@ -194,6 +198,7 @@ export default function RegisterPage() {
                 );
                 setTournamentStartDates(Object.fromEntries(tournamentEntries));
 
+                const birthdate = parseBirthdate(data?.birthdate) ?? deriveBirthdateFromMykad(data?.IC);
                 form.setFieldsValue({
                     email: data?.email,
                     IC: data?.IC,
@@ -201,7 +206,7 @@ export default function RegisterPage() {
                     country: data?.country,
                     school: data?.school ?? "",
                     gender: data?.gender,
-                    birthdate: data?.birthdate,
+                    birthdate,
                     phone_number: data?.phone_number ?? "-",
                     memberId: data?.memberId,
                 });
@@ -214,11 +219,7 @@ export default function RegisterPage() {
                     {label: "School/University/College", value: data?.school ?? "-"},
                     {
                         label: "Birthdate",
-                        value: data?.birthdate
-                            ? dayjs(data.birthdate instanceof Timestamp ? data.birthdate.toDate() : data.birthdate).format(
-                                  "DD/MM/YYYY",
-                              )
-                            : "-",
+                        value: formatBirthdateForDisplay(data?.birthdate, data?.IC),
                         span: 2,
                     },
                 ];
@@ -246,23 +247,47 @@ export default function RegisterPage() {
         country: [country: string, state: string];
         school: string;
         phone_number: string;
+        birthdate: unknown;
     }) => {
+        if (!id) return;
+        const birthdate = parseBirthdate(values.birthdate);
+        if (!birthdate) {
+            Message.error("Select a valid birthdate");
+            return;
+        }
+        if (/^\d{12}$/.test(user?.IC ?? "") && !isBirthdateMatchingMykad(user?.IC, birthdate)) {
+            Message.error("Birthdate must match the IC number");
+            return;
+        }
+
         setLoading(true);
         try {
-            if (!id) return;
             await updateUserProfile(id, {
                 name: values.name,
                 country: values.country,
                 school: values.school,
                 phone_number: values.phone_number,
+                birthdate,
             });
+            setUser((prev) =>
+                prev
+                    ? {
+                          ...prev,
+                          name: values.name,
+                          country: values.country,
+                          school: values.school,
+                          phone_number: values.phone_number,
+                          birthdate,
+                      }
+                    : prev,
+            );
             Message.success("Profile updated successfully");
+            setIsEditMode(false);
         } catch (err) {
             console.error(err);
             Message.error("Failed to update profile");
         } finally {
             setLoading(false);
-            setIsEditMode(false);
         }
     };
 
@@ -434,6 +459,9 @@ export default function RegisterPage() {
                                                             setLoading(true);
                                                             const data = await fetchUserByID(id ?? "");
                                                             setUser(data ?? null);
+                                                            const birthdate =
+                                                                parseBirthdate(data?.birthdate) ??
+                                                                deriveBirthdateFromMykad(data?.IC);
                                                             form.setFieldsValue({
                                                                 email: data?.email,
                                                                 IC: data?.IC,
@@ -442,7 +470,7 @@ export default function RegisterPage() {
                                                                 memberId: data?.memberId,
                                                                 school: data?.school ?? "",
                                                                 gender: data?.gender,
-                                                                birthdate: data?.birthdate,
+                                                                birthdate,
                                                                 phone_number: data?.phone_number,
                                                             });
                                                         } catch (err) {

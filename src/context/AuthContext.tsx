@@ -12,6 +12,7 @@ import {
     isGoogleOnlyUser,
 } from "../services/firebase/authService";
 import {auth, db} from "../services/firebase/config";
+import {parseBirthdate} from "../utils/birthdate";
 
 let redirectResultPromise: Promise<User | null> | null = null;
 let redirectResultUserCache: User | null | undefined;
@@ -74,6 +75,7 @@ const storeActiveProfileId = (profileId: string): void => {
 const normalizeProfile = (docId: string, data: FirestoreUser): FirestoreUser => ({
     ...data,
     id: data.id || docId,
+    birthdate: parseBirthdate(data.birthdate) ?? data.birthdate,
     owner_uids: data.owner_uids ?? (docId ? [docId] : []),
     account_status: data.account_status ?? "claimed",
     source: data.source ?? "legacy",
