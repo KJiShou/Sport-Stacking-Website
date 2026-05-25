@@ -1,6 +1,6 @@
 import type {AuthContextValue, FirestoreUser} from "@/schema";
 import {type User, getRedirectResult, onAuthStateChanged} from "firebase/auth";
-import {doc, getDoc} from "firebase/firestore";
+import {collection, doc, getDoc, getDocs, query, where} from "firebase/firestore";
 // src/context/AuthContext.tsx
 import type React from "react";
 import {createContext, useContext, useEffect, useMemo, useState} from "react";
@@ -12,6 +12,7 @@ import {
     isGoogleOnlyUser,
 } from "../services/firebase/authService";
 import {auth, db} from "../services/firebase/config";
+import {parseBirthdate} from "../utils/birthdate";
 
 let redirectResultPromise: Promise<User | null> | null = null;
 let redirectResultUserCache: User | null | undefined;
@@ -36,6 +37,14 @@ const resolveRedirectUserOnce = async (): Promise<User | null> => {
 
 const AuthContext = createContext<AuthContextValue>({
     user: null,
+    profiles: [],
+    activeProfileId: null,
+    setActiveProfileId: () => {
+        // default no-op function
+    },
+    refreshProfiles: async () => {
+        // default no-op function
+    },
     loading: true,
     firebaseUser: null,
     hasProfile: false,
@@ -47,26 +56,101 @@ const AuthContext = createContext<AuthContextValue>({
     },
 });
 
+const ACTIVE_PROFILE_ID_KEY = "active-profile-id";
+
+const getStoredActiveProfileId = (): string | null => {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+        return null;
+    }
+    return window.localStorage.getItem(ACTIVE_PROFILE_ID_KEY);
+};
+
+const storeActiveProfileId = (profileId: string): void => {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+        return;
+    }
+    window.localStorage.setItem(ACTIVE_PROFILE_ID_KEY, profileId);
+};
+
+const normalizeProfile = (docId: string, data: FirestoreUser): FirestoreUser => ({
+    ...data,
+    id: data.id || docId,
+    birthdate: parseBirthdate(data.birthdate) ?? data.birthdate,
+    owner_uids: data.owner_uids ?? (docId ? [docId] : []),
+    account_status: data.account_status ?? "claimed",
+    source: data.source ?? "legacy",
+});
+
 export const AuthProvider = ({children}: {children: React.ReactNode}) => {
     const [user, setUser] = useState<FirestoreUser | null>(null);
+    const [profiles, setProfiles] = useState<FirestoreUser[]>([]);
+    const [activeProfileId, setActiveProfileIdState] = useState<string | null>(() => getStoredActiveProfileId());
     const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
     const [googleSignInIntent, setGoogleSignInIntentState] = useState<GoogleSignInIntent | null>(() => getGoogleSignInIntent());
     const [isHydratingAuth, setIsHydratingAuth] = useState(true);
     const [isResolvingRedirect, setIsResolvingRedirect] = useState(true);
 
-    const hydrateProfile = async (nextFirebaseUser: User | null) => {
+    const setActiveProfileId = (profileId: string) => {
+        if (profileId === activeProfileId) {
+            return;
+        }
+
+        storeActiveProfileId(profileId);
+        setActiveProfileIdState(profileId);
+        const nextProfile = profiles.find((profile) => profile.id === profileId) ?? null;
+        setUser(nextProfile);
+
+        if (typeof window !== "undefined") {
+            window.location.reload();
+        }
+    };
+
+    const hydrateProfile = async (nextFirebaseUser: User | null, preferredProfileId?: string) => {
         setFirebaseUser(nextFirebaseUser);
         setGoogleSignInIntentState(getGoogleSignInIntent());
 
         if (!nextFirebaseUser) {
             setUser(null);
+            setProfiles([]);
             return;
         }
 
         try {
-            const userDoc = await getDoc(doc(db, "users", nextFirebaseUser.uid));
-            if (userDoc.exists()) {
-                setUser(userDoc.data() as FirestoreUser);
+            const [legacyUserDoc, ownedProfilesSnapshot] = await Promise.all([
+                getDoc(doc(db, "users", nextFirebaseUser.uid)),
+                getDocs(query(collection(db, "users"), where("owner_uids", "array-contains", nextFirebaseUser.uid))),
+            ]);
+            const profileMap = new Map<string, FirestoreUser>();
+
+            if (legacyUserDoc.exists()) {
+                profileMap.set(
+                    legacyUserDoc.id,
+                    normalizeProfile(legacyUserDoc.id, legacyUserDoc.data() as FirestoreUser),
+                );
+            }
+
+            for (const profileDoc of ownedProfilesSnapshot.docs) {
+                profileMap.set(profileDoc.id, normalizeProfile(profileDoc.id, profileDoc.data() as FirestoreUser));
+            }
+
+            const nextProfiles = Array.from(profileMap.values()).sort((a, b) => {
+                const left = a.global_id ?? a.id;
+                const right = b.global_id ?? b.id;
+                return left.localeCompare(right);
+            });
+
+            setProfiles(nextProfiles);
+
+            if (nextProfiles.length > 0) {
+                const storedProfileId = getStoredActiveProfileId();
+                const selectedProfile =
+                    nextProfiles.find((profile) => profile.id === preferredProfileId) ??
+                    nextProfiles.find((profile) => profile.id === storedProfileId) ??
+                    nextProfiles.find((profile) => profile.id === nextFirebaseUser.uid) ??
+                    nextProfiles[0];
+                setUser(selectedProfile);
+                setActiveProfileIdState(selectedProfile.id);
+                storeActiveProfileId(selectedProfile.id);
                 clearGoogleSignInIntent();
                 setGoogleSignInIntentState(null);
             } else {
@@ -76,6 +160,15 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
         } catch (err) {
             console.error("Failed to fetch Firestore user:", err);
             setUser(null);
+        }
+    };
+
+    const refreshProfiles = async (preferredProfileId?: string): Promise<void> => {
+        setIsHydratingAuth(true);
+        try {
+            await hydrateProfile(auth.currentUser, preferredProfileId);
+        } finally {
+            setIsHydratingAuth(false);
         }
     };
 
@@ -124,6 +217,10 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
     const contextValue = useMemo(
         () => ({
             user,
+            profiles,
+            activeProfileId,
+            setActiveProfileId,
+            refreshProfiles,
             loading,
             firebaseUser,
             hasProfile,
@@ -132,7 +229,18 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
             googleSignInIntent,
             setUser,
         }),
-        [firebaseUser, googleSignInIntent, hasProfile, isGoogleOnlyAuth, isGoogleRegistrationPending, loading, user],
+        [
+            activeProfileId,
+            firebaseUser,
+            googleSignInIntent,
+            hasProfile,
+            isGoogleOnlyAuth,
+            isGoogleRegistrationPending,
+            loading,
+            profiles,
+            refreshProfiles,
+            user,
+        ],
     );
 
     return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;

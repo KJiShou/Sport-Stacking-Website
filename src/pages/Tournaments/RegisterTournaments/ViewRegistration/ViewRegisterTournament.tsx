@@ -30,6 +30,7 @@ import {
     Select,
     Spin,
     Tag,
+    Tooltip,
     Typography,
 } from "@arco-design/web-react";
 import {IconDelete, IconExclamationCircle, IconUndo} from "@arco-design/web-react/icon";
@@ -127,10 +128,21 @@ export default function ViewTournamentRegistrationPage() {
         return (now.isAfter(start) || now.isSame(start)) && (now.isBefore(end) || now.isSame(end));
     }, [registration?.registration_status, tournament]);
 
+    const deleteRegistrationDisabledReason = useMemo(() => {
+        if (canDeleteRegistration) return null;
+        if (registration?.registration_status === "approved") {
+            return "Approved registrations cannot be deleted. Please contact the organizer if you need changes.";
+        }
+        if (tournament?.status === "On Going" || tournament?.status === "End") {
+            return "Registration cannot be deleted after the tournament has started or ended.";
+        }
+        return "You can only delete registrations within the registration period.";
+    }, [canDeleteRegistration, registration?.registration_status, tournament?.status]);
+
     const handleDeleteRegistration = async (registrationId: string) => {
         if (!tournamentId) return;
         if (!canDeleteRegistration) {
-            Message.error("Registration deletions are only allowed during the registration period.");
+            Message.error(deleteRegistrationDisabledReason ?? "Registration deletions are not allowed right now.");
             return;
         }
 
@@ -431,53 +443,60 @@ export default function ViewTournamentRegistrationPage() {
                             </Form.Item>
                         )}
                     </Form>
-                    <Popconfirm
-                        focusLock
-                        title={"Delete tournament registration"}
-                        content={
-                            <div className={`flex flex-col`}>
-                                <div>
-                                    Are you sure you want to delete this registration? Please note that this action is
-                                    irreversible and your payment will be cancelled.
-                                </div>
-                                <div className={`text-red-500 font-semibold mt-2`}>
-                                    <IconExclamationCircle /> This action cannot be undone.
-                                </div>
-                            </div>
-                        }
-                        onOk={(e) => {
-                            if (registration?.id) {
-                                handleDeleteRegistration(registration.id);
-                            } else {
-                                Message.error("Unable to determine registration id");
-                            }
-                            e.stopPropagation();
-                        }}
-                        okText="Yes"
-                        cancelText="No"
-                        onCancel={(e) => {
-                            e.stopPropagation();
-                        }}
-                        okButtonProps={{status: "danger"}}
-                        disabled={!canDeleteRegistration}
-                    >
-                        <Button
-                            title={"Delete this registration"}
-                            type="secondary"
-                            status="danger"
-                            loading={loading}
-                            icon={<IconDelete />}
-                            disabled={!canDeleteRegistration}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (!canDeleteRegistration) {
-                                    Message.warning("You can only delete registrations within the registration period.");
+                    <Tooltip content={deleteRegistrationDisabledReason} disabled={canDeleteRegistration}>
+                        <span className="inline-flex w-fit">
+                            <Popconfirm
+                                focusLock
+                                title={"Delete tournament registration"}
+                                content={
+                                    <div className={`flex flex-col`}>
+                                        <div>
+                                            Are you sure you want to delete this registration? Please note that this action is
+                                            irreversible and your payment will be cancelled.
+                                        </div>
+                                        <div className={`text-red-500 font-semibold mt-2`}>
+                                            <IconExclamationCircle /> This action cannot be undone.
+                                        </div>
+                                    </div>
                                 }
-                            }}
-                        >
-                            Delete Registration
-                        </Button>
-                    </Popconfirm>
+                                onOk={(e) => {
+                                    if (registration?.id) {
+                                        handleDeleteRegistration(registration.id);
+                                    } else {
+                                        Message.error("Unable to determine registration id");
+                                    }
+                                    e.stopPropagation();
+                                }}
+                                okText="Yes"
+                                cancelText="No"
+                                onCancel={(e) => {
+                                    e.stopPropagation();
+                                }}
+                                okButtonProps={{status: "danger"}}
+                                disabled={!canDeleteRegistration}
+                            >
+                                <Button
+                                    title={deleteRegistrationDisabledReason ?? "Delete this registration"}
+                                    type="secondary"
+                                    status="danger"
+                                    loading={loading}
+                                    icon={<IconDelete />}
+                                    disabled={!canDeleteRegistration}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!canDeleteRegistration) {
+                                            Message.warning(
+                                                deleteRegistrationDisabledReason ??
+                                                    "You can only delete registrations within the registration period.",
+                                            );
+                                        }
+                                    }}
+                                >
+                                    Delete Registration
+                                </Button>
+                            </Popconfirm>
+                        </span>
+                    </Tooltip>
                 </div>
             </Spin>
         </div>

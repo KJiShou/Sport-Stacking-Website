@@ -1,4 +1,5 @@
 import {useAuthContext} from "@/context/AuthContext";
+import {backfillUserAccountOwnershipFields} from "@/services/firebase/authService";
 import {recalculateAllAthletesBestPerformanceAndTournamentHistory} from "@/services/firebase/developerService";
 import {Button, Descriptions, Message, Modal, Typography} from "@arco-design/web-react";
 import {useState} from "react";
@@ -9,6 +10,7 @@ export default function DeveloperSettingPage() {
     const {user} = useAuthContext();
     const isDeveloper = user?.global_id === "00001";
     const [loading, setLoading] = useState(false);
+    const [backfillLoading, setBackfillLoading] = useState(false);
 
     const handleRecalculate = () => {
         Modal.confirm({
@@ -33,6 +35,27 @@ export default function DeveloperSettingPage() {
                     Message.error("Failed to run global recalculation.");
                 } finally {
                     setLoading(false);
+                }
+            },
+        });
+    };
+
+    const handleBackfillAccountFields = () => {
+        Modal.confirm({
+            title: "Backfill User Account Fields?",
+            content: "This will add ownership, account status, source, and identity fields to existing user profiles.",
+            okText: "Backfill",
+            cancelText: "Cancel",
+            onOk: async () => {
+                setBackfillLoading(true);
+                try {
+                    const count = await backfillUserAccountOwnershipFields();
+                    Message.success(`Backfilled ${count} user profiles.`);
+                } catch (error) {
+                    console.error("Failed to backfill account fields:", error);
+                    Message.error("Failed to backfill account fields.");
+                } finally {
+                    setBackfillLoading(false);
                 }
             },
         });
@@ -74,6 +97,11 @@ export default function DeveloperSettingPage() {
                 <div>
                     <Button type="primary" status="warning" loading={loading} onClick={handleRecalculate}>
                         Recalculate All Athletes Data
+                    </Button>
+                </div>
+                <div>
+                    <Button type="primary" loading={backfillLoading} onClick={handleBackfillAccountFields}>
+                        Backfill User Account Fields
                     </Button>
                 </div>
             </div>

@@ -2,7 +2,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {VerificationRequest} from "@/schema";
 import {
     deleteVerificationRequestForUser,
-    fetchPendingVerificationRequests,
+    fetchPendingVerificationRequestsForGlobalIds,
 } from "@/services/firebase/verificationRequestService";
 import {
     MEMBER_NOT_REGISTERED_CODE,
@@ -11,47 +11,65 @@ import {
 } from "@/services/firebase/verificationService";
 import {Button, Card, Message, Result, Spin, Typography} from "@arco-design/web-react";
 import dayjs from "dayjs";
-import {useEffect, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {useNavigate} from "react-router-dom";
 
 const {Title, Paragraph, Text} = Typography;
 
 export default function VerificationRequestsPage() {
-    const {firebaseUser, user} = useAuthContext();
+    const {firebaseUser, profiles} = useAuthContext();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [verifyingRequestId, setVerifyingRequestId] = useState<string | null>(null);
     const [deletingRequestId, setDeletingRequestId] = useState<string | null>(null);
     const [requests, setRequests] = useState<VerificationRequest[]>([]);
-
-    const loadRequests = async () => {
-        if (!user?.global_id) {
-            setRequests([]);
-            setLoading(false);
-            return;
-        }
-
-        setLoading(true);
-        try {
-            const pending = await fetchPendingVerificationRequests(user.global_id);
-            setRequests(pending);
-        } catch (error) {
-            console.error("Failed to load verification requests:", error);
-            Message.error("Failed to load verification requests.");
-        } finally {
-            setLoading(false);
-        }
-    };
+    const ownedProfiles = useMemo(
+        () => profiles.filter((profile) => typeof profile.global_id === "string" && profile.global_id.trim().length > 0),
+        [profiles],
+    );
+    const ownedGlobalIds = useMemo(() => ownedProfiles.map((profile) => profile.global_id ?? ""), [ownedProfiles]);
+    const profileByGlobalId = useMemo(
+        () => new Map(ownedProfiles.map((profile) => [profile.global_id ?? "", profile])),
+        [ownedProfiles],
+    );
+    const registeredTournamentKeys = useMemo(
+        () =>
+            new Set(
+                ownedProfiles.flatMap((profile) =>
+                    (profile.registration_records ?? []).map(
+                        (record) => `${profile.global_id ?? ""}:${record.tournament_id}`,
+                    ),
+                ),
+            ),
+        [ownedProfiles],
+    );
 
     useEffect(() => {
+        const loadRequests = async () => {
+            if (ownedGlobalIds.length === 0) {
+                setRequests([]);
+                setLoading(false);
+                return;
+            }
+
+            setLoading(true);
+            try {
+                const pending = await fetchPendingVerificationRequestsForGlobalIds(ownedGlobalIds);
+                setRequests(pending);
+            } catch (error) {
+                console.error("Failed to load verification requests:", error);
+                Message.error("Failed to load verification requests.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
         void loadRequests();
-    }, [user?.global_id]);
+    }, [ownedGlobalIds]);
 
     if (!firebaseUser) {
         return <Result status="403" title="Sign In Required" subTitle="Please sign in to see your verification requests." />;
     }
-
-    const registeredTournamentIds = new Set((user?.registration_records ?? []).map((record) => record.tournament_id));
 
     const handleVerify = async (request: VerificationRequest, isRegisteredForTournament: boolean) => {
         if (!isRegisteredForTournament) {
@@ -82,14 +100,14 @@ export default function VerificationRequestsPage() {
     };
 
     const handleDeleteRequest = async (request: VerificationRequest) => {
-        if (!user?.global_id) {
+        if (!request.target_global_id) {
             Message.error("You must be signed in.");
             return;
         }
 
         setDeletingRequestId(request.id);
         try {
-            await deleteVerificationRequestForUser(request.id, user.global_id);
+            await deleteVerificationRequestForUser(request.id, request.target_global_id);
             setRequests((prev) => prev.filter((item) => item.id !== request.id));
             Message.success("Verification request removed.");
         } catch (error) {
@@ -122,7 +140,13 @@ export default function VerificationRequestsPage() {
                                     request.created_at instanceof Date
                                         ? request.created_at
                                         : request.created_at?.toDate?.() ?? null;
-                                const isRegisteredForTournament = registeredTournamentIds.has(request.tournament_id);
+                                const targetProfile = profileByGlobalId.get(request.target_global_id);
+                                const targetProfileLabel = targetProfile
+                                    ? `${targetProfile.global_id} - ${targetProfile.name}`
+                                    : request.target_global_id || request.member_id;
+                                const isRegisteredForTournament = registeredTournamentKeys.has(
+                                    `${request.target_global_id}:${request.tournament_id}`,
+                                );
                                 return (
                                     <Card key={request.id} title={request.event_label || "Team Verification"}>
                                         <div className="flex flex-col gap-2">
@@ -131,6 +155,9 @@ export default function VerificationRequestsPage() {
                                             </Paragraph>
                                             <Paragraph>
                                                 <strong>Invited by:</strong> {request.leader_label || "-"}
+                                            </Paragraph>
+                                            <Paragraph>
+                                                <strong>For profile:</strong> {targetProfileLabel}
                                             </Paragraph>
                                             <Paragraph>
                                                 <strong>Member ID:</strong> {request.member_id}

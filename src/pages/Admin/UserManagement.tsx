@@ -1,21 +1,40 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
-import {deleteUserProfileAdmin, fetchAllUsers, updateUserProfile} from "@/services/firebase/authService";
-import {Button, Form, Input, Message, Modal, Select, Spin, Table, Tag, Typography} from "@arco-design/web-react";
+import {
+    deleteUserProfileAdmin,
+    fetchAllUsers,
+    transferProfileOwnership,
+    updateUserProfile,
+} from "@/services/firebase/authService";
+import {
+    Button,
+    DatePicker,
+    Form,
+    Input,
+    Message,
+    Modal,
+    Select,
+    Spin,
+    Table,
+    Tag,
+    Typography,
+} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch} from "@arco-design/web-react/icon";
+import {
+    deriveBirthdateFromMykad,
+    formatBirthdateForDisplay,
+    isBirthdateMatchingMykad,
+    parseBirthdate,
+} from "@/utils/birthdate";
+import dayjs from "dayjs";
 import {useEffect, useMemo, useState} from "react";
 
 const {Title, Paragraph, Text} = Typography;
 
-const formatBirthdate = (birthdate: FirestoreUser["birthdate"]): string => {
-    if (birthdate instanceof Date) {
-        return birthdate.toLocaleDateString("en-GB");
-    }
-    if (birthdate && typeof birthdate === "object" && "toDate" in birthdate && typeof birthdate.toDate === "function") {
-        return birthdate.toDate().toLocaleDateString("en-GB");
-    }
-    return "-";
+type GmailOption = {
+    label: string;
+    value: string;
 };
 
 export default function UserManagementPage() {
@@ -27,8 +46,10 @@ export default function UserManagementPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedUser, setSelectedUser] = useState<FirestoreUser | null>(null);
     const [detailModalVisible, setDetailModalVisible] = useState(false);
+    const [transferModalVisible, setTransferModalVisible] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [editForm] = Form.useForm();
+    const [transferForm] = Form.useForm<{targetEmail: string}>();
 
     const loadUsers = async () => {
         setLoading(true);
@@ -57,11 +78,39 @@ export default function UserManagementPage() {
             const ic = entry.IC?.toLowerCase() ?? "";
             const name = entry.name?.toLowerCase() ?? "";
             const email = entry.email?.toLowerCase() ?? "";
-            return globalId.includes(query) || ic.includes(query) || name.includes(query) || email.includes(query);
+            const primaryOwnerEmail = entry.primary_owner_email?.toLowerCase() ?? "";
+            return (
+                globalId.includes(query) ||
+                ic.includes(query) ||
+                name.includes(query) ||
+                email.includes(query) ||
+                primaryOwnerEmail.includes(query)
+            );
         });
     }, [users, searchTerm]);
 
+    const gmailOptions = useMemo<GmailOption[]>(() => {
+        const selectedOwnerEmail = (selectedUser?.primary_owner_email ?? selectedUser?.email ?? "").toLowerCase();
+        const optionMap = new Map<string, GmailOption>();
+
+        for (const entry of users) {
+            const email = (entry.primary_owner_email ?? entry.email ?? "").trim().toLowerCase();
+            if (!email || email === selectedOwnerEmail || optionMap.has(email)) {
+                continue;
+            }
+
+            const ownerLabel = [entry.name, entry.global_id].filter(Boolean).join(" / ");
+            optionMap.set(email, {
+                value: email,
+                label: ownerLabel ? `${email} - ${ownerLabel}` : email,
+            });
+        }
+
+        return Array.from(optionMap.values()).sort((a, b) => a.value.localeCompare(b.value));
+    }, [selectedUser, users]);
+
     const handleViewDetail = (entry: FirestoreUser) => {
+        const birthdate = parseBirthdate(entry.birthdate) ?? deriveBirthdateFromMykad(entry.IC);
         setSelectedUser(entry);
         setDetailModalVisible(true);
         setEditMode(false);
@@ -70,7 +119,39 @@ export default function UserManagementPage() {
             phone_number: entry.phone_number ?? "",
             school: entry.school ?? "",
             gender: entry.gender ?? undefined,
+            birthdate,
         });
+    };
+
+    const handleOpenTransferModal = () => {
+        if (!selectedUser) return;
+        transferForm.resetFields();
+        setTransferModalVisible(true);
+    };
+
+    const handleTransferOwnership = async () => {
+        if (!selectedUser?.id) return;
+
+        try {
+            const values = await transferForm.validate();
+            setLoading(true);
+            const updatedOwnership = await transferProfileOwnership(selectedUser.id, values.targetEmail);
+            const nextPatch: Partial<FirestoreUser> = {
+                owner_uids: updatedOwnership.owner_uids,
+                email: updatedOwnership.email,
+                primary_owner_email: updatedOwnership.primary_owner_email,
+                account_status: updatedOwnership.account_status,
+            };
+
+            setUsers((prev) => prev.map((entry) => (entry.id === selectedUser.id ? {...entry, ...nextPatch} : entry)));
+            setSelectedUser((prev) => (prev ? {...prev, ...nextPatch} : prev));
+            setTransferModalVisible(false);
+            Message.success("Profile ownership updated");
+        } catch (error) {
+            Message.error(error instanceof Error ? error.message : "Failed to transfer profile ownership");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleDelete = async () => {
@@ -103,12 +184,22 @@ export default function UserManagementPage() {
         if (!selectedUser?.id) return;
         try {
             const values = await editForm.validate();
+            const birthdate = parseBirthdate(values.birthdate);
+            if (!birthdate) {
+                Message.error("Select a valid birthdate");
+                return;
+            }
+            if (/^\d{12}$/.test(selectedUser.IC ?? "") && !isBirthdateMatchingMykad(selectedUser.IC, birthdate)) {
+                Message.error("Birthdate must match the IC number");
+                return;
+            }
             setLoading(true);
             await updateUserProfile(selectedUser.id, {
                 name: values.name,
                 phone_number: values.phone_number,
                 school: values.school,
                 gender: values.gender,
+                birthdate,
             });
             setUsers((prev) =>
                 prev.map((entry) =>
@@ -119,6 +210,7 @@ export default function UserManagementPage() {
                               phone_number: values.phone_number,
                               school: values.school,
                               gender: values.gender,
+                              birthdate,
                           }
                         : entry,
                 ),
@@ -131,6 +223,7 @@ export default function UserManagementPage() {
                           phone_number: values.phone_number,
                           school: values.school,
                           gender: values.gender,
+                          birthdate,
                       }
                     : prev,
             );
@@ -161,6 +254,15 @@ export default function UserManagementPage() {
         {title: "IC", dataIndex: "IC", width: 160},
         {title: "Name", dataIndex: "name", width: 200},
         {title: "Gmail", dataIndex: "email", width: 220},
+        {
+            title: "Status",
+            dataIndex: "account_status",
+            width: 120,
+            render: (_, record) => {
+                const status = record.account_status ?? "claimed";
+                return <Tag color={status === "unclaimed" ? "orange" : "green"}>{status}</Tag>;
+            },
+        },
         {
             title: "Action",
             width: 140,
@@ -211,6 +313,7 @@ export default function UserManagementPage() {
                     setDetailModalVisible(false);
                     setSelectedUser(null);
                     setEditMode(false);
+                    setTransferModalVisible(false);
                 }}
                 footer={
                     <div className="flex justify-between items-center w-full">
@@ -225,6 +328,11 @@ export default function UserManagementPage() {
                                     Edit
                                 </Button>
                             )}
+                            <Button onClick={handleOpenTransferModal}>
+                                {(selectedUser?.account_status ?? "claimed") === "unclaimed"
+                                    ? "Assign Gmail"
+                                    : "Transfer Profile"}
+                            </Button>
                             <Button status="danger" onClick={handleDelete}>
                                 Delete Account
                             </Button>
@@ -246,6 +354,18 @@ export default function UserManagementPage() {
                             <Text type="secondary">Email</Text>
                             <div>{selectedUser.email ?? "-"}</div>
                         </div>
+                        <div>
+                            <Text type="secondary">Ownership</Text>
+                            <div className="flex flex-col gap-1">
+                                <div>
+                                    <Tag color={(selectedUser.account_status ?? "claimed") === "unclaimed" ? "orange" : "green"}>
+                                        {selectedUser.account_status ?? "claimed"}
+                                    </Tag>
+                                    {selectedUser.source && <Tag>{selectedUser.source}</Tag>}
+                                </div>
+                                <div>Primary owner Gmail: {selectedUser.primary_owner_email ?? "-"}</div>
+                            </div>
+                        </div>
                         {editMode ? (
                             <Form form={editForm} layout="vertical">
                                 <Form.Item label="Name" field="name" rules={[{required: true, message: "Enter name"}]}>
@@ -259,6 +379,17 @@ export default function UserManagementPage() {
                                         <Select.Option value="Male">Male</Select.Option>
                                         <Select.Option value="Female">Female</Select.Option>
                                     </Select>
+                                </Form.Item>
+                                <Form.Item
+                                    label="Birthdate"
+                                    field="birthdate"
+                                    rules={[{required: true, message: "Select birthdate"}]}
+                                >
+                                    <DatePicker
+                                        format="DD/MM/YYYY"
+                                        style={{width: "100%"}}
+                                        disabledDate={(current) => current.isAfter(dayjs())}
+                                    />
                                 </Form.Item>
                                 <Form.Item label="School" field="school">
                                     <Input />
@@ -280,7 +411,7 @@ export default function UserManagementPage() {
                                 </div>
                                 <div>
                                     <Text type="secondary">Birthdate</Text>
-                                    <div>{formatBirthdate(selectedUser.birthdate)}</div>
+                                    <div>{formatBirthdateForDisplay(selectedUser.birthdate, selectedUser.IC)}</div>
                                 </div>
                                 <div>
                                     <Text type="secondary">Country / State</Text>
@@ -316,6 +447,45 @@ export default function UserManagementPage() {
                         </div>
                     </div>
                 ) : null}
+            </Modal>
+
+            <Modal
+                title={
+                    selectedUser && (selectedUser.account_status ?? "claimed") === "unclaimed"
+                        ? "Assign Gmail"
+                        : "Transfer Profile"
+                }
+                visible={transferModalVisible}
+                onCancel={() => setTransferModalVisible(false)}
+                onOk={handleTransferOwnership}
+                confirmLoading={loading}
+                okText="Confirm"
+            >
+                <Form form={transferForm} layout="vertical">
+                    <Paragraph>
+                        This will replace the current profile owner. Select a Gmail that already exists in the system.
+                    </Paragraph>
+                    <Form.Item
+                        label="Target Gmail"
+                        field="targetEmail"
+                        rules={[{required: true, message: "Select target Gmail"}]}
+                    >
+                        <Select
+                            showSearch
+                            allowClear
+                            placeholder="Select Gmail"
+                            options={gmailOptions}
+                            filterOption={(inputValue, option) => {
+                                const keyword = inputValue.toLowerCase();
+                                return (
+                                    String(option.props.value).toLowerCase().includes(keyword) ||
+                                    String(option.props.children).toLowerCase().includes(keyword)
+                                );
+                            }}
+                            notFoundContent="No Gmail found"
+                        />
+                    </Form.Item>
+                </Form>
             </Modal>
         </div>
     );

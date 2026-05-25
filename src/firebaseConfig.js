@@ -2,6 +2,7 @@
 import {initializeApp} from "firebase/app";
 import {ReCaptchaV3Provider, initializeAppCheck} from "firebase/app-check";
 import {getFirestore} from "firebase/firestore";
+import {connectFunctionsEmulator, getFunctions} from "firebase/functions";
 import {getStorage} from "firebase/storage";
 
 const firebaseConfig = {
@@ -15,12 +16,27 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 const app = initializeApp(firebaseConfig);
-const appCheck = initializeAppCheck(app, {
+const isLocalhost = typeof window !== "undefined" && ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
+if (isLocalhost) {
+    globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN?.trim() || true;
+}
+initializeAppCheck(app, {
     provider: new ReCaptchaV3Provider("6LcRC_0rAAAAADINnR7-KKu56U_F-QiCt0I0I0QQ"),
     isTokenAutoRefreshEnabled: true,
 });
-const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim();
+const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim() || (isLocalhost ? "develop2" : "");
 export const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
 export const storage = getStorage(app);
+const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION?.trim() || "asia-southeast1";
+export const functions = getFunctions(app, functionsRegion);
+
+const useFunctionsEmulator = import.meta.env.DEV && import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === "true";
+if (useFunctionsEmulator) {
+    const emulatorHost =
+        import.meta.env.VITE_FUNCTIONS_EMULATOR_HOST?.trim() ||
+        (typeof window !== "undefined" ? window.location.hostname : "127.0.0.1");
+    const defaultEmulatorPort = "5001";
+    const emulatorPort = Number.parseInt(import.meta.env.VITE_FUNCTIONS_EMULATOR_PORT ?? defaultEmulatorPort, 10);
+    connectFunctionsEmulator(functions, emulatorHost, Number.isFinite(emulatorPort) ? emulatorPort : 5001);
+}

@@ -42,6 +42,27 @@ export async function fetchPendingVerificationRequests(globalId: string): Promis
     });
 }
 
+export async function fetchPendingVerificationRequestsForGlobalIds(globalIds: string[]): Promise<VerificationRequest[]> {
+    const targetGlobalIds = Array.from(new Set(globalIds.map((globalId) => globalId.trim()).filter(Boolean)));
+    if (targetGlobalIds.length === 0) {
+        return [];
+    }
+
+    const requestsById = new Map<string, VerificationRequest>();
+    const results = await Promise.all(targetGlobalIds.map((globalId) => fetchPendingVerificationRequests(globalId)));
+    for (const requests of results) {
+        for (const request of requests) {
+            requestsById.set(request.id, request);
+        }
+    }
+
+    return Array.from(requestsById.values()).sort((a, b) => {
+        const timeA = a.created_at instanceof Date ? a.created_at.getTime() : (a.created_at?.toMillis?.() ?? 0);
+        const timeB = b.created_at instanceof Date ? b.created_at.getTime() : (b.created_at?.toMillis?.() ?? 0);
+        return timeB - timeA;
+    });
+}
+
 export function subscribePendingVerificationCount(globalId: string, onCountChange: (count: number) => void): () => void {
     const targetGlobalId = globalId.trim();
     if (!targetGlobalId) {
@@ -66,6 +87,48 @@ export function subscribePendingVerificationCount(globalId: string, onCountChang
     );
 
     return unsubscribe;
+}
+
+export function subscribePendingVerificationCountForGlobalIds(
+    globalIds: string[],
+    onCountChange: (count: number) => void,
+): () => void {
+    const targetGlobalIds = Array.from(new Set(globalIds.map((globalId) => globalId.trim()).filter(Boolean)));
+    if (targetGlobalIds.length === 0) {
+        onCountChange(0);
+        return () => void 0;
+    }
+
+    const countsByGlobalId = new Map<string, number>();
+    const emitCount = () => {
+        onCountChange(Array.from(countsByGlobalId.values()).reduce((total, count) => total + count, 0));
+    };
+
+    const unsubscribes = targetGlobalIds.map((globalId) => {
+        const q = query(collection(db, VERIFICATION_REQUEST_COLLECTION), where("target_global_id", "==", globalId));
+        return onSnapshot(
+            q,
+            (snapshot) => {
+                const count = snapshot.docs.reduce((acc, docSnap) => {
+                    const status = (docSnap.data() as {status?: string}).status;
+                    return status === "pending" ? acc + 1 : acc;
+                }, 0);
+                countsByGlobalId.set(globalId, count);
+                emitCount();
+            },
+            (error) => {
+                console.error("Failed to subscribe verification requests:", error);
+                countsByGlobalId.set(globalId, 0);
+                emitCount();
+            },
+        );
+    });
+
+    return () => {
+        for (const unsubscribe of unsubscribes) {
+            unsubscribe();
+        }
+    };
 }
 
 const deleteVerificationRequestDocIds = async (docIds: string[]): Promise<number> => {

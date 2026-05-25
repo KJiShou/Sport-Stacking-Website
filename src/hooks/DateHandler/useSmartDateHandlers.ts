@@ -70,11 +70,9 @@ export function useSmartDateHandlers(form: FormInstance) {
         const [start, end] = dates;
         if (!isDateRangeValue(start) || !isDateRangeValue(end)) return;
 
-        const fixedStart =
-            start.hour() === 0 && start.minute() === 0 && start.second() === 0 ? setTime(start, 8) : start;
+        const fixedStart = start.hour() === 0 && start.minute() === 0 && start.second() === 0 ? setTime(start, 8) : start;
 
-        const fixedEnd =
-            end.hour() === 0 && end.minute() === 0 && end.second() === 0 ? setTime(end, 18) : end;
+        const fixedEnd = end.hour() === 0 && end.minute() === 0 && end.second() === 0 ? setTime(end, 18) : end;
 
         form.setFieldValue(fieldName, [fixedStart.toDate(), fixedEnd.toDate()]);
     };

@@ -12,6 +12,8 @@ const __dirname = dirname(__filename);
 export default defineConfig(({mode}) => {
     // eslint-disable-next-line no-undef
     const env = loadEnv(mode, process.cwd()); // 👈 强制从项目根目录加载 .env
+    const firebaseProjectId = env.VITE_FIREBASE_PROJECT_ID || "sport-stacking-website";
+    const useFunctionsEmulator = env.VITE_USE_FUNCTIONS_EMULATOR === "true";
 
     return {
         plugins: [react(), vitePluginForArco({style: "css"})],
@@ -21,6 +23,15 @@ export default defineConfig(({mode}) => {
             strictPort: true,
             open: true,
             cors: true,
+            proxy: useFunctionsEmulator
+                ? {
+                      [`/${firebaseProjectId}`]: {
+                          target: "http://127.0.0.1:5001",
+                          changeOrigin: true,
+                          secure: false,
+                      },
+                  }
+                : undefined,
         },
         resolve: {
             alias: {
