@@ -32,11 +32,6 @@ import {useEffect, useMemo, useState} from "react";
 
 const {Title, Paragraph, Text} = Typography;
 
-type GmailOption = {
-    label: string;
-    value: string;
-};
-
 export default function UserManagementPage() {
     const {user} = useAuthContext();
     const isAdmin = user?.roles?.modify_admin || false;
@@ -89,26 +84,6 @@ export default function UserManagementPage() {
         });
     }, [users, searchTerm]);
 
-    const gmailOptions = useMemo<GmailOption[]>(() => {
-        const selectedOwnerEmail = (selectedUser?.primary_owner_email ?? selectedUser?.email ?? "").toLowerCase();
-        const optionMap = new Map<string, GmailOption>();
-
-        for (const entry of users) {
-            const email = (entry.primary_owner_email ?? entry.email ?? "").trim().toLowerCase();
-            if (!email || email === selectedOwnerEmail || optionMap.has(email)) {
-                continue;
-            }
-
-            const ownerLabel = [entry.name, entry.global_id].filter(Boolean).join(" / ");
-            optionMap.set(email, {
-                value: email,
-                label: ownerLabel ? `${email} - ${ownerLabel}` : email,
-            });
-        }
-
-        return Array.from(optionMap.values()).sort((a, b) => a.value.localeCompare(b.value));
-    }, [selectedUser, users]);
-
     const handleViewDetail = (entry: FirestoreUser) => {
         const birthdate = parseBirthdate(entry.birthdate) ?? deriveBirthdateFromMykad(entry.IC);
         setSelectedUser(entry);
@@ -134,8 +109,9 @@ export default function UserManagementPage() {
 
         try {
             const values = await transferForm.validate();
+            const targetEmail = values.targetEmail.trim().toLowerCase();
             setLoading(true);
-            const updatedOwnership = await transferProfileOwnership(selectedUser.id, values.targetEmail);
+            const updatedOwnership = await transferProfileOwnership(selectedUser.id, targetEmail);
             const nextPatch: Partial<FirestoreUser> = {
                 owner_uids: updatedOwnership.owner_uids,
                 email: updatedOwnership.email,
@@ -463,27 +439,17 @@ export default function UserManagementPage() {
             >
                 <Form form={transferForm} layout="vertical">
                     <Paragraph>
-                        This will replace the current profile owner. Select a Gmail that already exists in the system.
+                        This will replace the current profile owner. Enter a Gmail that already has a Firebase account.
                     </Paragraph>
                     <Form.Item
                         label="Target Gmail"
                         field="targetEmail"
-                        rules={[{required: true, message: "Select target Gmail"}]}
+                        rules={[
+                            {required: true, message: "Enter target Gmail"},
+                            {type: "email", message: "Enter a valid Gmail"},
+                        ]}
                     >
-                        <Select
-                            showSearch
-                            allowClear
-                            placeholder="Select Gmail"
-                            options={gmailOptions}
-                            filterOption={(inputValue, option) => {
-                                const keyword = inputValue.toLowerCase();
-                                return (
-                                    String(option.props.value).toLowerCase().includes(keyword) ||
-                                    String(option.props.children).toLowerCase().includes(keyword)
-                                );
-                            }}
-                            notFoundContent="No Gmail found"
-                        />
+                        <Input allowClear placeholder="name@gmail.com" />
                     </Form.Item>
                 </Form>
             </Modal>
