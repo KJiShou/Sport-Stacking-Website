@@ -72,6 +72,21 @@ const storeActiveProfileId = (profileId: string): void => {
     window.localStorage.setItem(ACTIVE_PROFILE_ID_KEY, profileId);
 };
 
+const clearStoredActiveProfileId = (): void => {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+        return;
+    }
+    window.localStorage.removeItem(ACTIVE_PROFILE_ID_KEY);
+};
+
+const isProfileOwnedByUid = (docId: string, data: FirestoreUser, uid: string): boolean => {
+    if (Array.isArray(data.owner_uids)) {
+        return data.owner_uids.includes(uid);
+    }
+
+    return docId === uid;
+};
+
 const normalizeProfile = (docId: string, data: FirestoreUser): FirestoreUser => ({
     ...data,
     id: data.id || docId,
@@ -112,6 +127,8 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
         if (!nextFirebaseUser) {
             setUser(null);
             setProfiles([]);
+            setActiveProfileIdState(null);
+            clearStoredActiveProfileId();
             return;
         }
 
@@ -123,10 +140,10 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
             const profileMap = new Map<string, FirestoreUser>();
 
             if (legacyUserDoc.exists()) {
-                profileMap.set(
-                    legacyUserDoc.id,
-                    normalizeProfile(legacyUserDoc.id, legacyUserDoc.data() as FirestoreUser),
-                );
+                const legacyData = legacyUserDoc.data() as FirestoreUser;
+                if (isProfileOwnedByUid(legacyUserDoc.id, legacyData, nextFirebaseUser.uid)) {
+                    profileMap.set(legacyUserDoc.id, normalizeProfile(legacyUserDoc.id, legacyData));
+                }
             }
 
             for (const profileDoc of ownedProfilesSnapshot.docs) {
@@ -156,10 +173,16 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
             } else {
                 console.warn("No Firestore user found for:", nextFirebaseUser.email);
                 setUser(null);
+                setProfiles([]);
+                setActiveProfileIdState(null);
+                clearStoredActiveProfileId();
             }
         } catch (err) {
             console.error("Failed to fetch Firestore user:", err);
             setUser(null);
+            setProfiles([]);
+            setActiveProfileIdState(null);
+            clearStoredActiveProfileId();
         }
     };
 

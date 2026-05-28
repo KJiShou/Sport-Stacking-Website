@@ -807,12 +807,24 @@ const importGetNextGlobalId = async (): Promise<string> => {
     return String(next).padStart(5, "0");
 };
 
+const profileSnapshotBelongsToUid = (profile: {id: string; data: () => Record<string, unknown> | undefined}, uid: string): boolean => {
+    const data = profile.data() as {owner_uids?: string[] | null};
+    if (Array.isArray(data.owner_uids)) {
+        return data.owner_uids.includes(uid);
+    }
+
+    return profile.id === uid;
+};
+
 const importIsAuthorized = async (uid: string, tournamentId: string): Promise<boolean> => {
     const tournamentSnap = await db.collection("tournaments").doc(tournamentId).get();
     const tournamentData = tournamentSnap.data() as {editor?: string; recorder?: string} | undefined;
     const ownedProfilesSnap = await db.collection("users").where("owner_uids", "array-contains", uid).get();
     const legacyProfileSnap = await db.collection("users").doc(uid).get();
-    const profiles = [...ownedProfilesSnap.docs, ...(legacyProfileSnap.exists ? [legacyProfileSnap] : [])];
+    const profiles = [
+        ...ownedProfilesSnap.docs,
+        ...(legacyProfileSnap.exists && profileSnapshotBelongsToUid(legacyProfileSnap, uid) ? [legacyProfileSnap] : []),
+    ];
     return profiles.some((profile) => {
         const data = profile.data() as {roles?: {modify_admin?: boolean; edit_tournament?: boolean}; global_id?: string};
         return (
@@ -832,7 +844,7 @@ const requesterHasModifyAdmin = async (uid: string): Promise<boolean> => {
     for (const profile of ownedProfilesSnap.docs) {
         profileDocs.set(profile.id, profile);
     }
-    if (legacyProfileSnap.exists) {
+    if (legacyProfileSnap.exists && profileSnapshotBelongsToUid(legacyProfileSnap, uid)) {
         profileDocs.set(legacyProfileSnap.id, legacyProfileSnap);
     }
 
