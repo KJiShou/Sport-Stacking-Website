@@ -142,6 +142,14 @@ export default function RegistrationsListPage() {
             reader.readAsDataURL(file);
         });
 
+    const getWorkbookImportErrorMessage = (error: unknown): string => {
+        const firebaseError = error as {code?: string; message?: string};
+        if (firebaseError.code === "functions/deadline-exceeded" || firebaseError.message?.includes("deadline-exceeded")) {
+            return "Workbook import is taking too long. Please retry after the latest backend deploy, or reduce the workbook rows if it still fails.";
+        }
+        return error instanceof Error ? error.message : "Failed to import workbook.";
+    };
+
     const handleWorkbookImport = async (mode: "preview" | "commit") => {
         if (!tournamentId || !importFile) {
             Message.warning("Please choose an Excel workbook first.");
@@ -170,7 +178,7 @@ export default function RegistrationsListPage() {
             }
         } catch (error) {
             console.error("Failed to import workbook:", error);
-            Message.error(error instanceof Error ? error.message : "Failed to import workbook.");
+            Message.error(getWorkbookImportErrorMessage(error));
         } finally {
             setImportLoading(false);
         }
@@ -616,18 +624,7 @@ export default function RegistrationsListPage() {
 
                     {importResult && (
                         <div className="flex flex-col gap-3">
-                            <div className="flex flex-wrap gap-2">
-                                <Tag color="arcoblue">Athletes: {importResult.summary.athletes}</Tag>
-                                <Tag color="arcoblue">Registrations: {importResult.summary.registrations}</Tag>
-                                <Tag color="arcoblue">Teams: {importResult.summary.teams}</Tag>
-                                <Tag color={importResult.summary.errors > 0 ? "red" : "green"}>
-                                    Errors: {importResult.summary.errors}
-                                </Tag>
-                                <Tag color={importResult.summary.warnings > 0 ? "orange" : "green"}>
-                                    Warnings: {importResult.summary.warnings}
-                                </Tag>
-                                {importResult.committed && <Tag color="green">Committed</Tag>}
-                            </div>
+                            {importResult.committed && <Tag color="green">Committed</Tag>}
                             <Tabs
                                 type="capsule"
                                 activeTab={importResultView}

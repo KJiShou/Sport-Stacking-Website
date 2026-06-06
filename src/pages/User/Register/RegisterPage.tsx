@@ -2,7 +2,13 @@ import InAppBrowserNotice from "@/components/common/InAppBrowserNotice";
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
 import {countries} from "@/schema/Country";
-import {cacheGoogleAvatar, clearGoogleSignInIntent, registerWithGoogle, signInWithGoogle} from "@/services/firebase/authService";
+import {
+    cacheGoogleAvatar,
+    clearGoogleSignInIntent,
+    createProfileClaimRequest,
+    registerWithGoogle,
+    signInWithGoogle,
+} from "@/services/firebase/authService";
 import {uploadAvatar} from "@/services/firebase/storageService";
 import {isBirthdateMatchingMykad, parseBirthdate} from "@/utils/birthdate";
 import {
@@ -14,6 +20,7 @@ import {
     Input,
     Message,
     Select,
+    Tabs,
     Tooltip,
     Typography,
     Upload,
@@ -28,13 +35,23 @@ import {useNavigate} from "react-router-dom";
 const {Title} = Typography;
 
 type RegisterFormData = Omit<FirestoreUser, "id"> & {password: string; confirmPassword: string};
+type ClaimRequestFormData = {
+    profile_global_id?: string;
+    profile_name: string;
+    identity_hint?: string;
+    birthdate_hint?: Date;
+    tournament_hint?: string;
+    note?: string;
+};
 
 const RegisterPage = () => {
     const navigate = useNavigate();
     const {firebaseUser, refreshProfiles, user} = useAuthContext();
     const [form] = Form.useForm<RegisterFormData>();
+    const [claimForm] = Form.useForm<ClaimRequestFormData>();
     const [loading, setLoading] = useState(false);
     const [isICMode, setIsICMode] = useState(true);
+    const [claimSubmitted, setClaimSubmitted] = useState(false);
     const avatarRetryRef = useRef(0);
 
     const linkEmailPassword = async (email: string, password: string, user: User) => {
@@ -154,6 +171,32 @@ const RegisterPage = () => {
         }
     };
 
+    const handleClaimSubmit = async (values: ClaimRequestFormData) => {
+        if (!firebaseUser) {
+            Message.error("Please sign in with Google before requesting a profile claim.");
+            return;
+        }
+
+        try {
+            setLoading(true);
+            await createProfileClaimRequest({
+                profile_global_id: values.profile_global_id,
+                profile_name: values.profile_name,
+                identity_hint: values.identity_hint,
+                birthdate_hint: values.birthdate_hint,
+                tournament_hint: values.tournament_hint,
+                note: values.note,
+            });
+            setClaimSubmitted(true);
+            claimForm.resetFields();
+            Message.success("Claim request submitted. An admin will review it.");
+        } catch (err) {
+            Message.error(err instanceof Error ? err.message : "Failed to submit claim request.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         const fetchAndUploadGoogleAvatar = async () => {
             if (!firebaseUser) {
@@ -246,7 +289,9 @@ const RegisterPage = () => {
                         </Button>
                     </div>
                 ) : (
-                    <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
+                    <Tabs defaultActiveTab="register" className="w-full max-w-3xl">
+                        <Tabs.TabPane key="register" title="Register / Auto Claim">
+                            <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
                         <Form.Item noStyle field="image_url">
                             <Input type="hidden" />
                         </Form.Item>
@@ -451,7 +496,63 @@ const RegisterPage = () => {
                         <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
                             Register
                         </Button>
-                    </Form>
+                            </Form>
+                        </Tabs.TabPane>
+                        <Tabs.TabPane key="claim" title="Claim Imported Profile">
+                            {claimSubmitted ? (
+                                <div className="flex flex-col gap-4">
+                                    <Typography.Paragraph>
+                                        Your claim request is pending admin review. After it is approved, sign in again with this
+                                        Google account to access the imported profile.
+                                    </Typography.Paragraph>
+                                    <Button type="primary" onClick={() => setClaimSubmitted(false)}>
+                                        Submit Another Request
+                                    </Button>
+                                </div>
+                            ) : (
+                                <Form form={claimForm} layout="vertical" onSubmit={handleClaimSubmit} requiredSymbol={false}>
+                                    <Typography.Paragraph>
+                                        Use this when your profile was imported but you do not have enough IC/passport details to
+                                        auto-claim it.
+                                    </Typography.Paragraph>
+                                    <Form.Item
+                                        field="profile_name"
+                                        label="Imported Profile Name"
+                                        rules={[{required: true, message: "Enter the participant name from the imported profile"}]}
+                                    >
+                                        <Input prefix={<IconUser />} placeholder="Participant full name" />
+                                    </Form.Item>
+                                    <Form.Item field="profile_global_id" label="Global ID">
+                                        <Input placeholder="Known Global ID, if available" allowClear />
+                                    </Form.Item>
+                                    <Form.Item field="identity_hint" label="IC / Passport Hint">
+                                        <Input placeholder="Optional IC or passport number" allowClear />
+                                    </Form.Item>
+                                    <Form.Item field="birthdate_hint" label="Birthdate Hint">
+                                        <DatePicker
+                                            format="DD/MM/YYYY"
+                                            style={{width: "100%"}}
+                                            disabledDate={(current) => current.isAfter(dayjs())}
+                                        />
+                                    </Form.Item>
+                                    <Form.Item field="tournament_hint" label="Tournament Hint">
+                                        <Input placeholder="Tournament name or event where this profile was imported" allowClear />
+                                    </Form.Item>
+                                    <Form.Item field="note" label="Note">
+                                        <Input.TextArea
+                                            placeholder="Anything admins can use to confirm this is your profile"
+                                            maxLength={1000}
+                                            showWordLimit
+                                            autoSize={{minRows: 3, maxRows: 6}}
+                                        />
+                                    </Form.Item>
+                                    <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
+                                        Submit Claim Request
+                                    </Button>
+                                </Form>
+                            )}
+                        </Tabs.TabPane>
+                    </Tabs>
                 )}
             </div>
         </div>

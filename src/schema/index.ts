@@ -7,8 +7,8 @@ export {
 } from "./TournamentSchema";
 export type {AgeBracket, FinalCriterion, PaymentMethod, Tournament, TournamentEvent} from "./TournamentSchema";
 
-export {FirestoreUserSchema} from "./UserSchema";
-export type {FirestoreUser} from "./UserSchema";
+export {FirestoreUserSchema, ProfileClaimRequestSchema} from "./UserSchema";
+export type {FirestoreUser, ProfileClaimRequest} from "./UserSchema";
 
 export type {AuthContextValue} from "./AuthSchema";
 

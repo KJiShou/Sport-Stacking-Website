@@ -18,14 +18,18 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const isLocalhost = typeof window !== "undefined" && ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
-if (isLocalhost) {
-    globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN?.trim() || true;
+const appCheckDebugToken = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN?.trim();
+const shouldInitializeAppCheck = !isLocalhost || Boolean(appCheckDebugToken);
+if (shouldInitializeAppCheck) {
+    if (isLocalhost && appCheckDebugToken) {
+        globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = appCheckDebugToken;
+    }
+    initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider("6LcRC_0rAAAAADINnR7-KKu56U_F-QiCt0I0I0QQ"),
+        isTokenAutoRefreshEnabled: true,
+    });
 }
-initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider("6LcRC_0rAAAAADINnR7-KKu56U_F-QiCt0I0I0QQ"),
-    isTokenAutoRefreshEnabled: true,
-});
-const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim() || (isLocalhost ? "develop2" : "");
+const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim() || "";
 export const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
 export const storage = getStorage(app);
 const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION?.trim() || "asia-southeast1";

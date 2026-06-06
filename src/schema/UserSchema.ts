@@ -35,6 +35,7 @@ const BestTimeRecordSchema = z.object({
 export const UserIdentityTypeSchema = z.enum(["MYKAD", "PASSPORT", "NONE"]);
 export const UserAccountStatusSchema = z.enum(["claimed", "unclaimed", "claim_review"]);
 export const UserAccountSourceSchema = z.enum(["legacy", "self_registered", "admin_import"]);
+export const ProfileClaimRequestStatusSchema = z.enum(["pending", "approved", "rejected"]);
 
 export const FirestoreUserSchema = z.object({
     id: z.string(),
@@ -83,3 +84,25 @@ export const FirestoreUserSchema = z.object({
 });
 
 export type FirestoreUser = z.infer<typeof FirestoreUserSchema>;
+
+export const ProfileClaimRequestSchema = z.object({
+    id: z.string().optional().nullable(),
+    requester_uid: z.string(),
+    requester_email: z.string().email(),
+    profile_global_id: z.string().optional().nullable(),
+    profile_name: z.string(),
+    identity_hint: z.string().optional().nullable(),
+    birthdate_hint: z.union([z.instanceof(Timestamp), z.instanceof(Date)]).optional().nullable(),
+    tournament_hint: z.string().optional().nullable(),
+    note: z.string().optional().nullable(),
+    status: ProfileClaimRequestStatusSchema,
+    matched_profile_id: z.string().optional().nullable(),
+    reviewed_by_uid: z.string().optional().nullable(),
+    reviewed_by_email: z.string().email().optional().nullable(),
+    rejection_reason: z.string().optional().nullable(),
+    created_at: z.instanceof(Timestamp).optional().nullable(),
+    updated_at: z.instanceof(Timestamp).optional().nullable(),
+    reviewed_at: z.instanceof(Timestamp).optional().nullable(),
+});
+
+export type ProfileClaimRequest = z.infer<typeof ProfileClaimRequestSchema>;

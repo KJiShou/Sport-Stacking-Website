@@ -11,10 +11,18 @@
       }
     ]
   },
-  "firestore": {
-    "indexes": "firestore.indexes.json",
-    "rules": "firestore.rules"
-  },
+  "firestore": [
+    {
+      "database": "(default)",
+      "indexes": "firestore.indexes.json",
+      "rules": "firestore.rules"
+    },
+    {
+      "database": "develop2",
+      "indexes": "firestore.indexes.json",
+      "rules": "firestore.rules"
+    }
+  ],
   "functions": [
     {
       "source": "functions",
