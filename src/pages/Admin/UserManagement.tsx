@@ -9,31 +9,54 @@ import {
     transferProfileOwnership,
     updateUserProfile,
 } from "@/services/firebase/authService";
-import {
-    Button,
-    DatePicker,
-    Form,
-    Input,
-    Message,
-    Modal,
-    Select,
-    Spin,
-    Table,
-    Tag,
-    Typography,
-} from "@arco-design/web-react";
+import {deriveBirthdateFromMykad, formatBirthdateForDisplay, isBirthdateMatchingMykad, parseBirthdate} from "@/utils/birthdate";
+import {Button, DatePicker, Form, Input, Message, Modal, Select, Spin, Table, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch} from "@arco-design/web-react/icon";
-import {
-    deriveBirthdateFromMykad,
-    formatBirthdateForDisplay,
-    isBirthdateMatchingMykad,
-    parseBirthdate,
-} from "@/utils/birthdate";
 import dayjs from "dayjs";
 import {useEffect, useMemo, useState} from "react";
 
 const {Title, Paragraph, Text} = Typography;
+
+const getAccountStatus = (entry?: FirestoreUser | null): string => entry?.account_status ?? "claimed";
+
+const isUnclaimedProfile = (entry?: FirestoreUser | null): boolean => getAccountStatus(entry) === "unclaimed";
+
+const getTransferActionLabel = (entry?: FirestoreUser | null): string =>
+    isUnclaimedProfile(entry) ? "Assign Gmail" : "Transfer Profile";
+
+const getCountryLabel = (country: FirestoreUser["country"]): string =>
+    Array.isArray(country) ? country.join(" / ") : (country ?? "-");
+
+const getEnabledRoles = (entry: FirestoreUser): string[] =>
+    Object.entries(entry.roles ?? {})
+        .filter(([, enabled]) => Boolean(enabled))
+        .map(([role]) => role);
+
+const shouldShowNoRoles = (entry: FirestoreUser): boolean => !entry.memberId && getEnabledRoles(entry).length === 0;
+
+const matchesSearchTerm = (entry: FirestoreUser, query: string): boolean => {
+    const searchableValues = [entry.global_id?.toString(), entry.IC, entry.name, entry.email, entry.primary_owner_email];
+    return searchableValues.some((value) => (value ?? "").toLowerCase().includes(query));
+};
+
+const filterUsers = (users: FirestoreUser[], searchTerm: string): FirestoreUser[] => {
+    const query = searchTerm.trim().toLowerCase();
+    return query ? users.filter((entry) => matchesSearchTerm(entry, query)) : users;
+};
+
+const findClaimProfileCandidate = (request: ProfileClaimRequest | null, users: FirestoreUser[]): FirestoreUser | undefined => {
+    if (!request) return undefined;
+    const globalId = request.profile_global_id?.trim();
+    if (globalId) {
+        const byGlobalId = users.find((entry) => entry.global_id === globalId);
+        if (byGlobalId) return byGlobalId;
+    }
+    const normalizedName = request.profile_name.trim().toLowerCase();
+    return users.find(
+        (entry) => (entry.account_status ?? "claimed") === "unclaimed" && entry.name?.trim().toLowerCase() === normalizedName,
+    );
+};
 
 export default function UserManagementPage() {
     const {user} = useAuthContext();
@@ -83,24 +106,11 @@ export default function UserManagementPage() {
         }
     }, [isAdmin]);
 
-    const filteredUsers = useMemo(() => {
-        const query = searchTerm.trim().toLowerCase();
-        if (!query) return users;
-        return users.filter((entry) => {
-            const globalId = entry.global_id?.toString().toLowerCase() ?? "";
-            const ic = entry.IC?.toLowerCase() ?? "";
-            const name = entry.name?.toLowerCase() ?? "";
-            const email = entry.email?.toLowerCase() ?? "";
-            const primaryOwnerEmail = entry.primary_owner_email?.toLowerCase() ?? "";
-            return (
-                globalId.includes(query) ||
-                ic.includes(query) ||
-                name.includes(query) ||
-                email.includes(query) ||
-                primaryOwnerEmail.includes(query)
-            );
-        });
-    }, [users, searchTerm]);
+    const filteredUsers = useMemo(() => filterUsers(users, searchTerm), [users, searchTerm]);
+    const selectedClaimCandidate = useMemo(
+        () => findClaimProfileCandidate(selectedClaimRequest, users),
+        [selectedClaimRequest, users],
+    );
 
     const handleViewDetail = (entry: FirestoreUser) => {
         const birthdate = parseBirthdate(entry.birthdate) ?? deriveBirthdateFromMykad(entry.IC);
@@ -122,23 +132,8 @@ export default function UserManagementPage() {
         setTransferModalVisible(true);
     };
 
-    const findClaimProfileCandidate = (request: ProfileClaimRequest | null): FirestoreUser | undefined => {
-        if (!request) return undefined;
-        const globalId = request.profile_global_id?.trim();
-        if (globalId) {
-            const byGlobalId = users.find((entry) => entry.global_id === globalId);
-            if (byGlobalId) return byGlobalId;
-        }
-        const normalizedName = request.profile_name.trim().toLowerCase();
-        return users.find(
-            (entry) =>
-                (entry.account_status ?? "claimed") === "unclaimed" &&
-                entry.name?.trim().toLowerCase() === normalizedName,
-        );
-    };
-
     const handleOpenClaimReview = (request: ProfileClaimRequest) => {
-        const candidate = findClaimProfileCandidate(request);
+        const candidate = findClaimProfileCandidate(request, users);
         setSelectedClaimRequest(request);
         claimReviewForm.setFieldsValue({
             profileId: candidate?.id ?? request.matched_profile_id ?? "",
@@ -353,6 +348,12 @@ export default function UserManagementPage() {
         },
     ];
 
+    const selectedUserStatus = getAccountStatus(selectedUser);
+    const selectedUserStatusColor = isUnclaimedProfile(selectedUser) ? "orange" : "green";
+    const transferActionLabel = getTransferActionLabel(selectedUser);
+    const selectedUserEnabledRoles = selectedUser ? getEnabledRoles(selectedUser) : [];
+    const selectedUserHasNoRoles = selectedUser ? shouldShowNoRoles(selectedUser) : false;
+
     return (
         <div className="flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
             <Spin loading={loading} tip="Loading users..." className="w-full">
@@ -421,11 +422,7 @@ export default function UserManagementPage() {
                                     Edit
                                 </Button>
                             )}
-                            <Button onClick={handleOpenTransferModal}>
-                                {(selectedUser?.account_status ?? "claimed") === "unclaimed"
-                                    ? "Assign Gmail"
-                                    : "Transfer Profile"}
-                            </Button>
+                            <Button onClick={handleOpenTransferModal}>{transferActionLabel}</Button>
                             <Button status="danger" onClick={handleDelete}>
                                 Delete Account
                             </Button>
@@ -451,9 +448,7 @@ export default function UserManagementPage() {
                             <Text type="secondary">Ownership</Text>
                             <div className="flex flex-col gap-1">
                                 <div>
-                                    <Tag color={(selectedUser.account_status ?? "claimed") === "unclaimed" ? "orange" : "green"}>
-                                        {selectedUser.account_status ?? "claimed"}
-                                    </Tag>
+                                    <Tag color={selectedUserStatusColor}>{selectedUserStatus}</Tag>
                                     {selectedUser.source && <Tag>{selectedUser.source}</Tag>}
                                 </div>
                                 <div>Primary owner Gmail: {selectedUser.primary_owner_email ?? "-"}</div>
@@ -508,11 +503,7 @@ export default function UserManagementPage() {
                                 </div>
                                 <div>
                                     <Text type="secondary">Country / State</Text>
-                                    <div>
-                                        {Array.isArray(selectedUser.country)
-                                            ? selectedUser.country.join(" / ")
-                                            : (selectedUser.country ?? "-")}
-                                    </div>
+                                    <div>{getCountryLabel(selectedUser.country)}</div>
                                 </div>
                                 <div>
                                     <Text type="secondary">School</Text>
@@ -523,19 +514,13 @@ export default function UserManagementPage() {
                         <div>
                             <Text type="secondary">Roles</Text>
                             <div className="flex flex-wrap gap-2">
-                                {selectedUser.roles &&
-                                    Object.entries(selectedUser.roles)
-                                        .filter(([, enabled]) => Boolean(enabled))
-                                        .map(([role]) => (
-                                            <Tag key={role} color="blue">
-                                                {role.replace(/_/g, " ")}
-                                            </Tag>
-                                        ))}
+                                {selectedUserEnabledRoles.map((role) => (
+                                    <Tag key={role} color="blue">
+                                        {role.replace(/_/g, " ")}
+                                    </Tag>
+                                ))}
                                 {selectedUser.memberId && <Tag color="green">memberId: {selectedUser.memberId}</Tag>}
-                                {!selectedUser.memberId &&
-                                    (!selectedUser.roles || Object.values(selectedUser.roles).every((value) => !value)) && (
-                                        <Text>-</Text>
-                                    )}
+                                {selectedUserHasNoRoles && <Text>-</Text>}
                             </div>
                         </div>
                     </div>
@@ -543,11 +528,7 @@ export default function UserManagementPage() {
             </Modal>
 
             <Modal
-                title={
-                    selectedUser && (selectedUser.account_status ?? "claimed") === "unclaimed"
-                        ? "Assign Gmail"
-                        : "Transfer Profile"
-                }
+                title={transferActionLabel}
                 visible={transferModalVisible}
                 onCancel={() => setTransferModalVisible(false)}
                 onOk={handleTransferOwnership}
@@ -621,17 +602,15 @@ export default function UserManagementPage() {
                                 <div>{selectedClaimRequest.note}</div>
                             </div>
                         )}
-                        {(() => {
-                            const candidate = findClaimProfileCandidate(selectedClaimRequest);
-                            return candidate ? (
+                        {selectedClaimCandidate && (
+                            <div>
+                                <Text type="secondary">Suggested Match</Text>
                                 <div>
-                                    <Text type="secondary">Suggested Match</Text>
-                                    <div>
-                                        {candidate.name} / {candidate.global_id ?? "-"} / doc {candidate.id}
-                                    </div>
+                                    {selectedClaimCandidate.name} / {selectedClaimCandidate.global_id ?? "-"} / doc{" "}
+                                    {selectedClaimCandidate.id}
                                 </div>
-                            ) : null;
-                        })()}
+                            </div>
+                        )}
                         <Form form={claimReviewForm} layout="vertical">
                             <Form.Item label="Profile Document ID To Claim" field="profileId">
                                 <Input allowClear placeholder="Firestore users document ID" />

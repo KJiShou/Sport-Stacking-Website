@@ -52,8 +52,8 @@ import {
     Typography,
     Upload,
 } from "@arco-design/web-react";
-import {IconCalendar, IconExclamationCircle, IconLaunch} from "@arco-design/web-react/icon";
 import type {UploadItem} from "@arco-design/web-react/es/Upload";
+import {IconCalendar, IconExclamationCircle, IconLaunch} from "@arco-design/web-react/icon";
 import MDEditor from "@uiw/react-md-editor";
 import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
@@ -86,6 +86,18 @@ const isParentChildEvent = (event?: ExpandedEvent, ...references: Array<string |
 };
 const isTeamRelayEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "team relay";
 const isDoubleEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "double";
+const getFallbackTeamSize = (event?: ExpandedEvent, eventId?: string): number | undefined => {
+    if (event?.teamSize !== undefined) {
+        return event.teamSize;
+    }
+    if (isParentChildEvent(event, eventId) || isDoubleEvent(event)) {
+        return 2;
+    }
+    if (isTeamRelayEvent(event)) {
+        return 4;
+    }
+    return undefined;
+};
 const isNonScoringEvent = (event?: ExpandedEvent) => {
     const normalized = (event?.type ?? "").toLowerCase();
     return (
@@ -474,10 +486,7 @@ export default function RegisterTournamentPage() {
 
                 // Only check member count if NOT looking for members/teammates
                 if (!isLookingForMembers && !isLookingForTeammates) {
-                    const lowerEventType = (relatedEvent?.type ?? "").toLowerCase();
-                    const fallbackTeamSize =
-                        relatedEvent?.teamSize ??
-                        (isParentChild ? 2 : lowerEventType === "double" ? 2 : lowerEventType === "team relay" ? 4 : undefined);
+                    const fallbackTeamSize = getFallbackTeamSize(relatedEvent, teamId);
 
                     if (fallbackTeamSize !== undefined) {
                         const expectedMembers = Math.max(fallbackTeamSize - 1, 0);
@@ -661,15 +670,7 @@ export default function RegisterTournamentPage() {
                 if (teamData.looking_for_team_members) {
                     // Calculate how many members are still needed
                     const relatedEvent = findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === eventId);
-                    const fallbackTeamSize =
-                        relatedEvent?.teamSize ??
-                        (isParentChildEvent(relatedEvent, eventId)
-                            ? 2
-                            : relatedEvent?.type?.toLowerCase() === "double"
-                              ? 2
-                              : relatedEvent?.type?.toLowerCase() === "team relay"
-                                ? 4
-                                : undefined);
+                    const fallbackTeamSize = getFallbackTeamSize(relatedEvent, eventId);
                     const currentCount = (teamData.member?.filter(Boolean)?.length ?? 0) + (teamData.leader ? 1 : 0);
                     const max_members_needed = fallbackTeamSize !== undefined ? Math.max(fallbackTeamSize - currentCount, 0) : 3;
                     await createTeamRecruitment({

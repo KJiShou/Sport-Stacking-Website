@@ -480,7 +480,6 @@ export default function ParticipantListPage() {
 
     if (!tournament) return null;
 
-    const tournamentEvents = events ?? [];
     const currentEvent =
         sortedEvents.find((evt) => (evt.id ?? evt.type) === currentEventTab) ??
         sortedEvents.find((evt) => evt.type === currentEventTab) ??
@@ -659,15 +658,14 @@ export default function ParticipantListPage() {
                                 >
                                     {evt.age_brackets.map((br) => {
                                         if (isTeamEventForTab) {
-                                            const teamRows: TeamRow[] = filterTeams(tabKey)
-                                                .map((team) => ({
-                                                    ...team,
-                                                    registrationId:
-                                                        regs.find((r) => {
-                                                            const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                                                            return r.user_id === leaderId || r.user_global_id === leaderId;
-                                                        })?.id ?? "",
-                                                }));
+                                            const teamRows: TeamRow[] = filterTeams(tabKey).map((team) => ({
+                                                ...team,
+                                                registrationId:
+                                                    regs.find((r) => {
+                                                        const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                                                        return r.user_id === leaderId || r.user_global_id === leaderId;
+                                                    })?.id ?? "",
+                                            }));
 
                                             const rowsForBracket = teamRows.filter((record) => {
                                                 return (

@@ -18,8 +18,8 @@ import {
 } from "firebase/firestore";
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 import {EventSchema, TournamentSchema} from "../../schema";
+import {type LegacyTeam, dedupeTeamsByEvent} from "../../utils/teamDeduplication";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
-import {dedupeTeamsByEvent, type LegacyTeam} from "../../utils/teamDeduplication";
 import {getTeamEvents, normalizeEventSelections, teamMatchesEventKey} from "../../utils/tournament/eventUtils";
 import {
     fetchUsersByGlobalIds,
@@ -101,7 +101,7 @@ const getCanonicalTeamParts = (
     const leaderId = normalizeTeamParticipantId(teamData.leader_id);
     const memberIds = Array.from(
         new Set((teamData.members ?? []).map((member) => normalizeTeamParticipantId(member.global_id)).filter(Boolean)),
-    ).sort();
+    ).sort((left, right) => left.localeCompare(right));
     const key = [tournamentId.trim(), eventId, leaderId, memberIds.join(",")].join("|");
 
     return {eventId, leaderId, memberIds, key};

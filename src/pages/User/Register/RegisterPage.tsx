@@ -44,6 +44,52 @@ type ClaimRequestFormData = {
     note?: string;
 };
 
+const linkEmailPassword = async (email: string, password: string, user: User) => {
+    const credential = EmailAuthProvider.credential(email, password);
+    try {
+        await linkWithCredential(user, credential);
+    } catch (err) {
+        console.error("Failed to link credentials:", err);
+        throw err;
+    }
+};
+
+const getMykadProfileHints = (value: string): {birthdate?: Date; gender: "Male" | "Female"} | null => {
+    const match = RegExp(/^(\d{2})(\d{2})(\d{2})\d{6}$/).exec(value);
+    if (!match) {
+        return null;
+    }
+
+    const [, yy, mm, dd] = match;
+    const fullYear = Number(yy) >= 50 ? `19${yy}` : `20${yy}`;
+    const birthdate = dayjs(`${fullYear}-${mm}-${dd}`);
+    const genderCode = Number(value[value.length - 1]);
+    const gender = genderCode % 2 === 1 ? "Male" : "Female";
+
+    return {
+        birthdate: birthdate.isValid() ? birthdate.toDate() : undefined,
+        gender,
+    };
+};
+
+const getAvatarUrl = async (imageUrl: string | null | undefined, firebaseUser: User): Promise<string> => {
+    if (imageUrl?.startsWith("data:")) {
+        const blob = await (await fetch(imageUrl)).blob();
+        const file = new File([blob], "avatar.png", {
+            type: blob.type ?? "image/png",
+        });
+        return uploadAvatar(file, firebaseUser.uid);
+    }
+
+    if (firebaseUser.photoURL) {
+        return imageUrl ?? "";
+    }
+
+    return imageUrl ?? "";
+};
+
+const getErrorMessage = (error: unknown, fallback: string): string => (error instanceof Error ? error.message : fallback);
+
 const RegisterPage = () => {
     const navigate = useNavigate();
     const {firebaseUser, refreshProfiles, user} = useAuthContext();
@@ -54,36 +100,17 @@ const RegisterPage = () => {
     const [claimSubmitted, setClaimSubmitted] = useState(false);
     const avatarRetryRef = useRef(0);
 
-    const linkEmailPassword = async (email: string, password: string, user: User) => {
-        const credential = EmailAuthProvider.credential(email, password);
-        try {
-            await linkWithCredential(user, credential);
-        } catch (err) {
-            console.error("Failed to link credentials:", err);
-            throw err;
-        }
-    };
-
     const handleICChange = (val: string) => {
         form.setFieldValue("IC", val);
         form.setFieldValue("identity_type", isICMode ? "MYKAD" : "PASSPORT");
         if (!isICMode) return;
 
-        const match = RegExp(/^(\d{2})(\d{2})(\d{2})\d{6}$/).exec(val);
-        if (match) {
-            const yy = match[1];
-            const mm = match[2];
-            const dd = match[3];
-
-            const fullYear = Number(yy) >= 50 ? `19${yy}` : `20${yy}`;
-            const birthdate = dayjs(`${fullYear}-${mm}-${dd}`);
-            if (birthdate.isValid()) {
-                form.setFieldValue("birthdate", birthdate.toDate());
-            }
-
-            const genderCode = Number(val[val.length - 1]);
-            const gender = genderCode % 2 === 1 ? "Male" : "Female";
-            form.setFieldValue("gender", gender);
+        const profileHints = getMykadProfileHints(val);
+        if (profileHints?.birthdate) {
+            form.setFieldValue("birthdate", profileHints.birthdate);
+        }
+        if (profileHints) {
+            form.setFieldValue("gender", profileHints.gender);
         }
     };
 
@@ -122,19 +149,7 @@ const RegisterPage = () => {
 
             setLoading(true);
 
-            // If user uploaded an avatar (data URL), upload it to storage
-            if (image_url?.startsWith("data:")) {
-                const blob = await (await fetch(image_url)).blob();
-                const file = new File([blob], "avatar.png", {
-                    type: blob.type ?? "image/png",
-                });
-                avatarUrl = await uploadAvatar(file, firebaseUser.uid);
-            } else if (firebaseUser.photoURL) {
-                // Already uploaded in useEffect, just use the form value
-                avatarUrl = image_url ?? "";
-            } else if (image_url) {
-                avatarUrl = image_url;
-            }
+            avatarUrl = await getAvatarUrl(image_url, firebaseUser);
 
             const profileId = await registerWithGoogle(
                 firebaseUser,
@@ -161,11 +176,7 @@ const RegisterPage = () => {
             Message.success("Registration successful!");
             navigate("/", {replace: true});
         } catch (err: unknown) {
-            if (err instanceof Error) {
-                Message.error(err.message);
-            } else {
-                Message.error("Something went wrong");
-            }
+            Message.error(getErrorMessage(err, "Something went wrong"));
         } finally {
             setLoading(false);
         }
@@ -191,7 +202,7 @@ const RegisterPage = () => {
             claimForm.resetFields();
             Message.success("Claim request submitted. An admin will review it.");
         } catch (err) {
-            Message.error(err instanceof Error ? err.message : "Failed to submit claim request.");
+            Message.error(getErrorMessage(err, "Failed to submit claim request."));
         } finally {
             setLoading(false);
         }
@@ -273,7 +284,7 @@ const RegisterPage = () => {
                                     // AuthContext and the useEffect above handle the returned Google user state.
                                     await signInWithGoogle("register");
                                 } catch (err) {
-                                    Message.error(err instanceof Error ? err.message : "Failed to sign in with Google.");
+                                    Message.error(getErrorMessage(err, "Failed to sign in with Google."));
                                 } finally {
                                     setLoading(false);
                                 }
@@ -292,210 +303,221 @@ const RegisterPage = () => {
                     <Tabs defaultActiveTab="register" className="w-full max-w-3xl">
                         <Tabs.TabPane key="register" title="Register / Auto Claim">
                             <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
-                        <Form.Item noStyle field="image_url">
-                            <Input type="hidden" />
-                        </Form.Item>
-                        <Form.Item noStyle field="identity_type">
-                            <Input type="hidden" />
-                        </Form.Item>
+                                <Form.Item noStyle field="image_url">
+                                    <Input type="hidden" />
+                                </Form.Item>
+                                <Form.Item noStyle field="identity_type">
+                                    <Input type="hidden" />
+                                </Form.Item>
 
-                        <Form.Item
-                            className="flex flex-col items-center gap-2"
-                            label="Avatar (optional)"
-                            shouldUpdate={(prev, curr) => prev.image_url !== curr.image_url}
-                        >
-                            {() => {
-                                const imageUrl = form.getFieldValue("image_url");
+                                <Form.Item
+                                    className="flex flex-col items-center gap-2"
+                                    label="Avatar (optional)"
+                                    shouldUpdate={(prev, curr) => prev.image_url !== curr.image_url}
+                                >
+                                    {() => {
+                                        const imageUrl = form.getFieldValue("image_url");
 
-                                return (
-                                    <div className="flex flex-col items-center gap-2">
-                                        <Upload
-                                            listType="picture-card"
-                                            accept="image/jpeg,image/png,image/gif"
-                                            showUploadList={false}
-                                            customRequest={({file, onSuccess, onError}) => {
-                                                const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-                                                const validTypes = ["image/jpeg", "image/png", "image/gif"];
+                                        return (
+                                            <div className="flex flex-col items-center gap-2">
+                                                <Upload
+                                                    listType="picture-card"
+                                                    accept="image/jpeg,image/png,image/gif"
+                                                    showUploadList={false}
+                                                    customRequest={({file, onSuccess, onError}) => {
+                                                        const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+                                                        const validTypes = ["image/jpeg", "image/png", "image/gif"];
 
-                                                if (!validTypes.includes(file.type)) {
-                                                    Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
-                                                    onError?.(new Error("Invalid file type"));
-                                                    return;
-                                                }
+                                                        if (!validTypes.includes(file.type)) {
+                                                            Message.error("Invalid file type. Please upload a JPG, PNG, or GIF.");
+                                                            onError?.(new Error("Invalid file type"));
+                                                            return;
+                                                        }
 
-                                                if (file.size > MAX_SIZE) {
-                                                    Message.error("File size exceeds 10MB limit");
-                                                    onError?.(new Error("File size exceeds 10MB limit"));
-                                                    return;
-                                                }
+                                                        if (file.size > MAX_SIZE) {
+                                                            Message.error("File size exceeds 10MB limit");
+                                                            onError?.(new Error("File size exceeds 10MB limit"));
+                                                            return;
+                                                        }
 
-                                                const reader = new FileReader();
-                                                reader.onload = () => {
-                                                    form.setFieldValue("image_url", reader.result as string);
-                                                    onSuccess?.();
-                                                };
-                                                reader.onerror = () => {
-                                                    Message.error("Failed to read file.");
-                                                    onError?.(new Error("Failed to read file."));
-                                                };
-                                                reader.readAsDataURL(file);
-                                            }}
-                                        >
-                                            <div className="relative inline-block">
-                                                <Avatar
-                                                    size={100}
-                                                    className="mx-auto w-24 h-24 rounded-full overflow-hidden"
-                                                    triggerIcon={<IconCamera />}
-                                                    triggerType="mask"
+                                                        const reader = new FileReader();
+                                                        reader.onload = () => {
+                                                            form.setFieldValue("image_url", reader.result as string);
+                                                            onSuccess?.();
+                                                        };
+                                                        reader.onerror = () => {
+                                                            Message.error("Failed to read file.");
+                                                            onError?.(new Error("Failed to read file."));
+                                                        };
+                                                        reader.readAsDataURL(file);
+                                                    }}
                                                 >
-                                                    {imageUrl ? (
-                                                        <img
-                                                            className="w-full h-full object-cover"
-                                                            src={imageUrl as string}
-                                                            alt={user?.name}
-                                                            onError={handleAvatarError}
-                                                        />
-                                                    ) : (
-                                                        <IconUser />
-                                                    )}
-                                                </Avatar>
-                                            </div>
-                                        </Upload>
+                                                    <div className="relative inline-block">
+                                                        <Avatar
+                                                            size={100}
+                                                            className="mx-auto w-24 h-24 rounded-full overflow-hidden"
+                                                            triggerIcon={<IconCamera />}
+                                                            triggerType="mask"
+                                                        >
+                                                            {imageUrl ? (
+                                                                <img
+                                                                    className="w-full h-full object-cover"
+                                                                    src={imageUrl as string}
+                                                                    alt={user?.name}
+                                                                    onError={handleAvatarError}
+                                                                />
+                                                            ) : (
+                                                                <IconUser />
+                                                            )}
+                                                        </Avatar>
+                                                    </div>
+                                                </Upload>
 
-                                        {firebaseUser && (
+                                                {firebaseUser && (
+                                                    <Button
+                                                        size="mini"
+                                                        type="text"
+                                                        onClick={() => {
+                                                            handleResetAvatar();
+                                                        }}
+                                                    >
+                                                        Reset Avatar
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        );
+                                    }}
+                                </Form.Item>
+
+                                <Form.Item
+                                    field="email"
+                                    label="Participant Email"
+                                    rules={[{required: true, type: "email", message: "Enter a valid email"}]}
+                                >
+                                    <Input
+                                        prefix={<IconEmail />}
+                                        placeholder="example@mail.com"
+                                        disabled={Boolean(firebaseUser)}
+                                    />
+                                </Form.Item>
+
+                                <Form.Item
+                                    field="name"
+                                    label="Participant Full Name"
+                                    rules={[{required: true, message: "Enter your full name"}]}
+                                >
+                                    <Input prefix={<IconUser />} placeholder="Your full name" />
+                                </Form.Item>
+
+                                <Form.Item
+                                    field="IC"
+                                    label={
+                                        <div className="flex justify-between items-center">
+                                            <span>{isICMode ? "Participant IC Number" : "Participant Passport Number"}</span>
                                             <Button
                                                 size="mini"
                                                 type="text"
                                                 onClick={() => {
-                                                    handleResetAvatar();
+                                                    setIsICMode(!isICMode);
+                                                    form.setFieldValue("IC", "");
+                                                    form.setFieldValue("identity_type", !isICMode ? "MYKAD" : "PASSPORT");
                                                 }}
                                             >
-                                                Reset Avatar
+                                                Use {isICMode ? "Passport" : "IC"}
                                             </Button>
-                                        )}
-                                    </div>
-                                );
-                            }}
-                        </Form.Item>
+                                        </div>
+                                    }
+                                    rules={[
+                                        {
+                                            required: true,
+                                            message: `Enter your ${isICMode ? "IC" : "passport"} number`,
+                                        },
+                                        ...(isICMode
+                                            ? [
+                                                  {
+                                                      match: /^\d{12}$/,
+                                                      message: "IC must be 12 digits like 050101011234",
+                                                  },
+                                              ]
+                                            : []),
+                                    ]}
+                                >
+                                    <Input
+                                        placeholder={isICMode ? "e.g. 050101011234" : "e.g. A12345678"}
+                                        onChange={handleICChange}
+                                    />
+                                </Form.Item>
 
-                        <Form.Item
-                            field="email"
-                            label="Participant Email"
-                            rules={[{required: true, type: "email", message: "Enter a valid email"}]}
-                        >
-                            <Input prefix={<IconEmail />} placeholder="example@mail.com" disabled={Boolean(firebaseUser)} />
-                        </Form.Item>
+                                <Form.Item
+                                    field="birthdate"
+                                    label="Participant Birthdate"
+                                    rules={[{required: true, message: "Select your birthdate"}]}
+                                >
+                                    <DatePicker
+                                        format="DD/MM/YYYY"
+                                        style={{width: "100%"}}
+                                        disabledDate={(current) => current.isAfter(dayjs())}
+                                    />
+                                </Form.Item>
 
-                        <Form.Item
-                            field="name"
-                            label="Participant Full Name"
-                            rules={[{required: true, message: "Enter your full name"}]}
-                        >
-                            <Input prefix={<IconUser />} placeholder="Your full name" />
-                        </Form.Item>
+                                <Form.Item
+                                    field="gender"
+                                    label="Participant Gender"
+                                    rules={[{required: true, message: "Select gender"}]}
+                                >
+                                    <Select placeholder="Select gender" options={["Male", "Female"]} />
+                                </Form.Item>
 
-                        <Form.Item
-                            field="IC"
-                            label={
-                                <div className="flex justify-between items-center">
-                                    <span>{isICMode ? "Participant IC Number" : "Participant Passport Number"}</span>
-                                    <Button
-                                        size="mini"
-                                        type="text"
-                                        onClick={() => {
-                                            setIsICMode(!isICMode);
-                                            form.setFieldValue("IC", "");
-                                            form.setFieldValue("identity_type", !isICMode ? "MYKAD" : "PASSPORT");
+                                <Form.Item
+                                    field="phone_number"
+                                    label="Phone Number"
+                                    rules={[{required: true, message: "Enter your phone number"}]}
+                                >
+                                    <Input prefix={<IconPhone />} placeholder="Your phone number" />
+                                </Form.Item>
+
+                                <Form.Item
+                                    label="Participant Country / State"
+                                    field="country"
+                                    rules={[{required: true, message: "Please select a country/region"}]}
+                                >
+                                    <Cascader
+                                        showSearch
+                                        changeOnSelect
+                                        allowClear
+                                        filterOption={(input, node) => {
+                                            return node.label.toLowerCase().includes(input.toLowerCase());
                                         }}
-                                    >
-                                        Use {isICMode ? "Passport" : "IC"}
-                                    </Button>
-                                </div>
-                            }
-                            rules={[
-                                {
-                                    required: true,
-                                    message: `Enter your ${isICMode ? "IC" : "passport"} number`,
-                                },
-                                ...(isICMode
-                                    ? [
-                                          {
-                                              match: /^\d{12}$/,
-                                              message: "IC must be 12 digits like 050101011234",
-                                          },
-                                      ]
-                                    : []),
-                            ]}
-                        >
-                            <Input placeholder={isICMode ? "e.g. 050101011234" : "e.g. A12345678"} onChange={handleICChange} />
-                        </Form.Item>
+                                        options={countries}
+                                        placeholder="Please select location"
+                                        expandTrigger="hover"
+                                        value={user?.country}
+                                    />
+                                </Form.Item>
 
-                        <Form.Item
-                            field="birthdate"
-                            label="Participant Birthdate"
-                            rules={[{required: true, message: "Select your birthdate"}]}
-                        >
-                            <DatePicker
-                                format="DD/MM/YYYY"
-                                style={{width: "100%"}}
-                                disabledDate={(current) => current.isAfter(dayjs())}
-                            />
-                        </Form.Item>
+                                <Form.Item label="Participant School/University/College" field="school">
+                                    <Input placeholder="Enter School/University/College name" />
+                                </Form.Item>
 
-                        <Form.Item field="gender" label="Participant Gender" rules={[{required: true, message: "Select gender"}]}>
-                            <Select placeholder="Select gender" options={["Male", "Female"]} />
-                        </Form.Item>
+                                <Form.Item
+                                    field="password"
+                                    label="Password"
+                                    rules={user ? [] : [{required: true, message: "Please enter a password"}]}
+                                >
+                                    <Input.Password prefix={<IconLock />} placeholder="Create password" />
+                                </Form.Item>
 
-                        <Form.Item
-                            field="phone_number"
-                            label="Phone Number"
-                            rules={[{required: true, message: "Enter your phone number"}]}
-                        >
-                            <Input prefix={<IconPhone />} placeholder="Your phone number" />
-                        </Form.Item>
+                                <Form.Item
+                                    field="confirmPassword"
+                                    label="Confirm Password"
+                                    rules={user ? [] : [{required: true, message: "Please confirm your password"}]}
+                                >
+                                    <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
+                                </Form.Item>
 
-                        <Form.Item
-                            label="Participant Country / State"
-                            field="country"
-                            rules={[{required: true, message: "Please select a country/region"}]}
-                        >
-                            <Cascader
-                                showSearch
-                                changeOnSelect
-                                allowClear
-                                filterOption={(input, node) => {
-                                    return node.label.toLowerCase().includes(input.toLowerCase());
-                                }}
-                                options={countries}
-                                placeholder="Please select location"
-                                expandTrigger="hover"
-                                value={user?.country}
-                            />
-                        </Form.Item>
-
-                        <Form.Item label="Participant School/University/College" field="school">
-                            <Input placeholder="Enter School/University/College name" />
-                        </Form.Item>
-
-                        <Form.Item
-                            field="password"
-                            label="Password"
-                            rules={user ? [] : [{required: true, message: "Please enter a password"}]}
-                        >
-                            <Input.Password prefix={<IconLock />} placeholder="Create password" />
-                        </Form.Item>
-
-                        <Form.Item
-                            field="confirmPassword"
-                            label="Confirm Password"
-                            rules={user ? [] : [{required: true, message: "Please confirm your password"}]}
-                        >
-                            <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
-                        </Form.Item>
-
-                        <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
-                            Register
-                        </Button>
+                                <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
+                                    Register
+                                </Button>
                             </Form>
                         </Tabs.TabPane>
                         <Tabs.TabPane key="claim" title="Claim Imported Profile">
@@ -518,7 +540,9 @@ const RegisterPage = () => {
                                     <Form.Item
                                         field="profile_name"
                                         label="Imported Profile Name"
-                                        rules={[{required: true, message: "Enter the participant name from the imported profile"}]}
+                                        rules={[
+                                            {required: true, message: "Enter the participant name from the imported profile"},
+                                        ]}
                                     >
                                         <Input prefix={<IconUser />} placeholder="Participant full name" />
                                     </Form.Item>
@@ -536,7 +560,10 @@ const RegisterPage = () => {
                                         />
                                     </Form.Item>
                                     <Form.Item field="tournament_hint" label="Tournament Hint">
-                                        <Input placeholder="Tournament name or event where this profile was imported" allowClear />
+                                        <Input
+                                            placeholder="Tournament name or event where this profile was imported"
+                                            allowClear
+                                        />
                                     </Form.Item>
                                     <Form.Item field="note" label="Note">
                                         <Input.TextArea
