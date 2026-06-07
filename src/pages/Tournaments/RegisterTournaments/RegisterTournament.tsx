@@ -11,7 +11,11 @@ import {
     getUserEmailByGlobalId,
     searchUsersByNameOrGlobalIdPrefix,
 } from "@/services/firebase/authService";
-import {createDoubleRecruitment, getDoubleRecruitmentsByTournament, updateDoubleRecruitmentStatus} from "@/services/firebase/doubleRecruitmentService";
+import {
+    createDoubleRecruitment,
+    getDoubleRecruitmentsByTournament,
+    updateDoubleRecruitmentStatus,
+} from "@/services/firebase/doubleRecruitmentService";
 import {createIndividualRecruitment} from "@/services/firebase/individualRecruitmentService";
 import {createRegistration, fetchRegistrations} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
@@ -73,9 +77,12 @@ type MemberSearchOption = {
     value: string;
 };
 
-const isParentChildEvent = (event?: ExpandedEvent) => {
-    const normalized = (event?.type ?? "").toLowerCase();
-    return normalized.includes("parent") && normalized.includes("child");
+const isParentChildEvent = (event?: ExpandedEvent, ...references: Array<string | null | undefined>) => {
+    const values = [event?.type, event?.id, event ? getEventLabel(event) : undefined, ...references];
+    return values.some((value) => {
+        const normalized = (value ?? "").toLowerCase();
+        return normalized.includes("parent") && normalized.includes("child");
+    });
 };
 const isTeamRelayEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "team relay";
 const isDoubleEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "double";
@@ -400,9 +407,7 @@ export default function RegisterTournamentPage() {
                 const member = rawTeam.member ?? getTeamFieldValue<string[]>(entry.eventId, "member") ?? [];
                 const leader = rawTeam.leader ?? getTeamFieldValue<string>(entry.eventId, "leader") ?? user?.global_id ?? null;
                 const name =
-                    rawTeam.name ??
-                    getTeamFieldValue<string>(entry.eventId, "name") ??
-                    (isPairEvent ? (user?.name ?? "") : "");
+                    rawTeam.name ?? getTeamFieldValue<string>(entry.eventId, "name") ?? (isPairEvent ? (user?.name ?? "") : "");
 
                 return {
                     ...rawTeam,
@@ -429,7 +434,8 @@ export default function RegisterTournamentPage() {
                 const memberIds = (team.member ?? []).map((m) => m).filter((id) => id != null) as string[];
                 const isLookingForMembers = team.looking_for_team_members === true;
                 const isLookingForTeammates = lookingForTeams.includes(teamId);
-                const shouldCheckOccupiedParticipants = !isLookingForTeammates && !isParentChildEvent(relatedEvent);
+                const isParentChild = isParentChildEvent(relatedEvent, teamId, team.label);
+                const shouldCheckOccupiedParticipants = !isLookingForTeammates && !isParentChild;
 
                 if (!isLookingForMembers && leaderId && memberIds.includes(leaderId)) {
                     Message.error(`${eventLabel}: team leader cannot be included in team members.`);
@@ -446,9 +452,7 @@ export default function RegisterTournamentPage() {
                     const participantIds = [leaderId, ...memberIds].filter((id): id is string => Boolean(id));
                     if (participantIds.length > 0) {
                         const unavailableIds = await fetchUnavailableParticipantIdsByEvent(tournamentId, teamId);
-                        const conflictedParticipantId = participantIds.find((participantId) =>
-                            unavailableIds.has(participantId),
-                        );
+                        const conflictedParticipantId = participantIds.find((participantId) => unavailableIds.has(participantId));
                         if (conflictedParticipantId) {
                             Message.error(
                                 `${eventLabel}: participant ${conflictedParticipantId} is already in this event or has an active recruitment.`,
@@ -460,18 +464,20 @@ export default function RegisterTournamentPage() {
                     }
                 }
 
+                if (!isLookingForMembers && !isLookingForTeammates && isParentChild) {
+                    const parentIds = memberIds.filter(Boolean);
+                    if (parentIds.length !== 1) {
+                        Message.error(`${eventLabel}: Parent & Child requires exactly one parent Global ID.`);
+                        throw new Error(`${eventLabel}: Parent & Child requires exactly one parent Global ID.`);
+                    }
+                }
+
                 // Only check member count if NOT looking for members/teammates
                 if (!isLookingForMembers && !isLookingForTeammates) {
                     const lowerEventType = (relatedEvent?.type ?? "").toLowerCase();
                     const fallbackTeamSize =
                         relatedEvent?.teamSize ??
-                        (isParentChildEvent(relatedEvent)
-                            ? 2
-                            : lowerEventType === "double"
-                              ? 2
-                              : lowerEventType === "team relay"
-                                ? 4
-                                : undefined);
+                        (isParentChild ? 2 : lowerEventType === "double" ? 2 : lowerEventType === "team relay" ? 4 : undefined);
 
                     if (fallbackTeamSize !== undefined) {
                         const expectedMembers = Math.max(fallbackTeamSize - 1, 0);
@@ -538,7 +544,8 @@ export default function RegisterTournamentPage() {
                     continue;
                 }
 
-                const eventDetails = entryEvent ?? findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === teamData.label);
+                const eventDetails =
+                    entryEvent ?? findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === teamData.label);
                 const eventType = (eventDetails?.type ?? teamData.label ?? "").toLowerCase();
 
                 if (eventType.includes("double") && teamData.looking_for_team_members) {
@@ -567,8 +574,9 @@ export default function RegisterTournamentPage() {
                 if (!teamData.name || !teamData.leader) {
                     continue; // Skip if team name or leader is missing
                 }
+                const isParentChild = isParentChildEvent(eventDetails, eventId, teamData.label);
                 const members = (teamData.member ?? [])
-                    .map((id) => (id ? {global_id: id, verified: isParentChildEvent(eventDetails)} : null))
+                    .map((id) => (id ? {global_id: id, verified: isParentChild} : null))
                     .filter((m): m is {global_id: string; verified: boolean} => m !== null);
 
                 const memberIds = members.map((m) => m.global_id);
@@ -655,7 +663,7 @@ export default function RegisterTournamentPage() {
                     const relatedEvent = findEventByKey(eventId) ?? availableEvents.find((evt) => evt.type === eventId);
                     const fallbackTeamSize =
                         relatedEvent?.teamSize ??
-                        (isParentChildEvent(relatedEvent)
+                        (isParentChildEvent(relatedEvent, eventId)
                             ? 2
                             : relatedEvent?.type?.toLowerCase() === "double"
                               ? 2
@@ -1220,7 +1228,7 @@ export default function RegisterTournamentPage() {
                                         const eventLabel = entry.label;
                                         const eventType = entry.event?.type ?? "";
                                         const lowerEventType = eventType.toLowerCase();
-                                        const isParentChild = eventType === "Parent & Child";
+                                        const isParentChild = isParentChildEvent(entry.event, eventId, eventLabel);
                                         const requiredTeamSize =
                                             entry.event?.teamSize ??
                                             (isParentChild
@@ -1338,8 +1346,9 @@ export default function RegisterTournamentPage() {
                                                         const shouldDisableMembers =
                                                             isLookingTopLevel || (isDoubleEvent && isLookingForMembers);
                                                         const selectedMembers =
-                                                            (form.getFieldValue(`teams.${eventId}.member`) as string[] | undefined) ??
-                                                            [];
+                                                            (form.getFieldValue(`teams.${eventId}.member`) as
+                                                                | string[]
+                                                                | undefined) ?? [];
                                                         const memberOptions = memberSearchOptionsByEvent[eventId] ?? [];
                                                         const isSearchingMembers = memberSearchLoadingByEvent[eventId] ?? false;
                                                         return (
@@ -1368,6 +1377,20 @@ export default function RegisterTournamentPage() {
                                                                         </Tooltip>
                                                                     </div>
                                                                 }
+                                                                rules={
+                                                                    !shouldDisableMembers &&
+                                                                    requiredMemberCount !== undefined &&
+                                                                    requiredMemberCount > 0
+                                                                        ? [
+                                                                              {
+                                                                                  required: true,
+                                                                                  message: isParentChild
+                                                                                      ? "Parent Global ID is required."
+                                                                                      : "Team member Global ID is required.",
+                                                                              },
+                                                                          ]
+                                                                        : []
+                                                                }
                                                             >
                                                                 <Select
                                                                     mode="multiple"
@@ -1385,12 +1408,19 @@ export default function RegisterTournamentPage() {
                                                                         void ensureOccupiedIdsForEvent(eventId);
                                                                     }}
                                                                     onSearch={(inputValue) => {
-                                                                        handleTeamMemberSearch(eventId, inputValue, selectedMembers);
+                                                                        handleTeamMemberSearch(
+                                                                            eventId,
+                                                                            inputValue,
+                                                                            selectedMembers,
+                                                                        );
                                                                     }}
                                                                     style={{width: 345, flex: 1}}
                                                                 >
                                                                     {memberOptions.map((option) => (
-                                                                        <Option key={`${eventId}-${option.value}`} value={option.value}>
+                                                                        <Option
+                                                                            key={`${eventId}-${option.value}`}
+                                                                            value={option.value}
+                                                                        >
                                                                             {option.label}
                                                                         </Option>
                                                                     ))}
@@ -1505,7 +1535,9 @@ export default function RegisterTournamentPage() {
                                                     />
                                                 </Tooltip>
                                             </div>
-                                            <div className="text-2xl font-bold text-green-600">Total Payment: RM{totalRegistrationFee}</div>
+                                            <div className="text-2xl font-bold text-green-600">
+                                                Total Payment: RM{totalRegistrationFee}
+                                            </div>
                                         </div>
                                     }
                                 >

@@ -39,7 +39,7 @@ type ClaimRequestFormData = {
     profile_global_id?: string;
     profile_name: string;
     identity_hint?: string;
-    birthdate_hint?: Date;
+    birthdate_hint?: unknown;
     tournament_hint?: string;
     note?: string;
 };

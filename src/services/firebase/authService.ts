@@ -361,10 +361,17 @@ export const rejectProfileClaimRequest = async (
 
 export const fetchProfileClaimRequests = async (status?: ProfileClaimRequest["status"]): Promise<ProfileClaimRequest[]> => {
     const baseQuery = status
-        ? query(collection(db, "profile_claim_requests"), where("status", "==", status), orderBy("created_at", "desc"))
+        ? query(collection(db, "profile_claim_requests"), where("status", "==", status))
         : query(collection(db, "profile_claim_requests"), orderBy("created_at", "desc"));
     const snapshot = await getDocs(baseQuery);
-    return snapshot.docs.map(mapProfileClaimRequestDoc);
+    const requests = snapshot.docs.map(mapProfileClaimRequestDoc);
+    if (!status) return requests;
+
+    return requests.sort((a, b) => {
+        const timeA = a.created_at?.toMillis?.() ?? 0;
+        const timeB = b.created_at?.toMillis?.() ?? 0;
+        return timeB - timeA;
+    });
 };
 
 // Register and create user in Firestore

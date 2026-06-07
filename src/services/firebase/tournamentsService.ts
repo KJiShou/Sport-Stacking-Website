@@ -11,6 +11,7 @@ import {
     getDocs,
     orderBy,
     query,
+    runTransaction,
     setDoc,
     updateDoc,
     where,
@@ -59,6 +60,8 @@ const getNormalizedTeamEventType = (
     return rawReferences.join(" ").trim().toLowerCase();
 };
 
+const isParentChildEventType = (eventType: string): boolean => eventType.includes("parent") && eventType.includes("child");
+
 const calculateTeamAge = (ages: number[], eventType: string, options: {enforceDoubleRange?: boolean} = {}): number => {
     const validAges = ages.filter((age) => Number.isFinite(age) && age > 0);
     if (validAges.length === 0) {
@@ -78,11 +81,48 @@ const calculateTeamAge = (ages: number[], eventType: string, options: {enforceDo
         return Math.round(validAges.reduce((sum, age) => sum + age, 0) / validAges.length);
     }
 
-    if (eventType.includes("parent") && eventType.includes("child")) {
+    if (isParentChildEventType(eventType)) {
         return Math.min(...validAges);
     }
 
     return Math.max(...validAges);
+};
+
+const normalizeTeamParticipantId = (value: string | null | undefined): string =>
+    stripTeamLeaderPrefix(value ?? "")
+        .trim()
+        .toLowerCase();
+
+const getCanonicalTeamParts = (
+    tournamentId: string,
+    teamData: Pick<Team, "event_id" | "leader_id" | "members">,
+): {eventId: string; leaderId: string; memberIds: string[]; key: string} => {
+    const eventId = (teamData.event_id ?? "").trim().toLowerCase();
+    const leaderId = normalizeTeamParticipantId(teamData.leader_id);
+    const memberIds = Array.from(
+        new Set((teamData.members ?? []).map((member) => normalizeTeamParticipantId(member.global_id)).filter(Boolean)),
+    ).sort();
+    const key = [tournamentId.trim(), eventId, leaderId, memberIds.join(",")].join("|");
+
+    return {eventId, leaderId, memberIds, key};
+};
+
+const canonicalTeamDocId = (canonicalKey: string): string =>
+    `team_${canonicalKey
+        .split("|")
+        .map((part) => encodeURIComponent(part))
+        .join("_")}`;
+
+const hasSameCanonicalTeamParts = (
+    team: Pick<Team, "event_id" | "leader_id" | "members">,
+    canonicalParts: ReturnType<typeof getCanonicalTeamParts>,
+): boolean => {
+    const candidateParts = getCanonicalTeamParts("", team);
+    return (
+        candidateParts.eventId === canonicalParts.eventId &&
+        candidateParts.leaderId === canonicalParts.leaderId &&
+        JSON.stringify(candidateParts.memberIds) === JSON.stringify(canonicalParts.memberIds)
+    );
 };
 
 const buildRegistrationLookup = (registrations: Registration[]): Map<string, Registration> => {
@@ -689,10 +729,35 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
 
 export async function createTeam(tournamentId: string, teamData: Omit<Team, "id" | "tournament_id">): Promise<string> {
     const teamsCollectionRef = collection(db, "teams");
+    const canonicalParts = getCanonicalTeamParts(tournamentId, teamData);
+    const tournamentEvents = await fetchTournamentEvents(tournamentId);
+    const eventType = getNormalizedTeamEventType(teamData, tournamentEvents);
+    if (isParentChildEventType(eventType)) {
+        const parentIds = (teamData.members ?? []).map((member) => member.global_id?.trim()).filter(Boolean);
+        if (parentIds.length !== 1) {
+            throw new Error("Parent & Child requires exactly one parent Global ID.");
+        }
+    }
+
+    const existingTeamQuery =
+        canonicalParts.eventId.length > 0
+            ? query(
+                  teamsCollectionRef,
+                  where("tournament_id", "==", tournamentId),
+                  where("event_id", "==", teamData.event_id ?? null),
+              )
+            : query(teamsCollectionRef, where("tournament_id", "==", tournamentId));
+    const existingTeamSnapshot = await getDocs(existingTeamQuery);
+
+    const existingDuplicateTeam = existingTeamSnapshot.docs.find((docSnap) =>
+        hasSameCanonicalTeamParts(docSnap.data() as Team, canonicalParts),
+    );
+    if (existingDuplicateTeam) {
+        return existingDuplicateTeam.id;
+    }
 
     const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
     const ages: number[] = [];
-    const tournamentEvents = await fetchTournamentEvents(tournamentId);
     for (const id of memberIds) {
         const registrationQuery = query(
             collection(db, "registrations"),
@@ -706,17 +771,24 @@ export async function createTeam(tournamentId: string, teamData: Omit<Team, "id"
         }
     }
 
-    const eventType = getNormalizedTeamEventType(teamData, tournamentEvents);
     const resolvedTeamAge = calculateTeamAge(ages, eventType);
+    const teamDocRef = doc(teamsCollectionRef, canonicalTeamDocId(canonicalParts.key));
 
-    const docRef = await addDoc(teamsCollectionRef, {
-        ...teamData,
-        team_age: resolvedTeamAge,
-        tournament_id: tournamentId,
-        event_id: teamData.event_id ?? null,
+    return await runTransaction(db, async (transaction) => {
+        const existingTeamDoc = await transaction.get(teamDocRef);
+        if (existingTeamDoc.exists()) {
+            return existingTeamDoc.id;
+        }
+
+        transaction.set(teamDocRef, {
+            ...teamData,
+            id: teamDocRef.id,
+            team_age: resolvedTeamAge,
+            tournament_id: tournamentId,
+            event_id: teamData.event_id ?? null,
+        });
+        return teamDocRef.id;
     });
-    await updateDoc(docRef, {id: docRef.id});
-    return docRef.id;
 }
 
 export async function deleteTeam(teamId: string): Promise<void> {

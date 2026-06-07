@@ -35,9 +35,10 @@ const allowedOriginList = [
 ];
 
 const allowedOrigins = new Set<string>(allowedOriginList);
+const allowedOriginPatterns = [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/];
 const functionsRegion = process.env.FUNCTIONS_REGION ?? "asia-southeast1";
 const callableFunctionOptions = {
-    cors: allowedOriginList,
+    cors: [...allowedOriginList, ...allowedOriginPatterns],
     region: functionsRegion,
 };
 const importWorkbookFunctionOptions = {
@@ -48,7 +49,7 @@ const importWorkbookFunctionOptions = {
 
 const corsHandler = cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.has(origin)) {
+        if (!origin || allowedOrigins.has(origin) || allowedOriginPatterns.some((pattern) => pattern.test(origin))) {
             callback(null, true);
             return;
         }
@@ -2715,6 +2716,15 @@ export const createProfileClaimRequest = onCall(callableFunctionOptions, async (
         .limit(1)
         .get();
     if (!existingPending.empty) {
+        await existingPending.docs[0].ref.update({
+            profile_global_id: profileGlobalId,
+            profile_name: profileName,
+            identity_hint: identityHint,
+            birthdate_hint: birthdateHint,
+            tournament_hint: tournamentHint,
+            note,
+            updated_at: FirestoreTimestamp.now(),
+        });
         return {requestId: existingPending.docs[0].id, status: "pending"};
     }
 

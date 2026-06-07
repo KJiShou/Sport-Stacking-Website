@@ -32,7 +32,7 @@ if (shouldInitializeAppCheck) {
         isTokenAutoRefreshEnabled: true,
     });
 }
-const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim() || "";
+const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim() || (isLocalhost ? "develop2" : "");
 export const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
 export const storage = getStorage(app);
 export const auth = getAuth(app);

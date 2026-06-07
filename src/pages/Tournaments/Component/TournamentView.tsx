@@ -803,6 +803,11 @@ export default function TournamentView() {
                 dataIndex: "participant_name",
                 width: 200,
             },
+            {
+                title: "Global ID",
+                dataIndex: "participant_global_id",
+                width: 120,
+            },
         ];
 
         if (deviceBreakpoint > DeviceBreakpoint.md) {
@@ -879,6 +884,11 @@ export default function TournamentView() {
             width: 200,
         },
         {
+            title: "Global ID",
+            dataIndex: "participant_global_id",
+            width: 120,
+        },
+        {
             title: "Event Code",
             dataIndex: "code",
             width: 100,
@@ -931,6 +941,12 @@ export default function TournamentView() {
                 title: "Team",
                 dataIndex: "team_name",
                 width: 200,
+            },
+            {
+                title: "Leader ID",
+                dataIndex: "leader_id",
+                width: 120,
+                render: (value: string | null | undefined) => value || "N/A",
             },
         ];
 
@@ -986,6 +1002,12 @@ export default function TournamentView() {
             title: "Team",
             dataIndex: "team_name",
             width: 200,
+        },
+        {
+            title: "Leader ID",
+            dataIndex: "leader_id",
+            width: 120,
+            render: (value: string | null | undefined) => value || "N/A",
         },
         {
             title: "Event Code",

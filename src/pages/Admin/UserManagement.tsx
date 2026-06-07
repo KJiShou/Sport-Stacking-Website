@@ -55,16 +55,26 @@ export default function UserManagementPage() {
 
     const loadUsers = async () => {
         setLoading(true);
-        try {
-            const [data, requests] = await Promise.all([fetchAllUsers(), fetchProfileClaimRequests("pending")]);
-            setUsers(data);
-            setClaimRequests(requests);
-        } catch (error) {
-            console.error("Failed to load users:", error);
+        const [usersResult, claimRequestsResult] = await Promise.allSettled([
+            fetchAllUsers(),
+            fetchProfileClaimRequests("pending"),
+        ]);
+
+        if (usersResult.status === "fulfilled") {
+            setUsers(usersResult.value);
+        } else {
+            console.error("Failed to load users:", usersResult.reason);
             Message.error("Failed to load users");
-        } finally {
-            setLoading(false);
         }
+
+        if (claimRequestsResult.status === "fulfilled") {
+            setClaimRequests(claimRequestsResult.value);
+        } else {
+            console.error("Failed to load profile claim requests:", claimRequestsResult.reason);
+            Message.error("Failed to load profile claim requests");
+        }
+
+        setLoading(false);
     };
 
     useEffect(() => {
@@ -623,11 +633,7 @@ export default function UserManagementPage() {
                             ) : null;
                         })()}
                         <Form form={claimReviewForm} layout="vertical">
-                            <Form.Item
-                                label="Profile Document ID To Claim"
-                                field="profileId"
-                                rules={[{required: true, message: "Enter the profile document ID"}]}
-                            >
+                            <Form.Item label="Profile Document ID To Claim" field="profileId">
                                 <Input allowClear placeholder="Firestore users document ID" />
                             </Form.Item>
                             <Form.Item label="Rejection Reason" field="rejectionReason">
