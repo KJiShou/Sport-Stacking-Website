@@ -36,7 +36,7 @@ import {
 } from "firebase/firestore";
 import {httpsCallable} from "firebase/functions";
 import {deleteObject, ref} from "firebase/storage";
-import type {FirestoreUser} from "../../schema";
+import type {FirestoreUser, ProfileClaimRequest} from "../../schema";
 import {FirestoreUserSchema} from "../../schema";
 import type {UserTournamentHistory} from "../../schema/UserHistorySchema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
@@ -260,6 +260,21 @@ type TransferProfileOwnershipResult = Pick<
     profileId: string;
 };
 
+type CreateProfileClaimRequestInput = {
+    profile_global_id?: string | null;
+    profile_name: string;
+    identity_hint?: string | null;
+    birthdate_hint?: unknown;
+    tournament_hint?: string | null;
+    note?: string | null;
+};
+
+type ReviewProfileClaimRequestResult = {
+    requestId: string;
+    status: "approved" | "rejected";
+    matched_profile_id?: string | null;
+};
+
 const resolveCallableErrorMessage = (error: unknown): string => {
     const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
     const message = error instanceof Error ? error.message : "";
@@ -289,6 +304,74 @@ export const transferProfileOwnership = async (
     } catch (error) {
         throw new Error(resolveCallableErrorMessage(error));
     }
+};
+
+const mapProfileClaimRequestDoc = (docSnap: QueryDocumentSnapshot<DocumentData>): ProfileClaimRequest => {
+    const data = docSnap.data();
+    return {
+        id: docSnap.id,
+        requester_uid: data.requester_uid ?? "",
+        requester_email: data.requester_email ?? "",
+        profile_global_id: data.profile_global_id ?? null,
+        profile_name: data.profile_name ?? "",
+        identity_hint: data.identity_hint ?? null,
+        birthdate_hint: parseBirthdate(data.birthdate_hint) ?? data.birthdate_hint ?? null,
+        tournament_hint: data.tournament_hint ?? null,
+        note: data.note ?? null,
+        status: data.status ?? "pending",
+        matched_profile_id: data.matched_profile_id ?? null,
+        reviewed_by_uid: data.reviewed_by_uid ?? null,
+        reviewed_by_email: data.reviewed_by_email ?? null,
+        rejection_reason: data.rejection_reason ?? null,
+        created_at: data.created_at ?? null,
+        updated_at: data.updated_at ?? null,
+        reviewed_at: data.reviewed_at ?? null,
+    } as ProfileClaimRequest;
+};
+
+export const createProfileClaimRequest = async (
+    input: CreateProfileClaimRequestInput,
+): Promise<{requestId: string; status: "pending"}> => {
+    const callable = httpsCallable(functions, "createProfileClaimRequest");
+    const normalizedInput = {
+        ...input,
+        birthdate_hint: input.birthdate_hint ? normalizeBirthdateForWrite(input.birthdate_hint) : null,
+    };
+    const result = await callable(normalizedInput);
+    return result.data as {requestId: string; status: "pending"};
+};
+
+export const approveProfileClaimRequest = async (
+    requestId: string,
+    profileId: string,
+): Promise<ReviewProfileClaimRequestResult> => {
+    const callable = httpsCallable(functions, "approveProfileClaimRequest");
+    const result = await callable({requestId, profileId});
+    return result.data as ReviewProfileClaimRequestResult;
+};
+
+export const rejectProfileClaimRequest = async (
+    requestId: string,
+    rejectionReason: string,
+): Promise<ReviewProfileClaimRequestResult> => {
+    const callable = httpsCallable(functions, "rejectProfileClaimRequest");
+    const result = await callable({requestId, rejectionReason});
+    return result.data as ReviewProfileClaimRequestResult;
+};
+
+export const fetchProfileClaimRequests = async (status?: ProfileClaimRequest["status"]): Promise<ProfileClaimRequest[]> => {
+    const baseQuery = status
+        ? query(collection(db, "profile_claim_requests"), where("status", "==", status))
+        : query(collection(db, "profile_claim_requests"), orderBy("created_at", "desc"));
+    const snapshot = await getDocs(baseQuery);
+    const requests = snapshot.docs.map(mapProfileClaimRequestDoc);
+    if (!status) return requests;
+
+    return requests.sort((a, b) => {
+        const timeA = a.created_at?.toMillis?.() ?? 0;
+        const timeB = b.created_at?.toMillis?.() ?? 0;
+        return timeB - timeA;
+    });
 };
 
 // Register and create user in Firestore

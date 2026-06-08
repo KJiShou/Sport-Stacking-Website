@@ -162,7 +162,7 @@ export default function TeamRecruitmentManagement() {
     };
 
     const handleAssignDouble = async (recruitment: DoubleRecruitment) => {
-        const unavailableIds = await fetchUnavailableParticipantIdsByEvent(recruitment.event_id, recruitment.tournament_id);
+        const unavailableIds = await fetchUnavailableParticipantIdsByEvent(recruitment.tournament_id, recruitment.event_id);
 
         const partners = doubles.filter(
             (candidate) =>
@@ -271,7 +271,7 @@ export default function TeamRecruitmentManagement() {
             }
 
             // Check if either participant is already in a team for this event
-            const occupied = await fetchOccupiedParticipantIdsByTournamentEvent(primary.event_id, primary.tournament_id);
+            const occupied = await fetchOccupiedParticipantIdsByTournamentEvent(primary.tournament_id, primary.event_id);
             if (occupied.has(primary.participant_id)) {
                 Message.error(`${primary.participant_name} is already in a team for this event. Their recruitment cannot be matched.`);
                 return;

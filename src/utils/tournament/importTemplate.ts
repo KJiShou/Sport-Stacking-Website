@@ -637,12 +637,12 @@ const addParentChildSheet = (
             const row = worksheet.getRow(rowNumber);
             if (memberIndex === 0) {
                 row.getCell(1).value = isExample ? "EX:" : blockIndex + 1;
-                row.getCell(7).value = {formula: buildAgeFormula(`${columnLetter(5)}${rowNumber}`, tournamentStartDate)};
                 row.getCell(8).value = {formula: buildGroupFormula(childAgeCell, templateSheet.event)};
             }
             row.getCell(2).value = memberIndex === 0 ? "Child:" : "Parent:";
             row.getCell(4).numFmt = "@";
             row.getCell(5).numFmt = "@";
+            row.getCell(7).value = {formula: buildAgeFormula(`${columnLetter(5)}${rowNumber}`, tournamentStartDate)};
         }
         worksheet.mergeCells(blockStartRow, 1, blockEndRow, 1);
         worksheet.mergeCells(blockStartRow, 8, blockEndRow, 8);
@@ -658,6 +658,7 @@ const addParentChildSheet = (
     worksheet.getCell(exampleStartRow, 6).value = "Male";
     worksheet.getCell(exampleStartRow + 1, 3).value = "WEE WEI KIAT";
     worksheet.getCell(exampleStartRow + 1, 4).value = "701010109999";
+    worksheet.getCell(exampleStartRow + 1, 5).value = "10/10/1970";
     worksheet.getCell(exampleStartRow + 1, 6).value = "Male";
 
     for (let blockIndex = 0; blockIndex < TEAM_BLOCK_COUNT; blockIndex += 1) {

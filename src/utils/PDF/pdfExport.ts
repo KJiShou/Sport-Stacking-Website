@@ -380,6 +380,39 @@ const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string
 
 const registrationMatchesParticipantId = (registration: Registration, participantId: string): boolean =>
     registration.user_id === participantId || registration.user_global_id === participantId;
+const normalizeSearchValue = (value: string | null | undefined): string => value?.trim().toLowerCase() ?? "";
+const valueMatchesSearch = (value: string | null | undefined, normalizedSearch: string): boolean =>
+    normalizeSearchValue(value).includes(normalizedSearch);
+const registrationMatchesSearch = (registration: Registration, normalizedSearch: string): boolean =>
+    valueMatchesSearch(registration.user_name, normalizedSearch) ||
+    valueMatchesSearch(registration.user_id, normalizedSearch) ||
+    valueMatchesSearch(registration.user_global_id, normalizedSearch);
+const getTeamParticipantIds = (team: Team): string[] => [
+    stripTeamLeaderPrefix(team.leader_id),
+    ...(team.members?.map((member) => member.global_id) ?? []),
+];
+const teamMatchesSearch = (
+    team: Team,
+    normalizedSearch: string,
+    registrationList: Registration[],
+): boolean => {
+    if (normalizedSearch.length === 0) {
+        return true;
+    }
+
+    if (valueMatchesSearch(team.name, normalizedSearch)) {
+        return true;
+    }
+
+    return getTeamParticipantIds(team).some((participantId) => {
+        if (valueMatchesSearch(participantId, normalizedSearch)) {
+            return true;
+        }
+
+        const registration = registrationList.find((item) => registrationMatchesParticipantId(item, participantId));
+        return registration ? registrationMatchesSearch(registration, normalizedSearch) : false;
+    });
+};
 
 // Main Export Functions
 export const exportParticipantListToPDF = async (options: ExportPDFOptions): Promise<void> => {
@@ -2049,49 +2082,22 @@ const filterRegistrations = (
     tournamentEvents: TournamentEvent[],
     teamList: Team[],
 ): Registration[] => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const normalizedSearch = normalizeSearchValue(searchTerm);
 
     if (isTeam) {
-        const filteredTeams = teamList.filter((team) => {
-            if (!teamMatchesEventKey(team, evtKey, tournamentEvents)) {
-                return false;
-            }
-
-            if (normalizedSearch.length === 0) {
-                return true;
-            }
-
-            const matchesName = team.name ? team.name.toLowerCase().includes(normalizedSearch) : false;
-            const leaderId = stripTeamLeaderPrefix(team.leader_id);
-            const matchesLeader = leaderId ? leaderId.toLowerCase().includes(normalizedSearch) : false;
-            const matchesMembers =
-                team.members?.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch) ?? false) ?? false;
-
-            return matchesName || matchesLeader || matchesMembers;
-        });
-
-        const teamUserIds = new Set(
-            filteredTeams.flatMap((team) => [
-                stripTeamLeaderPrefix(team.leader_id),
-                ...(team.members?.map((member) => member.global_id) ?? []),
-            ]),
+        const filteredTeams = teamList.filter(
+            (team) =>
+                teamMatchesEventKey(team, evtKey, tournamentEvents) &&
+                teamMatchesSearch(team, normalizedSearch, registrationList),
         );
+
+        const teamUserIds = new Set(filteredTeams.flatMap(getTeamParticipantIds));
 
         return registrationList.filter((registration) => {
             const hasParticipantMatch = Array.from(teamUserIds).some((participantId) =>
                 registrationMatchesParticipantId(registration, participantId),
             );
-            if (!hasParticipantMatch) {
-                return false;
-            }
-
-            if (normalizedSearch.length === 0) {
-                return true;
-            }
-
-            const nameMatches = registration.user_name?.toLowerCase().includes(normalizedSearch) ?? false;
-            const idMatches = registration.user_id?.toLowerCase().includes(normalizedSearch) ?? false;
-            return nameMatches || idMatches;
+            return hasParticipantMatch;
         });
     }
 
@@ -2106,9 +2112,7 @@ const filterRegistrations = (
             return true;
         }
 
-        const nameMatches = registration.user_name?.toLowerCase().includes(normalizedSearch) ?? false;
-        const idMatches = registration.user_id?.toLowerCase().includes(normalizedSearch) ?? false;
-        return nameMatches || idMatches;
+        return registrationMatchesSearch(registration, normalizedSearch);
     });
 };
 

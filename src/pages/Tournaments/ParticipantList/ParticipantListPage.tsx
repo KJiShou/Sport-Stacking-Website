@@ -102,6 +102,39 @@ export default function ParticipantListPage() {
         event.type.toLowerCase() === "stackout champion" || event.type.toLowerCase() === "stack up champion";
     const registrationMatchesParticipantId = (registration: Registration, participantId: string): boolean =>
         registration.user_id === participantId || registration.user_global_id === participantId;
+    const normalizeSearchValue = (value: string | null | undefined): string => value?.trim().toLowerCase() ?? "";
+    const valueMatchesSearch = (value: string | null | undefined, normalizedSearch: string): boolean =>
+        normalizeSearchValue(value).includes(normalizedSearch);
+    const registrationMatchesSearch = (registration: Registration, normalizedSearch: string): boolean =>
+        valueMatchesSearch(registration.user_name, normalizedSearch) ||
+        valueMatchesSearch(registration.user_id, normalizedSearch) ||
+        valueMatchesSearch(registration.user_global_id, normalizedSearch);
+    const getTeamParticipantIds = (team: Team): string[] => [
+        stripTeamLeaderPrefix(team.leader_id),
+        ...(team.members?.map((member) => member.global_id) ?? []),
+    ];
+    const teamMatchesSearch = (team: Team, normalizedSearch: string): boolean => {
+        if (normalizedSearch.length === 0) {
+            return true;
+        }
+
+        if (valueMatchesSearch(team.name, normalizedSearch)) {
+            return true;
+        }
+
+        return getTeamParticipantIds(team).some(
+            (participantId) =>
+                valueMatchesSearch(participantId, normalizedSearch) ||
+                valueMatchesSearch(combinedNameMap[participantId], normalizedSearch),
+        );
+    };
+    const filterTeams = (evtKey: string): Team[] => {
+        const normalizedSearch = normalizeSearchValue(searchTerm);
+
+        return teamList.filter(
+            (team) => teamMatchesEventKey(team, evtKey, events ?? []) && teamMatchesSearch(team, normalizedSearch),
+        );
+    };
 
     const refreshParticipantList = async () => {
         if (!tournamentId) return;
@@ -236,33 +269,10 @@ export default function ParticipantListPage() {
     }, [currentBracketTab, currentEventTab, currentPage, searchParams, searchTerm, setSearchParams]);
 
     const filterRegistrations = (evtKey: string, isTeam: boolean, event?: TournamentEvent) => {
-        const normalizedSearch = searchTerm.trim().toLowerCase();
+        const normalizedSearch = normalizeSearchValue(searchTerm);
 
         if (isTeam) {
-            const filteredTeams = teamList.filter((team) => {
-                if (!teamMatchesEventKey(team, evtKey, events ?? [])) {
-                    return false;
-                }
-
-                if (normalizedSearch.length === 0) {
-                    return true;
-                }
-
-                const matchesName = team.name ? team.name.toLowerCase().includes(normalizedSearch) : false;
-                const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                const matchesLeader = leaderId ? leaderId.toLowerCase().includes(normalizedSearch) : false;
-                const matchesMembers =
-                    team.members?.some((member) => member.global_id?.toLowerCase().includes(normalizedSearch) ?? false) ?? false;
-
-                return matchesName || matchesLeader || matchesMembers;
-            });
-
-            const teamUserIds = new Set(
-                filteredTeams.flatMap((team) => [
-                    stripTeamLeaderPrefix(team.leader_id),
-                    ...(team.members?.map((m) => m.global_id) ?? []),
-                ]),
-            );
+            const teamUserIds = new Set(filterTeams(evtKey).flatMap(getTeamParticipantIds));
 
             return registrationList.filter(
                 (registration) => teamUserIds.has(registration.user_id) || teamUserIds.has(registration.user_global_id ?? ""),
@@ -280,9 +290,7 @@ export default function ParticipantListPage() {
                 return true;
             }
 
-            const nameMatches = r.user_name?.toLowerCase().includes(normalizedSearch) ?? false;
-            const idMatches = r.user_id?.toLowerCase().includes(normalizedSearch) ?? false;
-            return nameMatches || idMatches;
+            return registrationMatchesSearch(r, normalizedSearch);
         });
     };
 
@@ -472,7 +480,6 @@ export default function ParticipantListPage() {
 
     if (!tournament) return null;
 
-    const tournamentEvents = events ?? [];
     const currentEvent =
         sortedEvents.find((evt) => (evt.id ?? evt.type) === currentEventTab) ??
         sortedEvents.find((evt) => evt.type === currentEventTab) ??
@@ -651,16 +658,14 @@ export default function ParticipantListPage() {
                                 >
                                     {evt.age_brackets.map((br) => {
                                         if (isTeamEventForTab) {
-                                            const teamRows: Team[] = teamList
-                                                .filter((team) => teamMatchesEventKey(team, tabKey, tournamentEvents))
-                                                .map((team) => ({
-                                                    ...team,
-                                                    registrationId:
-                                                        regs.find((r) => {
-                                                            const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                                                            return r.user_id === leaderId || r.user_global_id === leaderId;
-                                                        })?.id ?? "",
-                                                }));
+                                            const teamRows: TeamRow[] = filterTeams(tabKey).map((team) => ({
+                                                ...team,
+                                                registrationId:
+                                                    regs.find((r) => {
+                                                        const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                                                        return r.user_id === leaderId || r.user_global_id === leaderId;
+                                                    })?.id ?? "",
+                                            }));
 
                                             const rowsForBracket = teamRows.filter((record) => {
                                                 return (

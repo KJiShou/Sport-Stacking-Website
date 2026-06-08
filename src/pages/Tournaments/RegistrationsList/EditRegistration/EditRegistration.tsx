@@ -18,7 +18,7 @@ import {
     deleteIndividualRecruitment,
     getIndividualRecruitmentsByParticipant,
 } from "@/services/firebase/individualRecruitmentService";
-import {fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
+import {deleteRegistrationById, fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {
     createTeamRecruitment,
@@ -66,7 +66,7 @@ import {
     Upload,
 } from "@arco-design/web-react";
 import type {UploadItem} from "@arco-design/web-react/es/Upload";
-import {IconClose, IconDelete, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import {IconClose, IconDelete, IconExclamationCircle, IconPlus, IconUndo} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {nanoid} from "nanoid";
@@ -597,6 +597,50 @@ export default function EditTournamentRegistrationPage() {
                 } catch (error) {
                     console.error("Failed to delete recruitment:", error);
                     Message.error("Failed to delete recruitment.");
+                } finally {
+                    setLoading(false);
+                }
+            },
+        });
+    };
+
+    const handleDeleteRegistration = () => {
+        if (!tournamentId || !registration?.id) {
+            Message.error("Unable to determine registration to delete.");
+            return;
+        }
+
+        const registrationLabel = [registration.user_global_id, registration.user_name].filter(Boolean).join(" - ");
+
+        Modal.confirm({
+            title: "Delete Registration",
+            content: (
+                <div className="flex flex-col gap-3">
+                    <div>
+                        Delete <strong>{registrationLabel || "this registration"}</strong> from this tournament?
+                    </div>
+                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        <div className="font-semibold">
+                            <IconExclamationCircle /> This action cannot be undone.
+                        </div>
+                        <div className="mt-1">
+                            The registration, related team records, recruitments, and verification requests will be removed.
+                        </div>
+                    </div>
+                </div>
+            ),
+            okText: "Delete Registration",
+            cancelText: "Cancel",
+            okButtonProps: {status: "danger"},
+            onOk: async () => {
+                setLoading(true);
+                try {
+                    await deleteRegistrationById(tournamentId, registration.id ?? "", {adminDelete: true});
+                    Message.success("Registration deleted successfully.");
+                    navigate(`/tournaments/${tournamentId}/registrations${location.search}`);
+                } catch (error) {
+                    console.error("Failed to delete registration:", error);
+                    Message.error("Failed to delete registration.");
                 } finally {
                     setLoading(false);
                 }
@@ -1440,6 +1484,25 @@ export default function EditTournamentRegistrationPage() {
                                     }}
                                 >
                                     Reject
+                                </Button>
+                            </div>
+                        </Form.Item>
+                        <Form.Item className="w-full">
+                            <div className="flex flex-col gap-3 rounded-md border border-red-200 bg-red-50 p-4 md:flex-row md:items-center md:justify-between">
+                                <div className="min-w-0">
+                                    <div className="font-semibold text-red-700">Delete registration</div>
+                                    <Typography.Text type="secondary">
+                                        Remove this participant and related tournament records after confirmation.
+                                    </Typography.Text>
+                                </div>
+                                <Button
+                                    type="primary"
+                                    status="danger"
+                                    icon={<IconDelete />}
+                                    loading={loading}
+                                    onClick={handleDeleteRegistration}
+                                >
+                                    Delete Registration
                                 </Button>
                             </div>
                         </Form.Item>

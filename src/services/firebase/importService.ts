@@ -42,7 +42,9 @@ type ImportWorkbookInput = {
 };
 
 export const importTournamentWorkbook = async (input: ImportWorkbookInput): Promise<ImportWorkbookResult> => {
-    const callable = httpsCallable<ImportWorkbookInput, ImportWorkbookResult>(functions, "importTournamentWorkbook");
+    const callable = httpsCallable<ImportWorkbookInput, ImportWorkbookResult>(functions, "importTournamentWorkbook", {
+        timeout: 540000,
+    });
     const result = await callable(input);
     return result.data;
 };

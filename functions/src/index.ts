@@ -3,7 +3,14 @@ import cors from "cors";
 import {getApps, initializeApp} from "firebase-admin/app";
 import type {UserRecord} from "firebase-admin/auth";
 import {getAuth} from "firebase-admin/auth";
-import {FieldValue, type QueryDocumentSnapshot, Timestamp as FirestoreTimestamp, getFirestore} from "firebase-admin/firestore";
+import {
+    type DocumentReference,
+    FieldValue,
+    type QueryDocumentSnapshot,
+    Timestamp as FirestoreTimestamp,
+    type WriteBatch,
+    getFirestore,
+} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
 import {defineSecret} from "firebase-functions/params";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
@@ -28,15 +35,21 @@ const allowedOriginList = [
 ];
 
 const allowedOrigins = new Set<string>(allowedOriginList);
+const allowedOriginPatterns = [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/];
 const functionsRegion = process.env.FUNCTIONS_REGION ?? "asia-southeast1";
 const callableFunctionOptions = {
-    cors: allowedOriginList,
+    cors: [...allowedOriginList, ...allowedOriginPatterns],
     region: functionsRegion,
+};
+const importWorkbookFunctionOptions = {
+    ...callableFunctionOptions,
+    memory: "1GiB" as const,
+    timeoutSeconds: 540,
 };
 
 const corsHandler = cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.has(origin)) {
+        if (!origin || allowedOrigins.has(origin) || allowedOriginPatterns.some((pattern) => pattern.test(origin))) {
             callback(null, true);
             return;
         }
@@ -119,8 +132,12 @@ type ImportReportRow = {
     category?: "errors" | "warnings" | "athletes" | "registrations" | "teams";
 };
 
+const IMPORT_BATCH_WRITE_LIMIT = 450;
+const IMPORT_REPORT_ROW_LIMIT_PER_CATEGORY = 500;
+
 type ParsedWorkbookImport = {
     athletes: Map<string, ImportAthlete>;
+    invalidAthleteKeys: Set<string>;
     baseRosterKeys: Set<string>;
     registrationsByAthleteKey: Map<string, Set<string>>;
     teams: ImportTeam[];
@@ -140,6 +157,27 @@ type ImportUserProfileData = {
     identity_key?: string | null;
     passport_country?: string | null;
     country?: string[] | null;
+};
+
+type ProfileClaimRequestStatus = "pending" | "approved" | "rejected";
+
+type ProfileClaimRequestData = {
+    requester_uid: string;
+    requester_email: string;
+    profile_global_id?: string | null;
+    profile_name: string;
+    identity_hint?: string | null;
+    birthdate_hint?: FirestoreTimestamp | null;
+    tournament_hint?: string | null;
+    note?: string | null;
+    status: ProfileClaimRequestStatus;
+    matched_profile_id?: string | null;
+    reviewed_by_uid?: string | null;
+    reviewed_by_email?: string | null;
+    rejection_reason?: string | null;
+    created_at?: FirestoreTimestamp;
+    updated_at?: FirestoreTimestamp;
+    reviewed_at?: FirestoreTimestamp | null;
 };
 
 const IMPORT_TEMPLATE_MAPPING_SHEET_NAME = "__TemplateMapping";
@@ -257,6 +295,8 @@ const importWorkbookKey = (athlete: Pick<ImportAthlete, "identityKey" | "name" |
     return `NO_ID:${importNormalize(athlete.name)}:${importFormatDateKey(athlete.birthdate)}`;
 };
 
+const importNamesMatch = (firstName: string, secondName: string): boolean => importNormalize(firstName) === importNormalize(secondName);
+
 const importFindHeaderRow = (worksheet: ExcelJS.Worksheet): number => {
     for (let rowNumber = 1; rowNumber <= Math.min(worksheet.rowCount, 12); rowNumber += 1) {
         const rowText = worksheet.getRow(rowNumber).values.toString().toLowerCase();
@@ -318,6 +358,8 @@ const importIsExampleMarker = (value: string): boolean => {
     const normalized = importNormalize(value).replace(":", "");
     return normalized === "ex" || normalized === "example";
 };
+
+const importIsMergedContinuationCell = (cell: ExcelJS.Cell): boolean => cell.isMerged && cell.master.address !== cell.address;
 
 const importRowHasParticipantContent = (row: ExcelJS.Row, columns: ReturnType<typeof importFindColumns>): boolean => {
     const checkedColumns = [columns.name, columns.identity, columns.birthdate].filter((column) => column > 0);
@@ -428,8 +470,6 @@ const importReadAthleteFromRow = ({
     defaultCountry,
     defaultState,
     eventGender,
-    fallbackBirthdate,
-    allowMissingBirthdate,
 }: {
     worksheet: ExcelJS.Worksheet;
     rowNumber: number;
@@ -438,8 +478,6 @@ const importReadAthleteFromRow = ({
     defaultCountry: string;
     defaultState: string;
     eventGender?: string;
-    fallbackBirthdate?: Date;
-    allowMissingBirthdate?: boolean;
 }): {athlete: ImportAthlete | null; warnings: string[]} => {
     const row = worksheet.getRow(rowNumber);
     const nameCell =
@@ -456,13 +494,10 @@ const importReadAthleteFromRow = ({
     const birthdateCell = columns.birthdate > 0 ? row.getCell(columns.birthdate).value : row.getCell(nameCell.col + 1).value;
     const parsedBirthdate = importParseDate(birthdateCell);
     const warnings: string[] = [];
-    if (!parsedBirthdate && !allowMissingBirthdate) {
+    if (!parsedBirthdate) {
         return {athlete: null, warnings: [`${name}: missing or invalid date of birth.`]};
     }
-    const birthdate = parsedBirthdate ?? fallbackBirthdate ?? new Date(Date.UTC(1900, 0, 1));
-    if (!parsedBirthdate && allowMissingBirthdate) {
-        warnings.push(`${name}: DOB missing; parent-only account used a placeholder date.`);
-    }
+    const birthdate = parsedBirthdate;
 
     const genderText = columns.gender > 0 ? importNormalize(importCellToString(row.getCell(columns.gender).value)) : "";
     const inferredGender = importInferGender(identityType, identityNumber);
@@ -505,7 +540,17 @@ const importMergeAthlete = (parsed: ParsedWorkbookImport, athlete: ImportAthlete
         parsed.athletes.set(athlete.workbookKey, athlete);
         return athlete;
     }
-    if (existing.name !== athlete.name) {
+    if (!importNamesMatch(existing.name, athlete.name)) {
+        if (athlete.identityKey && existing.identityKey === athlete.identityKey) {
+            parsed.invalidAthleteKeys.add(athlete.workbookKey);
+            rows.push({
+                sheet: athlete.sourceSheet,
+                row: athlete.sourceRow,
+                level: "error",
+                message: `${athlete.identityNumber ?? athlete.identityKey} is used by both ${existing.name} and ${athlete.name}. Fix the name or Passport/IC before importing.`,
+            });
+            return existing;
+        }
         rows.push({
             sheet: athlete.sourceSheet,
             row: athlete.sourceRow,
@@ -543,6 +588,7 @@ const importParseWorkbook = (
 ): ParsedWorkbookImport => {
     const parsed: ParsedWorkbookImport = {
         athletes: new Map(),
+        invalidAthleteKeys: new Set(),
         baseRosterKeys: new Set(),
         registrationsByAthleteKey: new Map(),
         teams: [],
@@ -609,13 +655,22 @@ const importParseWorkbook = (
                 const merged = importMergeAthlete(parsed, athlete, parsed.rows);
                 if (isIndividualSheet) {
                     parsed.baseRosterKeys.add(merged.workbookKey);
-                    importAddEventForAthlete(parsed, merged.workbookKey, individualEvent.id);
+                    if (!parsed.invalidAthleteKeys.has(merged.workbookKey)) {
+                        importAddEventForAthlete(parsed, merged.workbookKey, individualEvent.id);
+                    }
                 } else if (!parsed.baseRosterKeys.has(merged.workbookKey)) {
                     parsed.rows.push({
                         sheet: worksheet.name,
                         row: rowNumber,
                         level: "error",
                         message: `${merged.name} must appear in the Individual sheet before joining ${event.type}.`,
+                    });
+                } else if (parsed.invalidAthleteKeys.has(merged.workbookKey)) {
+                    parsed.rows.push({
+                        sheet: worksheet.name,
+                        row: rowNumber,
+                        level: "error",
+                        message: `${merged.name} has a Passport/IC conflict and cannot be registered for ${event.type}.`,
                     });
                 } else {
                     importAddEventForAthlete(parsed, merged.workbookKey, event.id);
@@ -662,8 +717,6 @@ const importParseWorkbook = (
                     defaultCountry: options.defaultCountry,
                     defaultState: options.defaultState,
                     eventGender: event.gender,
-                    fallbackBirthdate: childResult.athlete?.birthdate,
-                    allowMissingBirthdate: true,
                 });
                 for (const warning of childResult.warnings) {
                     parsed.rows.push({sheet: worksheet.name, row: rowNumber, level: "warning", message: warning});
@@ -683,6 +736,15 @@ const importParseWorkbook = (
                 const child = importMergeAthlete(parsed, childResult.athlete, parsed.rows);
                 const parentInput = {...parentResult.athlete, parentOnly: true};
                 const parent = importMergeAthlete(parsed, parentInput, parsed.rows);
+                if (parsed.invalidAthleteKeys.has(child.workbookKey) || parsed.invalidAthleteKeys.has(parent.workbookKey)) {
+                    parsed.rows.push({
+                        sheet: worksheet.name,
+                        row: rowNumber,
+                        level: "error",
+                        message: "Child and Parent block has a Passport/IC conflict and cannot be imported.",
+                    });
+                    continue;
+                }
                 if (!parsed.baseRosterKeys.has(child.workbookKey)) {
                     parsed.rows.push({
                         sheet: worksheet.name,
@@ -706,6 +768,7 @@ const importParseWorkbook = (
 
         let currentBlock: string[] = [];
         let currentBlockRow = 0;
+        let currentBlockHasErrors = false;
         const expectedSize = event.teamSize ?? (event.type === "Double" ? 2 : event.type === "Team Relay" ? 4 : 1);
         const flushBlock = () => {
             if (currentBlock.length === 0) {
@@ -718,7 +781,7 @@ const importParseWorkbook = (
                     level: "error",
                     message: `${event.type} block has ${currentBlock.length} members; expected ${expectedSize}.`,
                 });
-            } else {
+            } else if (!currentBlockHasErrors) {
                 parsed.teams.push({
                     eventId: event.id,
                     eventType: event.type,
@@ -732,11 +795,13 @@ const importParseWorkbook = (
             }
             currentBlock = [];
             currentBlockRow = 0;
+            currentBlockHasErrors = false;
         };
 
         for (let rowNumber = headerRowNumber + 1; rowNumber <= lastRelevantRow; rowNumber += 1) {
             const row = worksheet.getRow(rowNumber);
-            const noText = importCellToString(row.getCell(columns.no).value);
+            const noCell = row.getCell(columns.no);
+            const noText = importCellToString(noCell.value);
             if (importIsExampleMarker(noText)) {
                 flushBlock();
                 rowNumber += expectedSize - 1;
@@ -745,7 +810,8 @@ const importParseWorkbook = (
             if (!importRowHasParticipantContent(row, columns)) {
                 continue;
             }
-            const startsBlock = noText.trim().length > 0 && noText.toLowerCase() !== "ex:";
+            const startsBlock =
+                noText.trim().length > 0 && noText.toLowerCase() !== "ex:" && !importIsMergedContinuationCell(noCell);
             if (startsBlock) {
                 flushBlock();
                 currentBlockRow = rowNumber;
@@ -767,6 +833,17 @@ const importParseWorkbook = (
                 continue;
             }
             const merged = importMergeAthlete(parsed, athlete, parsed.rows);
+            currentBlock.push(merged.workbookKey);
+            if (parsed.invalidAthleteKeys.has(merged.workbookKey)) {
+                parsed.rows.push({
+                    sheet: worksheet.name,
+                    row: rowNumber,
+                    level: "error",
+                    message: `${merged.name} has a Passport/IC conflict and cannot join ${event.type}.`,
+                });
+                currentBlockHasErrors = true;
+                continue;
+            }
             if (!parsed.baseRosterKeys.has(merged.workbookKey)) {
                 parsed.rows.push({
                     sheet: worksheet.name,
@@ -774,9 +851,8 @@ const importParseWorkbook = (
                     level: "error",
                     message: `${merged.name} must appear in the Individual sheet before joining ${event.type}.`,
                 });
-                continue;
+                currentBlockHasErrors = true;
             }
-            currentBlock.push(merged.workbookKey);
         }
         flushBlock();
     }
@@ -788,23 +864,52 @@ const importParseWorkbook = (
     return parsed;
 };
 
-const importGetNextGlobalId = async (): Promise<string> => {
+const importNextGlobalIdNumber = (current: number): number => {
+    let candidate = current + 1;
+    while (String(candidate).includes("4")) {
+        candidate += 1;
+    }
+    return candidate;
+};
+
+const importReserveGlobalIds = async (count: number): Promise<string[]> => {
+    if (count <= 0) {
+        return [];
+    }
+
     const counterRef = db.collection("counters").doc("userCounter");
-    const next = await db.runTransaction(async (transaction) => {
+    return db.runTransaction(async (transaction) => {
         const snap = await transaction.get(counterRef);
-        const nextAvailableCount = (current: number) => {
-            let candidate = current + 1;
-            while (String(candidate).includes("4")) {
-                candidate += 1;
-            }
-            return candidate;
-        };
         const current = snap.exists ? ((snap.data()?.count as number | undefined) ?? 0) : 0;
-        const resolved = nextAvailableCount(current);
-        transaction.set(counterRef, {count: resolved}, {merge: true});
-        return resolved;
+        const reserved: number[] = [];
+        let last = current;
+
+        while (reserved.length < count) {
+            last = importNextGlobalIdNumber(last);
+            reserved.push(last);
+        }
+
+        transaction.set(counterRef, {count: last}, {merge: true});
+        return reserved.map((value) => String(value).padStart(5, "0"));
     });
-    return String(next).padStart(5, "0");
+};
+
+const importCommitBatchWrites = async (applyWrites: Array<(batch: WriteBatch) => void>): Promise<void> => {
+    for (let index = 0; index < applyWrites.length; index += IMPORT_BATCH_WRITE_LIMIT) {
+        const batch = db.batch();
+        for (const applyWrite of applyWrites.slice(index, index + IMPORT_BATCH_WRITE_LIMIT)) {
+            applyWrite(batch);
+        }
+        await batch.commit();
+    }
+};
+
+const importGetDocumentsInChunks = async <T extends DocumentReference>(refs: T[]) => {
+    const snapshots: Awaited<ReturnType<typeof db.getAll>> = [];
+    for (let index = 0; index < refs.length; index += IMPORT_BATCH_WRITE_LIMIT) {
+        snapshots.push(...(await db.getAll(...refs.slice(index, index + IMPORT_BATCH_WRITE_LIMIT))));
+    }
+    return snapshots;
 };
 
 const profileSnapshotBelongsToUid = (profile: {id: string; data: () => Record<string, unknown> | undefined}, uid: string): boolean => {
@@ -923,9 +1028,13 @@ const importFindExistingUserForAthlete = async (athlete: ImportAthlete): Promise
     return null;
 };
 
-const importUseExistingUserForAthlete = async (athlete: ImportAthlete, existingDoc: QueryDocumentSnapshot): Promise<void> => {
+const importBuildExistingUserPatch = (
+    athlete: ImportAthlete,
+    existingDoc: QueryDocumentSnapshot,
+    assignedGlobalId?: string,
+): Partial<ImportUserProfileData> & {updated_at: FirestoreTimestamp} => {
     const data = existingDoc.data() as ImportUserProfileData;
-    const nextGlobalId = data.global_id ?? (await importGetNextGlobalId());
+    const nextGlobalId = data.global_id ?? assignedGlobalId;
     const accountStatus = data.account_status ?? (data.email ? "claimed" : "unclaimed");
     const ownerUids = Array.isArray(data.owner_uids) ? data.owner_uids : data.email ? [existingDoc.id] : [];
     const patch: Partial<ImportUserProfileData> & {updated_at: FirestoreTimestamp} = {
@@ -963,50 +1072,77 @@ const importUseExistingUserForAthlete = async (athlete: ImportAthlete, existingD
         patch.passport_country = athlete.passportCountry;
     }
 
-    await existingDoc.ref.update(patch);
+    return patch;
 };
 
 const importResolveUsers = async (athletes: Iterable<ImportAthlete>, importBatchId: string): Promise<void> => {
+    const existingAthletes: Array<{athlete: ImportAthlete; existingDoc: QueryDocumentSnapshot}> = [];
+    const newAthletes: ImportAthlete[] = [];
+
     for (const athlete of athletes) {
         const existingDoc = await importFindExistingUserForAthlete(athlete);
         if (existingDoc) {
-            await importUseExistingUserForAthlete(athlete, existingDoc);
+            existingAthletes.push({athlete, existingDoc});
             continue;
         }
 
+        newAthletes.push(athlete);
+    }
+
+    const existingWithoutGlobalId = existingAthletes.filter(({existingDoc}) => {
+        const data = existingDoc.data() as ImportUserProfileData;
+        return !data.global_id;
+    });
+    const reservedGlobalIds = await importReserveGlobalIds(existingWithoutGlobalId.length + newAthletes.length);
+    let nextReservedGlobalIdIndex = 0;
+    const writes: Array<(batch: WriteBatch) => void> = [];
+
+    for (const {athlete, existingDoc} of existingAthletes) {
+        const data = existingDoc.data() as ImportUserProfileData;
+        const assignedGlobalId = data.global_id ? undefined : reservedGlobalIds[nextReservedGlobalIdIndex++];
+        const patch = importBuildExistingUserPatch(athlete, existingDoc, assignedGlobalId);
+        writes.push((batch) => batch.update(existingDoc.ref, patch));
+    }
+
+    for (const athlete of newAthletes) {
         const userRef = db.collection("users").doc();
-        const globalId = await importGetNextGlobalId();
+        const globalId = reservedGlobalIds[nextReservedGlobalIdIndex++];
+        const now = FirestoreTimestamp.now();
         athlete.userDocId = userRef.id;
         athlete.globalId = globalId;
-        await userRef.set({
-            id: userRef.id,
-            global_id: globalId,
-            name: athlete.name,
-            name_search: importNormalize(athlete.name),
-            IC: athlete.identityNumber,
-            email: null,
-            phone_number: null,
-            birthdate: FirestoreTimestamp.fromDate(athlete.birthdate),
-            gender: athlete.gender,
-            country: athlete.country,
-            image_url: "",
-            owner_uids: [],
-            primary_owner_email: null,
-            account_status: "unclaimed",
-            source: "admin_import",
-            identity_type: athlete.identityType,
-            identity_key: athlete.identityKey,
-            passport_country: athlete.passportCountry,
-            import_batch_id: importBatchId,
-            claim_method: athlete.identityType === "NONE" ? "admin_review" : "identity_match",
-            roles: null,
-            school: null,
-            best_times: {},
-            registration_records: [],
-            created_at: FirestoreTimestamp.now(),
-            updated_at: FirestoreTimestamp.now(),
-        });
+        writes.push((batch) =>
+            batch.set(userRef, {
+                id: userRef.id,
+                global_id: globalId,
+                name: athlete.name,
+                name_search: importNormalize(athlete.name),
+                IC: athlete.identityNumber,
+                email: null,
+                phone_number: null,
+                birthdate: FirestoreTimestamp.fromDate(athlete.birthdate),
+                gender: athlete.gender,
+                country: athlete.country,
+                image_url: "",
+                owner_uids: [],
+                primary_owner_email: null,
+                account_status: "unclaimed",
+                source: "admin_import",
+                identity_type: athlete.identityType,
+                identity_key: athlete.identityKey,
+                passport_country: athlete.passportCountry,
+                import_batch_id: importBatchId,
+                claim_method: athlete.identityType === "NONE" ? "admin_review" : "identity_match",
+                roles: null,
+                school: null,
+                best_times: {},
+                registration_records: [],
+                created_at: now,
+                updated_at: now,
+            }),
+        );
     }
+
+    await importCommitBatchWrites(writes);
 };
 
 const importCommitRegistrationsAndTeams = async ({
@@ -1024,18 +1160,37 @@ const importCommitRegistrationsAndTeams = async ({
     let updatedRegistrations = 0;
     let createdTeams = 0;
     const registrationIdByAthleteKey = new Map<string, string>();
+    const existingRegistrationsSnap = await db.collection("registrations").where("tournament_id", "==", tournamentId).get();
+    const existingRegistrationByGlobalId = new Map(
+        existingRegistrationsSnap.docs
+            .map((docSnap) => {
+                const data = docSnap.data() as {user_global_id?: string};
+                return data.user_global_id ? ([data.user_global_id, docSnap] as const) : null;
+            })
+            .filter((entry): entry is readonly [string, QueryDocumentSnapshot] => Boolean(entry)),
+    );
+    const registrationWrites: Array<(batch: WriteBatch) => void> = [];
+    const userRegistrationUpdates: Array<{
+        userRef: DocumentReference;
+        tournamentId: string;
+        registrationRecord: {
+            tournament_id: string;
+            events: string[];
+            registration_date: FirestoreTimestamp;
+            status: string;
+            rejection_reason: null;
+            created_at: FirestoreTimestamp;
+            updated_at: FirestoreTimestamp;
+        };
+        now: FirestoreTimestamp;
+    }> = [];
 
     for (const [athleteKey, eventIds] of parsed.registrationsByAthleteKey.entries()) {
         const athlete = parsed.athletes.get(athleteKey);
         if (!athlete?.userDocId || !athlete.globalId || athlete.parentOnly) {
             continue;
         }
-        const existingRegistrationSnap = await db
-            .collection("registrations")
-            .where("tournament_id", "==", tournamentId)
-            .where("user_global_id", "==", athlete.globalId)
-            .limit(1)
-            .get();
+        const existingRegistrationDoc = existingRegistrationByGlobalId.get(athlete.globalId);
         const age = importAgeAtTournament(athlete.birthdate, tournamentStartDate);
         const eventsRegistered = Array.from(eventIds);
         const now = FirestoreTimestamp.now();
@@ -1050,7 +1205,7 @@ const importCommitRegistrationsAndTeams = async ({
             updated_at: now,
         };
 
-        if (existingRegistrationSnap.empty) {
+        if (!existingRegistrationDoc) {
             const registrationRef = db.collection("registrations").doc();
             const payload = {
                 id: registrationRef.id,
@@ -1072,43 +1227,57 @@ const importCommitRegistrationsAndTeams = async ({
                 created_at: now,
                 updated_at: now,
             };
-            await registrationRef.set(payload);
+            registrationWrites.push((batch) => batch.set(registrationRef, payload));
             registrationIdByAthleteKey.set(athleteKey, registrationRef.id);
             createdRegistrations += 1;
         } else {
-            const registrationDoc = existingRegistrationSnap.docs[0];
-            const existingData = registrationDoc.data() as {events_registered?: string[]; registration_status?: string};
+            const existingData = existingRegistrationDoc.data() as {events_registered?: string[]; registration_status?: string};
             const mergedEvents = Array.from(new Set([...(existingData.events_registered ?? []), ...eventsRegistered]));
             recordEvents = mergedEvents;
-            await registrationDoc.ref.update({
-                events_registered: mergedEvents,
-                registration_status: "approved",
-                import_batch_id: importBatchId,
-                updated_at: now,
-            });
-            registrationIdByAthleteKey.set(athleteKey, registrationDoc.id);
+            registrationWrites.push((batch) =>
+                batch.update(existingRegistrationDoc.ref, {
+                    events_registered: mergedEvents,
+                    registration_status: "approved",
+                    import_batch_id: importBatchId,
+                    updated_at: now,
+                }),
+            );
+            registrationIdByAthleteKey.set(athleteKey, existingRegistrationDoc.id);
             updatedRegistrations += 1;
             if (existingData.registration_status !== "approved") {
                 createdRegistrations += 1;
             }
         }
 
-        const userRef = db.collection("users").doc(athlete.userDocId);
-        const userSnap = await userRef.get();
-        const existingRecords = (userSnap.data()?.registration_records as Array<{tournament_id?: string}> | undefined) ?? [];
-        const syncedRegistrationRecord = {
-            ...registrationRecord,
-            events: recordEvents,
-        };
-        const nextRecords = [
-            ...existingRecords.filter((record) => record.tournament_id !== tournamentId),
-            syncedRegistrationRecord,
-        ];
-        await userRef.update({
-            registration_records: nextRecords,
-            updated_at: now,
+        userRegistrationUpdates.push({
+            userRef: db.collection("users").doc(athlete.userDocId),
+            tournamentId,
+            registrationRecord: {
+                ...registrationRecord,
+                events: recordEvents,
+            },
+            now,
         });
     }
+
+    await importCommitBatchWrites(registrationWrites);
+
+    const userSnapshots = await importGetDocumentsInChunks(userRegistrationUpdates.map((update) => update.userRef));
+    const userWrites = userRegistrationUpdates.map((update, index) => {
+        const userSnap = userSnapshots[index];
+        const existingRecords = (userSnap?.data()?.registration_records as Array<{tournament_id?: string}> | undefined) ?? [];
+        const nextRecords = [
+            ...existingRecords.filter((record) => record.tournament_id !== update.tournamentId),
+            update.registrationRecord,
+        ];
+
+        return (batch: WriteBatch) =>
+            batch.update(update.userRef, {
+                registration_records: nextRecords,
+                updated_at: update.now,
+            });
+    });
+    await importCommitBatchWrites(userWrites);
 
     if (createdRegistrations > 0) {
         await db
@@ -1182,45 +1351,78 @@ const importCommitRegistrationsAndTeams = async ({
 
 const importBuildReportRows = (parsed: ParsedWorkbookImport, events: ImportEvent[]): ImportReportRow[] => {
     const eventLabelById = new Map(events.map((event) => [event.id, event.type]));
-    const issueRows = parsed.rows.map((row) => ({
-        ...row,
-        category: row.level === "warning" ? ("warnings" as const) : ("errors" as const),
-    }));
-    const athleteRows = Array.from(parsed.athletes.values()).map((athlete) => ({
-        sheet: athlete.sourceSheet,
-        row: athlete.sourceRow,
-        level: "info" as const,
-        category: "athletes" as const,
-        message: `${athlete.name} | ${athlete.gender} | ${athlete.identityNumber ?? "No Passport/IC"} | ${importFormatDateKey(athlete.birthdate)}`,
-    }));
-    const registrationRows = Array.from(parsed.registrationsByAthleteKey.entries()).flatMap(([athleteKey, eventIds]) => {
+    const rows: ImportReportRow[] = [];
+    let errorRows = 0;
+    let warningRows = 0;
+    let athleteRows = 0;
+    let registrationRows = 0;
+    let teamRows = 0;
+
+    for (const row of parsed.rows) {
+        if (row.level === "warning") {
+            if (warningRows >= IMPORT_REPORT_ROW_LIMIT_PER_CATEGORY) {
+                continue;
+            }
+            warningRows += 1;
+            rows.push({...row, category: "warnings"});
+            continue;
+        }
+        if (errorRows >= IMPORT_REPORT_ROW_LIMIT_PER_CATEGORY) {
+            continue;
+        }
+        errorRows += 1;
+        rows.push({...row, category: "errors"});
+    }
+
+    for (const athlete of parsed.athletes.values()) {
+        if (athleteRows >= IMPORT_REPORT_ROW_LIMIT_PER_CATEGORY) {
+            break;
+        }
+        athleteRows += 1;
+        rows.push({
+            sheet: athlete.sourceSheet,
+            row: athlete.sourceRow,
+            level: "info",
+            category: "athletes",
+            message: `${athlete.name} | ${athlete.gender} | ${athlete.identityNumber ?? "No Passport/IC"} | ${importFormatDateKey(athlete.birthdate)}`,
+        });
+    }
+
+    for (const [athleteKey, eventIds] of parsed.registrationsByAthleteKey.entries()) {
+        if (registrationRows >= IMPORT_REPORT_ROW_LIMIT_PER_CATEGORY) {
+            break;
+        }
         const athlete = parsed.athletes.get(athleteKey);
         if (!athlete) {
-            return [];
+            continue;
         }
         const eventLabels = Array.from(eventIds).map((eventId) => eventLabelById.get(eventId) ?? eventId);
-        return [
-            {
-                sheet: athlete.sourceSheet,
-                row: athlete.sourceRow,
-                level: "info" as const,
-                category: "registrations" as const,
-                message: `${athlete.name} | ${eventLabels.join(", ")}`,
-            },
-        ];
-    });
-    const teamRows = parsed.teams.map((team) => {
+        registrationRows += 1;
+        rows.push({
+            sheet: athlete.sourceSheet,
+            row: athlete.sourceRow,
+            level: "info",
+            category: "registrations",
+            message: `${athlete.name} | ${eventLabels.join(", ")}`,
+        });
+    }
+
+    for (const team of parsed.teams) {
+        if (teamRows >= IMPORT_REPORT_ROW_LIMIT_PER_CATEGORY) {
+            break;
+        }
         const memberNames = team.members.map((memberKey) => parsed.athletes.get(memberKey)?.name ?? memberKey);
-        return {
+        teamRows += 1;
+        rows.push({
             sheet: team.sheetName,
             row: team.sourceRow,
-            level: "info" as const,
-            category: "teams" as const,
+            level: "info",
+            category: "teams",
             message: `${team.eventType} | ${memberNames.join(" / ")}`,
-        };
-    });
+        });
+    }
 
-    return [...issueRows, ...athleteRows, ...registrationRows, ...teamRows];
+    return rows;
 };
 
 const buildVerificationRequestId = (tournamentId: string, teamId: string, memberId: string): string =>
@@ -2445,8 +2647,248 @@ export const transferProfileOwnership = onCall(callableFunctionOptions, async (r
     };
 });
 
-export const importTournamentWorkbook = onCall(callableFunctionOptions, async (request) => {
+const sanitizeProfileClaimText = (value: unknown, maxLength: number): string => {
+    if (typeof value !== "string") {
+        return "";
+    }
+    return value.trim().replace(/\s+/g, " ").slice(0, maxLength);
+};
+
+const parseProfileClaimDate = (value: unknown): FirestoreTimestamp | null => {
+    if (!value) {
+        return null;
+    }
+    if (value instanceof FirestoreTimestamp) {
+        return value;
+    }
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return FirestoreTimestamp.fromDate(value);
+    }
+    if (typeof value === "string" || typeof value === "number") {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : FirestoreTimestamp.fromDate(parsed);
+    }
+    if (typeof value === "object") {
+        const data = value as {seconds?: unknown; _seconds?: unknown; nanoseconds?: unknown; _nanoseconds?: unknown};
+        const seconds = typeof data.seconds === "number" ? data.seconds : data._seconds;
+        const nanoseconds = typeof data.nanoseconds === "number" ? data.nanoseconds : data._nanoseconds;
+        if (typeof seconds === "number") {
+            return new FirestoreTimestamp(seconds, typeof nanoseconds === "number" ? nanoseconds : 0);
+        }
+    }
+    return null;
+};
+
+export const createProfileClaimRequest = onCall(callableFunctionOptions, async (request) => {
+    const requesterUid = request.auth?.uid;
+    const requesterEmail =
+        typeof request.auth?.token.email === "string" ? request.auth.token.email.trim().toLowerCase() : "";
+    if (!requesterUid || !requesterEmail) {
+        throw new HttpsError("unauthenticated", "Please sign in with Google before requesting a profile claim.");
+    }
+
+    const payload = request.data as {
+        profile_global_id?: unknown;
+        profile_name?: unknown;
+        identity_hint?: unknown;
+        birthdate_hint?: unknown;
+        tournament_hint?: unknown;
+        note?: unknown;
+    };
+    const profileName = sanitizeProfileClaimText(payload.profile_name, 120);
+    const profileGlobalId = sanitizeProfileClaimText(payload.profile_global_id, 32) || null;
+    const identityHint = sanitizeProfileClaimText(payload.identity_hint, 64) || null;
+    const tournamentHint = sanitizeProfileClaimText(payload.tournament_hint, 160) || null;
+    const note = sanitizeProfileClaimText(payload.note, 1000) || null;
+    const birthdateHint = parseProfileClaimDate(payload.birthdate_hint);
+
+    if (!profileName) {
+        throw new HttpsError("invalid-argument", "Participant name is required.");
+    }
+    if (!profileGlobalId && !identityHint && !birthdateHint && !tournamentHint && !note) {
+        throw new HttpsError("invalid-argument", "Please provide at least one clue to help admins find the imported profile.");
+    }
+
+    const existingPending = await db
+        .collection("profile_claim_requests")
+        .where("requester_uid", "==", requesterUid)
+        .where("status", "==", "pending")
+        .limit(1)
+        .get();
+    if (!existingPending.empty) {
+        await existingPending.docs[0].ref.update({
+            profile_global_id: profileGlobalId,
+            profile_name: profileName,
+            identity_hint: identityHint,
+            birthdate_hint: birthdateHint,
+            tournament_hint: tournamentHint,
+            note,
+            updated_at: FirestoreTimestamp.now(),
+        });
+        return {requestId: existingPending.docs[0].id, status: "pending"};
+    }
+
+    const now = FirestoreTimestamp.now();
+    const requestRef = db.collection("profile_claim_requests").doc();
+    await requestRef.set({
+        requester_uid: requesterUid,
+        requester_email: requesterEmail,
+        profile_global_id: profileGlobalId,
+        profile_name: profileName,
+        identity_hint: identityHint,
+        birthdate_hint: birthdateHint,
+        tournament_hint: tournamentHint,
+        note,
+        status: "pending",
+        matched_profile_id: null,
+        rejection_reason: null,
+        created_at: now,
+        updated_at: now,
+        reviewed_at: null,
+    } satisfies ProfileClaimRequestData);
+
+    return {requestId: requestRef.id, status: "pending"};
+});
+
+export const approveProfileClaimRequest = onCall(callableFunctionOptions, async (request) => {
+    const requesterUid = request.auth?.uid;
+    if (!requesterUid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+    }
+    const authorized = await requesterHasModifyAdmin(requesterUid);
+    if (!authorized) {
+        throw new HttpsError("permission-denied", "You do not have permission to approve profile claims.");
+    }
+
+    const payload = request.data as {requestId?: unknown; profileId?: unknown};
+    const requestId = sanitizeProfileClaimText(payload.requestId, 128);
+    const profileId = sanitizeProfileClaimText(payload.profileId, 128);
+    if (!requestId || !profileId) {
+        throw new HttpsError("invalid-argument", "Claim request ID and profile ID are required.");
+    }
+
+    const requestRef = db.collection("profile_claim_requests").doc(requestId);
+    const profileRef = db.collection("users").doc(profileId);
+    const now = FirestoreTimestamp.now();
+
+    let requesterEmail = "";
+    let requesterOwnerUid = "";
+    await db.runTransaction(async (transaction) => {
+        const [requestSnap, profileSnap] = await Promise.all([transaction.get(requestRef), transaction.get(profileRef)]);
+        if (!requestSnap.exists) {
+            throw new HttpsError("not-found", "Claim request not found.");
+        }
+        if (!profileSnap.exists) {
+            throw new HttpsError("not-found", "Profile not found.");
+        }
+
+        const claimData = requestSnap.data() as ProfileClaimRequestData;
+        if (claimData.status !== "pending") {
+            throw new HttpsError("failed-precondition", "Only pending claim requests can be approved.");
+        }
+        requesterEmail = claimData.requester_email;
+        requesterOwnerUid = claimData.requester_uid;
+        if (!requesterEmail || !requesterOwnerUid) {
+            throw new HttpsError("failed-precondition", "Claim request is missing requester account details.");
+        }
+
+        const previousData = profileSnap.data() as {
+            email?: string | null;
+            owner_uids?: string[] | null;
+            primary_owner_email?: string | null;
+            account_status?: string | null;
+        };
+        const previousOwnerUids = Array.isArray(previousData.owner_uids) ? previousData.owner_uids : [];
+
+        transaction.update(profileRef, {
+            owner_uids: [requesterOwnerUid],
+            email: requesterEmail,
+            primary_owner_email: requesterEmail,
+            account_status: "claimed",
+            claim_method: "admin_review",
+            updated_at: now,
+        });
+        transaction.update(requestRef, {
+            status: "approved",
+            matched_profile_id: profileId,
+            reviewed_by_uid: requesterUid,
+            reviewed_by_email: request.auth?.token.email ?? null,
+            updated_at: now,
+            reviewed_at: now,
+        });
+        transaction.set(db.collection("profile_ownership_audits").doc(), {
+            profile_id: profileId,
+            claim_request_id: requestId,
+            previous_owner_uids: previousOwnerUids,
+            previous_email: previousData.email ?? null,
+            previous_primary_owner_email: previousData.primary_owner_email ?? null,
+            previous_account_status: previousData.account_status ?? null,
+            new_owner_uid: requesterOwnerUid,
+            new_owner_email: requesterEmail,
+            admin_uid: requesterUid,
+            admin_email: request.auth?.token.email ?? null,
+            method: "claim_request_approval",
+            created_at: now,
+        });
+    });
+
+    return {requestId, status: "approved", matched_profile_id: profileId};
+});
+
+export const rejectProfileClaimRequest = onCall(callableFunctionOptions, async (request) => {
+    const requesterUid = request.auth?.uid;
+    if (!requesterUid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+    }
+    const authorized = await requesterHasModifyAdmin(requesterUid);
+    if (!authorized) {
+        throw new HttpsError("permission-denied", "You do not have permission to reject profile claims.");
+    }
+
+    const payload = request.data as {requestId?: unknown; rejectionReason?: unknown};
+    const requestId = sanitizeProfileClaimText(payload.requestId, 128);
+    const rejectionReason = sanitizeProfileClaimText(payload.rejectionReason, 500);
+    if (!requestId || !rejectionReason) {
+        throw new HttpsError("invalid-argument", "Claim request ID and rejection reason are required.");
+    }
+
+    const requestRef = db.collection("profile_claim_requests").doc(requestId);
+    const requestSnap = await requestRef.get();
+    if (!requestSnap.exists) {
+        throw new HttpsError("not-found", "Claim request not found.");
+    }
+    const claimData = requestSnap.data() as ProfileClaimRequestData;
+    if (claimData.status !== "pending") {
+        throw new HttpsError("failed-precondition", "Only pending claim requests can be rejected.");
+    }
+
+    const now = FirestoreTimestamp.now();
+    await requestRef.update({
+        status: "rejected",
+        rejection_reason: rejectionReason,
+        reviewed_by_uid: requesterUid,
+        reviewed_by_email: request.auth?.token.email ?? null,
+        updated_at: now,
+        reviewed_at: now,
+    });
+
+    return {requestId, status: "rejected", matched_profile_id: null};
+});
+
+export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, async (request) => {
+    const importStartedAt = Date.now();
+    const importBatchRef = db.collection("import_batches").doc();
+    const logImportStage = (stage: string, details: Record<string, unknown> = {}) => {
+        console.info("importTournamentWorkbook checkpoint", {
+            stage,
+            importBatchId: importBatchRef.id,
+            elapsedMs: Date.now() - importStartedAt,
+            ...details,
+        });
+    };
+
     if (!request.auth?.uid) {
+        logImportStage("unauthenticated");
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
 
@@ -2463,19 +2905,34 @@ export const importTournamentWorkbook = onCall(callableFunctionOptions, async (r
             ? (payload.sheetMappings as Record<string, string>)
             : {};
 
+    logImportStage("request received", {
+        mode,
+        tournamentId,
+        fileName: typeof payload.fileName === "string" ? payload.fileName : null,
+        fileBase64Length: fileBase64.length,
+        uid: request.auth.uid,
+    });
+
     if (!tournamentId || !fileBase64) {
+        logImportStage("invalid argument", {hasTournamentId: Boolean(tournamentId), hasFileBase64: Boolean(fileBase64)});
         throw new HttpsError("invalid-argument", "Tournament ID and workbook file are required.");
     }
 
     const authorized = await importIsAuthorized(request.auth.uid, tournamentId);
     if (!authorized) {
+        logImportStage("authorization failed");
         throw new HttpsError("permission-denied", "You do not have permission to import registrations for this tournament.");
     }
+    logImportStage("authorization complete");
 
     const [tournamentSnap, eventsSnap] = await Promise.all([
         db.collection("tournaments").doc(tournamentId).get(),
         db.collection("events").where("tournament_id", "==", tournamentId).get(),
     ]);
+    logImportStage("tournament/events loaded", {
+        tournamentExists: tournamentSnap.exists,
+        events: eventsSnap.size,
+    });
     if (!tournamentSnap.exists) {
         throw new HttpsError("not-found", "Tournament not found.");
     }
@@ -2509,10 +2966,22 @@ export const importTournamentWorkbook = onCall(callableFunctionOptions, async (r
         workbookBuffer.byteOffset + workbookBuffer.byteLength,
     );
     await workbook.xlsx.load(workbookArrayBuffer);
+    logImportStage("workbook loaded", {
+        bufferBytes: workbookBuffer.byteLength,
+        worksheets: workbook.worksheets.length,
+    });
     const parsed = importParseWorkbook(workbook, events, {defaultCountry, defaultState, sheetMappings});
     const errors = parsed.rows.filter((row) => row.level === "error");
+    logImportStage("workbook parsed", {
+        athletes: parsed.athletes.size,
+        baseRoster: parsed.baseRosterKeys.size,
+        registrations: parsed.registrationsByAthleteKey.size,
+        teams: parsed.teams.length,
+        issues: parsed.rows.length,
+        errors: errors.length,
+        warnings: parsed.rows.filter((row) => row.level === "warning").length,
+    });
     const reportRows = importBuildReportRows(parsed, events);
-    const importBatchRef = db.collection("import_batches").doc();
     const summary = {
         mode,
         importBatchId: importBatchRef.id,
@@ -2526,16 +2995,23 @@ export const importTournamentWorkbook = onCall(callableFunctionOptions, async (r
         updatedRegistrations: 0,
         createdTeams: 0,
     };
+    logImportStage("report rows built", {
+        reportRows: reportRows.length,
+        summary,
+    });
 
     if (mode === "commit") {
         if (errors.length > 0) {
+            logImportStage("commit skipped due to errors", {errors: errors.length});
             return {
                 summary,
                 rows: reportRows,
                 committed: false,
             };
         }
+        logImportStage("commit started");
         await importResolveUsers(parsed.athletes.values(), importBatchRef.id);
+        logImportStage("users resolved");
         const commitSummary = await importCommitRegistrationsAndTeams({
             tournamentId,
             tournamentStartDate: tournamentStart,
@@ -2543,6 +3019,7 @@ export const importTournamentWorkbook = onCall(callableFunctionOptions, async (r
             importBatchId: importBatchRef.id,
         });
         Object.assign(summary, commitSummary);
+        logImportStage("registrations and teams committed", {commitSummary});
         await importBatchRef.set({
             tournament_id: tournamentId,
             file_name: typeof payload.fileName === "string" ? payload.fileName : null,
@@ -2552,6 +3029,7 @@ export const importTournamentWorkbook = onCall(callableFunctionOptions, async (r
             created_at: FirestoreTimestamp.now(),
             created_by_uid: request.auth.uid,
         });
+        logImportStage("import batch saved", {summary});
         return {
             summary,
             rows: reportRows,
@@ -2559,6 +3037,7 @@ export const importTournamentWorkbook = onCall(callableFunctionOptions, async (r
         };
     }
 
+    logImportStage("preview complete", {summary});
     return {
         summary,
         rows: reportRows,
