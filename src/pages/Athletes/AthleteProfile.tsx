@@ -20,6 +20,7 @@ import type {Timestamp} from "firebase/firestore";
 import type {FirestoreUser} from "@/schema/UserSchema";
 import {type EventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
 import {fetchUserByID, getUserByGlobalId} from "@/services/firebase/authService";
+import {fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatDateSafe, formatStackingTime} from "@/utils/time";
 
@@ -45,6 +46,8 @@ interface TournamentRecord {
     finalOverall: number | null;
 }
 
+type RegistrationRecord = NonNullable<FirestoreUser["registration_records"]>[number];
+
 const STATUS_COLORS: Record<string, string> = {
     verified: "green",
     submitted: "orange",
@@ -63,6 +66,25 @@ const toDate = (value: Date | Timestamp | null | undefined): Date | null => {
     return null;
 };
 
+const toNumber = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+};
+
+const hasTournamentResult = (record: RegistrationRecord): boolean =>
+    [
+        record.prelim_rank,
+        record.final_rank,
+        record.prelim_overall_result,
+        record.final_overall_result,
+    ].some((value) => toNumber(value) !== null);
+
 const getBestTimesCount = (user: FirestoreUser | null | undefined): number => {
     if (!user?.best_times) {
         return 0;
@@ -79,6 +101,7 @@ const AthleteProfilePage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [user, setUser] = useState<FirestoreUser | null>(null);
+    const [tournamentStartDates, setTournamentStartDates] = useState<Record<string, Date | null>>({});
     const [rankings, setRankings] = useState<Record<EventType, number | null>>({
         "3-3-3": null,
         "3-6-3": null,
@@ -174,6 +197,44 @@ const AthleteProfilePage = () => {
         };
     }, [athleteId]);
 
+    useEffect(() => {
+        const tournamentIds = Array.from(
+            new Set(
+                (user?.registration_records ?? [])
+                    .filter((record) => record.status === "approved" && hasTournamentResult(record))
+                    .map((record) => record.tournament_id)
+                    .filter((tournamentId): tournamentId is string => Boolean(tournamentId)),
+            ),
+        );
+
+        if (tournamentIds.length === 0) {
+            setTournamentStartDates({});
+            return;
+        }
+
+        let cancelled = false;
+
+        Promise.all(
+            tournamentIds.map(async (tournamentId) => {
+                try {
+                    const tournament = await fetchTournamentById(tournamentId);
+                    return [tournamentId, toDate(tournament?.start_date)] as const;
+                } catch (error) {
+                    console.warn(`Failed to fetch tournament ${tournamentId} for athlete profile`, error);
+                    return [tournamentId, null] as const;
+                }
+            }),
+        ).then((entries) => {
+            if (!cancelled) {
+                setTournamentStartDates(Object.fromEntries(entries));
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [user]);
+
     const bestTimes = useMemo<BestTimeRecord[]>(() => {
         if (!user?.best_times) return [];
 
@@ -197,20 +258,19 @@ const AthleteProfilePage = () => {
     const tournaments = useMemo<TournamentRecord[]>(() => {
         if (!user?.registration_records) return [];
 
-        // Only show approved registrations
         return user.registration_records
-            .filter((reg) => reg.status === "approved")
+            .filter((reg) => reg.status === "approved" && hasTournamentResult(reg))
             .map((reg) => ({
                 tournamentId: reg.tournament_id,
                 events: reg.events ?? [],
-                registrationDate: toDate(reg.updated_at) ?? toDate(reg.registration_date),
+                registrationDate: tournamentStartDates[reg.tournament_id] ?? toDate(reg.registration_date),
                 status: reg.status ?? "pending",
-                prelimRank: reg.prelim_rank ?? null,
-                finalRank: reg.final_rank ?? null,
-                prelimOverall: reg.prelim_overall_result ?? null,
-                finalOverall: reg.final_overall_result ?? null,
+                prelimRank: toNumber(reg.prelim_rank),
+                finalRank: toNumber(reg.final_rank),
+                prelimOverall: toNumber(reg.prelim_overall_result),
+                finalOverall: toNumber(reg.final_overall_result),
             }));
-    }, [user]);
+    }, [user, tournamentStartDates]);
 
     const bestTimeColumns: TableColumnProps<BestTimeRecord>[] = useMemo(
         () => [
