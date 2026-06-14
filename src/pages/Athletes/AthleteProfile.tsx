@@ -71,7 +71,7 @@ const toNumber = (value: unknown): number | null => {
         return value;
     }
     if (typeof value === "string" && value.trim().length > 0) {
-        const parsed = Number.parseFloat(value);
+        const parsed = Number(value.trim());
         return Number.isFinite(parsed) ? parsed : null;
     }
     return null;
@@ -263,7 +263,10 @@ const AthleteProfilePage = () => {
             .map((reg) => ({
                 tournamentId: reg.tournament_id,
                 events: reg.events ?? [],
-                registrationDate: tournamentStartDates[reg.tournament_id] ?? toDate(reg.registration_date),
+                registrationDate:
+                    tournamentStartDates[reg.tournament_id] !== undefined
+                        ? tournamentStartDates[reg.tournament_id]
+                        : toDate(reg.registration_date),
                 status: reg.status ?? "pending",
                 prelimRank: toNumber(reg.prelim_rank),
                 finalRank: toNumber(reg.final_rank),
