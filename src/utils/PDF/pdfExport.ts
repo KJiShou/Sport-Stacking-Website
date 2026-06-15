@@ -1828,7 +1828,8 @@ const generateSingleStackingSheet = (
     const pageHeight = doc.internal.pageSize.getHeight();
     const marginX = 5;
     const halfPageHeight = pageHeight / 2;
-    const startY = position === 0 ? 4 : halfPageHeight + 1; // top or bottom half
+    const sheetVerticalOffset = 2;
+    const startY = (position === 0 ? 4 : halfPageHeight + 1) + sheetVerticalOffset; // top or bottom half
     const sectionSpacing = 5;
     let tableYOffset = 11;
 
@@ -1836,7 +1837,7 @@ const generateSingleStackingSheet = (
 
     // === 1. Outer Title Frame ===
     const titleHeight = 22;
-    doc.setLineWidth(0.1);
+    doc.setLineWidth(0.2);
     doc.rect(marginX, startY, pageWidth - 2 * marginX, titleHeight);
 
     const logoBoxWidth = 40;
@@ -1940,8 +1941,8 @@ const generateSingleStackingSheet = (
 
     // === 3. Participant Info ===
     const infoY = startY + titleHeight + 13;
-    const idBoxW = 30;
-    const idBoxH = 9;
+    const idBoxW = 34;
+    const idBoxH = 10;
     const idBoxX = pageWidth - marginX - idBoxW;
     const idBoxY = startY + titleHeight + 2;
 
@@ -1981,13 +1982,12 @@ const generateSingleStackingSheet = (
         tableYOffset += Math.max(0, memberNameLines.length - 1) * sectionSpacing;
 
         // ID box (right top)
-        doc.setLineWidth(0.1);
+        doc.setLineWidth(0.2);
         doc.rect(idBoxX, idBoxY, idBoxW, idBoxH);
         doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
-        doc.setFontSize(13);
-        doc.text("ID:", idBoxX + 3, idBoxY + 7);
+        doc.setFontSize(17);
         const teamIdValue = team.leader_id ? formatTeamLeaderId(team.leader_id, sheetType) : "____";
-        doc.text(teamIdValue, idBoxX + 10, idBoxY + 7);
+        doc.text(`ID: ${teamIdValue}`, idBoxX + 3, idBoxY + 7.8);
     } else {
         const individual = participant as Registration;
         doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
@@ -2037,12 +2037,11 @@ const generateSingleStackingSheet = (
         tableYOffset += Math.max(0, schoolLines.length - 1) * sectionSpacing;
 
         // ID box (right top)
-        doc.setLineWidth(0.1);
+        doc.setLineWidth(0.2);
         doc.rect(idBoxX, idBoxY, idBoxW, idBoxH);
         doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
-        doc.setFontSize(13);
-        doc.text("ID:", idBoxX + 3, idBoxY + 7);
-        doc.text(individual.user_global_id || "____", idBoxX + 10, idBoxY + 7);
+        doc.setFontSize(17);
+        doc.text(`ID: ${individual.user_global_id || "____"}`, idBoxX + 3, idBoxY + 7.8);
     }
 
     // === 4. Time Table ===
