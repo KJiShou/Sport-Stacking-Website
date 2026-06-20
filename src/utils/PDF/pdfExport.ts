@@ -1,6 +1,7 @@
 // @ts-nocheck
 // src/utils/pdfExportUtils.ts
 import defaultIconSrc from "@/assets/icon.avif";
+import notoSansSCFontUrl from "@/assets/fonts/NotoSansSC-VF.ttf?url";
 import type {
     AllPrelimResultsPDFParams,
     BracketResults,
@@ -31,6 +32,119 @@ import {nanoid} from "nanoid";
 import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, TournamentEvent} from "../../schema";
 
 // Utility Functions
+const PDF_DEFAULT_FONT_FAMILY = "times";
+const PDF_CJK_FONT_FAMILY = "NotoSansSC";
+const PDF_CJK_FONT_FILE = "NotoSansSC-VF.ttf";
+let cachedPDFFontBase64: string | undefined;
+
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    let binary = "";
+
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+    }
+
+    return btoa(binary);
+};
+
+const loadPDFFontBase64 = async (): Promise<string> => {
+    if (cachedPDFFontBase64) {
+        return cachedPDFFontBase64;
+    }
+
+    const response = await fetch(notoSansSCFontUrl);
+    if (!response.ok) {
+        throw new Error(`Failed to load PDF font: ${response.status} ${response.statusText}`);
+    }
+
+    cachedPDFFontBase64 = arrayBufferToBase64(await response.arrayBuffer());
+    return cachedPDFFontBase64;
+};
+
+const initializePDFDoc = async (doc: jsPDF): Promise<jsPDF> => {
+    const fontBase64 = await loadPDFFontBase64();
+    doc.addFileToVFS(PDF_CJK_FONT_FILE, fontBase64);
+    doc.addFont(PDF_CJK_FONT_FILE, PDF_CJK_FONT_FAMILY, "normal", "Identity-H");
+    doc.addFont(PDF_CJK_FONT_FILE, PDF_CJK_FONT_FAMILY, "bold", "Identity-H");
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
+    return doc;
+};
+
+const hasCJKText = (value: string | string[]): boolean => {
+    const text = Array.isArray(value) ? value.join("") : value;
+    return /[\u3400-\u9fff\uf900-\ufaff]/u.test(text);
+};
+
+const getPDFFontForText = (value: string): string => (hasCJKText(value) ? PDF_CJK_FONT_FAMILY : PDF_DEFAULT_FONT_FAMILY);
+
+const splitPDFTextRuns = (value: string): {text: string; fontFamily: string}[] => {
+    const runs: {text: string; fontFamily: string}[] = [];
+
+    for (const character of Array.from(value)) {
+        const fontFamily = getPDFFontForText(character);
+        const lastRun = runs[runs.length - 1];
+
+        if (lastRun?.fontFamily === fontFamily) {
+            lastRun.text += character;
+        } else {
+            runs.push({text: character, fontFamily});
+        }
+    }
+
+    return runs;
+};
+
+const getMixedTextWidth = (doc: jsPDF, value: string, fontStyle: string, fontSize: number): number => {
+    doc.setFontSize(fontSize);
+    return splitPDFTextRuns(value).reduce((width, run) => {
+        doc.setFont(run.fontFamily, fontStyle);
+        return width + doc.getTextWidth(run.text);
+    }, 0);
+};
+
+const drawMixedText = (
+    doc: jsPDF,
+    value: string,
+    x: number,
+    y: number,
+    options: {fontStyle?: string; fontSize: number; align?: "left" | "center"} = {fontSize: 10},
+): void => {
+    const fontStyle = options.fontStyle ?? "normal";
+    const textWidth = getMixedTextWidth(doc, value, fontStyle, options.fontSize);
+    let currentX = options.align === "center" ? x - textWidth / 2 : x;
+
+    for (const run of splitPDFTextRuns(value)) {
+        doc.setFont(run.fontFamily, fontStyle);
+        doc.setFontSize(options.fontSize);
+        doc.text(run.text, currentX, y);
+        currentX += doc.getTextWidth(run.text);
+    }
+};
+
+const splitMixedTextToSize = (doc: jsPDF, value: string, maxWidth: number, fontStyle: string, fontSize: number): string[] => {
+    const characters = Array.from(value);
+    const lines: string[] = [];
+    let currentLine = "";
+
+    for (const character of characters) {
+        const candidate = `${currentLine}${character}`;
+        if (currentLine.length > 0 && getMixedTextWidth(doc, candidate, fontStyle, fontSize) > maxWidth) {
+            lines.push(currentLine.trimEnd());
+            currentLine = character.trimStart();
+        } else {
+            currentLine = candidate;
+        }
+    }
+
+    if (currentLine.length > 0) {
+        lines.push(currentLine);
+    }
+
+    return lines.length > 0 ? lines : [""];
+};
+
 const normalizeCodeKey = (code: string): string => code.toLowerCase().replace(/[^a-z0-9_]/g, "");
 
 const formatPDFTime = (value: unknown): string => {
@@ -391,11 +505,7 @@ const getTeamParticipantIds = (team: Team): string[] => [
     stripTeamLeaderPrefix(team.leader_id),
     ...(team.members?.map((member) => member.global_id) ?? []),
 ];
-const teamMatchesSearch = (
-    team: Team,
-    normalizedSearch: string,
-    registrationList: Registration[],
-): boolean => {
+const teamMatchesSearch = (team: Team, normalizedSearch: string, registrationList: Registration[]): boolean => {
     if (normalizedSearch.length === 0) {
         return true;
     }
@@ -446,7 +556,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         await addHeaderIcons(doc, marginX, 30, tournament.logo);
 
         // Header
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(25);
         const eventLabel = getEventLabel(event) || event.type;
         const title = team ? `${team.name} Member List` : `${eventLabel} ${bracket.name} Name List`;
@@ -528,14 +638,14 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
                 lineColor: [0, 0, 0],
                 lineWidth: 0.1,
                 textColor: [0, 0, 0],
-                font: "times",
+                font: PDF_DEFAULT_FONT_FAMILY,
             },
             headStyles: {
                 fillColor: [255, 255, 255],
                 textColor: [0, 0, 0],
                 lineColor: [0, 0, 0],
                 lineWidth: 0.1,
-                font: "times",
+                font: PDF_DEFAULT_FONT_FAMILY,
                 fontStyle: "bold",
             },
             columnStyles,
@@ -639,7 +749,7 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
         });
 
         // Header
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(25);
         const title = `${tournament.venue} ${tournament.name} - Master Participant List`;
         const titleLines = doc.splitTextToSize(title, titleMaxWidth);
@@ -671,19 +781,21 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
             head: [["No.", "Global ID", "Name", "Age", "School", "Phone", "Events Registered"]],
             body: tableData,
             theme: "plain",
+            rowPageBreak: "avoid",
+            margin: {left: marginX, right: marginX, bottom: 18},
             styles: {
                 fontSize: 9,
                 lineColor: [0, 0, 0],
                 lineWidth: 0.1,
                 textColor: [0, 0, 0],
-                font: "times",
+                font: PDF_DEFAULT_FONT_FAMILY,
             },
             headStyles: {
                 fillColor: [255, 255, 255],
                 textColor: [0, 0, 0],
                 lineColor: [0, 0, 0],
                 lineWidth: 0.1,
-                font: "times",
+                font: PDF_DEFAULT_FONT_FAMILY,
                 fontStyle: "bold",
             },
             columnStyles: {
@@ -710,7 +822,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
     const {tournament, resultsData, round = "Preliminary", highlightFinalists = true} = options;
     try {
         const doc = new jsPDF();
-        doc.setFont("times");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY);
 
         const addHeader = async (docInstance: jsPDF) => {
             const pageWidth = docInstance.internal.pageSize.getWidth();
@@ -722,7 +834,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
 
             await addHeaderIcons(docInstance, marginX, 30, tournament.logo);
 
-            docInstance.setFont("times", "bold");
+            docInstance.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
             docInstance.setFontSize(25);
             const title = `${tournament.name} - ${round} Results`;
             const titleLines = docInstance.splitTextToSize(title, titleMaxWidth);
@@ -748,7 +860,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
             isFirstEvent = false;
 
             doc.setFontSize(16);
-            doc.setFont(undefined, "bold");
+            doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
             const eventTitle = getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`;
             doc.text(eventTitle, 14, currentY);
             currentY += 10;
@@ -884,7 +996,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                             lineColor: [0, 0, 0],
                             lineWidth: 0.1,
                             textColor: [0, 0, 0],
-                            font: "times",
+                            font: PDF_DEFAULT_FONT_FAMILY,
                         },
                         headStyles: {
                             fillColor: [255, 255, 255],
@@ -914,12 +1026,12 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
 
                         // Add legend title
                         doc.setFontSize(10);
-                        doc.setFont(undefined, "bold");
+                        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
                         doc.text("Classification Legend:", 20, currentY);
                         currentY += 6;
 
                         // Draw legend items
-                        doc.setFont(undefined, "normal");
+                        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
                         doc.setFontSize(9);
 
                         const classificationLabels: {[key: string]: string} = {
@@ -975,7 +1087,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
     const {tournament, finalistsData} = options;
     try {
         const doc = new jsPDF();
-        doc.setFont("times");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY);
 
         const addHeader = async (docInstance: jsPDF) => {
             const pageWidth = docInstance.internal.pageSize.getWidth();
@@ -985,7 +1097,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
 
             await addHeaderIcons(docInstance, marginX, 30, tournament.logo);
 
-            docInstance.setFont("times", "bold");
+            docInstance.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
             docInstance.setFontSize(25);
             const title = `${tournament.name} - Finalists Name List`;
             const titleLines = docInstance.splitTextToSize(title, titleMaxWidth);
@@ -1012,7 +1124,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
             isFirstEvent = false;
 
             doc.setFontSize(16);
-            doc.setFont(undefined, "bold");
+            doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
             doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, currentY);
             currentY += 10;
 
@@ -1022,7 +1134,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
                     doc.addPage();
                     currentY = await addHeader(doc);
                     doc.setFontSize(16);
-                    doc.setFont(undefined, "bold");
+                    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
                     doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, currentY);
                     currentY += 10;
                 }
@@ -1034,7 +1146,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
                     doc.addPage();
                     currentY = await addHeader(doc);
                     doc.setFontSize(16);
-                    doc.setFont(undefined, "bold");
+                    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
                     doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, currentY);
                     currentY += 10;
                 }
@@ -1067,7 +1179,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
                             lineColor: [0, 0, 0],
                             lineWidth: 0.1,
                             textColor: [0, 0, 0],
-                            font: "times",
+                            font: PDF_DEFAULT_FONT_FAMILY,
                         },
                         headStyles: {
                             fillColor: [255, 255, 255],
@@ -1106,7 +1218,7 @@ export const exportAllBracketsListToPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
-        doc.setFont("times");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY);
         const pageWidth = doc.internal.pageSize.getWidth();
         const marginX = 14;
         const titleMaxWidth = pageWidth - marginX * 2 - HEADER_ICON_SIZE * 2;
@@ -1114,7 +1226,7 @@ export const exportAllBracketsListToPDF = async (
         await addHeaderIcons(doc, marginX, HEADER_ICON_SIZE, tournament.logo);
 
         // Header
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(25);
         const title = `${tournament.name} - All Events & Brackets`;
         const titleLines = doc.splitTextToSize(title, titleMaxWidth);
@@ -1144,7 +1256,7 @@ export const exportAllBracketsListToPDF = async (
             isFirstEvent = false;
 
             doc.setFontSize(16);
-            doc.setFont(undefined, "bold");
+            doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
             doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, startY);
             startY += 10;
 
@@ -1205,14 +1317,14 @@ export const exportAllBracketsListToPDF = async (
                             lineColor: [0, 0, 0],
                             lineWidth: 0.1,
                             textColor: [0, 0, 0],
-                            font: "times",
+                            font: PDF_DEFAULT_FONT_FAMILY,
                         },
                         headStyles: {
                             fillColor: [255, 255, 255],
                             textColor: [0, 0, 0],
                             lineColor: [0, 0, 0],
                             lineWidth: 0.1,
-                            font: "times",
+                            font: PDF_DEFAULT_FONT_FAMILY,
                             fontStyle: "bold",
                         },
                         columnStyles,
@@ -1286,7 +1398,7 @@ export const exportNameListStickerPDF = async ({tournament, registrations}: Name
 
                     // 1. Tournament Name (Title)
                     doc.setFontSize(15);
-                    doc.setFont("times", "bold");
+                    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
                     const titleLines = doc.splitTextToSize(tournament.name, contentWidth);
                     doc.text(titleLines, centerX, contentY, {align: "center"});
                     doc.setLineWidth(0.1);
@@ -1295,7 +1407,7 @@ export const exportNameListStickerPDF = async ({tournament, registrations}: Name
 
                     // 2. Global ID (Team Age)
                     doc.setFontSize(95);
-                    doc.setFont("times", "bold");
+                    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
                     doc.text(registration.user_global_id, centerX, currentY, {align: "center"});
                     currentY += 10;
 
@@ -1306,7 +1418,7 @@ export const exportNameListStickerPDF = async ({tournament, registrations}: Name
 
                     // 4. User Name
                     doc.setFontSize(20);
-                    doc.setFont("times", "normal");
+                    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
                     const nameLines = doc.splitTextToSize(registration.user_name, contentWidth);
                     doc.text(nameLines, centerX, currentY, {align: "center"});
 
@@ -1366,7 +1478,7 @@ export const exportLargeNameListStickerPDF = async ({tournament, registrations}:
 
                 // Tournament Name
                 doc.setFontSize(25);
-                doc.setFont("times", "bold");
+                doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
                 const titleLines = doc.splitTextToSize(tournament.name, contentWidth);
                 const titleBaseY = y + paddingY;
                 doc.text(titleLines, centerX, titleBaseY, {align: "center"});
@@ -1379,7 +1491,7 @@ export const exportLargeNameListStickerPDF = async ({tournament, registrations}:
 
                 // Global ID (large and centered)
                 doc.setFontSize(120);
-                doc.setFont("times", "bold");
+                doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
                 doc.text(registration.user_global_id, centerX, currentY, {align: "center"});
                 currentY += 28;
 
@@ -1390,7 +1502,7 @@ export const exportLargeNameListStickerPDF = async ({tournament, registrations}:
 
                 // User Name
                 doc.setFontSize(28);
-                doc.setFont("times", "normal");
+                doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
                 const nameLines = doc.splitTextToSize(registration.user_name, contentWidth);
                 doc.text(nameLines, centerX, currentY, {align: "center"});
 
@@ -1424,6 +1536,7 @@ export const generateStackingSheetPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
+        await initializePDFDoc(doc);
         if (isStackOutChampionType(sheetType)) {
             throw new Error("StackOut Champion does not require a time sheet.");
         }
@@ -1499,6 +1612,7 @@ export const exportCombinedTimeSheetsPDF = async (options: {
 }): Promise<void> => {
     const {tournament, entries, ageMap, nameMap, logoUrl, filename} = options;
     const doc = new jsPDF();
+    await initializePDFDoc(doc);
     const filteredEntries = entries.filter((entry) => !isStackOutChampionType(entry.sheetType));
     if (filteredEntries.length === 0) {
         throw new Error("No eligible time sheets to generate.");
@@ -1571,7 +1685,7 @@ export const exportCertificatesPDF = async (options: {
             }
         }
 
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(32);
         doc.setTextColor(212, 131, 37);
         doc.text("CERTIFICATE", centerX, 64, {align: "center"});
@@ -1580,31 +1694,31 @@ export const exportCertificatesPDF = async (options: {
         doc.setFontSize(16);
         doc.text("OF RECOGNITION", centerX, 78, {align: "center"});
 
-        doc.setFont("times", "normal");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.setFontSize(14);
         doc.text(tournament.name, centerX, 94, {align: "center"});
 
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(18);
         doc.text(entry.eventLabel, centerX, 108, {align: "center"});
 
-        doc.setFont("times", "normal");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.setFontSize(13);
         doc.text(entry.divisionLabel, centerX, 122, {align: "center"});
 
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(14);
         doc.text("THIS CERTIFICATE IS AWARDED TO", centerX, 142, {align: "center"});
 
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(26);
         doc.text(entry.participantName, centerX, 162, {align: "center"});
 
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(16);
         doc.text(entry.categoryLabel, centerX, 176, {align: "center"});
 
-        doc.setFont("times", "normal");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.setFontSize(13);
         let currentY = 194;
         for (const time of entry.times) {
@@ -1613,17 +1727,17 @@ export const exportCertificatesPDF = async (options: {
         }
 
         if (entry.totalTime) {
-            doc.setFont("times", "bold");
+            doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
             doc.setFontSize(14);
             doc.text(`Overall: ${formatTimeValue(entry.totalTime)}`, centerX, currentY + 4, {align: "center"});
             currentY += 14;
         }
 
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(20);
         doc.text(entry.placementLabel, centerX, currentY + 14, {align: "center"});
 
-        doc.setFont("times", "normal");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.setFontSize(13);
         doc.text(entry.divisionLabel, centerX, currentY + 30, {align: "center"});
     };
@@ -1649,6 +1763,7 @@ export const generateTeamStackingSheetPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
+        await initializePDFDoc(doc);
         if (isStackOutChampionType(sheetType)) {
             throw new Error("StackOut Champion does not require a time sheet.");
         }
@@ -1712,17 +1827,19 @@ const generateSingleStackingSheet = (
     roundLabel = "Prelim",
 ): void => {
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     const marginX = 5;
-    const contentMaxHeight = 148; // Upper half of A4
-    const startY = position === 0 ? 5 : contentMaxHeight + 5; // top or bottom half
-    const sectionSpacing = 6;
-    let tableYOffset = 13;
+    const halfPageHeight = pageHeight / 2;
+    const sheetVerticalOffset = 2;
+    const startY = (position === 0 ? 4 : halfPageHeight + 1) + sheetVerticalOffset; // top or bottom half
+    const sectionSpacing = 5;
+    let tableYOffset = 11;
 
-    doc.setFont("times", "normal");
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
 
     // === 1. Outer Title Frame ===
-    const titleHeight = 25;
-    doc.setLineWidth(0.1);
+    const titleHeight = 22;
+    doc.setLineWidth(0.2);
     doc.rect(marginX, startY, pageWidth - 2 * marginX, titleHeight);
 
     const logoBoxWidth = 40;
@@ -1777,20 +1894,19 @@ const generateSingleStackingSheet = (
         }
 
         let fontSize = preferredSize;
-        doc.setFont("times", "bold");
         doc.setFontSize(fontSize);
 
-        while (fontSize > minSize && doc.getTextWidth(source) > maxWidth) {
+        while (fontSize > minSize && getMixedTextWidth(doc, source, "bold", fontSize) > maxWidth) {
             fontSize -= 0.5;
             doc.setFontSize(fontSize);
         }
 
-        if (doc.getTextWidth(source) <= maxWidth) {
+        if (getMixedTextWidth(doc, source, "bold", fontSize) <= maxWidth) {
             return {text: source, fontSize};
         }
 
         let truncated = source;
-        while (truncated.length > 0 && doc.getTextWidth(`${truncated}...`) > maxWidth) {
+        while (truncated.length > 0 && getMixedTextWidth(doc, `${truncated}...`, "bold", fontSize) > maxWidth) {
             truncated = truncated.slice(0, -1);
         }
         const display = truncated.length > 0 ? `${truncated}...` : "...";
@@ -1798,37 +1914,48 @@ const generateSingleStackingSheet = (
     };
 
     // Title text (right side, centered vertically)
-    doc.setFont("times", "bold");
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
     const titleCenterY = startY + titleHeight / 2;
     const titleCenterX = marginX + logoBoxWidth + (pageWidth - 2 * marginX - logoBoxWidth * 2) / 2;
     const titleMaxWidth = pageWidth - marginX * 2 - logoBoxWidth * 2 - 6;
     const venueTitle = fitTextToWidth(tournament.venue ?? "-", titleMaxWidth, 14);
-    doc.setFontSize(venueTitle.fontSize);
-    doc.text(venueTitle.text, titleCenterX, titleCenterY - 4, {align: "center"});
+    drawMixedText(doc, venueTitle.text, titleCenterX, titleCenterY - 4, {
+        fontSize: venueTitle.fontSize,
+        fontStyle: "bold",
+        align: "center",
+    });
     const tournamentTitle = fitTextToWidth(tournament.name ?? "-", titleMaxWidth, 14);
-    doc.setFontSize(tournamentTitle.fontSize);
-    doc.text(tournamentTitle.text, titleCenterX, titleCenterY + 4, {align: "center"});
+    drawMixedText(doc, tournamentTitle.text, titleCenterX, titleCenterY + 4, {
+        fontSize: tournamentTitle.fontSize,
+        fontStyle: "bold",
+        align: "center",
+    });
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
 
     // === 2. Subtitle ===
-    doc.setFontSize(11);
-    doc.setFont("times", "bold");
+    doc.setFontSize(10);
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
     const sheetTitle = `${sheetType} ${roundLabel}`;
     doc.text(sheetTitle, marginX, startY + titleHeight + 8);
     const sheetTypeWidth = marginX + doc.getTextWidth(sheetTitle);
-    doc.setFont("times", "normal");
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
     doc.text("Time Sheet", sheetTypeWidth + 1, startY + titleHeight + 8);
 
     // === 3. Participant Info ===
-    const infoY = startY + titleHeight + 15;
+    const infoY = startY + titleHeight + 13;
+    const idBoxW = 34;
+    const idBoxH = 10;
+    const idBoxX = pageWidth - marginX - idBoxW;
+    const idBoxY = startY + titleHeight + 2;
 
     // Name and ID based on sheet type
     if (!isIndividualSheetType(sheetType)) {
         const team = participant as Team;
-        doc.setFont("times", "normal");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.setFontSize(10);
         doc.text("Name: ", marginX, infoY);
         const nameX = marginX + doc.getTextWidth("Name: ");
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.setFontSize(14);
         const allMembers = [stripTeamLeaderPrefix(team.leader_id), ...(team.members || []).map((m) => m.global_id)].filter(
             Boolean,
@@ -1845,38 +1972,37 @@ const generateSingleStackingSheet = (
             }
         })();
         const memberNamesValue = memberNames.length > 0 ? memberNames.join(nameSeparator) : "________________________";
-        const memberNameLines = doc.splitTextToSize(memberNamesValue, pageWidth - marginX * 2 - nameX);
-        doc.text(memberNameLines, nameX, infoY);
+        const memberNameLines = splitMixedTextToSize(doc, memberNamesValue, pageWidth - marginX * 2 - nameX, "bold", 14);
+        memberNameLines.forEach((line, lineIndex) => {
+            drawMixedText(doc, line, nameX, infoY + sectionSpacing * lineIndex, {fontSize: 14, fontStyle: "bold"});
+        });
 
-        doc.setFont("times", "normal");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.setFontSize(10);
         doc.text(`Division: ${division || "___"}`, marginX, infoY + sectionSpacing);
         doc.text(`IDs: ${allMembers.join(", ")}`, marginX, infoY + sectionSpacing * 2);
         tableYOffset += Math.max(0, memberNameLines.length - 1) * sectionSpacing;
 
         // ID box (right top)
-        const idBoxW = 30;
-        const idBoxH = 10;
-        doc.setLineWidth(0.1);
-        doc.rect(pageWidth - marginX - idBoxW, startY + titleHeight + 2, idBoxW, idBoxH);
-        doc.setFont("times", "bold");
-        doc.setFontSize(14);
-        doc.text("ID:", pageWidth - marginX - idBoxW + 3, startY + titleHeight + 9);
+        doc.setLineWidth(0.2);
+        doc.rect(idBoxX, idBoxY, idBoxW, idBoxH);
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
+        doc.setFontSize(17);
         const teamIdValue = team.leader_id ? formatTeamLeaderId(team.leader_id, sheetType) : "____";
-        doc.text(teamIdValue, pageWidth - marginX - idBoxW + 10, startY + titleHeight + 9);
+        doc.text(`ID: ${teamIdValue}`, idBoxX + 3, idBoxY + 7.8);
     } else {
         const individual = participant as Registration;
-        doc.setFont("times", "normal");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.setFontSize(10);
         doc.text("Name: ", marginX, infoY);
 
         const nameX = marginX + doc.getTextWidth("Name: ");
-        doc.setFont("times", "bold");
-        doc.setFontSize(14); // Increased from 10
-        doc.text(`${individual.user_name || "________________________"}`, nameX, infoY);
+        const individualNameValue = `${individual.user_name || "________________________"}`;
+        const individualName = fitTextToWidth(individualNameValue, idBoxX - nameX - 3, 13, 9);
+        drawMixedText(doc, individualName.text, nameX, infoY, {fontSize: individualName.fontSize, fontStyle: "bold"});
 
         // Other information - normal size, positioned below the name
-        doc.setFont("times", "normal");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.setFontSize(10);
         const divisionY = infoY + sectionSpacing;
         const divisionText = `Division: ${division || "___"}`;
@@ -1895,28 +2021,29 @@ const generateSingleStackingSheet = (
         const schoolValue = schoolOrCountry ?? " - ";
         const schoolLabelWidth = doc.getTextWidth(schoolLabel);
         const schoolMaxWidth = pageWidth - marginX * 2 - schoolLabelWidth;
-        const schoolLines = doc.splitTextToSize(schoolValue, schoolMaxWidth);
+        const schoolLines = splitMixedTextToSize(doc, schoolValue, schoolMaxWidth, "normal", 10);
         const schoolY = ageY + sectionSpacing;
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.text(schoolLabel, marginX, schoolY);
         if (schoolLines.length > 0) {
-            doc.text(schoolLines[0], marginX + schoolLabelWidth, schoolY);
+            drawMixedText(doc, schoolLines[0], marginX + schoolLabelWidth, schoolY, {fontSize: 10});
         }
         if (schoolLines.length > 1) {
             schoolLines.slice(1).forEach((line, lineIndex) => {
-                doc.text(line, marginX + schoolLabelWidth, schoolY + sectionSpacing * (lineIndex + 1));
+                drawMixedText(doc, line, marginX + schoolLabelWidth, schoolY + sectionSpacing * (lineIndex + 1), {
+                    fontSize: 10,
+                });
             });
         }
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         tableYOffset += Math.max(0, schoolLines.length - 1) * sectionSpacing;
 
         // ID box (right top)
-        const idBoxW = 30;
-        const idBoxH = 10;
-        doc.setLineWidth(0.1);
-        doc.rect(pageWidth - marginX - idBoxW, startY + titleHeight + 2, idBoxW, idBoxH);
-        doc.setFont("times", "bold");
-        doc.setFontSize(14);
-        doc.text("ID:", pageWidth - marginX - idBoxW + 3, startY + titleHeight + 9);
-        doc.text(individual.user_global_id || "____", pageWidth - marginX - idBoxW + 10, startY + titleHeight + 9);
+        doc.setLineWidth(0.2);
+        doc.rect(idBoxX, idBoxY, idBoxW, idBoxH);
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
+        doc.setFontSize(17);
+        doc.text(`ID: ${individual.user_global_id || "____"}`, idBoxX + 3, idBoxY + 7.8);
     }
 
     // === 4. Time Table ===
@@ -1924,18 +2051,20 @@ const generateSingleStackingSheet = (
     const tableWidth = 47 + 37 + 37 + 37 + 5 + 37; // Total width of the table
     const colWidths = [47, 37, 37, 37, 5, 37];
     const tableX = (pageWidth - tableWidth) / 2;
-    const rowHeight = 12;
+    const headerHeight = 5;
+    const rowHeight = 10;
+    const stacks = resolveStackLabels(sheetType, eventCodes);
 
     // Header row
     const headers = ["Stack", "Try 1", "Try 2", "Try 3", "", "Best Time"];
     let currentX = tableX;
     doc.setFontSize(9);
-    doc.setFont("times", "bold");
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
     headers.forEach((header, i) => {
-        doc.rect(currentX, tableY, colWidths[i], 5);
+        doc.rect(currentX, tableY, colWidths[i], headerHeight);
         if (i === 4) {
             doc.setFillColor(0, 0, 0);
-            doc.rect(currentX, tableY, colWidths[i], rowHeight, "F");
+            doc.rect(currentX, tableY, colWidths[i], headerHeight + stacks.length * rowHeight, "F");
             doc.setTextColor(255, 255, 255);
         }
         doc.text(header, currentX + colWidths[i] / 2, tableY + 4, {align: "center"});
@@ -1944,16 +2073,15 @@ const generateSingleStackingSheet = (
     });
 
     // Stack rows
-    const stacks = resolveStackLabels(sheetType, eventCodes);
-    doc.setFont("times", "normal");
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
     doc.setFontSize(15);
     stacks.forEach((label, rowIndex) => {
-        const y = tableY - 7 + rowHeight * (rowIndex + 1);
+        const y = tableY + headerHeight + rowHeight * rowIndex;
         currentX = tableX;
         colWidths.forEach((w, colIdx) => {
             doc.rect(currentX, y, w, rowHeight);
             if (colIdx === 0) {
-                doc.text(label, currentX + w / 2, y + 8, {align: "center"});
+                doc.text(label, currentX + w / 2, y + 7, {align: "center"});
             }
             if (colIdx === 4) {
                 doc.setFillColor(0, 0, 0);
@@ -1964,8 +2092,9 @@ const generateSingleStackingSheet = (
     });
 
     // === 5. Notes / Instructions ===
-    const notesY = tableY - 3 + rowHeight * (stacks.length + 1);
-    doc.setFontSize(7.5);
+    const notesY = tableY + headerHeight + rowHeight * stacks.length + 3;
+    const noteLineHeight = 3.3;
+    doc.setFontSize(6.5);
     const orderLine = (() => {
         const labels = resolveStackLabels(sheetType, eventCodes);
         return `*The Stacks are done IN this order: ${labels.join(", ")}`;
@@ -1982,13 +2111,13 @@ const generateSingleStackingSheet = (
         "*Judge keeps this sheet. (Division Manager or Runner will pick up. )",
     ];
     lines.forEach((line, i) => {
-        doc.text(line, marginX, notesY + i * 4);
+        doc.text(line, marginX, notesY + i * noteLineHeight);
     });
 
     // === 6. Single Judge/Table Signature Box ===
-    const signY = notesY - 7 + lines.length * 4 + 6;
-    const boxW = 200;
-    const boxH = 6;
+    const signY = notesY - 4 + lines.length * noteLineHeight + 4;
+    const boxW = pageWidth - marginX * 2;
+    const boxH = 5;
     const judgeColW = boxW * 0.7; // Judge column takes 70% of width
     const tableColW = boxW * 0.3; // Table column takes 30% of width
 
@@ -1998,18 +2127,18 @@ const generateSingleStackingSheet = (
     // Draw vertical line to separate columns
     doc.line(marginX + judgeColW, signY, marginX + judgeColW, signY + boxH);
 
-    doc.setFontSize(9);
-    doc.setFont("times", "bold");
-    doc.text("Judge:", marginX + 3, signY + 4);
-    doc.text("Table:", marginX + judgeColW + 3, signY + 4);
+    doc.setFontSize(8);
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
+    doc.text("Judge:", marginX + 3, signY + 3.5);
+    doc.text("Table:", marginX + judgeColW + 3, signY + 3.5);
 
     // === 7. Scratch Key ===
-    const scratchY = signY + boxH + 6;
-    doc.setFontSize(7);
-    doc.setFont("times", "bold");
+    const scratchY = signY + boxH + 4;
+    doc.setFontSize(6.3);
+    doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
     doc.text("Scratch Key:", marginX, scratchY);
 
-    doc.setFontSize(7);
+    doc.setFontSize(6.3);
     const scratchItems = [
         {label: "S1:", text: " Starting/Stopping hand positions"},
         {label: "S2:", text: " Surface"},
@@ -2020,7 +2149,7 @@ const generateSingleStackingSheet = (
     ];
 
     let tempCurrentX = marginX + 25;
-    const maxWidth = 200; // Adjust based on your page width
+    const maxWidth = boxW;
     let currentY = scratchY;
 
     scratchItems.forEach((item, index) => {
@@ -2029,17 +2158,17 @@ const generateSingleStackingSheet = (
 
         if (tempCurrentX + itemWidth > marginX + maxWidth && index > 0) {
             // Move to next line
-            currentY += 10;
+            currentY += 6;
             tempCurrentX = marginX + 25;
         }
 
         // Draw bold label
-        doc.setFont("times", "bold");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
         doc.text(item.label, tempCurrentX, currentY);
         tempCurrentX += doc.getTextWidth(item.label);
 
         // Draw normal text
-        doc.setFont("times", "normal");
+        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "normal");
         doc.text(item.text, tempCurrentX, currentY);
         tempCurrentX += doc.getTextWidth(item.text);
 
@@ -2137,6 +2266,7 @@ export const generateAllTeamStackingSheetsPDF = async (
 ): Promise<void> => {
     try {
         const doc = new jsPDF();
+        await initializePDFDoc(doc);
         const filteredTeams = isStackOutChampionType(sheetType) ? [] : teams;
         if (filteredTeams.length === 0) {
             throw new Error("No eligible time sheets to generate.");
