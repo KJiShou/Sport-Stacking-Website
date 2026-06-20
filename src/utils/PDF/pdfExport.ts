@@ -781,6 +781,8 @@ export const exportMasterListToPDF = async (options: ExportMasterListOptions): P
             head: [["No.", "Global ID", "Name", "Age", "School", "Phone", "Events Registered"]],
             body: tableData,
             theme: "plain",
+            rowPageBreak: "avoid",
+            margin: {left: marginX, right: marginX, bottom: 18},
             styles: {
                 fontSize: 9,
                 lineColor: [0, 0, 0],
