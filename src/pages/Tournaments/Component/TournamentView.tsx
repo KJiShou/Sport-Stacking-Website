@@ -689,13 +689,20 @@ export default function TournamentView() {
 
     const renderStatusTag = (status: string) => <Tag color={status === "verified" ? "green" : "orange"}>{status === "verified" ? "Verified" : "Submitted"}</Tag>;
 
-    const renderRankCell = (_: unknown, __: CombinedTournamentRecord, index: number) => <Text bold>{index + 1}</Text>;
+    const createRankCellRenderer =
+        <T extends CombinedTournamentRecord>(records: T[], highlightRankings = false) => {
+            const rankById = new Map(records.map((rankedRecord, rankIndex) => [rankedRecord.id, rankIndex + 1]));
 
-    const renderHighlightedRankCell = (_: unknown, __: CombinedTournamentRecord, index: number) => (
-        <Text bold style={{color: getRankColor(index)}}>
-            {index + 1}
-        </Text>
-    );
+            return (_: unknown, record: T, index: number) => {
+                const rank = rankById.get(record.id) ?? index + 1;
+
+                return (
+                    <Text bold style={highlightRankings ? {color: getRankColor(rank - 1)} : undefined}>
+                        {rank}
+                    </Text>
+                );
+            };
+        };
 
     const renderVideoTimeText = (
         displayValue: string,
@@ -725,8 +732,19 @@ export default function TournamentView() {
     const renderOverallPlainModalTimeCell = (time: number, record: TournamentOverallRecord) =>
         renderVideoTimeText(formatTime(time), record, "#1890ff");
 
-    const renderOverallModalTimeCell = (time: number, record: TournamentOverallRecord, index: number) =>
-        renderVideoTimeText(formatTime(time), record, index === 0 ? "#52c41a" : "#1890ff");
+    const createOverallModalTimeCellRenderer =
+        (records: TournamentOverallRecord[], highlightRankings = false) => {
+            const rankById = new Map(records.map((rankedRecord, rankIndex) => [rankedRecord.id, rankIndex + 1]));
+
+            return (time: number, record: TournamentOverallRecord, index: number) => {
+                const rank = rankById.get(record.id) ?? index + 1;
+                return renderVideoTimeText(
+                    formatTime(time),
+                    record,
+                    highlightRankings && rank === 1 ? "#52c41a" : "#1890ff",
+                );
+            };
+        };
 
     const renderTeamPreviewTimeCell = (time: number, record: TournamentTeamRecord) =>
         renderVideoTimeText(formatTime(time), record, "#1890ff");
@@ -734,8 +752,19 @@ export default function TournamentView() {
     const renderTeamPlainModalTimeCell = (time: number, record: TournamentTeamRecord) =>
         renderVideoTimeText(formatAttemptTime(time), record, "#1890ff");
 
-    const renderTeamModalTimeCell = (time: number, record: TournamentTeamRecord, index: number) =>
-        renderVideoTimeText(formatAttemptTime(time), record, index === 0 ? "#52c41a" : "#1890ff");
+    const createTeamModalTimeCellRenderer =
+        (records: TournamentTeamRecord[], highlightRankings = false) => {
+            const rankById = new Map(records.map((rankedRecord, rankIndex) => [rankedRecord.id, rankIndex + 1]));
+
+            return (time: number, record: TournamentTeamRecord, index: number) => {
+                const rank = rankById.get(record.id) ?? index + 1;
+                return renderVideoTimeText(
+                    formatAttemptTime(time),
+                    record,
+                    highlightRankings && rank === 1 ? "#52c41a" : "#1890ff",
+                );
+            };
+        };
 
     const renderFormattedAttemptTime = (time: number) => <Text>{formatAttemptTime(time)}</Text>;
 
@@ -791,12 +820,15 @@ export default function TournamentView() {
         </div>
     );
 
-    const buildOverallPreviewColumns = (highlightRankings = false): TableColumnProps<TournamentOverallRecord>[] => {
+    const buildOverallPreviewColumns = (
+        highlightRankings = false,
+        records: TournamentOverallRecord[] = [],
+    ): TableColumnProps<TournamentOverallRecord>[] => {
         const columns: TableColumnProps<TournamentOverallRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
-                render: highlightRankings ? renderHighlightedRankCell : renderRankCell,
+                render: createRankCellRenderer(records, highlightRankings),
             },
             {
                 title: "Athlete",
@@ -872,11 +904,14 @@ export default function TournamentView() {
         return columns;
     };
 
-    const buildOverallModalColumns = (highlightRankings = false): TableColumnProps<TournamentOverallRecord>[] => [
+    const buildOverallModalColumns = (
+        highlightRankings = false,
+        records: TournamentOverallRecord[] = [],
+    ): TableColumnProps<TournamentOverallRecord>[] => [
         {
             title: "Rank",
             width: 60,
-            render: highlightRankings ? renderHighlightedRankCell : renderRankCell,
+            render: createRankCellRenderer(records, highlightRankings),
         },
         {
             title: "Athlete",
@@ -915,7 +950,9 @@ export default function TournamentView() {
             title: "Overall Time",
             dataIndex: "overall_time",
             width: 120,
-            render: highlightRankings ? renderOverallModalTimeCell : renderOverallPlainModalTimeCell,
+            render: highlightRankings
+                ? createOverallModalTimeCellRenderer(records, highlightRankings)
+                : renderOverallPlainModalTimeCell,
         },
         {
             title: "Country",
@@ -930,12 +967,15 @@ export default function TournamentView() {
         },
     ];
 
-    const buildTeamPreviewColumns = (highlightRankings = false): TableColumnProps<TournamentTeamRecord>[] => {
+    const buildTeamPreviewColumns = (
+        highlightRankings = false,
+        records: TournamentTeamRecord[] = [],
+    ): TableColumnProps<TournamentTeamRecord>[] => {
         const columns: TableColumnProps<TournamentTeamRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
-                render: highlightRankings ? renderHighlightedRankCell : renderRankCell,
+                render: createRankCellRenderer(records, highlightRankings),
             },
             {
                 title: "Team",
@@ -992,11 +1032,14 @@ export default function TournamentView() {
         return columns;
     };
 
-    const buildTeamModalColumns = (highlightRankings = false): TableColumnProps<TournamentTeamRecord>[] => [
+    const buildTeamModalColumns = (
+        highlightRankings = false,
+        records: TournamentTeamRecord[] = [],
+    ): TableColumnProps<TournamentTeamRecord>[] => [
         {
             title: "Rank",
             width: 60,
-            render: highlightRankings ? renderHighlightedRankCell : renderRankCell,
+            render: createRankCellRenderer(records, highlightRankings),
         },
         {
             title: "Team",
@@ -1036,7 +1079,9 @@ export default function TournamentView() {
             title: "Best Time",
             dataIndex: "best_time",
             width: 120,
-            render: highlightRankings ? renderTeamModalTimeCell : renderTeamPlainModalTimeCell,
+            render: highlightRankings
+                ? createTeamModalTimeCellRenderer(records, highlightRankings)
+                : renderTeamPlainModalTimeCell,
         },
         {
             title: "Country",
@@ -1320,7 +1365,7 @@ export default function TournamentView() {
                                                 const finalistLegendItems = getFinalistLegendItems(
                                                     selectedBracket?.final_criteria ?? [],
                                                 );
-                                                const columns = buildOverallPreviewColumns();
+                                                const columns = buildOverallPreviewColumns(false, filteredRecords);
                                                 const tableRowClassName = (record: TournamentOverallRecord) => {
                                                     const classification = record.id && finalistClassificationMap[record.id];
                                                     return classification
@@ -1337,7 +1382,7 @@ export default function TournamentView() {
                                                                     openFullResultModal(
                                                                         `Overall Rankings (${getEventLabel(overallEvent)})`,
                                                                         <Table
-                                                                            columns={buildOverallModalColumns()}
+                                                                            columns={buildOverallModalColumns(false, filteredRecords)}
                                                                             data={filteredRecords}
                                                                             pagination={{
                                                                                 pageSize: 20,
@@ -1450,7 +1495,7 @@ export default function TournamentView() {
                                                 selectedBracket?.final_criteria ?? [],
                                             );
 
-                                            const columns = buildTeamPreviewColumns();
+                                            const columns = buildTeamPreviewColumns(false, filteredRecords);
                                             const tableRowClassName = (record: TournamentTeamRecord) => {
                                                 const classification = record.id && finalistClassificationMap[record.id];
                                                 return classification
@@ -1474,7 +1519,7 @@ export default function TournamentView() {
                                                                 openFullResultModal(
                                                                     `${eventLabel} - Team Rankings`,
                                                                     <Table
-                                                                        columns={buildTeamModalColumns()}
+                                                                        columns={buildTeamModalColumns(false, filteredRecords)}
                                                                         data={filteredRecords}
                                                                         pagination={{
                                                                             pageSize: 20,
@@ -1631,7 +1676,7 @@ export default function TournamentView() {
                                                                         openFullResultModal(
                                                                             `Overall Rankings (${getEventLabel(overallEvent)})`,
                                                                             <Table
-                                                                                columns={buildOverallModalColumns(true)}
+                                                                                columns={buildOverallModalColumns(true, filteredBracketRecords)}
                                                                                 data={filteredBracketRecords}
                                                                                 pagination={{
                                                                                     pageSize: 20,
@@ -1650,7 +1695,7 @@ export default function TournamentView() {
                                                                 </Button>
                                                             </div>
                                                             <Table
-                                                                columns={buildOverallPreviewColumns(true)}
+                                                                columns={buildOverallPreviewColumns(true, filteredBracketRecords)}
                                                                 data={filteredBracketRecords}
                                                                 pagination={{
                                                                     pageSize: 20,
@@ -1707,7 +1752,7 @@ export default function TournamentView() {
                                                             selectedBracket,
                                                         );
 
-                                                        const columns = buildTeamPreviewColumns(true);
+                                                        const columns = buildTeamPreviewColumns(true, filteredRecords);
 
                                                         return (
                                                             <Card
@@ -1725,7 +1770,7 @@ export default function TournamentView() {
                                                                             openFullResultModal(
                                                                                 `${eventLabel} - Team Rankings - ${classificationLabel}`,
                                                                                 <Table
-                                                                                    columns={buildTeamModalColumns(true)}
+                                                                                    columns={buildTeamModalColumns(true, filteredRecords)}
                                                                                     data={filteredRecords}
                                                                                     pagination={{
                                                                                         pageSize: 20,
