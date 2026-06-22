@@ -1831,7 +1831,8 @@ const generateSingleStackingSheet = (
     const marginX = 5;
     const halfPageHeight = pageHeight / 2;
     const sheetVerticalOffset = 2;
-    const startY = (position === 0 ? 4 : halfPageHeight + 1) + sheetVerticalOffset; // top or bottom half
+    const bottomSheetOffset = position === 1 ? 6 : 0;
+    const startY = (position === 0 ? 4 : halfPageHeight + 1) + sheetVerticalOffset + bottomSheetOffset; // top or bottom half
     const sectionSpacing = 5;
     let tableYOffset = 11;
 

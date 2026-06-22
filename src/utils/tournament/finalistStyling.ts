@@ -2,6 +2,12 @@ import type {FinalCriterion} from "@/schema";
 
 export type FinalClassification = FinalCriterion["classification"];
 
+export type FinalistAllocation<T> = {
+    criterion: FinalCriterion;
+    classification: FinalClassification;
+    records: T[];
+};
+
 type FinalistVisualStyle = {
     label: string;
     rowClassName: string;
@@ -61,21 +67,58 @@ export const isEligibleForFinalistSelection = (eventCodes: string[], bestTime: n
     return Math.abs(bestTime - FINALIST_EXCLUDED_TOTAL_TIME) > TIME_COMPARISON_EPSILON;
 };
 
+const FINALIST_CLASSIFICATION_PRIORITY: Record<FinalClassification, number> = {
+    advance: 0,
+    intermediate: 1,
+    beginner: 2,
+    prelim: 3,
+};
+
+export const allocateFinalistsByCriteria = <T extends {bestTime: number}>(
+    records: T[],
+    eventCodes: string[],
+    criteria: FinalCriterion[] = [],
+): FinalistAllocation<T>[] => {
+    const eligibleRecords = records.filter((record) => isEligibleForFinalistSelection(eventCodes, record.bestTime));
+    const prioritizedCriteria = criteria
+        .map((criterion, index) => ({criterion, index}))
+        .sort((a, b) => {
+            const priorityDiff =
+                FINALIST_CLASSIFICATION_PRIORITY[a.criterion.classification] -
+                FINALIST_CLASSIFICATION_PRIORITY[b.criterion.classification];
+            return priorityDiff || a.index - b.index;
+        });
+
+    const allocations: FinalistAllocation<T>[] = [];
+    let processedCount = 0;
+
+    for (const {criterion} of prioritizedCriteria) {
+        const finalistCount = Math.max(0, criterion.number);
+        const finalists = eligibleRecords.slice(processedCount, processedCount + finalistCount);
+
+        allocations.push({
+            criterion,
+            classification: criterion.classification,
+            records: finalists,
+        });
+
+        processedCount += finalistCount;
+    }
+
+    return allocations;
+};
+
 export const buildFinalistClassificationMap = <T extends {id: string; bestTime: number}>(
     records: T[],
     eventCodes: string[],
     criteria: FinalCriterion[] = [],
 ): Record<string, FinalClassification> => {
-    const eligibleRecords = records.filter((record) => isEligibleForFinalistSelection(eventCodes, record.bestTime));
     const highlightedRecordClassifications: Record<string, FinalClassification> = {};
-    let processedCount = 0;
 
-    for (const criterion of criteria) {
-        const bracketFinalists = eligibleRecords.slice(processedCount, processedCount + criterion.number);
-        for (const finalistRecord of bracketFinalists) {
-            highlightedRecordClassifications[finalistRecord.id] = criterion.classification;
+    for (const allocation of allocateFinalistsByCriteria(records, eventCodes, criteria)) {
+        for (const finalistRecord of allocation.records) {
+            highlightedRecordClassifications[finalistRecord.id] = allocation.classification;
         }
-        processedCount += criterion.number;
     }
 
     return highlightedRecordClassifications;
