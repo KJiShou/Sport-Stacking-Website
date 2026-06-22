@@ -31,7 +31,11 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import {buildFinalistClassificationMap, isEligibleForFinalistSelection} from "@/utils/tournament/finalistStyling";
+import {
+    allocateFinalistsByCriteria,
+    buildFinalistClassificationMap,
+    isEligibleForFinalistSelection,
+} from "@/utils/tournament/finalistStyling";
 import {Button, Dropdown, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
@@ -874,16 +878,16 @@ export default function PrelimResultsPage() {
 
                 const brackets: BracketResults[] = [];
                 for (const bracket of scopedBrackets) {
-                    const records = computeEventBracketResults(event, bracket, aggregationContext).filter((record) =>
-                        isEligibleForFinalistSelection(sanitizeEventCodes(event.codes), record.bestTime),
+                    const records = computeEventBracketResults(event, bracket, aggregationContext);
+                    const finalistAllocations = allocateFinalistsByCriteria(
+                        records,
+                        sanitizeEventCodes(event.codes),
+                        bracket.final_criteria ?? [],
                     );
-                    if (records.length === 0) continue;
+                    if (finalistAllocations.every((allocation) => allocation.records.length === 0)) continue;
 
-                    const finalCriteria = bracket.final_criteria ?? [];
-                    let processedCount = 0;
-                    for (const criterion of finalCriteria) {
-                        const {classification, number} = criterion;
-                        const bracketFinalists = records.slice(processedCount, processedCount + number);
+                    for (const allocation of finalistAllocations) {
+                        const {classification, records: bracketFinalists} = allocation;
                         if (bracketFinalists.length > 0) {
                             if (event.codes.length > 1) {
                                 for (const code of event.codes) {
@@ -920,7 +924,6 @@ export default function PrelimResultsPage() {
                                 });
                             }
                         }
-                        processedCount += number;
                     }
                 }
 
@@ -979,16 +982,12 @@ export default function PrelimResultsPage() {
                         : (event.age_brackets ?? []);
 
                 return scopedBrackets.flatMap((bracket) => {
-                    const records = computeEventBracketResults(event, bracket, aggregationContext).filter((record) =>
-                        isEligibleForFinalistSelection(sanitizeEventCodes(event.codes), record.bestTime),
+                    const records = computeEventBracketResults(event, bracket, aggregationContext);
+                    const finalistAllocations = allocateFinalistsByCriteria(
+                        records,
+                        sanitizeEventCodes(event.codes),
+                        bracket.final_criteria ?? [],
                     );
-
-                    if (records.length === 0) {
-                        return [];
-                    }
-
-                    const finalCriteria = bracket.final_criteria ?? [];
-                    let processedCount = 0;
                     const entries: Array<{
                         participant: Registration | Team;
                         division: string;
@@ -997,12 +996,11 @@ export default function PrelimResultsPage() {
                         roundLabel: string;
                     }> = [];
 
-                    for (const criterion of finalCriteria) {
-                        const classificationLabel = criterion.classification
-                            ? `${bracket.name} - ${criterion.classification}`
+                    for (const allocation of finalistAllocations) {
+                        const classificationLabel = allocation.classification
+                            ? `${bracket.name} - ${allocation.classification}`
                             : bracket.name;
-                        const bracketFinalists = records.slice(processedCount, processedCount + criterion.number);
-                        for (const finalistRecord of bracketFinalists) {
+                        for (const finalistRecord of allocation.records) {
                             const participant = isTournamentTeamEvent(event) ? finalistRecord.team : finalistRecord.registration;
                             if (!participant) {
                                 continue;
@@ -1016,7 +1014,6 @@ export default function PrelimResultsPage() {
                                 roundLabel: "Final",
                             });
                         }
-                        processedCount += criterion.number;
                     }
 
                     return entries;
@@ -1215,28 +1212,23 @@ export default function PrelimResultsPage() {
 
                 for (const bracket of event.age_brackets ?? []) {
                     const records = computeEventBracketResults(event, bracket, aggregationContext);
-                    if (records.length === 0) continue;
-                    const eligibleRecords = records.filter((record) =>
-                        isEligibleForFinalistSelection(sanitizeEventCodes(event.codes), record.bestTime),
+                    const finalistAllocations = allocateFinalistsByCriteria(
+                        records,
+                        sanitizeEventCodes(event.codes),
+                        bracket.final_criteria ?? [],
                     );
-                    if (eligibleRecords.length === 0) continue;
 
-                    const finalCriteria = bracket.final_criteria ?? [];
-                    let processedCount = 0;
-                    for (const criterion of finalCriteria) {
-                        const {classification, number} = criterion;
-                        const bracketFinalists = eligibleRecords.slice(processedCount, processedCount + number);
-                        if (bracketFinalists.length > 0) {
+                    for (const allocation of finalistAllocations) {
+                        if (allocation.records.length > 0) {
                             finalists.push({
                                 event,
                                 eventCode,
                                 eventCodes,
                                 bracket,
-                                records: bracketFinalists,
-                                classification,
+                                records: allocation.records,
+                                classification: allocation.classification,
                             });
                         }
-                        processedCount += number;
                     }
                 }
             }
