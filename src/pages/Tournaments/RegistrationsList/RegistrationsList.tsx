@@ -7,8 +7,9 @@ import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/re
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
+import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
-import {findDuplicateEventSelections, groupEventSelections} from "@/utils/tournament/eventUtils";
+import {findDuplicateEventSelections, getTeamEvents, groupEventSelections} from "@/utils/tournament/eventUtils";
 import {downloadTournamentImportTemplate} from "@/utils/tournament/importTemplate";
 import {
     Button,
@@ -39,6 +40,37 @@ type ImportResultView = "errors" | "warnings" | "athletes" | "registrations" | "
 const parsePositivePage = (value: string | null): number => {
     const parsed = Number.parseInt(value ?? "", 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+};
+
+const normalizeParticipantId = (value?: string | null): string => value?.trim().toLowerCase() ?? "";
+
+const getFallbackTeamEventType = (team: Team): string => {
+    const references = [
+        ...(Array.isArray(team.event) ? team.event : []),
+        typeof team.event_id === "string" ? team.event_id : "",
+    ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+    if (references.includes("team relay")) {
+        return "Team Relay";
+    }
+    if (references.includes("double")) {
+        return "Double";
+    }
+
+    return "Team";
+};
+
+const getTeamVerificationLabel = (team: Team, events: TournamentEvent[], verified: boolean): string => {
+    const eventType = getTeamEvents(team, events)[0]?.type ?? getFallbackTeamEventType(team);
+    const label =
+        eventType.toLowerCase().includes("team relay") || eventType.toLowerCase().includes("double")
+            ? eventType
+            : "Team";
+
+    return `${label} ${verified ? "Verified" : "Not Verified"}`;
 };
 
 export default function RegistrationsListPage() {
@@ -72,24 +104,41 @@ export default function RegistrationsListPage() {
     const [importFile, setImportFile] = useState<File | null>(null);
     const [importFileList, setImportFileList] = useState<UploadItem[]>([]);
     const [importResult, setImportResult] = useState<ImportWorkbookResult | null>(null);
-    const [importResultView, setImportResultView] = useState<ImportResultView>("errors");
+    const [importResultView, setImportResultView] = useState<ImportResultView>("registrations");
 
     const teamVerificationByRegistration = useMemo(() => {
-        return teams.reduce(
-            (acc, team) => {
-                const registrationId = team.registration_id ?? "";
+        return registrations.reduce(
+            (acc, registration) => {
+                const registrationId = registration.id ?? "";
                 if (!registrationId) {
                     return acc;
                 }
-                if (!acc[registrationId]) {
-                    acc[registrationId] = [];
+
+                const registrationGlobalId = normalizeParticipantId(registration.user_global_id);
+                const matchedTeams = new Map<string, Team>();
+
+                for (const team of teams) {
+                    const directRegistrationMatch = team.registration_id === registrationId;
+                    const leaderMatch =
+                        registrationGlobalId.length > 0 &&
+                        normalizeParticipantId(stripTeamLeaderPrefix(team.leader_id)) === registrationGlobalId;
+                    const memberMatch =
+                        registrationGlobalId.length > 0 &&
+                        (team.members ?? []).some(
+                            (member) => normalizeParticipantId(member.global_id) === registrationGlobalId,
+                        );
+
+                    if (directRegistrationMatch || leaderMatch || memberMatch) {
+                        matchedTeams.set(team.id, team);
+                    }
                 }
-                acc[registrationId].push(team);
+
+                acc[registrationId] = Array.from(matchedTeams.values());
                 return acc;
             },
             {} as Record<string, Team[]>,
         );
-    }, [teams]);
+    }, [registrations, teams]);
 
     const refreshRegistrationsList = async () => {
         if (!tournamentId) return;
@@ -167,7 +216,7 @@ export default function RegistrationsListPage() {
                 defaultState: "-",
             });
             setImportResult(result);
-            setImportResultView("errors");
+            setImportResultView("registrations");
             if (mode === "commit" && result.committed) {
                 Message.success("Workbook imported.");
                 await refreshRegistrationsList();
@@ -336,13 +385,17 @@ export default function RegistrationsListPage() {
                     color = undefined;
                 }
                 const teamsForRegistration = record.id ? (teamVerificationByRegistration[record.id] ?? []) : [];
-                const teamVerified =
-                    teamsForRegistration.length > 0 && teamsForRegistration.every((team) => isTeamFullyVerified(team));
                 return (
                     <div className="flex flex-wrap gap-2">
                         <Tag color={color}>{status}</Tag>
-                        {teamsForRegistration.length > 0 &&
-                            (teamVerified ? <Tag color="green">Team Verified</Tag> : <Tag color="red">Team Not Verified</Tag>)}
+                        {teamsForRegistration.map((team) => {
+                            const teamVerified = isTeamFullyVerified(team);
+                            return (
+                                <Tag key={team.id} color={teamVerified ? "green" : "red"}>
+                                    {getTeamVerificationLabel(team, events, teamVerified)}
+                                </Tag>
+                            );
+                        })}
                     </div>
                 );
             },
@@ -545,7 +598,7 @@ export default function RegistrationsListPage() {
                 onCancel={() => {
                     setImportModalVisible(false);
                     setImportResult(null);
-                    setImportResultView("errors");
+                    setImportResultView("registrations");
                 }}
                 footer={
                     <div className="flex justify-between w-full gap-2">
@@ -584,7 +637,7 @@ export default function RegistrationsListPage() {
                                     const file = nextFile?.originFile as File | undefined;
                                     setImportFile(file ?? null);
                                     setImportResult(null);
-                                    setImportResultView("errors");
+                                    setImportResultView("registrations");
                                     setImportFileList(
                                         file && nextFile
                                             ? [
@@ -602,7 +655,7 @@ export default function RegistrationsListPage() {
                                     setImportFile(null);
                                     setImportFileList([]);
                                     setImportResult(null);
-                                    setImportResultView("errors");
+                                    setImportResultView("registrations");
                                     return true;
                                 }}
                             />
@@ -630,14 +683,14 @@ export default function RegistrationsListPage() {
                                 activeTab={importResultView}
                                 onChange={(key) => setImportResultView(key as ImportResultView)}
                             >
-                                <Tabs.TabPane key="errors" title={`Errors (${importResult.summary.errors})`} />
-                                <Tabs.TabPane key="warnings" title={`Warnings (${importResult.summary.warnings})`} />
-                                <Tabs.TabPane key="athletes" title={`Athletes (${importResult.summary.athletes})`} />
                                 <Tabs.TabPane
                                     key="registrations"
                                     title={`Registrations (${importResult.summary.registrations})`}
                                 />
+                                <Tabs.TabPane key="athletes" title={`Athletes (${importResult.summary.athletes})`} />
                                 <Tabs.TabPane key="teams" title={`Teams (${importResult.summary.teams})`} />
+                                <Tabs.TabPane key="warnings" title={`Warnings (${importResult.summary.warnings})`} />
+                                <Tabs.TabPane key="errors" title={`Errors (${importResult.summary.errors})`} />
                             </Tabs>
                             <Table
                                 size="small"
