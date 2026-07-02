@@ -74,8 +74,7 @@ if (!getApps().length) {
 }
 
 const firebaseApp = getApps()[0] ?? initializeApp();
-const firestoreDatabaseId =
-    process.env.FIRESTORE_DATABASE_ID?.trim() || (process.env.FUNCTIONS_EMULATOR === "true" ? "develop2" : "");
+const firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID?.trim() || "";
 const db = firestoreDatabaseId ? getFirestore(firebaseApp, firestoreDatabaseId) : getFirestore(firebaseApp);
 
 type ImportIdentityType = "MYKAD" | "PASSPORT" | "NONE";
@@ -214,6 +213,44 @@ const importCellToString = (value: ExcelJS.CellValue): string => {
 
 const importNormalize = (value: string): string => value.trim().replace(/\s+/g, " ").toLowerCase();
 const importNormalizeCompact = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
+
+const importNormalizeEventType = (value: string): string => {
+    const normalized = importNormalize(value).replace(/&/g, "and");
+    const aliases: Record<string, string> = {
+        double: "double",
+        doubles: "double",
+        "stack up champion": "stackout champion",
+        "stack out champion": "stackout champion",
+        "stackout champion": "stackout champion",
+        "time relay": "team relay",
+        "team relay": "team relay",
+    };
+    return aliases[normalized] ?? normalized;
+};
+
+const importIsEventType = (event: ImportEvent, expectedType: string): boolean =>
+    importNormalizeEventType(event.type) === importNormalizeEventType(expectedType);
+
+const importIsIndividualEvent = (event: ImportEvent): boolean => {
+    const normalizedType = importNormalizeEventType(event.type);
+    return normalizedType === "individual" || normalizedType.includes("individual");
+};
+
+const importIsTeamEvent = (event: ImportEvent): boolean =>
+    importIsEventType(event, "Double") || importIsEventType(event, "Team Relay") || importIsEventType(event, "Parent & Child");
+
+const importGetExpectedTeamSize = (event: ImportEvent): number => {
+    if (typeof event.teamSize === "number" && event.teamSize > 0) {
+        return event.teamSize;
+    }
+    if (importIsEventType(event, "Double") || importIsEventType(event, "Parent & Child")) {
+        return 2;
+    }
+    if (importIsEventType(event, "Team Relay")) {
+        return 4;
+    }
+    return 1;
+};
 
 const importBuildIdentityKey = (
     identityType: ImportIdentityType,
@@ -414,7 +451,13 @@ const importResolveEventForSheet = (
 ): ImportEvent | null => {
     const mapped = explicitMapping[sheetName] ?? explicitMapping[importNormalize(sheetName)];
     if (mapped) {
-        return events.find((event) => event.id === mapped || event.type === mapped) ?? null;
+        const normalizedMappedType = importNormalizeEventType(mapped);
+        const mappedEvent = events.find(
+            (event) => event.id === mapped || importNormalizeEventType(event.type) === normalizedMappedType,
+        );
+        if (mappedEvent) {
+            return mappedEvent;
+        }
     }
 
     const normalizedSheet = importNormalize(sheetName).replace(/&/g, "and");
@@ -429,15 +472,21 @@ const importResolveEventForSheet = (
         ["stackout champion", "StackOut Champion"],
         ["stackout", "StackOut Champion"],
         ["stack out champion", "StackOut Champion"],
+        ["stack up champion", "StackOut Champion"],
     ];
     const alias = aliases.find(([name]) => normalizedSheet.includes(name))?.[1];
     if (alias) {
+        const normalizedAliasType = importNormalizeEventType(alias);
         return (
-            events.find((event) => event.type === alias || (alias === "Individual" && event.type.includes("Individual"))) ?? null
+            events.find(
+                (event) =>
+                    importNormalizeEventType(event.type) === normalizedAliasType ||
+                    (alias === "Individual" && importIsIndividualEvent(event)),
+            ) ?? null
         );
     }
 
-    return events.find((event) => normalizedSheet.includes(importNormalize(event.type).replace(/&/g, "and"))) ?? null;
+    return events.find((event) => normalizedSheet.includes(importNormalizeEventType(event.type))) ?? null;
 };
 
 const importReadTemplateMappings = (workbook: ExcelJS.Workbook): Record<string, string> => {
@@ -594,8 +643,7 @@ const importParseWorkbook = (
         teams: [],
         rows: [],
     };
-    const individualEvent =
-        events.find((event) => event.type === "Individual") ?? events.find((event) => event.type.includes("Individual"));
+    const individualEvent = events.find((event) => importIsEventType(event, "Individual")) ?? events.find(importIsIndividualEvent);
     if (!individualEvent) {
         parsed.rows.push({sheet: "Workbook", row: 0, level: "error", message: "Tournament has no Individual event."});
         return parsed;
@@ -623,9 +671,9 @@ const importParseWorkbook = (
 
         const headerRowNumber = importFindHeaderRow(worksheet);
         const columns = importFindColumns(worksheet, headerRowNumber);
-        const isIndividualSheet = event.id === individualEvent.id || event.type.includes("Individual");
-        const isParentChildSheet = event.type === "Parent & Child";
-        const isTeamSheet = event.type === "Double" || event.type === "Team Relay" || isParentChildSheet;
+        const isIndividualSheet = event.id === individualEvent.id || importIsIndividualEvent(event);
+        const isParentChildSheet = importIsEventType(event, "Parent & Child");
+        const isTeamSheet = importIsTeamEvent(event);
         const lastRelevantRow = importGetLastRelevantRow(worksheet, headerRowNumber, columns);
 
         if (!isTeamSheet) {
@@ -769,7 +817,7 @@ const importParseWorkbook = (
         let currentBlock: string[] = [];
         let currentBlockRow = 0;
         let currentBlockHasErrors = false;
-        const expectedSize = event.teamSize ?? (event.type === "Double" ? 2 : event.type === "Team Relay" ? 4 : 1);
+        const expectedSize = importGetExpectedTeamSize(event);
         const flushBlock = () => {
             if (currentBlock.length === 0) {
                 return;
@@ -1319,12 +1367,12 @@ const importCommitRegistrationsAndTeams = async ({
             continue;
         }
         const ages = athletes.map((athlete) => importAgeAtTournament(athlete.birthdate, tournamentStartDate));
+        const normalizedTeamEventType = importNormalizeEventType(team.eventType);
         const teamAge =
-            team.eventType === "Team Relay"
+            normalizedTeamEventType === importNormalizeEventType("Team Relay") ||
+            normalizedTeamEventType === importNormalizeEventType("Double")
                 ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length)
-                : team.eventType === "Double"
-                  ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length)
-                  : ages[0];
+                : ages[0];
         const teamRef = db.collection("teams").doc();
         const teamName = athletes.map((athlete) => athlete.name).join(" & ");
         await teamRef.set({
