@@ -20,12 +20,11 @@ import {
     updateTeamRecruitmentMembersNeeded,
 } from "@/services/firebase/teamRecruitmentService";
 import {
-    addMemberToTeam,
-    createTeam,
     fetchOccupiedParticipantIdsByTournamentEvent,
     fetchTournamentsByType,
     fetchUnavailableParticipantIdsByEvent,
 } from "@/services/firebase/tournamentsService";
+import {addAdminTeamMember, upsertAdminTeam} from "@/services/firebase/adminTeamService";
 import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatTeamLeaderId} from "@/utils/teamLeaderId";
 import {
@@ -187,7 +186,7 @@ export default function TeamRecruitmentManagement() {
             if (values.action === "assign" && values.teamId) {
                 // First add member to the team - verified by admin
                 try {
-                    await addMemberToTeam(individual.tournament_id, values.teamId, individual.participant_id, true);
+                    await addAdminTeamMember(individual.tournament_id, values.teamId, individual.participant_id);
                 } catch (error) {
                     const errorMessage = error instanceof Error ? error.message : "Unknown error";
                     Message.error(`Failed to add participant to team: ${errorMessage}`);
@@ -281,7 +280,7 @@ export default function TeamRecruitmentManagement() {
                 return;
             }
 
-            const teamId = await createTeam(primary.tournament_id, {
+            const {teamId} = await upsertAdminTeam(primary.tournament_id, {
                 name: teamName,
                 leader_id: leaderId,
                 members: [

@@ -76,6 +76,7 @@ if (!getApps().length) {
 const firebaseApp = getApps()[0] ?? initializeApp();
 const firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID?.trim() || "";
 const db = firestoreDatabaseId ? getFirestore(firebaseApp, firestoreDatabaseId) : getFirestore(firebaseApp);
+const firestoreTriggerDatabase = firestoreDatabaseId || "(default)";
 
 type ImportIdentityType = "MYKAD" | "PASSPORT" | "NONE";
 type ImportGender = "Male" | "Female";
@@ -2501,7 +2502,6 @@ const deliverUserNotificationEmail = async (notificationRef: DocumentReference):
 const PASSWORD_RESET_EMAIL_THROTTLE_MS = 60 * 1000;
 
 async function enforcePasswordResetEmailThrottle(email: string): Promise<void> {
-    const db = getFirestore();
     const throttleRef = db.collection("passwordResetEmailThrottle").doc(encodeURIComponent(email));
     const nowMs = Date.now();
 
@@ -2662,6 +2662,7 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
 export const syncTeamVerificationRequests = onDocumentWritten(
     {
         document: "teams/{teamId}",
+        database: firestoreTriggerDatabase,
         region: functionsRegion,
         retry: false,
     },
@@ -2746,6 +2747,7 @@ export const syncTeamVerificationRequests = onDocumentWritten(
 export const deliverVerificationRequestEmails = onDocumentWritten(
     {
         document: "verification_requests/{requestId}",
+        database: firestoreTriggerDatabase,
         region: functionsRegion,
         retry: false,
         secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
@@ -2768,6 +2770,7 @@ export const deliverVerificationRequestEmails = onDocumentWritten(
 export const deliverUserNotificationEmails = onDocumentWritten(
     {
         document: "notifications/{notificationId}",
+        database: firestoreTriggerDatabase,
         region: functionsRegion,
         retry: false,
         secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
@@ -2900,6 +2903,349 @@ export const rejectTeamInvitation = onCall(callableFunctionOptions, async (reque
     }
 
     return {success: true, status: "rejected", ...result};
+});
+
+type AdminTeamMutationInput = {
+    action?: "upsert" | "add-member" | "delete";
+    tournamentId?: unknown;
+    teamId?: unknown;
+    memberId?: unknown;
+    team?: Partial<Team>;
+};
+
+const normalizeAdminGlobalId = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+
+const registrationEventsWith = (events: unknown, eventKeys: string[]): string[] =>
+    Array.from(
+        new Set([
+            ...(Array.isArray(events) ? events.filter((event): event is string => typeof event === "string") : []),
+            ...eventKeys,
+        ]),
+    );
+
+const registrationEventsWithout = (events: unknown, eventKeys: string[]): string[] => {
+    const eventKeySet = new Set(eventKeys.map((eventKey) => normalizeEventValue(eventKey)));
+    return (Array.isArray(events) ? events : []).filter(
+        (event): event is string => typeof event === "string" && !eventKeySet.has(normalizeEventValue(event)),
+    );
+};
+
+const teamParticipantIds = (team: Team): string[] =>
+    Array.from(
+        new Set(
+            [team.leader_id, ...(team.members ?? []).filter((member) => member.verified).map((member) => member.global_id)]
+                .map((participantId) => normalizeAdminGlobalId(participantId))
+                .filter(Boolean),
+        ),
+    );
+
+const teamContainsConfirmedParticipant = (team: Team, participantId: string): boolean =>
+    normalizeAdminGlobalId(team.leader_id) === participantId ||
+    (team.members ?? []).some(
+        (member) => normalizeAdminGlobalId(member.global_id) === participantId && member.verified === true,
+    );
+
+const hasSameConfirmedTeam = (left: Team, right: Team): boolean => {
+    const leftParticipants = teamParticipantIds(left).sort();
+    const rightParticipants = teamParticipantIds(right).sort();
+    return (
+        hasEventOverlap(
+            buildNormalizedEventSet(getTeamEventReferences(left)),
+            buildNormalizedEventSet(getTeamEventReferences(right)),
+        ) &&
+        leftParticipants.length === rightParticipants.length &&
+        leftParticipants.every((participantId, index) => participantId === rightParticipants[index])
+    );
+};
+
+const findUserDocumentForTournament = (
+    userSnapshot: {docs: QueryDocumentSnapshot[]},
+    tournamentId: string,
+) =>
+    userSnapshot.docs.find((userDoc) =>
+        ((userDoc.data() as {registration_records?: UserRegistrationRecord[]}).registration_records ?? []).some(
+            (record) => record.tournament_id === tournamentId,
+        ),
+    );
+
+/**
+ * The only admin path for creating, editing, directly confirming, or removing team members.
+ * It keeps teams, registrations, and user registration records consistent in one transaction.
+ */
+export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) => {
+    if (!request.auth?.uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+    }
+
+    const input = request.data as AdminTeamMutationInput;
+    const tournamentId = normalizeAdminGlobalId(input.tournamentId);
+    const action = input.action ?? "upsert";
+    const requestedTeamId = normalizeAdminGlobalId(input.teamId);
+    if (!tournamentId) {
+        throw new HttpsError("invalid-argument", "Tournament ID is required.");
+    }
+    if (!(await importIsAuthorized(request.auth.uid, tournamentId))) {
+        throw new HttpsError("permission-denied", "You do not have permission to manage this tournament.");
+    }
+    if ((action === "add-member" || action === "delete") && !requestedTeamId) {
+        throw new HttpsError("invalid-argument", "Team ID is required.");
+    }
+
+    return db.runTransaction(async (transaction) => {
+        const existingTeamRef = requestedTeamId ? db.collection("teams").doc(requestedTeamId) : null;
+        const existingTeamSnap = existingTeamRef ? await transaction.get(existingTeamRef) : null;
+        if (existingTeamRef && !existingTeamSnap?.exists) {
+            throw new HttpsError("not-found", "Team not found.");
+        }
+        const existingTeam = existingTeamSnap?.exists ? (existingTeamSnap.data() as Team) : null;
+        if (existingTeam && existingTeam.tournament_id !== tournamentId) {
+            throw new HttpsError("failed-precondition", "Team does not belong to this tournament.");
+        }
+
+        if (action === "delete") {
+            if (!existingTeamRef || !existingTeam) {
+                throw new HttpsError("not-found", "Team not found.");
+            }
+            const eventKeys = getPreferredTeamEventKeys(existingTeam, getTeamEventReferences(existingTeam));
+            const previousParticipantIds = existingTeam ? teamParticipantIds(existingTeam) : [];
+            const allTeamsSnapshot = await transaction.get(db.collection("teams").where("tournament_id", "==", tournamentId));
+            const participantSnapshots = await Promise.all(
+                previousParticipantIds.map(async (participantId) => {
+                    const [registrationSnapshot, userSnapshot] = await Promise.all([
+                        transaction.get(
+                            db.collection("registrations").where("tournament_id", "==", tournamentId).where("user_global_id", "==", participantId),
+                        ),
+                        transaction.get(db.collection("users").where("global_id", "==", participantId)),
+                    ]);
+                    return {participantId, registrationSnapshot, userSnapshot};
+                }),
+            );
+
+            for (const {participantId, registrationSnapshot, userSnapshot} of participantSnapshots) {
+                const belongsToAnotherTeam = allTeamsSnapshot.docs.some((teamSnapshot) => {
+                    if (teamSnapshot.id === existingTeamRef?.id) return false;
+                    const candidate = teamSnapshot.data() as Team;
+                    return (
+                        teamContainsConfirmedParticipant(candidate, participantId) &&
+                        hasEventOverlap(
+                            buildNormalizedEventSet(getTeamEventReferences(candidate)),
+                            buildNormalizedEventSet(getTeamEventReferences(existingTeam)),
+                        )
+                    );
+                });
+                if (belongsToAnotherTeam) continue;
+
+                const registrationRef = registrationSnapshot.docs[0]?.ref;
+                if (registrationRef) {
+                    transaction.update(registrationRef, {
+                        events_registered: registrationEventsWithout(registrationSnapshot.docs[0].data().events_registered, eventKeys),
+                        updated_at: FirestoreTimestamp.now(),
+                    });
+                }
+                const userDoc = findUserDocumentForTournament(userSnapshot, tournamentId);
+                if (userDoc) {
+                    const userData = userDoc.data() as {registration_records?: UserRegistrationRecord[]};
+                    const registrationRecords = userData.registration_records ?? [];
+                    transaction.update(userDoc.ref, {
+                        registration_records: registrationRecords.map((record) =>
+                            record.tournament_id === tournamentId
+                                ? {...record, events: registrationEventsWithout(record.events, eventKeys), updated_at: FirestoreTimestamp.now()}
+                                : record,
+                        ),
+                        updated_at: FirestoreTimestamp.now(),
+                    });
+                }
+            }
+            transaction.delete(existingTeamRef);
+            return {teamId: requestedTeamId, deleted: true};
+        }
+
+        const rawTeam = input.team;
+        let nextTeam: Team;
+        if (action === "add-member") {
+            if (!existingTeam) {
+                throw new HttpsError("not-found", "Team not found.");
+            }
+            const memberId = normalizeAdminGlobalId(input.memberId);
+            if (!memberId) {
+                throw new HttpsError("invalid-argument", "Member Global ID is required.");
+            }
+            if (teamContainsConfirmedParticipant(existingTeam, memberId) || (existingTeam.members ?? []).some((member) => member.global_id === memberId)) {
+                throw new HttpsError("already-exists", "Member is already in this team.");
+            }
+            nextTeam = {
+                ...existingTeam,
+                members: [...(existingTeam.members ?? []), {global_id: memberId, verified: true}],
+            };
+        } else {
+            if (!rawTeam) {
+                throw new HttpsError("invalid-argument", "Team data is required.");
+            }
+            const leaderId = normalizeAdminGlobalId(rawTeam.leader_id);
+            const memberIds = (rawTeam.members ?? []).map((member) => normalizeAdminGlobalId(member.global_id)).filter(Boolean);
+            const nextTeamId =
+                normalizeAdminGlobalId(existingTeam?.id) ||
+                requestedTeamId ||
+                normalizeAdminGlobalId(rawTeam.id) ||
+                db.collection("teams").doc().id;
+            if (!leaderId || memberIds.length !== new Set(memberIds).size || memberIds.includes(leaderId)) {
+                throw new HttpsError("invalid-argument", "Team members must be unique and cannot include the leader.");
+            }
+            nextTeam = {
+                ...(existingTeam ?? {}),
+                ...rawTeam,
+                id: nextTeamId,
+                tournament_id: tournamentId,
+                name: typeof rawTeam.name === "string" ? rawTeam.name : "",
+                leader_id: leaderId,
+                registration_id: typeof rawTeam.registration_id === "string" ? rawTeam.registration_id : "",
+                event_id: typeof rawTeam.event_id === "string" ? rawTeam.event_id : null,
+                event: Array.isArray(rawTeam.event) ? rawTeam.event.filter((event): event is string => typeof event === "string") : [],
+                members: memberIds.map((memberId) => ({global_id: memberId, verified: true})),
+                team_age: typeof rawTeam.team_age === "number" ? rawTeam.team_age : 0,
+                looking_for_member: rawTeam.looking_for_member === true,
+            };
+        }
+
+        const teamRef = existingTeamRef ?? db.collection("teams").doc(nextTeam.id);
+        const eventKeys = getPreferredTeamEventKeys(nextTeam, getTeamEventReferences(nextTeam));
+        if (eventKeys.length === 0) {
+            throw new HttpsError("invalid-argument", "Team event is required.");
+        }
+        const confirmedParticipantIds = teamParticipantIds(nextTeam);
+        const previousConfirmedParticipantIds = existingTeam ? teamParticipantIds(existingTeam) : [];
+        const allTeamsSnapshot = await transaction.get(db.collection("teams").where("tournament_id", "==", tournamentId));
+        const duplicateTeam = allTeamsSnapshot.docs.find(
+            (teamSnapshot) => teamSnapshot.id !== teamRef.id && hasSameConfirmedTeam(teamSnapshot.data() as Team, nextTeam),
+        );
+        if (duplicateTeam) {
+            throw new HttpsError("already-exists", "These participants are already registered as a team for this event.");
+        }
+        const participantSnapshots = await Promise.all(
+            confirmedParticipantIds.map(async (participantId) => {
+                const [registrationSnapshot, userSnapshot] = await Promise.all([
+                    transaction.get(
+                        db.collection("registrations").where("tournament_id", "==", tournamentId).where("user_global_id", "==", participantId),
+                    ),
+                    transaction.get(db.collection("users").where("global_id", "==", participantId)),
+                ]);
+                return {participantId, registrationSnapshot, userSnapshot};
+            }),
+        );
+        const invalidParticipantIds = participantSnapshots
+            .filter(({registrationSnapshot, userSnapshot}) => registrationSnapshot.empty || userSnapshot.empty)
+            .map(({participantId}) => participantId);
+        const missingRegistrationRecordIds = participantSnapshots
+            .filter(({userSnapshot}) => {
+                return !findUserDocumentForTournament(userSnapshot, tournamentId);
+            })
+            .map(({participantId}) => participantId);
+        if (invalidParticipantIds.length > 0 || missingRegistrationRecordIds.length > 0) {
+            throw new HttpsError(
+                "failed-precondition",
+                `Each member must be registered for this tournament. Invalid: ${[...new Set([...invalidParticipantIds, ...missingRegistrationRecordIds])].join(", ")}`,
+            );
+        }
+
+        const removedConfirmedParticipantIds = previousConfirmedParticipantIds.filter(
+            (participantId) => !confirmedParticipantIds.includes(participantId),
+        );
+        const removedSnapshots = await Promise.all(
+            removedConfirmedParticipantIds.map(async (participantId) => {
+                const [registrationSnapshot, userSnapshot] = await Promise.all([
+                    transaction.get(
+                        db.collection("registrations").where("tournament_id", "==", tournamentId).where("user_global_id", "==", participantId),
+                    ),
+                    transaction.get(db.collection("users").where("global_id", "==", participantId)),
+                ]);
+                return {participantId, registrationSnapshot, userSnapshot};
+            }),
+        );
+        const verificationEntries = [...new Set([...previousConfirmedParticipantIds, ...confirmedParticipantIds])].map(
+            (participantId) => ({
+                participantId,
+                ref: db.collection("verification_requests").doc(buildVerificationRequestId(tournamentId, teamRef.id, participantId)),
+            }),
+        );
+        const verificationSnapshots = await Promise.all(verificationEntries.map(({ref}) => transaction.get(ref)));
+        const now = FirestoreTimestamp.now();
+
+        for (const {registrationSnapshot, userSnapshot} of participantSnapshots) {
+            const registrationDoc = registrationSnapshot.docs[0];
+            const userDoc = findUserDocumentForTournament(userSnapshot, tournamentId);
+            if (!userDoc) {
+                throw new HttpsError("failed-precondition", "Member registration record is missing.");
+            }
+            const userData = userDoc.data() as {registration_records?: UserRegistrationRecord[]};
+            transaction.update(registrationDoc.ref, {
+                events_registered: registrationEventsWith(registrationDoc.data().events_registered, eventKeys),
+                updated_at: now,
+            });
+            transaction.update(userDoc.ref, {
+                registration_records: (userData.registration_records ?? []).map((record) =>
+                    record.tournament_id === tournamentId
+                        ? {...record, events: registrationEventsWith(record.events, eventKeys), updated_at: now}
+                        : record,
+                ),
+                updated_at: now,
+            });
+        }
+
+        for (const {participantId, registrationSnapshot, userSnapshot} of removedSnapshots) {
+            const belongsToAnotherTeam = allTeamsSnapshot.docs.some((teamSnapshot) => {
+                if (teamSnapshot.id === teamRef.id) return false;
+                const candidate = teamSnapshot.data() as Team;
+                return (
+                    teamContainsConfirmedParticipant(candidate, participantId) &&
+                    hasEventOverlap(
+                        buildNormalizedEventSet(getTeamEventReferences(candidate)),
+                        buildNormalizedEventSet(getTeamEventReferences(existingTeam)),
+                    )
+                );
+            });
+            if (belongsToAnotherTeam) continue;
+            const registrationDoc = registrationSnapshot.docs[0];
+            const userDoc = findUserDocumentForTournament(userSnapshot, tournamentId);
+            if (registrationDoc) {
+                transaction.update(registrationDoc.ref, {
+                    events_registered: registrationEventsWithout(registrationDoc.data().events_registered, eventKeys),
+                    updated_at: now,
+                });
+            }
+            if (userDoc) {
+                const userData = userDoc.data() as {registration_records?: UserRegistrationRecord[]};
+                transaction.update(userDoc.ref, {
+                    registration_records: (userData.registration_records ?? []).map((record) =>
+                        record.tournament_id === tournamentId
+                            ? {...record, events: registrationEventsWithout(record.events, eventKeys), updated_at: now}
+                            : record,
+                    ),
+                    updated_at: now,
+                });
+            }
+        }
+
+        transaction.set(teamRef, {...nextTeam, id: teamRef.id, updated_at: now}, {merge: true});
+        for (let index = 0; index < verificationEntries.length; index += 1) {
+            const {participantId, ref} = verificationEntries[index];
+            const isConfirmed = confirmedParticipantIds.includes(participantId);
+            const verificationSnapshot = verificationSnapshots[index];
+            if (isConfirmed) {
+                transaction.set(
+                    ref,
+                    {status: "verified", verified_at: now, updated_at: now},
+                    {merge: true},
+                );
+            } else if (verificationSnapshot.exists && verificationSnapshot.data()?.status === "pending") {
+                transaction.set(
+                    ref,
+                    {status: "expired", expired_at: now, updated_at: now},
+                    {merge: true},
+                );
+            }
+        }
+        return {teamId: teamRef.id, deleted: false};
+    });
 });
 
 export const cacheGoogleAvatarCallable = onCall(callableFunctionOptions, async (request) => {
@@ -3284,11 +3630,20 @@ export const rejectProfileClaimRequest = onCall(callableFunctionOptions, async (
 });
 
 export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, async (request) => {
+    if (!firestoreDatabaseId) {
+        throw new HttpsError(
+            "failed-precondition",
+            "FIRESTORE_DATABASE_ID must be set before importing a workbook.",
+        );
+    }
+
     const importStartedAt = Date.now();
     const importBatchRef = db.collection("import_batches").doc();
     const logImportStage = (stage: string, details: Record<string, unknown> = {}) => {
         console.info("importTournamentWorkbook checkpoint", {
             stage,
+            databaseId: firestoreDatabaseId || "(default)",
+            functionsEmulator: process.env.FUNCTIONS_EMULATOR === "true",
             importBatchId: importBatchRef.id,
             elapsedMs: Date.now() - importStartedAt,
             ...details,
@@ -3566,11 +3921,6 @@ export const updateVerification = onRequest(async (req, res) => {
                     throw new Error("You are not a member of this team.");
                 }
 
-                if (teamData.members[memberIndex].verified) {
-                    // Member is already verified, so we can just return success.
-                    return;
-                }
-
                 const userData = userDoc.data();
                 const registrationRecords: UserRegistrationRecord[] = userData?.registration_records ?? [];
                 const recordIndex = registrationRecords.findIndex((record) => record.tournament_id === tournamentId);
@@ -3637,13 +3987,6 @@ export const updateVerification = onRequest(async (req, res) => {
                 const registrationEvents = Array.isArray(registrationData.events_registered)
                     ? registrationData.events_registered
                     : [];
-                if (normalizedTeamEventReferences.size > 0) {
-                    const normalizedRegisteredEvents = buildNormalizedEventSet(registrationEvents);
-                    if (hasEventOverlap(normalizedTeamEventReferences, normalizedRegisteredEvents)) {
-                        throw new Error("You are already registered for one or more of these team events.");
-                    }
-                }
-
                 // Update the registration document with the new events
                 await transaction.update(regRef, {
                     events_registered:
@@ -3708,6 +4051,7 @@ export const updateVerification = onRequest(async (req, res) => {
 export const updateUserBestTimes = onDocumentWritten(
     {
         document: "records/{recordId}",
+        database: firestoreTriggerDatabase,
         region: functionsRegion,
         retry: false,
     },
@@ -3730,6 +4074,7 @@ export const updateUserBestTimes = onDocumentWritten(
 export const syncUserTournamentHistoryFromRecords = onDocumentWritten(
     {
         document: "records/{recordId}",
+        database: firestoreTriggerDatabase,
         region: functionsRegion,
         retry: false,
     },
@@ -3751,6 +4096,7 @@ export const syncUserTournamentHistoryFromRecords = onDocumentWritten(
 export const syncUserTournamentHistoryFromPrelimRecords = onDocumentWritten(
     {
         document: "prelim_records/{recordId}",
+        database: firestoreTriggerDatabase,
         region: functionsRegion,
         retry: false,
     },
@@ -3772,6 +4118,7 @@ export const syncUserTournamentHistoryFromPrelimRecords = onDocumentWritten(
 export const syncUserTournamentHistoryFromOverallRecords = onDocumentWritten(
     {
         document: "overall_records/{recordId}",
+        database: firestoreTriggerDatabase,
         region: functionsRegion,
         retry: false,
     },
@@ -3793,6 +4140,7 @@ export const syncUserTournamentHistoryFromOverallRecords = onDocumentWritten(
 export const updateUserBestTimesFromOverall = onDocumentWritten(
     {
         document: "overall_records/{recordId}",
+        database: firestoreTriggerDatabase,
         region: functionsRegion,
         retry: false,
     },

@@ -42,6 +42,11 @@ type ImportWorkbookInput = {
 };
 
 export const importTournamentWorkbook = async (input: ImportWorkbookInput): Promise<ImportWorkbookResult> => {
+    if (import.meta.env.DEV && import.meta.env.VITE_USE_FUNCTIONS_EMULATOR !== "true") {
+        throw new Error(
+            "Local workbook imports require the Functions emulator. Set VITE_USE_FUNCTIONS_EMULATOR=true and start the emulator first.",
+        );
+    }
     const callable = httpsCallable<ImportWorkbookInput, ImportWorkbookResult>(functions, "importTournamentWorkbook", {
         timeout: 540000,
     });
