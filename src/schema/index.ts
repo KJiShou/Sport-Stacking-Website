@@ -124,3 +124,5 @@ export {HomeCarouselImageSchema} from "./HomeCarouselSchema";
 export type {HomeCarouselImage} from "./HomeCarouselSchema";
 export {VerificationRequestSchema} from "./VerificationRequestSchema";
 export type {VerificationRequest} from "./VerificationRequestSchema";
+export {UserNotificationSchema} from "./UserNotificationSchema";
+export type {UserNotification} from "./UserNotificationSchema";

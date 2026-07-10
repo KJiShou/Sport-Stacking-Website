@@ -16,6 +16,7 @@ import {useState} from "react";
 import {useLocation, useNavigate} from "react-router-dom";
 import {useAuthContext} from "../../context/AuthContext";
 import {logout} from "../../services/firebase/authService";
+import {subscribeNotificationsForGlobalIds} from "../../services/firebase/notificationService";
 import {subscribePendingVerificationCountForGlobalIds} from "../../services/firebase/verificationRequestService";
 import LoginForm from "../common/Login";
 
@@ -69,6 +70,7 @@ const Navbar: React.FC = () => {
 
     const [visible, setVisible] = React.useState(false);
     const [pendingVerificationCount, setPendingVerificationCount] = React.useState(0);
+    const [unreadNotificationCount, setUnreadNotificationCount] = React.useState(0);
     const {activeProfileId, firebaseUser, profiles, setActiveProfileId, user} = useAuthContext();
     const isRegisterPage = location.pathname === "/register";
     const handleNavigation = (key: string): void => {
@@ -101,6 +103,16 @@ const Navbar: React.FC = () => {
         }
 
         const unsubscribe = subscribePendingVerificationCountForGlobalIds(ownedGlobalIds, setPendingVerificationCount);
+        return () => unsubscribe();
+    }, [profiles]);
+
+    React.useEffect(() => {
+        const ownedGlobalIds = profiles
+            .map((profile) => profile.global_id?.trim())
+            .filter((globalId): globalId is string => Boolean(globalId));
+        const unsubscribe = subscribeNotificationsForGlobalIds(ownedGlobalIds, (notifications) => {
+            setUnreadNotificationCount(notifications.filter((notification) => notification.status === "unread").length);
+        });
         return () => unsubscribe();
     }, [profiles]);
 
@@ -219,6 +231,12 @@ const Navbar: React.FC = () => {
                                             Verify Requests ({pendingVerificationCount})
                                         </Menu.Item>
                                     )}
+                                    {user && (
+                                        <Menu.Item key="notifications" onClick={() => navigate("/notifications")}>
+                                            <IconNotification className="mr-2" />
+                                            Notifications ({unreadNotificationCount})
+                                        </Menu.Item>
+                                    )}
                                     {firebaseUser && (
                                         <Menu.Item key="add-profile" onClick={() => navigate("/register")}>
                                             <IconUserAdd className="mr-2" />
@@ -251,7 +269,7 @@ const Navbar: React.FC = () => {
                             trigger="click"
                         >
                             <div className="cursor-pointer flex items-center gap-1 rounded-md bg-transparent px-2 py-1 transition-colors hover:bg-[var(--color-fill-2)]">
-                                <Badge count={pendingVerificationCount} offset={[-2, 6]}>
+                                <Badge count={pendingVerificationCount + unreadNotificationCount} offset={[-2, 6]}>
                                     {user?.image_url || firebaseUser?.photoURL ? (
                                         <AvatarWithLoading
                                             src={user?.image_url ?? firebaseUser?.photoURL ?? ""}
