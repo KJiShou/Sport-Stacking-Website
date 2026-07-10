@@ -146,6 +146,8 @@ type ParsedWorkbookImport = {
 type ImportUserProfileData = {
     id?: string;
     global_id?: string;
+    name?: string;
+    name_search?: string | null;
     IC?: string | null;
     email?: string | null;
     owner_uids?: string[] | null;
@@ -1097,6 +1099,10 @@ const importBuildExistingUserPatch = (
     }
     if (!data.global_id) {
         patch.global_id = nextGlobalId;
+    }
+    const normalizedNameSearch = importNormalize(data.name ?? athlete.name);
+    if (data.name_search !== normalizedNameSearch) {
+        patch.name_search = normalizedNameSearch;
     }
     if (!Array.isArray(data.owner_uids)) {
         patch.owner_uids = ownerUids;
@@ -2271,6 +2277,227 @@ async function sendEmailViaSES(
     }
 }
 
+type EmailDeliveryResult = {
+    success: boolean;
+    provider?: "resend" | "aws-ses";
+    messageId?: string;
+    error?: string;
+};
+
+type VerificationRequestData = {
+    target_global_id: string;
+    member_id: string;
+    tournament_id: string;
+    team_id: string;
+    registration_id: string;
+    status: "pending" | "verified" | "expired" | "rejected";
+    event_label?: string | null;
+    team_name?: string | null;
+    leader_label?: string | null;
+    email_status?: "pending" | "sending" | "accepted" | "failed" | "skipped";
+};
+
+type UserNotificationData = {
+    target_global_id: string;
+    type: "team_invitation_rejected";
+    status: "unread" | "read";
+    title: string;
+    message: string;
+    tournament_id?: string | null;
+    team_id?: string | null;
+    actor_global_id?: string | null;
+    action_url?: string | null;
+    email_status?: "pending" | "sending" | "accepted" | "failed" | "skipped";
+};
+
+const sendHtmlEmail = async (to: string, subject: string, html: string): Promise<EmailDeliveryResult> => {
+    try {
+        const resendResponse = await fetch(RESEND_API_URL, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${RESEND_API_KEY.value()}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                from: RESEND_FROM_EMAIL,
+                to: [to],
+                subject,
+                html,
+            }),
+        });
+        const payload = (await resendResponse.json().catch(() => undefined)) as
+            | {id?: string; error?: {message?: string} | string}
+            | undefined;
+        if (resendResponse.ok) {
+            return {success: true, provider: "resend", messageId: payload?.id};
+        }
+
+        const resendError =
+            typeof payload?.error === "string"
+                ? payload.error
+                : payload?.error?.message || `Resend failed with status ${resendResponse.status}`;
+        console.error("Resend email failed; trying AWS SES", resendError);
+    } catch (error) {
+        console.error("Resend email threw; trying AWS SES", error);
+    }
+
+    const sesResult = await sendEmailViaSES(
+        to,
+        subject,
+        html,
+        AWS_SES_SMTP_USERNAME.value(),
+        AWS_SES_SMTP_PASSWORD.value(),
+    );
+    if (sesResult.success) {
+        return {success: true, provider: "aws-ses", messageId: sesResult.messageId};
+    }
+    return {success: false, error: sesResult.error || "Both email providers failed."};
+};
+
+const resolveProfileEmail = async (globalId: string): Promise<string | null> => {
+    const snapshot = await db.collection("users").where("global_id", "==", globalId).get();
+    if (snapshot.empty) {
+        return null;
+    }
+
+    const candidates = snapshot.docs
+        .map((docSnapshot) => docSnapshot.data() as {email?: string | null; primary_owner_email?: string | null})
+        .map((data) => data.email?.trim() || data.primary_owner_email?.trim() || "")
+        .filter(Boolean);
+    return candidates[0] ?? null;
+};
+
+const claimEmailDelivery = async (
+    ref: DocumentReference,
+    allowedStatus: string,
+): Promise<Record<string, unknown> | null> =>
+    db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists) {
+            return null;
+        }
+        const data = snapshot.data() as Record<string, unknown>;
+        if (data.status !== allowedStatus) {
+            return null;
+        }
+        const emailStatus = data.email_status;
+        if (emailStatus === "sending" || emailStatus === "accepted" || emailStatus === "skipped") {
+            return null;
+        }
+        transaction.set(
+            ref,
+            {
+                email_status: "sending",
+                email_error: FieldValue.delete(),
+                email_updated_at: FirestoreTimestamp.now(),
+            },
+            {merge: true},
+        );
+        return data;
+    });
+
+const buildVerificationEmailHtml = (data: VerificationRequestData): string => {
+    const detailItems = [
+        data.event_label ? `<li><strong>Event:</strong> ${escapeHtml(data.event_label)}</li>` : "",
+        data.team_name ? `<li><strong>Team:</strong> ${escapeHtml(data.team_name)}</li>` : "",
+        data.leader_label ? `<li><strong>Invited by:</strong> ${escapeHtml(data.leader_label)}</li>` : "",
+    ].filter(Boolean);
+    const detailList = detailItems.length > 0 ? `<p>Verification details:</p><ul>${detailItems.join("")}</ul>` : "";
+    const verifyUrl = `https://rankingstack.com/verify?tournamentId=${encodeURIComponent(
+        data.tournament_id,
+    )}&teamId=${encodeURIComponent(data.team_id)}&memberId=${encodeURIComponent(
+        data.member_id,
+    )}&registrationId=${encodeURIComponent(data.registration_id)}`;
+
+    return `
+        <p>Hello,</p>
+        <p>Please verify your team membership for the <strong>RankingStack</strong> competition.</p>
+        ${detailList}
+        <p><a href="${verifyUrl.replace(/&/g, "&amp;")}" style="padding:10px 16px;background:#165DFF;color:white;text-decoration:none;border-radius:6px;font-weight:500;">Verify My Participation</a></p>
+        <p>If you did not expect this email, you can reject the invitation from your RankingStack account.</p>
+    `;
+};
+
+const deliverVerificationRequestEmail = async (
+    requestRef: DocumentReference,
+    recipientOverride?: string,
+): Promise<EmailDeliveryResult> => {
+    const claimed = await claimEmailDelivery(requestRef, "pending");
+    if (!claimed) {
+        return {success: true};
+    }
+    const data = claimed as VerificationRequestData;
+    const email = recipientOverride?.trim() || (await resolveProfileEmail(data.target_global_id));
+    if (!email) {
+        await requestRef.set(
+            {email_status: "skipped", email_error: "Recipient email is missing.", email_updated_at: FirestoreTimestamp.now()},
+            {merge: true},
+        );
+        return {success: true};
+    }
+
+    const result = await sendHtmlEmail(email, "Please verify your competition registration", buildVerificationEmailHtml(data));
+    await requestRef.set(
+        result.success
+            ? {
+                  email_status: "accepted",
+                  email_provider: result.provider ?? null,
+                  email_message_id: result.messageId ?? null,
+                  email_accepted_at: FirestoreTimestamp.now(),
+                  email_updated_at: FirestoreTimestamp.now(),
+              }
+            : {
+                  email_status: "failed",
+                  email_error: result.error ?? "Email delivery failed.",
+                  email_updated_at: FirestoreTimestamp.now(),
+              },
+        {merge: true},
+    );
+    return result;
+};
+
+const deliverUserNotificationEmail = async (notificationRef: DocumentReference): Promise<EmailDeliveryResult> => {
+    const claimed = await claimEmailDelivery(notificationRef, "unread");
+    if (!claimed) {
+        return {success: true};
+    }
+    const data = claimed as UserNotificationData;
+    const email = await resolveProfileEmail(data.target_global_id);
+    if (!email) {
+        await notificationRef.set(
+            {email_status: "skipped", email_error: "Recipient email is missing.", email_updated_at: FirestoreTimestamp.now()},
+            {merge: true},
+        );
+        return {success: true};
+    }
+
+    const actionUrl = data.action_url
+        ? `<p><a href="${escapeHtml(data.action_url)}" style="padding:10px 16px;background:#165DFF;color:white;text-decoration:none;border-radius:6px;font-weight:500;">Open Registration</a></p>`
+        : "";
+    const result = await sendHtmlEmail(
+        email,
+        data.title,
+        `<p>Hello,</p><p>${escapeHtml(data.message)}</p>${actionUrl}<p>Please sign in to RankingStack for details.</p>`,
+    );
+    await notificationRef.set(
+        result.success
+            ? {
+                  email_status: "accepted",
+                  email_provider: result.provider ?? null,
+                  email_message_id: result.messageId ?? null,
+                  email_accepted_at: FirestoreTimestamp.now(),
+                  email_updated_at: FirestoreTimestamp.now(),
+              }
+            : {
+                  email_status: "failed",
+                  email_error: result.error ?? "Email delivery failed.",
+                  email_updated_at: FirestoreTimestamp.now(),
+              },
+        {merge: true},
+    );
+    return result;
+};
+
 const PASSWORD_RESET_EMAIL_THROTTLE_MS = 60 * 1000;
 
 async function enforcePasswordResetEmailThrottle(email: string): Promise<void> {
@@ -2368,7 +2595,6 @@ export const sendPasswordResetEmailWithCustomEmail = onCall(
 
 export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD]}, (req, res) => {
     corsHandler(req, res, async () => {
-        const apiKey = RESEND_API_KEY.value();
         const auth = getAuth();
 
         const authHeader = req.headers.authorization;
@@ -2387,9 +2613,8 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
             return;
         }
 
-        // Step 2: 校验必要参数
         const {to, tournamentId, teamId, memberId, registrationId} = req.body;
-        if (!to || !tournamentId || !teamId || !memberId || !registrationId) {
+        if (!tournamentId || !teamId || !memberId || !registrationId) {
             res.status(400).json({error: "Missing required fields"});
             return;
         }
@@ -2404,23 +2629,10 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
         const leaderName = leaderId ? await resolveLeaderName(leaderId) : null;
         const leaderLabel = leaderName ? `${leaderName} (${leaderId})` : leaderId;
 
-        const detailItems: string[] = [];
-        if (eventLabel) {
-            detailItems.push(`<li><strong>Event:</strong> ${escapeHtml(eventLabel)}</li>`);
-        }
-        if (teamName) {
-            detailItems.push(`<li><strong>Team:</strong> ${escapeHtml(teamName)}</li>`);
-        }
-        if (leaderLabel) {
-            detailItems.push(`<li><strong>Invited by:</strong> ${escapeHtml(leaderLabel)}</li>`);
-        }
-
-        const detailList = detailItems.length > 0 ? `<p>Verification details:</p><ul>${detailItems.join("")}</ul>` : "";
-
         const verificationRequestId = buildVerificationRequestId(tournamentId, teamId, memberId);
         const verificationRequestRef = db.collection("verification_requests").doc(verificationRequestId);
         const verificationRequestSnapshot = await verificationRequestRef.get();
-        const now = new Date();
+        const now = FirestoreTimestamp.now();
         const verificationPayload = {
             target_global_id: memberId,
             member_id: memberId,
@@ -2432,114 +2644,262 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
             team_name: teamName || null,
             leader_label: leaderLabel || null,
             updated_at: now,
-            ...(verificationRequestSnapshot.exists ? {} : {created_at: now}),
+            ...(verificationRequestSnapshot.exists ? {} : {created_at: now, email_status: "pending"}),
         };
         await verificationRequestRef.set(verificationPayload, {merge: true});
+        const delivery = await deliverVerificationRequestEmail(
+            verificationRequestRef,
+            typeof to === "string" ? to : undefined,
+        );
+        if (!delivery.success) {
+            res.status(500).json({error: delivery.error || "Email delivery failed"});
+            return;
+        }
+        res.status(200).json({success: true, id: delivery.messageId, provider: delivery.provider});
+    });
+});
 
-        // Step 3: 构造验证链接，包含 registrationId
-        const verifyUrl = `https://rankingstack.com/verify?tournamentId=${tournamentId}&teamId=${teamId}&memberId=${memberId}&registrationId=${registrationId}`;
-        const safeVerifyUrl = verifyUrl.replace(/&/g, "&amp;");
+export const syncTeamVerificationRequests = onDocumentWritten(
+    {
+        document: "teams/{teamId}",
+        region: functionsRegion,
+        retry: false,
+    },
+    async (event) => {
+        const teamId = event.params.teamId;
+        const beforeTeam = event.data?.before.exists ? (event.data.before.data() as Team) : null;
+        const afterTeam = event.data?.after.exists ? (event.data.after.data() as Team) : null;
+        const beforeMembers = new Map((beforeTeam?.members ?? []).map((member) => [member.global_id, member]));
+        const afterMembers = new Map((afterTeam?.members ?? []).map((member) => [member.global_id, member]));
+        const tournamentId = afterTeam?.tournament_id ?? beforeTeam?.tournament_id ?? "";
 
-        const html = `
-    <p>Hello,</p>
-    <p>Please click the button below to verify your team membership for the <strong>RankingStack</strong> competition.</p>
-    ${detailList}
-    <p>
-        <a href="${safeVerifyUrl}"
-   style="padding: 10px 16px; background-color: #165DFF; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
-   🔐 Verify My Participation
-</a>
-    </p>
-    <p>If you did not expect this email, you can safely ignore it.</p>
-    <p>Thank you!</p>
-`;
-
-        // Step 4: 发送邮件 (Resend primary, AWS SES backup)
-        try {
-            const resendResponse = await fetch(RESEND_API_URL, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    from: RESEND_FROM_EMAIL,
-                    to: [to],
-                    subject: "Please verify your competition registration",
-                    html,
-                }),
-            });
-
-            const payload = await resendResponse.json().catch((err) => {
-                console.error("❌ Failed to parse Resend response JSON:", err);
-                return undefined;
-            });
-
-            if (!resendResponse.ok) {
-                const message = typeof payload === "object" && payload?.error ? payload.error : "Send failed";
-                console.error("❌ Resend error:", payload || resendResponse.statusText);
-
-                // Try AWS SES as backup
-                console.info("⚡ Attempting AWS SES as backup...");
-                const sesResult = await sendEmailViaSES(
-                    to,
-                    "Please verify your competition registration",
-                    html,
-                    AWS_SES_SMTP_USERNAME.value(),
-                    AWS_SES_SMTP_PASSWORD.value(),
-                );
-
-                if (sesResult.success) {
-                    console.info("✅ Email sent successfully via AWS SES backup");
-                    res.status(200).json({success: true, id: sesResult.messageId, provider: "aws-ses"});
-                    return;
-                }
-
-                // Both services failed
-                console.error("❌ Both Resend and AWS SES failed");
-                res.status(500).json({
-                    error: message,
-                    backup_error: sesResult.error,
-                });
-                return;
+        for (const [memberId] of beforeMembers) {
+            if (afterMembers.has(memberId) || !tournamentId) {
+                continue;
             }
-
-            res.status(200).json({success: true, id: payload?.id, provider: "resend"});
-        } catch (err: unknown) {
-            console.error("❌ Resend send attempt failed:", err);
-
-            // Try AWS SES as backup
-            console.info("⚡ Attempting AWS SES as backup after Resend exception...");
-            try {
-                const sesResult = await sendEmailViaSES(
-                    to,
-                    "Please verify your competition registration",
-                    html,
-                    AWS_SES_SMTP_USERNAME.value(),
-                    AWS_SES_SMTP_PASSWORD.value(),
+            const requestRef = db
+                .collection("verification_requests")
+                .doc(buildVerificationRequestId(tournamentId, teamId, memberId));
+            const requestSnapshot = await requestRef.get();
+            if (requestSnapshot.exists && requestSnapshot.data()?.status === "pending") {
+                await requestRef.set(
+                    {status: "expired", updated_at: FirestoreTimestamp.now(), expired_at: FirestoreTimestamp.now()},
+                    {merge: true},
                 );
-
-                if (sesResult.success) {
-                    console.info("✅ Email sent successfully via AWS SES backup");
-                    res.status(200).json({success: true, id: sesResult.messageId, provider: "aws-ses"});
-                    return;
-                }
-
-                // Both services failed
-                console.error("❌ Both Resend and AWS SES failed");
-                res.status(500).json({
-                    error: (err as Error).message || "Send failed",
-                    backup_error: sesResult.error,
-                });
-            } catch (sesErr: unknown) {
-                console.error("❌ AWS SES backup also threw exception:", sesErr);
-                res.status(500).json({
-                    error: (err as Error).message || "Send failed",
-                    backup_error: (sesErr as Error).message || "AWS SES backup failed",
-                });
             }
         }
+
+        if (!afterTeam || !tournamentId) {
+            return;
+        }
+
+        const eventReferences = getTeamEventReferences(afterTeam);
+        const eventLabels = await resolveEventLabels(tournamentId, eventReferences);
+        const eventLabel = eventLabels.length > 0 ? eventLabels.join(", ") : (eventReferences[0] ?? "");
+        const leaderId = afterTeam.leader_id ?? "";
+        const leaderName = leaderId ? await resolveLeaderName(leaderId) : null;
+        const leaderLabel = leaderName ? `${leaderName} (${leaderId})` : leaderId;
+
+        for (const [memberId, member] of afterMembers) {
+            const requestRef = db
+                .collection("verification_requests")
+                .doc(buildVerificationRequestId(tournamentId, teamId, memberId));
+            const requestSnapshot = await requestRef.get();
+            const requestData = requestSnapshot.data() as VerificationRequestData | undefined;
+
+            if (member.verified) {
+                if (requestSnapshot.exists && requestData?.status === "pending") {
+                    await requestRef.set(
+                        {status: "verified", verified_at: FirestoreTimestamp.now(), updated_at: FirestoreTimestamp.now()},
+                        {merge: true},
+                    );
+                }
+                continue;
+            }
+
+            const wasMember = beforeMembers.has(memberId);
+            const shouldCreate = !requestSnapshot.exists || (!wasMember && requestData?.status !== "pending");
+            if (!shouldCreate && requestData?.status !== "pending") {
+                continue;
+            }
+            const now = FirestoreTimestamp.now();
+            await requestRef.set(
+                {
+                    target_global_id: memberId,
+                    member_id: memberId,
+                    tournament_id: tournamentId,
+                    team_id: teamId,
+                    registration_id: afterTeam.registration_id,
+                    status: "pending",
+                    event_label: eventLabel || null,
+                    team_name: afterTeam.name || null,
+                    leader_label: leaderLabel || null,
+                    updated_at: now,
+                    ...(shouldCreate ? {created_at: now, email_status: "pending"} : {}),
+                },
+                {merge: true},
+            );
+        }
+    },
+);
+
+export const deliverVerificationRequestEmails = onDocumentWritten(
+    {
+        document: "verification_requests/{requestId}",
+        region: functionsRegion,
+        retry: false,
+        secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
+    },
+    async (event) => {
+        if (!event.data?.after.exists) {
+            return;
+        }
+        const after = event.data.after.data() as VerificationRequestData;
+        const before = event.data.before.exists ? (event.data.before.data() as VerificationRequestData) : null;
+        const becamePending = before?.status !== "pending" && after.status === "pending";
+        const emailBecamePending = before?.email_status !== "pending" && after.email_status === "pending";
+        if (after.status !== "pending" || (!becamePending && !emailBecamePending && after.email_status !== undefined)) {
+            return;
+        }
+        await deliverVerificationRequestEmail(event.data.after.ref);
+    },
+);
+
+export const deliverUserNotificationEmails = onDocumentWritten(
+    {
+        document: "notifications/{notificationId}",
+        region: functionsRegion,
+        retry: false,
+        secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
+    },
+    async (event) => {
+        if (!event.data?.after.exists) {
+            return;
+        }
+        const after = event.data.after.data() as UserNotificationData;
+        const before = event.data.before.exists ? (event.data.before.data() as UserNotificationData) : null;
+        const becameUnread = before?.status !== "unread" && after.status === "unread";
+        const emailBecamePending = before?.email_status !== "pending" && after.email_status === "pending";
+        if (after.status !== "unread" || (!becameUnread && !emailBecamePending && after.email_status !== undefined)) {
+            return;
+        }
+        await deliverUserNotificationEmail(event.data.after.ref);
+    },
+);
+
+export const rejectTeamInvitation = onCall(callableFunctionOptions, async (request) => {
+    if (!request.auth?.uid) {
+        throw new HttpsError("unauthenticated", "Sign in to reject an invitation.");
+    }
+    const requestId = typeof request.data?.requestId === "string" ? request.data.requestId.trim() : "";
+    if (!requestId) {
+        throw new HttpsError("invalid-argument", "Request ID is required.");
+    }
+
+    const requestRef = db.collection("verification_requests").doc(requestId);
+    const initialRequestSnapshot = await requestRef.get();
+    if (!initialRequestSnapshot.exists) {
+        throw new HttpsError("not-found", "Invitation not found.");
+    }
+    const initialRequest = initialRequestSnapshot.data() as VerificationRequestData;
+    const memberProfiles = await db.collection("users").where("global_id", "==", initialRequest.member_id).get();
+    const ownsMember = memberProfiles.docs.some((docSnapshot) => {
+        const data = docSnapshot.data() as {id?: string; owner_uids?: string[] | null};
+        return (
+            docSnapshot.id === request.auth?.uid ||
+            data.id === request.auth?.uid ||
+            (Array.isArray(data.owner_uids) && data.owner_uids.includes(request.auth?.uid ?? ""))
+        );
     });
+    if (!ownsMember) {
+        throw new HttpsError("permission-denied", "You can only reject your own invitation.");
+    }
+
+    const teamRef = db.collection("teams").doc(initialRequest.team_id);
+    const actorName = await resolveLeaderName(initialRequest.member_id);
+    const result = await db.runTransaction(async (transaction) => {
+        const [freshRequestSnapshot, teamSnapshot] = await Promise.all([
+            transaction.get(requestRef),
+            transaction.get(teamRef),
+        ]);
+        if (!freshRequestSnapshot.exists) {
+            throw new HttpsError("not-found", "Invitation not found.");
+        }
+        const freshRequest = freshRequestSnapshot.data() as VerificationRequestData;
+        if (freshRequest.status !== "pending") {
+            throw new HttpsError("failed-precondition", "Only pending invitations can be rejected.");
+        }
+        if (!teamSnapshot.exists) {
+            transaction.set(
+                requestRef,
+                {
+                    status: "expired",
+                    expired_at: FirestoreTimestamp.now(),
+                    updated_at: FirestoreTimestamp.now(),
+                },
+                {merge: true},
+            );
+            return {teamDeleted: false, leaderId: ""};
+        }
+
+        const team = teamSnapshot.data() as Team;
+        const member = (team.members ?? []).find((candidate) => candidate.global_id === freshRequest.member_id);
+        if (!member) {
+            throw new HttpsError("failed-precondition", "You are no longer a member of this team.");
+        }
+        if (member.verified) {
+            throw new HttpsError("failed-precondition", "Verified membership cannot be rejected.");
+        }
+
+        const remainingMembers = (team.members ?? []).filter((candidate) => candidate.global_id !== freshRequest.member_id);
+        const teamDeleted = remainingMembers.length === 0;
+        if (teamDeleted) {
+            transaction.delete(teamRef);
+        } else {
+            transaction.update(teamRef, {members: remainingMembers, updated_at: FirestoreTimestamp.now()});
+        }
+
+        const now = FirestoreTimestamp.now();
+        transaction.set(
+            requestRef,
+            {
+                status: "rejected",
+                rejected_at: now,
+                rejected_by: request.auth?.uid,
+                updated_at: now,
+            },
+            {merge: true},
+        );
+
+        const notificationRef = db.collection("notifications").doc(`team-invitation-rejected-${requestId}`);
+        const actorLabel = actorName ? `${actorName} (${freshRequest.member_id})` : freshRequest.member_id;
+        transaction.set(
+            notificationRef,
+            {
+                target_global_id: team.leader_id,
+                type: "team_invitation_rejected",
+                status: "unread",
+                title: "Team invitation declined",
+                message: `${actorLabel} declined the invitation for ${freshRequest.event_label || "a team event"}.`,
+                tournament_id: freshRequest.tournament_id,
+                team_id: freshRequest.team_id,
+                actor_global_id: freshRequest.member_id,
+                action_url: `https://rankingstack.com/tournaments/${encodeURIComponent(freshRequest.tournament_id)}`,
+                email_status: "pending",
+                created_at: now,
+                updated_at: now,
+            },
+            {merge: true},
+        );
+        return {teamDeleted, leaderId: team.leader_id};
+    });
+
+    if (result.teamDeleted) {
+        const recruitmentSnapshot = await db.collection("team_recruitment").where("team_id", "==", initialRequest.team_id).get();
+        await Promise.all(recruitmentSnapshot.docs.map((docSnapshot) => docSnapshot.ref.delete()));
+    }
+
+    return {success: true, status: "rejected", ...result};
 });
 
 export const cacheGoogleAvatarCallable = onCall(callableFunctionOptions, async (request) => {

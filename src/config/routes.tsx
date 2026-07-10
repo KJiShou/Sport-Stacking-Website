@@ -1,3 +1,4 @@
+import NotificationsPage from "@/pages/Notifications/NotificationsPage";
 import TournamentView from "@/pages/Tournaments/Component/TournamentView";
 import FinalResultsPage from "@/pages/Tournaments/FinalResults/FinalResultsPage";
 import ParticipantListPage from "@/pages/Tournaments/ParticipantList/ParticipantListPage";
@@ -9,8 +10,8 @@ import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/Registr
 import ScoreSheetPage from "@/pages/Tournaments/ScoreSheet/ScoreSheetPage";
 import FinalScoringPage from "@/pages/Tournaments/Scoring/FinalScoringPage";
 import ScoringPage from "@/pages/Tournaments/Scoring/ScoringPage";
-import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
 import VerificationRequestsPage from "@/pages/Tournaments/VerifyMember/VerificationRequestsPage";
+import VerifyPage from "@/pages/Tournaments/VerifyMember/VerifyPage";
 import ForgotPasswordPage from "@/pages/User/ForgotPassword/ForgotPasswordPage";
 import type {AppRoute} from "@/schema";
 import AdminPermissionsPage from "../pages/Admin/AdminPermission";
@@ -90,6 +91,10 @@ const routes: AppRoute[] = [
     {
         path: "/verify-requests",
         component: VerificationRequestsPage,
+    },
+    {
+        path: "/notifications",
+        component: NotificationsPage,
     },
     {path: "/records", component: RecordsIndex},
     {path: "/register", component: RegisterPage},

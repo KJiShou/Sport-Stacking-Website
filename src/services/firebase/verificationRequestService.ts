@@ -1,6 +1,7 @@
 import type {VerificationRequest} from "@/schema";
-import {collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, writeBatch, where} from "firebase/firestore";
-import {db} from "./config";
+import {collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, where, writeBatch} from "firebase/firestore";
+import {httpsCallable} from "firebase/functions";
+import {db, functions} from "./config";
 
 const VERIFICATION_REQUEST_COLLECTION = "verification_requests";
 const MAX_BATCH_DELETE = 400;
@@ -20,6 +21,12 @@ const toVerificationRequest = (id: string, data: Record<string, unknown>): Verif
         created_at: (data.created_at as VerificationRequest["created_at"]) ?? null,
         updated_at: (data.updated_at as VerificationRequest["updated_at"]) ?? null,
         verified_at: (data.verified_at as VerificationRequest["verified_at"]) ?? null,
+        rejected_at: (data.rejected_at as VerificationRequest["rejected_at"]) ?? null,
+        rejected_by: (data.rejected_by as string) ?? null,
+        email_status: (data.email_status as VerificationRequest["email_status"]) ?? null,
+        email_provider: (data.email_provider as VerificationRequest["email_provider"]) ?? null,
+        email_message_id: (data.email_message_id as string) ?? null,
+        email_error: (data.email_error as string) ?? null,
     };
 };
 
@@ -187,10 +194,7 @@ export async function deleteVerificationRequestsByRegistrationId(registrationId:
     return deleteVerificationRequestDocIds(snapshot.docs.map((docSnap) => docSnap.id));
 }
 
-export async function deleteVerificationRequestsByTournamentAndMember(
-    tournamentId: string,
-    memberId: string,
-): Promise<number> {
+export async function deleteVerificationRequestsByTournamentAndMember(tournamentId: string, memberId: string): Promise<number> {
     const normalizedTournamentId = tournamentId.trim();
     const normalizedMemberId = memberId.trim();
     if (!normalizedTournamentId || !normalizedMemberId) {
@@ -226,4 +230,70 @@ export async function deleteVerificationRequestForUser(requestId: string, global
     }
 
     await deleteDoc(requestRef);
+}
+
+export function subscribePendingVerificationRequestsForGlobalIds(
+    globalIds: string[],
+    onChange: (requests: VerificationRequest[]) => void,
+): () => void {
+    const targetGlobalIds = Array.from(new Set(globalIds.map((globalId) => globalId.trim()).filter(Boolean)));
+    if (targetGlobalIds.length === 0) {
+        onChange([]);
+        return () => void 0;
+    }
+
+    const requestsByGlobalId = new Map<string, VerificationRequest[]>();
+    const emit = () => {
+        const requestsById = new Map<string, VerificationRequest>();
+        for (const requests of requestsByGlobalId.values()) {
+            for (const request of requests) requestsById.set(request.id, request);
+        }
+        onChange(
+            Array.from(requestsById.values()).sort((left, right) => {
+                const leftTime =
+                    left.created_at instanceof Date ? left.created_at.getTime() : (left.created_at?.toMillis?.() ?? 0);
+                const rightTime =
+                    right.created_at instanceof Date ? right.created_at.getTime() : (right.created_at?.toMillis?.() ?? 0);
+                return rightTime - leftTime;
+            }),
+        );
+    };
+
+    const unsubscribes = targetGlobalIds.map((globalId) =>
+        onSnapshot(
+            query(collection(db, VERIFICATION_REQUEST_COLLECTION), where("target_global_id", "==", globalId)),
+            (snapshot) => {
+                requestsByGlobalId.set(
+                    globalId,
+                    snapshot.docs
+                        .map((docSnapshot) =>
+                            toVerificationRequest(docSnapshot.id, docSnapshot.data() as Record<string, unknown>),
+                        )
+                        .filter((request) => request.status === "pending"),
+                );
+                emit();
+            },
+            (error) => {
+                console.error("Failed to subscribe verification requests:", error);
+                requestsByGlobalId.set(globalId, []);
+                emit();
+            },
+        ),
+    );
+
+    return () => {
+        for (const unsubscribe of unsubscribes) unsubscribe();
+    };
+}
+
+export async function rejectTeamInvitation(requestId: string): Promise<void> {
+    const normalizedRequestId = requestId.trim();
+    if (!normalizedRequestId) {
+        throw new Error("Invalid verification request.");
+    }
+    const rejectInvitation = httpsCallable<{requestId: string}, {success: boolean; status: string}>(
+        functions,
+        "rejectTeamInvitation",
+    );
+    await rejectInvitation({requestId: normalizedRequestId});
 }

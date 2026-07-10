@@ -9,7 +9,8 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "yarn shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "repair:teams": "node lib/functions/src/scripts/repairTournamentTeamState.js"
   },
   "engines": {
     "node": "22"

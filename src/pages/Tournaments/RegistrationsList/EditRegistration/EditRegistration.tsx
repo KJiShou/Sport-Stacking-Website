@@ -4,14 +4,14 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {DoubleRecruitment, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {dedupeTeamsByEvent, resolveTeamEvent, teamMatchesEvent} from "@/utils/teamDeduplication";
-import type {LegacyTeam} from "@/utils/teamDeduplication";
 import {fetchUsersByGlobalIds, getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
 import {
     createDoubleRecruitment,
     deleteDoubleRecruitment,
     getDoubleRecruitmentsByParticipant,
 } from "@/services/firebase/doubleRecruitmentService";
+import {dedupeTeamsByEvent, resolveTeamEvent, teamMatchesEvent} from "@/utils/teamDeduplication";
+import type {LegacyTeam} from "@/utils/teamDeduplication";
 
 import {db} from "@/services/firebase/config";
 import {
@@ -94,6 +94,21 @@ const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): s
 const getRequiredEventIds = (events: TournamentEvent[]): string[] =>
     events.filter((event) => event.type === "Individual").map((event) => getEventKey(event));
 
+const getRequiredTeamSize = (event: TournamentEvent): number | null => {
+    if (typeof event.teamSize === "number" && event.teamSize > 0) {
+        return event.teamSize;
+    }
+
+    const eventType = (event.type ?? "").toLowerCase();
+    if (eventType.includes("double") || (eventType.includes("parent") && eventType.includes("child"))) {
+        return 2;
+    }
+    if (eventType.includes("team relay")) {
+        return 4;
+    }
+    return null;
+};
+
 const getAdditionalFeeForEvent = (event: TournamentEvent): number => {
     if (event.additional_fee_enabled !== true) {
         return 0;
@@ -109,7 +124,6 @@ const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds
         }
         return total + getAdditionalFeeForEvent(event);
     }, 0);
-
 
 export default function EditTournamentRegistrationPage() {
     const {tournamentId, registrationId} = useParams();
@@ -172,8 +186,59 @@ export default function EditTournamentRegistrationPage() {
 
     const handleSave = async (values: Registration, rejection_reason = "") => {
         try {
-            setEdit(false);
             setLoading(true);
+
+            const normalizedEventSelections = normalizeEventSelections(values.events_registered ?? [], events);
+            for (const event of events.filter(
+                (candidate) =>
+                    isTeamEvent(candidate) && normalizedEventSelections.some((eventId) => matchesEventKey(eventId, candidate)),
+            )) {
+                const eventId = getEventKey(event);
+                const eventLabel = getEventLabel(event);
+                const team = teams.find((candidate) => teamMatchesEvent(candidate, event, events));
+                const eventType = (event.type ?? "").toLowerCase();
+                const isDoubleEvent = eventType.includes("double");
+                const hasActiveRecruitment = isDoubleEvent
+                    ? doubleRecruitments.some(
+                          (recruitment) =>
+                              recruitment.status === "active" &&
+                              recruitment.event_id === eventId &&
+                              recruitment.participant_id === registration?.user_global_id,
+                      )
+                    : Boolean(
+                          team &&
+                              teamRecruitments.some(
+                                  (recruitment) => recruitment.status === "active" && recruitment.team_id === team.id,
+                              ),
+                      );
+
+                if (hasActiveRecruitment) {
+                    continue;
+                }
+                if (!team) {
+                    throw new Error(`${eventLabel}: complete the team or create recruitment before saving.`);
+                }
+
+                const leaderId = stripTeamLeaderPrefix(team.leader_id ?? "").trim();
+                const memberIds = (team.members ?? []).map((member) => member.global_id?.trim()).filter(Boolean) as string[];
+                const uniqueMemberIds = new Set(memberIds);
+                if (!leaderId) {
+                    throw new Error(`${eventLabel}: team leader is required.`);
+                }
+                if (uniqueMemberIds.size !== memberIds.length) {
+                    throw new Error(`${eventLabel}: duplicate team members are not allowed.`);
+                }
+                if (uniqueMemberIds.has(leaderId)) {
+                    throw new Error(`${eventLabel}: team leader cannot also be a team member.`);
+                }
+
+                const requiredTeamSize = getRequiredTeamSize(event);
+                if (requiredTeamSize !== null && memberIds.length + 1 !== requiredTeamSize) {
+                    throw new Error(
+                        `${eventLabel}: requires ${requiredTeamSize} participants or an active recruitment before saving.`,
+                    );
+                }
+            }
 
             const paymentProofFile = form.getFieldValue("payment_proof_url");
             let tempPaymentProofUrl = registration?.payment_proof_url ?? "";
@@ -186,7 +251,6 @@ export default function EditTournamentRegistrationPage() {
                 );
             }
             setPaymentProofUrl(tempPaymentProofUrl);
-            const normalizedEventSelections = normalizeEventSelections(values.events_registered ?? [], events);
             const registrationData: Registration = {
                 id: registrationId,
                 tournament_id: tournamentId ?? "",
@@ -461,6 +525,7 @@ export default function EditTournamentRegistrationPage() {
             }
             await updateUserRegistrationRecord(registration?.user_id ?? "", tournamentId, userRegistrationData);
 
+            setEdit(false);
             Message.success("Completely save the changes!");
         } catch (err) {
             console.error(err);
@@ -491,11 +556,7 @@ export default function EditTournamentRegistrationPage() {
         }
         const eventType = (eventDefinition?.type ?? "").toLowerCase();
         const isDoubleEvent = eventType.includes("double");
-        if (!isDoubleEvent && !recruitmentTeam.id) {
-            Message.error("Team ID is missing. Save the registration before creating recruitment.");
-            return;
-        }
-
+        let createdRecruitmentTeamId: string | null = null;
         try {
             const values = await recruitmentForm.validate();
             setLoading(true);
@@ -533,8 +594,30 @@ export default function EditTournamentRegistrationPage() {
                 }
             } else {
                 const normalizedLeaderId = stripTeamLeaderPrefix(recruitmentTeam.leader_id);
+                const isPersistedTeam = initialTeams.some((team) => team.id === recruitmentTeam.id);
+                const draftTeamData = {
+                    name: recruitmentTeam.name,
+                    leader_id: recruitmentTeam.leader_id,
+                    members: recruitmentTeam.members,
+                    event_id: resolvedEventId,
+                    event: [resolvedEventName],
+                    registration_id: recruitmentTeam.registration_id,
+                    team_age: recruitmentTeam.team_age,
+                    looking_for_member: true,
+                };
+                const persistedTeamId = isPersistedTeam
+                    ? recruitmentTeam.id
+                    : await createTeam(tournamentId, {
+                          ...draftTeamData,
+                      });
+                if (!isPersistedTeam) {
+                    createdRecruitmentTeamId = persistedTeamId;
+                    const persistedTeam = {...recruitmentTeam, id: persistedTeamId, looking_for_member: true};
+                    setTeams((prev) => prev.map((team) => (team.id === recruitmentTeam.id ? persistedTeam : team)));
+                    setInitialTeams((prev) => [...prev, persistedTeam]);
+                }
                 await createTeamRecruitment({
-                    team_id: recruitmentTeam.id,
+                    team_id: persistedTeamId,
                     tournament_id: tournamentId,
                     team_name: recruitmentTeam.name,
                     leader_id: normalizedLeaderId || recruitmentTeam.leader_id,
@@ -564,6 +647,14 @@ export default function EditTournamentRegistrationPage() {
                 participantDoubleRecruitments.filter((recruitment) => recruitment.tournament_id === tournamentId),
             );
         } catch (error) {
+            if (createdRecruitmentTeamId) {
+                try {
+                    await deleteTeam(createdRecruitmentTeamId);
+                    setInitialTeams((prev) => prev.filter((team) => team.id !== createdRecruitmentTeamId));
+                } catch (cleanupError) {
+                    console.error("Failed to clean up team after recruitment error:", cleanupError);
+                }
+            }
             console.error("Failed to create recruitment:", error);
             const errorMessage = error instanceof Error ? error.message : "Failed to create recruitment.";
             Message.error(errorMessage);
@@ -925,13 +1016,12 @@ export default function EditTournamentRegistrationPage() {
                                     const requiredEventIds = getRequiredEventIds(tournamentEvents);
                                     const nextSelectedEvents = Array.from(new Set([...selectedEvents, ...requiredEventIds]));
                                     form.setFieldValue("events_registered", nextSelectedEvents);
-                                    setRegistration((prev) =>
-                                        prev ? {...prev, events_registered: nextSelectedEvents} : null,
-                                    );
+                                    setRegistration((prev) => (prev ? {...prev, events_registered: nextSelectedEvents} : null));
 
                                     const selectedTeamEvents = tournamentEvents.filter(
                                         (event) =>
-                                            nextSelectedEvents.some((value) => matchesEventKey(value, event)) && isTeamEvent(event),
+                                            nextSelectedEvents.some((value) => matchesEventKey(value, event)) &&
+                                            isTeamEvent(event),
                                     );
                                     const registrationLeaderIds = [registration?.user_global_id, registration?.user_id].filter(
                                         (value): value is string => Boolean(value),
@@ -1060,17 +1150,12 @@ export default function EditTournamentRegistrationPage() {
                                           )
                                         : undefined;
                                     const activeRecruitment = activeDoubleRecruitment ?? activeTeamRecruitment;
-                                    const isPersistedTeam = initialTeams.some((initialTeam) => initialTeam.id === team.id);
-                                    const addRecruitmentDisabled = isDoubleEvent
-                                        ? !edit || Boolean(activeRecruitment)
-                                        : !edit || !isPersistedTeam || Boolean(activeRecruitment);
+                                    const addRecruitmentDisabled = !edit || Boolean(activeRecruitment);
                                     const addRecruitmentDisabledReason = !edit
                                         ? "Enable edit to add recruitment."
-                                        : !isPersistedTeam && !isDoubleEvent
-                                          ? "Save registration before creating recruitment."
-                                          : activeRecruitment
-                                            ? "Recruitment already exists."
-                                            : "";
+                                        : activeRecruitment
+                                          ? "Recruitment already exists."
+                                          : "";
 
                                     return (
                                         <div key={team.id} className="border p-4 rounded-md shadow-sm min-w-0">
@@ -1393,7 +1478,6 @@ export default function EditTournamentRegistrationPage() {
                                     long
                                     type={`primary`}
                                     onClick={() => {
-                                        setEdit(false);
                                         handleSave(form.getFieldsValue() as Registration, registration?.rejection_reason ?? "");
                                     }}
                                 >

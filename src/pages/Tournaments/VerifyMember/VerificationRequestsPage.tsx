@@ -1,14 +1,10 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {VerificationRequest} from "@/schema";
 import {
-    deleteVerificationRequestForUser,
-    fetchPendingVerificationRequestsForGlobalIds,
+    rejectTeamInvitation,
+    subscribePendingVerificationRequestsForGlobalIds,
 } from "@/services/firebase/verificationRequestService";
-import {
-    MEMBER_NOT_REGISTERED_CODE,
-    VerificationError,
-    verifyTeamMembership,
-} from "@/services/firebase/verificationService";
+import {MEMBER_NOT_REGISTERED_CODE, VerificationError, verifyTeamMembership} from "@/services/firebase/verificationService";
 import {Button, Card, Message, Result, Spin, Typography} from "@arco-design/web-react";
 import dayjs from "dayjs";
 import {useEffect, useMemo, useState} from "react";
@@ -21,7 +17,7 @@ export default function VerificationRequestsPage() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [verifyingRequestId, setVerifyingRequestId] = useState<string | null>(null);
-    const [deletingRequestId, setDeletingRequestId] = useState<string | null>(null);
+    const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null);
     const [requests, setRequests] = useState<VerificationRequest[]>([]);
     const ownedProfiles = useMemo(
         () => profiles.filter((profile) => typeof profile.global_id === "string" && profile.global_id.trim().length > 0),
@@ -36,35 +32,19 @@ export default function VerificationRequestsPage() {
         () =>
             new Set(
                 ownedProfiles.flatMap((profile) =>
-                    (profile.registration_records ?? []).map(
-                        (record) => `${profile.global_id ?? ""}:${record.tournament_id}`,
-                    ),
+                    (profile.registration_records ?? []).map((record) => `${profile.global_id ?? ""}:${record.tournament_id}`),
                 ),
             ),
         [ownedProfiles],
     );
 
     useEffect(() => {
-        const loadRequests = async () => {
-            if (ownedGlobalIds.length === 0) {
-                setRequests([]);
-                setLoading(false);
-                return;
-            }
-
-            setLoading(true);
-            try {
-                const pending = await fetchPendingVerificationRequestsForGlobalIds(ownedGlobalIds);
-                setRequests(pending);
-            } catch (error) {
-                console.error("Failed to load verification requests:", error);
-                Message.error("Failed to load verification requests.");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        void loadRequests();
+        setLoading(true);
+        const unsubscribe = subscribePendingVerificationRequestsForGlobalIds(ownedGlobalIds, (pending) => {
+            setRequests(pending);
+            setLoading(false);
+        });
+        return () => unsubscribe();
     }, [ownedGlobalIds]);
 
     if (!firebaseUser) {
@@ -99,22 +79,17 @@ export default function VerificationRequestsPage() {
         }
     };
 
-    const handleDeleteRequest = async (request: VerificationRequest) => {
-        if (!request.target_global_id) {
-            Message.error("You must be signed in.");
-            return;
-        }
-
-        setDeletingRequestId(request.id);
+    const handleRejectRequest = async (request: VerificationRequest) => {
+        setRejectingRequestId(request.id);
         try {
-            await deleteVerificationRequestForUser(request.id, request.target_global_id);
+            await rejectTeamInvitation(request.id);
             setRequests((prev) => prev.filter((item) => item.id !== request.id));
-            Message.success("Verification request removed.");
+            Message.success("Invitation rejected. You are available to join another team.");
         } catch (error) {
-            console.error("Failed to remove verification request:", error);
-            Message.error(error instanceof Error ? error.message : "Failed to remove request.");
+            console.error("Failed to reject verification request:", error);
+            Message.error(error instanceof Error ? error.message : "Failed to reject invitation.");
         } finally {
-            setDeletingRequestId(null);
+            setRejectingRequestId(null);
         }
     };
 
@@ -139,7 +114,7 @@ export default function VerificationRequestsPage() {
                                 const createdAt =
                                     request.created_at instanceof Date
                                         ? request.created_at
-                                        : request.created_at?.toDate?.() ?? null;
+                                        : (request.created_at?.toDate?.() ?? null);
                                 const targetProfile = profileByGlobalId.get(request.target_global_id);
                                 const targetProfileLabel = targetProfile
                                     ? `${targetProfile.global_id} - ${targetProfile.name}`
@@ -166,9 +141,7 @@ export default function VerificationRequestsPage() {
                                                 Requested: {createdAt ? dayjs(createdAt).format("YYYY-MM-DD HH:mm") : "-"}
                                             </Text>
                                             {!isRegisteredForTournament ? (
-                                                <Text type="warning">
-                                                    Register this tournament first before verification.
-                                                </Text>
+                                                <Text type="warning">Register this tournament first before verification.</Text>
                                             ) : null}
                                             <div className="mt-2">
                                                 <Button
@@ -194,12 +167,12 @@ export default function VerificationRequestsPage() {
                                                     className="ml-2"
                                                     type="outline"
                                                     status="danger"
-                                                    loading={deletingRequestId === request.id}
+                                                    loading={rejectingRequestId === request.id}
                                                     onClick={() => {
-                                                        void handleDeleteRequest(request);
+                                                        void handleRejectRequest(request);
                                                     }}
                                                 >
-                                                    Remove
+                                                    Reject Invitation
                                                 </Button>
                                             </div>
                                         </div>

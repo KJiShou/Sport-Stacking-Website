@@ -5,12 +5,7 @@ import {useAuthContext} from "@/context/AuthContext";
 import type {ExpandedEvent, Registration, Tournament, TournamentEvent} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {
-    addUserRegistrationRecord,
-    getUserByGlobalId,
-    getUserEmailByGlobalId,
-    searchUsersByNameOrGlobalIdPrefix,
-} from "@/services/firebase/authService";
+import {addUserRegistrationRecord, getUserByGlobalId, searchUsersByNameOrGlobalIdPrefix} from "@/services/firebase/authService";
 import {
     createDoubleRecruitment,
     getDoubleRecruitmentsByTournament,
@@ -30,7 +25,6 @@ import {
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
-import {sendProtectedEmail} from "@/utils/SenderGrid/sendMail";
 import {getCountryFlag} from "@/utils/countryFlags";
 import {getEventKey, getEventLabel, isTeamEvent, matchesAnyEventKey, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
 import {
@@ -127,7 +121,7 @@ const calculateAdditionalEventFee = (events: ExpandedEvent[], selectedEventIds: 
 export default function RegisterTournamentPage() {
     const {tournamentId} = useParams();
     const [form] = Form.useForm();
-    const {firebaseUser, user} = useAuthContext();
+    const {firebaseUser, refreshProfiles, user} = useAuthContext();
     const navigate = useNavigate();
     const location = useLocation();
     const deviceBreakpoint = useDeviceBreakpoint();
@@ -450,13 +444,11 @@ export default function RegisterTournamentPage() {
                 const shouldCheckOccupiedParticipants = !isLookingForTeammates && !isParentChild;
 
                 if (!isLookingForMembers && leaderId && memberIds.includes(leaderId)) {
-                    Message.error(`${eventLabel}: team leader cannot be included in team members.`);
                     throw new Error(`${eventLabel}: team leader cannot be included in team members.`);
                 }
 
                 const userInTeam = leaderId === user.global_id || memberIds.includes(user.global_id ?? "");
                 if (!isLookingForMembers && !userInTeam) {
-                    Message.error(`${eventLabel}: you must be either leader or one of the members.`);
                     throw new Error(`${eventLabel}: you must be either leader or one of the members.`);
                 }
 
@@ -466,9 +458,6 @@ export default function RegisterTournamentPage() {
                         const unavailableIds = await fetchUnavailableParticipantIdsByEvent(tournamentId, teamId);
                         const conflictedParticipantId = participantIds.find((participantId) => unavailableIds.has(participantId));
                         if (conflictedParticipantId) {
-                            Message.error(
-                                `${eventLabel}: participant ${conflictedParticipantId} is already in this event or has an active recruitment.`,
-                            );
                             throw new Error(
                                 `${eventLabel}: participant ${conflictedParticipantId} is already in this event or has an active recruitment.`,
                             );
@@ -479,7 +468,6 @@ export default function RegisterTournamentPage() {
                 if (!isLookingForMembers && !isLookingForTeammates && isParentChild) {
                     const parentIds = memberIds.filter(Boolean);
                     if (parentIds.length !== 1) {
-                        Message.error(`${eventLabel}: Parent & Child requires exactly one parent Global ID.`);
                         throw new Error(`${eventLabel}: Parent & Child requires exactly one parent Global ID.`);
                     }
                 }
@@ -495,7 +483,6 @@ export default function RegisterTournamentPage() {
                             const participantLabel = fallbackTeamSize === 1 ? "participant" : "participants";
                             const additionalMessage = expectedMembers > 0 ? `` : "No additional members should be listed.";
 
-                            Message.error(`${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`);
                             throw new Error(
                                 `${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`,
                             );
@@ -698,18 +685,6 @@ export default function RegisterTournamentPage() {
                 if (toNotify.length > 0) {
                     needsMemberVerification = true;
                 }
-
-                for (const globalId of toNotify) {
-                    try {
-                        const userSnap = await getUserEmailByGlobalId(globalId);
-                        const email = userSnap?.email;
-                        if (email) {
-                            await sendProtectedEmail(email, tournamentId, teamId, globalId, registrationId);
-                        }
-                    } catch (err) {
-                        console.error(`❌ Failed to send verification to ${globalId}`, err);
-                    }
-                }
             }
 
             // Handle individual recruitment if user is looking for teams
@@ -749,6 +724,7 @@ export default function RegisterTournamentPage() {
             };
 
             await addUserRegistrationRecord(user.id ?? "", registrationRecord);
+            await refreshProfiles(user.id ?? undefined);
 
             if (needsMemberVerification) {
                 Modal.info({
