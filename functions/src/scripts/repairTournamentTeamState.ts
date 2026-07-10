@@ -25,7 +25,9 @@ if (!tournamentId) {
 }
 
 if (!getApps().length) initializeApp();
-const db = getFirestore();
+const firebaseApp = getApps()[0] ?? initializeApp();
+const firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID?.trim() || "";
+const db = firestoreDatabaseId ? getFirestore(firebaseApp, firestoreDatabaseId) : getFirestore(firebaseApp);
 const normalize = (value: string | null | undefined): string => (value ?? "").trim().toLowerCase();
 const requestIdFor = (teamId: string, memberId: string): string => `${tournamentId}_${teamId}_${memberId}`;
 
@@ -117,6 +119,7 @@ const main = async () => {
 
     const report = {
         tournamentId,
+        databaseId: firestoreDatabaseId || "(default)",
         mode: apply ? "apply" : "dry-run",
         orphanTeams: orphanTeams.map((team) => ({
             teamId: team.id,

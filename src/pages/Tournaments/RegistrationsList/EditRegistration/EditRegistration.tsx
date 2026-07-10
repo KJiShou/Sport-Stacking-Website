@@ -19,6 +19,7 @@ import {
     getIndividualRecruitmentsByParticipant,
 } from "@/services/firebase/individualRecruitmentService";
 import {deleteRegistrationById, fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
+import {deleteAdminTeam, upsertAdminTeam} from "@/services/firebase/adminTeamService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {
     createTeamRecruitment,
@@ -32,8 +33,6 @@ import {
     fetchTeamsByTournament,
     fetchTournamentById,
     fetchTournamentEvents,
-    removeMemberFromTeam,
-    updateTeam,
 } from "@/services/firebase/tournamentsService";
 import {
     deleteVerificationRequestByTournamentTeamMember,
@@ -295,7 +294,7 @@ export default function EditTournamentRegistrationPage() {
                     removedTeams.map(async (removedTeam) => {
                         const removedLeaderId = stripTeamLeaderPrefix(removedTeam.leader_id);
                         if (registrationIds.includes(removedLeaderId)) {
-                            await deleteTeam(removedTeam.id);
+                            await deleteAdminTeam(tournamentId ?? "", removedTeam.id);
                             try {
                                 await deleteVerificationRequestsByTeamId(removedTeam.id);
                             } catch (error) {
@@ -319,7 +318,14 @@ export default function EditTournamentRegistrationPage() {
                         )?.global_id;
 
                         if (memberIdToRemove) {
-                            await removeMemberFromTeam(removedTeam.id, memberIdToRemove);
+                            await upsertAdminTeam(
+                                tournamentId ?? "",
+                                {
+                                    ...removedTeam,
+                                    members: (removedTeam.members ?? []).filter((member) => member.global_id !== memberIdToRemove),
+                                },
+                                removedTeam.id,
+                            );
                             if (tournamentId) {
                                 try {
                                     await deleteVerificationRequestByTournamentTeamMember(
@@ -506,11 +512,7 @@ export default function EditTournamentRegistrationPage() {
 
                 const isNew = !initialTeams.some((initialTeam) => initialTeam.id === team.id);
 
-                if (isNew) {
-                    await createTeam(tournamentId ?? "", teamData);
-                } else {
-                    await updateTeam(tournamentId ?? "", team.id, teamData);
-                }
+                await upsertAdminTeam(tournamentId ?? "", teamData, isNew ? undefined : team.id);
             }
 
             const userRegistrationData: Partial<UserRegistrationRecord> = {
@@ -1259,7 +1261,7 @@ export default function EditTournamentRegistrationPage() {
                                                                                               ...t.members,
                                                                                               {
                                                                                                   global_id: newMemberId,
-                                                                                                  verified: false,
+                                                                                                  verified: true,
                                                                                               },
                                                                                           ],
                                                                                       }

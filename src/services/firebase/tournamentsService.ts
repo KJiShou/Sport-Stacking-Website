@@ -993,19 +993,8 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
               .map((value) => (typeof value === "string" ? value.trim() : ""))
               .filter((value): value is string => value.length > 0)
         : [];
-    // If event_id is present, use it, else fallback to normalizedEventNames
-    const eventIds: string[] = [];
-    if (typeof teamData.event_id === "string" && teamData.event_id.length > 0) {
-        eventIds.push(teamData.event_id);
-    } else if (Array.isArray(teamData.event_id)) {
-        eventIds.push(...teamData.event_id.filter((e: string) => typeof e === "string" && e.length > 0));
-    }
-    // If no event_id, try to use normalizedEventNames as event ids (if they look like ids)
-    if (eventIds.length === 0) {
-        eventIds.push(...normalizedEventNames.filter((e) => e.length > 0));
-    }
-
-    // For each member, ensure their registration includes the event id(s)
+    // Team edits must not mutate participant registrations here. Admin updates use
+    // the server-side mutation, while pending invitations update only on acceptance.
     for (const id of memberIds) {
         const registrationQuery = query(
             collection(db, "registrations"),
@@ -1017,16 +1006,6 @@ export async function updateTeam(tournamentId: string, teamId: string, teamData:
         const registration = registrationDoc?.data() as Registration | undefined;
         if (registration?.age != null) {
             ages.push(registration.age);
-        }
-        if (registrationDoc && registration) {
-            // Ensure registration.events_registered is an array
-            const regEvents: string[] = Array.isArray(registration.events_registered)
-                ? registration.events_registered.filter((e: string) => typeof e === "string" && e.length > 0)
-                : [];
-            const normalizedEvents = normalizeEventSelections([...regEvents, ...eventIds], tournamentEvents);
-            if (JSON.stringify(normalizedEvents) !== JSON.stringify(regEvents)) {
-                await updateDoc(registrationDoc.ref, {events_registered: normalizedEvents});
-            }
         }
     }
 
