@@ -768,16 +768,18 @@ export default function EditTournamentRegistrationPage() {
             initialEventIdsRef.current = userReg.events_registered ?? [];
 
             const registrationTeams = await fetchTeamsByRegistrationId(registrationId);
-            const sourceTeams =
-                registrationTeams.length > 0
-                    ? registrationTeams
-                    : (await fetchTeamsByTournament(tournamentId)).filter((team) => {
-                          const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                          return (
-                              leaderId === userReg.user_global_id ||
-                              (team.members ?? []).some((m) => m.global_id === userReg.user_global_id)
-                          );
-                      });
+            const membershipTeams = (await fetchTeamsByTournament(tournamentId)).filter((team) => {
+                const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                return (
+                    leaderId === userReg.user_global_id ||
+                    (team.members ?? []).some(
+                        (member) => member.global_id === userReg.user_global_id && member.verified === true,
+                    )
+                );
+            });
+            const sourceTeams = Array.from(
+                new Map([...registrationTeams, ...membershipTeams].map((team) => [team.id, team])).values(),
+            );
 
             const normalizedTeams: LegacyTeam[] = sourceTeams.map((team) => {
                 const legacyTeam = team as LegacyTeam;

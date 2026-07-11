@@ -184,14 +184,14 @@ export default function ViewTournamentRegistrationPage() {
                 setRegistrationOwnerIsMember(hasMemberId);
 
                 const registrationTeams = userReg.id ? await fetchTeamsByRegistrationId(userReg.id) : [];
-                const sourceTeams =
-                    registrationTeams.length > 0
-                        ? registrationTeams
-                        : (await fetchTeamsByTournament(tournamentId)).filter(
-                              (team) =>
-                                  team.leader_id === user.global_id ||
-                                  (team.members ?? []).some((m) => m.global_id === user.global_id),
-                          );
+                const membershipTeams = (await fetchTeamsByTournament(tournamentId)).filter(
+                    (team) =>
+                        team.leader_id === user.global_id ||
+                        (team.members ?? []).some((member) => member.global_id === user.global_id && member.verified === true),
+                );
+                const sourceTeams = Array.from(
+                    new Map([...registrationTeams, ...membershipTeams].map((team) => [team.id, team])).values(),
+                );
                 const normalizedTeams = sourceTeams.map((team) => {
                     const legacyTeam = team as LegacyTeam;
                     const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentEvents);

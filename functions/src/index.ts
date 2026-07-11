@@ -1676,6 +1676,75 @@ const getPreferredTeamEventKeys = (team: TeamEventRefs | null | undefined, fallb
     return fallback;
 };
 
+type RegistrationTeamSnapshot = NonNullable<Registration["teams"]>[number];
+
+const buildRegistrationTeamSnapshot = (team: Team): RegistrationTeamSnapshot => ({
+    team_id: team.id,
+    label: team.name ?? "",
+    name: team.name ?? "",
+    member: (team.members ?? []).map((member) => ({
+        global_id: member.global_id,
+        verified: Boolean(member.verified),
+    })),
+    leader: {
+        global_id: team.leader_id ?? null,
+        verified: true,
+    },
+    looking_for_team_members: Boolean(team.looking_for_member),
+});
+
+/**
+ * Keeps the legacy registration team snapshot readable by every confirmed
+ * participant. The teams collection remains the source of truth.
+ */
+const syncRegistrationTeamSnapshots = async (teamId: string, beforeTeam: Team | null, afterTeam: Team | null): Promise<void> => {
+    const tournamentId = afterTeam?.tournament_id ?? beforeTeam?.tournament_id ?? "";
+    if (!tournamentId) return;
+
+    const participantIds = new Set<string>();
+    for (const team of [beforeTeam, afterTeam]) {
+        if (!team) continue;
+        if (team.leader_id) participantIds.add(team.leader_id);
+        for (const member of team.members ?? []) {
+            if (member.global_id) participantIds.add(member.global_id);
+        }
+    }
+    if (participantIds.size === 0) return;
+
+    const registrationSnapshots = await Promise.all(
+        [...participantIds].map((participantId) =>
+            db
+                .collection("registrations")
+                .where("tournament_id", "==", tournamentId)
+                .where("user_global_id", "==", participantId)
+                .limit(1)
+                .get(),
+        ),
+    );
+    const activeParticipantIds = new Set<string>();
+    if (afterTeam?.leader_id) activeParticipantIds.add(afterTeam.leader_id);
+    for (const member of afterTeam?.members ?? []) {
+        if (member.global_id && member.verified) activeParticipantIds.add(member.global_id);
+    }
+    const snapshot = afterTeam ? buildRegistrationTeamSnapshot(afterTeam) : null;
+
+    await Promise.all(
+        registrationSnapshots.flatMap((result) =>
+            result.docs.map((registrationDoc) => {
+                const registration = registrationDoc.data() as Registration;
+                const existingTeams = Array.isArray(registration.teams) ? registration.teams : [];
+                const withoutCurrentTeam = existingTeams.filter((entry) => entry.team_id !== teamId);
+                const nextTeams =
+                    snapshot && activeParticipantIds.has(registration.user_global_id)
+                        ? [...withoutCurrentTeam, snapshot]
+                        : withoutCurrentTeam;
+                if (JSON.stringify(nextTeams) === JSON.stringify(existingTeams)) return Promise.resolve();
+                return registrationDoc.ref.update({teams: nextTeams, updated_at: FirestoreTimestamp.now()});
+            }),
+        ),
+    );
+};
+
 const normalizeEventValue = (value: string): string => value.trim().toLowerCase();
 
 const buildNormalizedEventSet = (values: string[]): Set<string> => {
@@ -2664,7 +2733,7 @@ export const syncTeamVerificationRequests = onDocumentWritten(
         document: "teams/{teamId}",
         database: firestoreTriggerDatabase,
         region: functionsRegion,
-        retry: false,
+        retry: true,
     },
     async (event) => {
         const teamId = event.params.teamId;
@@ -2673,6 +2742,8 @@ export const syncTeamVerificationRequests = onDocumentWritten(
         const beforeMembers = new Map((beforeTeam?.members ?? []).map((member) => [member.global_id, member]));
         const afterMembers = new Map((afterTeam?.members ?? []).map((member) => [member.global_id, member]));
         const tournamentId = afterTeam?.tournament_id ?? beforeTeam?.tournament_id ?? "";
+
+        await syncRegistrationTeamSnapshots(teamId, beforeTeam, afterTeam);
 
         for (const [memberId] of beforeMembers) {
             if (afterMembers.has(memberId) || !tournamentId) {
@@ -3082,7 +3153,13 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
                 throw new HttpsError("invalid-argument", "Team data is required.");
             }
             const leaderId = normalizeAdminGlobalId(rawTeam.leader_id);
-            const memberIds = (rawTeam.members ?? []).map((member) => normalizeAdminGlobalId(member.global_id)).filter(Boolean);
+            const rawMembers = (rawTeam.members ?? [])
+                .map((member) => ({
+                    globalId: normalizeAdminGlobalId(member.global_id),
+                    verified: member.verified === true,
+                }))
+                .filter((member) => Boolean(member.globalId));
+            const memberIds = rawMembers.map((member) => member.globalId);
             const nextTeamId =
                 normalizeAdminGlobalId(existingTeam?.id) ||
                 requestedTeamId ||
@@ -3101,7 +3178,12 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
                 registration_id: typeof rawTeam.registration_id === "string" ? rawTeam.registration_id : "",
                 event_id: typeof rawTeam.event_id === "string" ? rawTeam.event_id : null,
                 event: Array.isArray(rawTeam.event) ? rawTeam.event.filter((event): event is string => typeof event === "string") : [],
-                members: memberIds.map((memberId) => ({global_id: memberId, verified: true})),
+                // Editing a team must retain pending invitations. Only explicitly
+                // confirmed members participate in registration validation below.
+                members: rawMembers.map(({globalId, verified}) => ({
+                    global_id: globalId,
+                    verified: existingTeam?.members?.find((member) => member.global_id === globalId)?.verified === true || verified,
+                })),
                 team_age: typeof rawTeam.team_age === "number" ? rawTeam.team_age : 0,
                 looking_for_member: rawTeam.looking_for_member === true,
             };
