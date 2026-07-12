@@ -1,5 +1,5 @@
 import {getApps, initializeApp} from "firebase-admin/app";
-import {FieldValue, Timestamp, getFirestore} from "firebase-admin/firestore";
+import {FieldValue, Timestamp, type DocumentReference, type QueryDocumentSnapshot, getFirestore} from "firebase-admin/firestore";
 
 type TeamMember = {global_id?: string; verified?: boolean};
 type TeamData = {
@@ -19,17 +19,110 @@ const getArg = (name: string): string => {
 };
 const tournamentId = getArg("--tournament");
 const apply = args.includes("--apply");
+const syncRegistrationTeams = args.includes("--sync-registration-teams");
+const allTournaments = args.includes("--all-tournaments");
+const requestedDatabase = getArg("--database");
 
-if (!tournamentId) {
-    throw new Error("Usage: yarn workspace functions repair:teams --tournament <id> [--apply]");
+if (!tournamentId && !allTournaments) {
+    throw new Error(
+        "Usage: yarn workspace functions repair:teams --tournament <id> [--apply] [--sync-registration-teams] or --all-tournaments --sync-registration-teams [--database default] [--apply]",
+    );
 }
 
 if (!getApps().length) initializeApp();
 const firebaseApp = getApps()[0] ?? initializeApp();
-const firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID?.trim() || "";
+const firestoreDatabaseId = requestedDatabase === "default" ? "" : process.env.FIRESTORE_DATABASE_ID?.trim() || requestedDatabase;
 const db = firestoreDatabaseId ? getFirestore(firebaseApp, firestoreDatabaseId) : getFirestore(firebaseApp);
 const normalize = (value: string | null | undefined): string => (value ?? "").trim().toLowerCase();
 const requestIdFor = (teamId: string, memberId: string): string => `${tournamentId}_${teamId}_${memberId}`;
+
+type RegistrationTeamSnapshot = {
+    team_id: string;
+    label: string;
+    name: string;
+    member: Array<{global_id?: string; verified?: boolean}>;
+    leader: {global_id?: string | null; verified?: boolean};
+    looking_for_team_members: boolean;
+};
+
+const buildRegistrationTeamSnapshot = (teamId: string, data: TeamData): RegistrationTeamSnapshot => ({
+    team_id: teamId,
+    label: data.name ?? "",
+    name: data.name ?? "",
+    member: (data.members ?? []).map((member) => ({global_id: member.global_id, verified: Boolean(member.verified)})),
+    leader: {global_id: data.leader_id ?? null, verified: true},
+    looking_for_team_members: false,
+});
+
+const syncRegistrationTeamSnapshots = async (): Promise<void> => {
+    const teamsQuery = tournamentId
+        ? db.collection("teams").where("tournament_id", "==", tournamentId)
+        : db.collection("teams");
+    const registrationsQuery = tournamentId
+        ? db.collection("registrations").where("tournament_id", "==", tournamentId)
+        : db.collection("registrations");
+    const [teamSnapshot, registrationSnapshot] = await Promise.all([teamsQuery.get(), registrationsQuery.get()]);
+    const registrationsByParticipant = new Map<string, QueryDocumentSnapshot>();
+    for (const registration of registrationSnapshot.docs) {
+        const participantId = (registration.data().user_global_id as string | undefined)?.trim();
+        if (participantId) registrationsByParticipant.set(`${registration.data().tournament_id}|${participantId}`, registration);
+    }
+
+    const expectedByRegistration = new Map<string, RegistrationTeamSnapshot[]>();
+    for (const teamDoc of teamSnapshot.docs) {
+        const data = teamDoc.data() as TeamData;
+        const confirmedIds = new Set<string>();
+        if (data.leader_id) confirmedIds.add(data.leader_id.trim());
+        for (const member of data.members ?? []) {
+            if (member.global_id && member.verified) confirmedIds.add(member.global_id.trim());
+        }
+        const payload = buildRegistrationTeamSnapshot(teamDoc.id, data);
+        for (const participantId of confirmedIds) {
+            const registration = registrationsByParticipant.get(`${data.tournament_id}|${participantId}`);
+            if (!registration) continue;
+            const key = registration.id;
+            expectedByRegistration.set(key, [...(expectedByRegistration.get(key) ?? []), payload]);
+        }
+    }
+
+    const updates: Array<{ref: DocumentReference; teams: RegistrationTeamSnapshot[]}> = [];
+    for (const registration of registrationSnapshot.docs) {
+        const existing = Array.isArray(registration.data().teams) ? (registration.data().teams as RegistrationTeamSnapshot[]) : [];
+        const expected = expectedByRegistration.get(registration.id) ?? [];
+        const expectedByTeamId = new Map(expected.map((team) => [team.team_id, team]));
+        const next = [...expectedByTeamId.values()];
+        for (const team of existing) {
+            if (!expectedByTeamId.has(team.team_id) && !teamSnapshot.docs.some((candidate) => candidate.id === team.team_id)) {
+                next.push(team);
+            }
+        }
+        if (JSON.stringify(next) !== JSON.stringify(existing)) updates.push({ref: registration.ref, teams: next});
+    }
+
+    console.info(
+        JSON.stringify(
+            {
+                mode: apply ? "apply" : "dry-run",
+                databaseId: firestoreDatabaseId || "(default)",
+                tournamentId: tournamentId || "all",
+                teamsScanned: teamSnapshot.size,
+                registrationsScanned: registrationSnapshot.size,
+                registrationsToUpdate: updates.length,
+                examples: updates.slice(0, 20).map((update) => ({registrationId: update.ref.id, teamIds: update.teams.map((team) => team.team_id)})),
+            },
+            null,
+            2,
+        ),
+    );
+    if (!apply) return;
+    for (let index = 0; index < updates.length; index += 400) {
+        const batch = db.batch();
+        for (const update of updates.slice(index, index + 400)) {
+            batch.update(update.ref, {teams: update.teams, updated_at: Timestamp.now()});
+        }
+        await batch.commit();
+    }
+};
 
 const main = async () => {
     const [
@@ -222,7 +315,9 @@ const main = async () => {
     console.info("Repair applied. Re-run without --apply to confirm the remaining report.");
 };
 
-main().catch((error) => {
+const run = syncRegistrationTeams ? syncRegistrationTeamSnapshots : main;
+
+run().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });

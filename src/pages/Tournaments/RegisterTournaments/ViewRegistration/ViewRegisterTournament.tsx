@@ -73,6 +73,10 @@ const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds
         return total + getAdditionalFeeForEvent(event);
     }, 0);
 
+const isTeamMember = (team: Team, globalId: string | null | undefined): boolean =>
+    team.leader_id === globalId ||
+    (team.members ?? []).some((member) => member.global_id === globalId && member.verified === true);
+
 export default function ViewTournamentRegistrationPage() {
     const {tournamentId} = useParams();
     const {user} = useAuthContext();
@@ -184,14 +188,11 @@ export default function ViewTournamentRegistrationPage() {
                 setRegistrationOwnerIsMember(hasMemberId);
 
                 const registrationTeams = userReg.id ? await fetchTeamsByRegistrationId(userReg.id) : [];
-                const sourceTeams =
-                    registrationTeams.length > 0
-                        ? registrationTeams
-                        : (await fetchTeamsByTournament(tournamentId)).filter(
-                              (team) =>
-                                  team.leader_id === user.global_id ||
-                                  (team.members ?? []).some((m) => m.global_id === user.global_id),
-                          );
+                const allTournamentTeams = await fetchTeamsByTournament(tournamentId);
+                const membershipTeams = allTournamentTeams.filter((team) => isTeamMember(team, user.global_id));
+                const sourceTeams = Array.from(
+                    new Map([...registrationTeams, ...membershipTeams].map((team) => [team.id, team])).values(),
+                );
                 const normalizedTeams = sourceTeams.map((team) => {
                     const legacyTeam = team as LegacyTeam;
                     const {eventId, eventName} = resolveTeamEvent(legacyTeam, tournamentEvents);
