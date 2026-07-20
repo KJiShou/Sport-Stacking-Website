@@ -75,7 +75,7 @@ const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds
 
 const isTeamMember = (team: Team, globalId: string | null | undefined): boolean =>
     team.leader_id === globalId ||
-    (team.members ?? []).some((member) => member.global_id === globalId && member.verified === true);
+    (team.members ?? []).some((member) => member.global_id === globalId);
 
 export default function ViewTournamentRegistrationPage() {
     const {tournamentId} = useParams();
@@ -381,7 +381,7 @@ export default function ViewTournamentRegistrationPage() {
                                                             status={m.verified ? "success" : "danger"}
                                                             disabled
                                                         >
-                                                            {getParticipantDisplay(m.global_id)}
+                                                            {getParticipantDisplay(m.global_id)} · {m.verified ? "Verified" : "Pending verification"}
                                                         </Button>
                                                     ))}
                                                 </div>

@@ -772,9 +772,7 @@ export default function EditTournamentRegistrationPage() {
                 const leaderId = stripTeamLeaderPrefix(team.leader_id);
                 return (
                     leaderId === userReg.user_global_id ||
-                    (team.members ?? []).some(
-                        (member) => member.global_id === userReg.user_global_id && member.verified === true,
-                    )
+                    (team.members ?? []).some((member) => member.global_id === userReg.user_global_id)
                 );
             });
             const sourceTeams = Array.from(
@@ -1212,7 +1210,7 @@ export default function EditTournamentRegistrationPage() {
                                                                     }
                                                                 }}
                                                             >
-                                                                {getParticipantDisplay(m.global_id)}
+                                                                {getParticipantDisplay(m.global_id)} · {m.verified ? "Verified" : "Pending verification"}
                                                             </Tag>
                                                             <Button
                                                                 icon={<IconClose />}
