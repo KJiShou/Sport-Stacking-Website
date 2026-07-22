@@ -10,7 +10,8 @@
     "start": "yarn shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "repair:teams": "node --env-file-if-exists=.env.development lib/functions/src/scripts/repairTournamentTeamState.js"
+    "repair:teams": "node --env-file-if-exists=.env.development lib/functions/src/scripts/repairTournamentTeamState.js",
+    "migrate:develop2-to-default": "node lib/functions/src/scripts/migrateDevelop2ToDefault.js"
   },
   "engines": {
     "node": "22"

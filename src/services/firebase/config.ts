@@ -32,8 +32,10 @@ if (shouldInitializeAppCheck) {
         isTokenAutoRefreshEnabled: true,
     });
 }
-const firestoreDatabaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID?.trim() || "";
-export const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
+// The public application always uses the primary Firestore database. Keeping this
+// explicit prevents a deployment environment variable from accidentally routing
+// production traffic to a secondary/testing database.
+export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const auth = getAuth(app);
 const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION?.trim() || "asia-southeast1";

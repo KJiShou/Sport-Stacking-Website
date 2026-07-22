@@ -74,9 +74,10 @@ if (!getApps().length) {
 }
 
 const firebaseApp = getApps()[0] ?? initializeApp();
-const firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID?.trim() || "";
-const db = firestoreDatabaseId ? getFirestore(firebaseApp, firestoreDatabaseId) : getFirestore(firebaseApp);
-const firestoreTriggerDatabase = firestoreDatabaseId || "(default)";
+// Cloud Functions always operate on the primary production database. This must
+// not be configurable by deployment environment variables.
+const db = getFirestore(firebaseApp);
+const firestoreTriggerDatabase = "(default)";
 
 type ImportIdentityType = "MYKAD" | "PASSPORT" | "NONE";
 type ImportGender = "Male" | "Female";
@@ -3712,19 +3713,12 @@ export const rejectProfileClaimRequest = onCall(callableFunctionOptions, async (
 });
 
 export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, async (request) => {
-    if (!firestoreDatabaseId) {
-        throw new HttpsError(
-            "failed-precondition",
-            "FIRESTORE_DATABASE_ID must be set before importing a workbook.",
-        );
-    }
-
     const importStartedAt = Date.now();
     const importBatchRef = db.collection("import_batches").doc();
     const logImportStage = (stage: string, details: Record<string, unknown> = {}) => {
         console.info("importTournamentWorkbook checkpoint", {
             stage,
-            databaseId: firestoreDatabaseId || "(default)",
+            databaseId: firestoreTriggerDatabase,
             functionsEmulator: process.env.FUNCTIONS_EMULATOR === "true",
             importBatchId: importBatchRef.id,
             elapsedMs: Date.now() - importStartedAt,
