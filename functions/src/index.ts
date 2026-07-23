@@ -122,6 +122,7 @@ type ImportTeam = {
     eventType: string;
     sheetName: string;
     sourceRow: number;
+    name: string;
     members: string[];
 };
 
@@ -336,7 +337,8 @@ const importWorkbookKey = (athlete: Pick<ImportAthlete, "identityKey" | "name" |
     return `NO_ID:${importNormalize(athlete.name)}:${importFormatDateKey(athlete.birthdate)}`;
 };
 
-const importNamesMatch = (firstName: string, secondName: string): boolean => importNormalize(firstName) === importNormalize(secondName);
+const importNamesMatch = (firstName: string, secondName: string): boolean =>
+    importNormalize(firstName) === importNormalize(secondName);
 
 const importFindHeaderRow = (worksheet: ExcelJS.Worksheet): number => {
     for (let rowNumber = 1; rowNumber <= Math.min(worksheet.rowCount, 12); rowNumber += 1) {
@@ -358,6 +360,7 @@ const importFindColumns = (worksheet: ExcelJS.Worksheet, headerRowNumber: number
         gender: 0,
         country: 0,
         state: 0,
+        teamName: 0,
         no: 1,
     };
 
@@ -370,7 +373,11 @@ const importFindColumns = (worksheet: ExcelJS.Worksheet, headerRowNumber: number
             .replace(/[^a-z0-9]+/g, " ")
             .split(" ")
             .filter(Boolean);
-        if (value.includes("name")) columns.name = colNumber;
+        if (value === "team name" || value === "team") {
+            columns.teamName = colNumber;
+        } else if (value.includes("name")) {
+            columns.name = colNumber;
+        }
         if (value.includes("passport") || headerTokens.includes("ic") || value.includes("identity")) columns.identity = colNumber;
         if (value.includes("birth") || value.includes("dob")) columns.birthdate = colNumber;
         if (value.includes("gender")) columns.gender = colNumber;
@@ -647,7 +654,8 @@ const importParseWorkbook = (
         teams: [],
         rows: [],
     };
-    const individualEvent = events.find((event) => importIsEventType(event, "Individual")) ?? events.find(importIsIndividualEvent);
+    const individualEvent =
+        events.find((event) => importIsEventType(event, "Individual")) ?? events.find(importIsIndividualEvent);
     if (!individualEvent) {
         parsed.rows.push({sheet: "Workbook", row: 0, level: "error", message: "Tournament has no Individual event."});
         return parsed;
@@ -812,6 +820,7 @@ const importParseWorkbook = (
                     eventType: event.type,
                     sheetName: worksheet.name,
                     sourceRow: rowNumber,
+                    name: "",
                     members: [child.workbookKey, parent.workbookKey],
                 });
             }
@@ -820,6 +829,7 @@ const importParseWorkbook = (
 
         let currentBlock: string[] = [];
         let currentBlockRow = 0;
+        let currentBlockName = "";
         let currentBlockHasErrors = false;
         const expectedSize = importGetExpectedTeamSize(event);
         const flushBlock = () => {
@@ -839,6 +849,7 @@ const importParseWorkbook = (
                     eventType: event.type,
                     sheetName: worksheet.name,
                     sourceRow: currentBlockRow,
+                    name: currentBlockName,
                     members: currentBlock,
                 });
                 for (const athleteKey of currentBlock) {
@@ -847,6 +858,7 @@ const importParseWorkbook = (
             }
             currentBlock = [];
             currentBlockRow = 0;
+            currentBlockName = "";
             currentBlockHasErrors = false;
         };
 
@@ -867,6 +879,7 @@ const importParseWorkbook = (
             if (startsBlock) {
                 flushBlock();
                 currentBlockRow = rowNumber;
+                currentBlockName = columns.teamName > 0 ? importCellToString(row.getCell(columns.teamName).value).trim() : "";
             } else if (currentBlockRow === 0) {
                 currentBlockRow = rowNumber;
             }
@@ -964,7 +977,10 @@ const importGetDocumentsInChunks = async <T extends DocumentReference>(refs: T[]
     return snapshots;
 };
 
-const profileSnapshotBelongsToUid = (profile: {id: string; data: () => Record<string, unknown> | undefined}, uid: string): boolean => {
+const profileSnapshotBelongsToUid = (
+    profile: {id: string; data: () => Record<string, unknown> | undefined},
+    uid: string,
+): boolean => {
     const data = profile.data() as {owner_uids?: string[] | null};
     if (Array.isArray(data.owner_uids)) {
         return data.owner_uids.includes(uid);
@@ -1343,11 +1359,11 @@ const importCommitRegistrationsAndTeams = async ({
     }
 
     const existingTeamsSnap = await db.collection("teams").where("tournament_id", "==", tournamentId).get();
-    const existingTeamKeys = new Set(
+    const existingTeamsByKey: Map<string, DocumentReference> = new Map(
         existingTeamsSnap.docs.map((docSnap) => {
             const team = docSnap.data() as {event_id?: string; leader_id?: string; members?: Array<{global_id?: string}>};
             const memberIds = (team.members ?? []).map((member) => member.global_id ?? "").sort();
-            return `${team.event_id ?? ""}|${team.leader_id ?? ""}|${memberIds.join(",")}`;
+            return [`${team.event_id ?? ""}|${team.leader_id ?? ""}|${memberIds.join(",")}`, docSnap.ref] as const;
         }),
     );
 
@@ -1371,7 +1387,15 @@ const importCommitRegistrationsAndTeams = async ({
             .map((member) => member.global_id)
             .sort()
             .join(",")}`;
-        if (existingTeamKeys.has(teamKey)) {
+        const existingTeam = existingTeamsByKey.get(teamKey);
+        if (existingTeam) {
+            if (team.name) {
+                await existingTeam.update({
+                    name: team.name,
+                    import_batch_id: importBatchId,
+                    updated_at: FirestoreTimestamp.now(),
+                });
+            }
             continue;
         }
         const ages = athletes.map((athlete) => importAgeAtTournament(athlete.birthdate, tournamentStartDate));
@@ -1382,7 +1406,7 @@ const importCommitRegistrationsAndTeams = async ({
                 ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length)
                 : ages[0];
         const teamRef = db.collection("teams").doc();
-        const teamName = athletes.map((athlete) => athlete.name).join(" & ");
+        const teamName = team.name || athletes.map((athlete) => athlete.name).join(" & ");
         await teamRef.set({
             id: teamRef.id,
             name: teamName,
@@ -1398,7 +1422,7 @@ const importCommitRegistrationsAndTeams = async ({
             created_at: FirestoreTimestamp.now(),
             updated_at: FirestoreTimestamp.now(),
         });
-        existingTeamKeys.add(teamKey);
+        existingTeamsByKey.set(teamKey, teamRef);
         createdTeams += 1;
     }
 
@@ -1468,13 +1492,14 @@ const importBuildReportRows = (parsed: ParsedWorkbookImport, events: ImportEvent
             break;
         }
         const memberNames = team.members.map((memberKey) => parsed.athletes.get(memberKey)?.name ?? memberKey);
+        const teamName = team.name || memberNames.join(" & ");
         teamRows += 1;
         rows.push({
             sheet: team.sheetName,
             row: team.sourceRow,
             level: "info",
             category: "teams",
-            message: `${team.eventType} | ${memberNames.join(" / ")}`,
+            message: `${team.eventType} | ${teamName} | ${memberNames.join(" / ")}`,
         });
     }
 
@@ -2412,13 +2437,7 @@ const sendHtmlEmail = async (to: string, subject: string, html: string): Promise
         console.error("Resend email threw; trying AWS SES", error);
     }
 
-    const sesResult = await sendEmailViaSES(
-        to,
-        subject,
-        html,
-        AWS_SES_SMTP_USERNAME.value(),
-        AWS_SES_SMTP_PASSWORD.value(),
-    );
+    const sesResult = await sendEmailViaSES(to, subject, html, AWS_SES_SMTP_USERNAME.value(), AWS_SES_SMTP_PASSWORD.value());
     if (sesResult.success) {
         return {success: true, provider: "aws-ses", messageId: sesResult.messageId};
     }
@@ -2438,10 +2457,7 @@ const resolveProfileEmail = async (globalId: string): Promise<string | null> => 
     return candidates[0] ?? null;
 };
 
-const claimEmailDelivery = async (
-    ref: DocumentReference,
-    allowedStatus: string,
-): Promise<Record<string, unknown> | null> =>
+const claimEmailDelivery = async (ref: DocumentReference, allowedStatus: string): Promise<Record<string, unknown> | null> =>
     db.runTransaction(async (transaction) => {
         const snapshot = await transaction.get(ref);
         if (!snapshot.exists) {
@@ -2717,10 +2733,7 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
             ...(verificationRequestSnapshot.exists ? {} : {created_at: now, email_status: "pending"}),
         };
         await verificationRequestRef.set(verificationPayload, {merge: true});
-        const delivery = await deliverVerificationRequestEmail(
-            verificationRequestRef,
-            typeof to === "string" ? to : undefined,
-        );
+        const delivery = await deliverVerificationRequestEmail(verificationRequestRef, typeof to === "string" ? to : undefined);
         if (!delivery.success) {
             res.status(500).json({error: delivery.error || "Email delivery failed"});
             return;
@@ -2893,10 +2906,7 @@ export const rejectTeamInvitation = onCall(callableFunctionOptions, async (reque
     const teamRef = db.collection("teams").doc(initialRequest.team_id);
     const actorName = await resolveLeaderName(initialRequest.member_id);
     const result = await db.runTransaction(async (transaction) => {
-        const [freshRequestSnapshot, teamSnapshot] = await Promise.all([
-            transaction.get(requestRef),
-            transaction.get(teamRef),
-        ]);
+        const [freshRequestSnapshot, teamSnapshot] = await Promise.all([transaction.get(requestRef), transaction.get(teamRef)]);
         if (!freshRequestSnapshot.exists) {
             throw new HttpsError("not-found", "Invitation not found.");
         }
@@ -3013,9 +3023,7 @@ const teamParticipantIds = (team: Team): string[] =>
 
 const teamContainsConfirmedParticipant = (team: Team, participantId: string): boolean =>
     normalizeAdminGlobalId(team.leader_id) === participantId ||
-    (team.members ?? []).some(
-        (member) => normalizeAdminGlobalId(member.global_id) === participantId && member.verified === true,
-    );
+    (team.members ?? []).some((member) => normalizeAdminGlobalId(member.global_id) === participantId && member.verified === true);
 
 const hasSameConfirmedTeam = (left: Team, right: Team): boolean => {
     const leftParticipants = teamParticipantIds(left).sort();
@@ -3030,10 +3038,7 @@ const hasSameConfirmedTeam = (left: Team, right: Team): boolean => {
     );
 };
 
-const findUserDocumentForTournament = (
-    userSnapshot: {docs: QueryDocumentSnapshot[]},
-    tournamentId: string,
-) =>
+const findUserDocumentForTournament = (userSnapshot: {docs: QueryDocumentSnapshot[]}, tournamentId: string) =>
     userSnapshot.docs.find((userDoc) =>
         ((userDoc.data() as {registration_records?: UserRegistrationRecord[]}).registration_records ?? []).some(
             (record) => record.tournament_id === tournamentId,
@@ -3048,6 +3053,8 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
     if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    const requesterUid = request.auth.uid;
+    const requesterEmail = typeof request.auth.token.email === "string" ? request.auth.token.email : null;
 
     const input = request.data as AdminTeamMutationInput;
     const tournamentId = normalizeAdminGlobalId(input.tournamentId);
@@ -3056,8 +3063,28 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
     if (!tournamentId) {
         throw new HttpsError("invalid-argument", "Tournament ID is required.");
     }
-    if (!(await importIsAuthorized(request.auth.uid, tournamentId))) {
-        throw new HttpsError("permission-denied", "You do not have permission to manage this tournament.");
+    const isTournamentAdmin = await importIsAuthorized(requesterUid, tournamentId);
+    if (!isTournamentAdmin) {
+        // A registrant may create their own team during self-registration, but
+        // all edits and deletions remain administrator-only. This keeps every
+        // client-created team inside the same transaction and conflict checks.
+        if (action !== "upsert" || requestedTeamId || !input.team) {
+            throw new HttpsError("permission-denied", "You do not have permission to manage this tournament.");
+        }
+        const ownedProfilesSnap = await db.collection("users").where("owner_uids", "array-contains", requesterUid).get();
+        const legacyProfileSnap = await db.collection("users").doc(requesterUid).get();
+        const ownedGlobalIds = new Set(
+            [...ownedProfilesSnap.docs, ...(legacyProfileSnap.exists ? [legacyProfileSnap] : [])]
+                .filter((profile) => profileSnapshotBelongsToUid(profile, requesterUid))
+                .map((profile) => normalizeAdminGlobalId(profile.data()?.global_id))
+                .filter(Boolean),
+        );
+        const submittedParticipantIds = [input.team.leader_id, ...(input.team.members ?? []).map((member) => member.global_id)]
+            .map((participantId) => normalizeAdminGlobalId(participantId))
+            .filter(Boolean);
+        if (!submittedParticipantIds.some((participantId) => ownedGlobalIds.has(participantId))) {
+            throw new HttpsError("permission-denied", "You can only create a team that includes your own profile.");
+        }
     }
     if ((action === "add-member" || action === "delete") && !requestedTeamId) {
         throw new HttpsError("invalid-argument", "Team ID is required.");
@@ -3085,7 +3112,10 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
                 previousParticipantIds.map(async (participantId) => {
                     const [registrationSnapshot, userSnapshot] = await Promise.all([
                         transaction.get(
-                            db.collection("registrations").where("tournament_id", "==", tournamentId).where("user_global_id", "==", participantId),
+                            db
+                                .collection("registrations")
+                                .where("tournament_id", "==", tournamentId)
+                                .where("user_global_id", "==", participantId),
                         ),
                         transaction.get(db.collection("users").where("global_id", "==", participantId)),
                     ]);
@@ -3110,7 +3140,10 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
                 const registrationRef = registrationSnapshot.docs[0]?.ref;
                 if (registrationRef) {
                     transaction.update(registrationRef, {
-                        events_registered: registrationEventsWithout(registrationSnapshot.docs[0].data().events_registered, eventKeys),
+                        events_registered: registrationEventsWithout(
+                            registrationSnapshot.docs[0].data().events_registered,
+                            eventKeys,
+                        ),
                         updated_at: FirestoreTimestamp.now(),
                     });
                 }
@@ -3121,7 +3154,11 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
                     transaction.update(userDoc.ref, {
                         registration_records: registrationRecords.map((record) =>
                             record.tournament_id === tournamentId
-                                ? {...record, events: registrationEventsWithout(record.events, eventKeys), updated_at: FirestoreTimestamp.now()}
+                                ? {
+                                      ...record,
+                                      events: registrationEventsWithout(record.events, eventKeys),
+                                      updated_at: FirestoreTimestamp.now(),
+                                  }
                                 : record,
                         ),
                         updated_at: FirestoreTimestamp.now(),
@@ -3129,6 +3166,15 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
                 }
             }
             transaction.delete(existingTeamRef);
+            transaction.set(db.collection("admin_team_audits").doc(), {
+                action: "delete",
+                tournament_id: tournamentId,
+                team_id: requestedTeamId,
+                actor_uid: requesterUid,
+                actor_email: requesterEmail,
+                before: existingTeam,
+                created_at: FirestoreTimestamp.now(),
+            });
             return {teamId: requestedTeamId, deleted: true};
         }
 
@@ -3142,7 +3188,10 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
             if (!memberId) {
                 throw new HttpsError("invalid-argument", "Member Global ID is required.");
             }
-            if (teamContainsConfirmedParticipant(existingTeam, memberId) || (existingTeam.members ?? []).some((member) => member.global_id === memberId)) {
+            if (
+                teamContainsConfirmedParticipant(existingTeam, memberId) ||
+                (existingTeam.members ?? []).some((member) => member.global_id === memberId)
+            ) {
                 throw new HttpsError("already-exists", "Member is already in this team.");
             }
             nextTeam = {
@@ -3164,7 +3213,7 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
             const nextTeamId =
                 normalizeAdminGlobalId(existingTeam?.id) ||
                 requestedTeamId ||
-                normalizeAdminGlobalId(rawTeam.id) ||
+                (isTournamentAdmin ? normalizeAdminGlobalId(rawTeam.id) : "") ||
                 db.collection("teams").doc().id;
             if (!leaderId || memberIds.length !== new Set(memberIds).size || memberIds.includes(leaderId)) {
                 throw new HttpsError("invalid-argument", "Team members must be unique and cannot include the leader.");
@@ -3178,12 +3227,15 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
                 leader_id: leaderId,
                 registration_id: typeof rawTeam.registration_id === "string" ? rawTeam.registration_id : "",
                 event_id: typeof rawTeam.event_id === "string" ? rawTeam.event_id : null,
-                event: Array.isArray(rawTeam.event) ? rawTeam.event.filter((event): event is string => typeof event === "string") : [],
+                event: Array.isArray(rawTeam.event)
+                    ? rawTeam.event.filter((event): event is string => typeof event === "string")
+                    : [],
                 // Editing a team must retain pending invitations. Only explicitly
                 // confirmed members participate in registration validation below.
                 members: rawMembers.map(({globalId, verified}) => ({
                     global_id: globalId,
-                    verified: existingTeam?.members?.find((member) => member.global_id === globalId)?.verified === true || verified,
+                    verified:
+                        existingTeam?.members?.find((member) => member.global_id === globalId)?.verified === true || verified,
                 })),
                 team_age: typeof rawTeam.team_age === "number" ? rawTeam.team_age : 0,
                 looking_for_member: rawTeam.looking_for_member === true,
@@ -3204,11 +3256,38 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
         if (duplicateTeam) {
             throw new HttpsError("already-exists", "These participants are already registered as a team for this event.");
         }
+        const conflictingTeams = allTeamsSnapshot.docs.filter((teamSnapshot) => {
+            if (teamSnapshot.id === teamRef.id) return false;
+            const candidate = teamSnapshot.data() as Team;
+            return (
+                hasEventOverlap(
+                    buildNormalizedEventSet(getTeamEventReferences(candidate)),
+                    buildNormalizedEventSet(getTeamEventReferences(nextTeam)),
+                ) && teamParticipantIds(candidate).some((participantId) => confirmedParticipantIds.includes(participantId))
+            );
+        });
+        const replaceableConflictingTeams = conflictingTeams.filter((teamSnapshot) => {
+            const candidateParticipantIds = teamParticipantIds(teamSnapshot.data() as Team);
+            return (
+                candidateParticipantIds.length < confirmedParticipantIds.length &&
+                candidateParticipantIds.every((participantId) => confirmedParticipantIds.includes(participantId))
+            );
+        });
+        const blockingConflict = conflictingTeams.find((teamSnapshot) => !replaceableConflictingTeams.includes(teamSnapshot));
+        if (blockingConflict) {
+            throw new HttpsError(
+                "failed-precondition",
+                "A participant is already assigned to a different team for this event. Edit that team instead of creating another one.",
+            );
+        }
         const participantSnapshots = await Promise.all(
             confirmedParticipantIds.map(async (participantId) => {
                 const [registrationSnapshot, userSnapshot] = await Promise.all([
                     transaction.get(
-                        db.collection("registrations").where("tournament_id", "==", tournamentId).where("user_global_id", "==", participantId),
+                        db
+                            .collection("registrations")
+                            .where("tournament_id", "==", tournamentId)
+                            .where("user_global_id", "==", participantId),
                     ),
                     transaction.get(db.collection("users").where("global_id", "==", participantId)),
                 ]);
@@ -3237,7 +3316,10 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
             removedConfirmedParticipantIds.map(async (participantId) => {
                 const [registrationSnapshot, userSnapshot] = await Promise.all([
                     transaction.get(
-                        db.collection("registrations").where("tournament_id", "==", tournamentId).where("user_global_id", "==", participantId),
+                        db
+                            .collection("registrations")
+                            .where("tournament_id", "==", tournamentId)
+                            .where("user_global_id", "==", participantId),
                     ),
                     transaction.get(db.collection("users").where("global_id", "==", participantId)),
                 ]);
@@ -3247,7 +3329,9 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
         const verificationEntries = [...new Set([...previousConfirmedParticipantIds, ...confirmedParticipantIds])].map(
             (participantId) => ({
                 participantId,
-                ref: db.collection("verification_requests").doc(buildVerificationRequestId(tournamentId, teamRef.id, participantId)),
+                ref: db
+                    .collection("verification_requests")
+                    .doc(buildVerificationRequestId(tournamentId, teamRef.id, participantId)),
             }),
         );
         const verificationSnapshots = await Promise.all(verificationEntries.map(({ref}) => transaction.get(ref)));
@@ -3309,22 +3393,42 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
         }
 
         transaction.set(teamRef, {...nextTeam, id: teamRef.id, updated_at: now}, {merge: true});
+        // Replacing an incomplete team (for example, a one-person recruitment
+        // team) must remove the old record in the same transaction. Leaving it
+        // behind lets a participant appear as a leader of two teams.
+        for (const teamSnapshot of replaceableConflictingTeams) {
+            const conflictingTeam = teamSnapshot.data() as Team;
+            transaction.delete(teamSnapshot.ref);
+            for (const member of conflictingTeam.members ?? []) {
+                const memberId = normalizeAdminGlobalId(member.global_id);
+                if (memberId) {
+                    transaction.delete(
+                        db
+                            .collection("verification_requests")
+                            .doc(buildVerificationRequestId(tournamentId, teamSnapshot.id, memberId)),
+                    );
+                }
+            }
+        }
+        transaction.set(db.collection("admin_team_audits").doc(), {
+            action,
+            tournament_id: tournamentId,
+            team_id: teamRef.id,
+            actor_uid: requesterUid,
+            actor_email: requesterEmail,
+            before: existingTeam,
+            after: nextTeam,
+            replaced_team_ids: replaceableConflictingTeams.map((teamSnapshot) => teamSnapshot.id),
+            created_at: now,
+        });
         for (let index = 0; index < verificationEntries.length; index += 1) {
             const {participantId, ref} = verificationEntries[index];
             const isConfirmed = confirmedParticipantIds.includes(participantId);
             const verificationSnapshot = verificationSnapshots[index];
             if (isConfirmed) {
-                transaction.set(
-                    ref,
-                    {status: "verified", verified_at: now, updated_at: now},
-                    {merge: true},
-                );
+                transaction.set(ref, {status: "verified", verified_at: now, updated_at: now}, {merge: true});
             } else if (verificationSnapshot.exists && verificationSnapshot.data()?.status === "pending") {
-                transaction.set(
-                    ref,
-                    {status: "expired", expired_at: now, updated_at: now},
-                    {merge: true},
-                );
+                transaction.set(ref, {status: "expired", expired_at: now, updated_at: now}, {merge: true});
             }
         }
         return {teamId: teamRef.id, deleted: false};
@@ -3518,8 +3622,7 @@ const parseProfileClaimDate = (value: unknown): FirestoreTimestamp | null => {
 
 export const createProfileClaimRequest = onCall(callableFunctionOptions, async (request) => {
     const requesterUid = request.auth?.uid;
-    const requesterEmail =
-        typeof request.auth?.token.email === "string" ? request.auth.token.email.trim().toLowerCase() : "";
+    const requesterEmail = typeof request.auth?.token.email === "string" ? request.auth.token.email.trim().toLowerCase() : "";
     if (!requesterUid || !requesterEmail) {
         throw new HttpsError("unauthenticated", "Please sign in with Google before requesting a profile claim.");
     }

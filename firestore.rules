@@ -1,9 +1,17 @@
 rules_version = '2';
 service cloud.firestore {
     match /databases/{database}/documents {
-        match /{document=**} {
+        // Team membership is validated atomically by mutateAdminTeam. Client
+        // writes would bypass the one-team-per-event invariant.
+        match /teams/{document=**} {
             allow read: if true;
-            allow write: if true;
+            allow write: if false;
+        }
+
+        // Preserve the application's current permissions for every other root
+        // collection while making teams the only server-authoritative resource.
+        match /{collection}/{document=**} {
+            allow read, write: if collection != "teams";
         }
     }
 }
