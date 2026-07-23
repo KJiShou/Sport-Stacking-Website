@@ -859,7 +859,7 @@ export default function EditTournamentRegistrationPage() {
                     activeTeamRecruitments
                         .filter((recruitment) => recruitment.team_id === team.id)
                         .map((recruitment) => recruitment.id)
-                        .sort(),
+                        .sort((firstId, secondId) => firstId.localeCompare(secondId)),
                 ]),
             );
             setDoubleRecruitments(
