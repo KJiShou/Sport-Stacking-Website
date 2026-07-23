@@ -122,6 +122,7 @@ type ImportTeam = {
     eventType: string;
     sheetName: string;
     sourceRow: number;
+    name: string;
     members: string[];
 };
 
@@ -358,6 +359,7 @@ const importFindColumns = (worksheet: ExcelJS.Worksheet, headerRowNumber: number
         gender: 0,
         country: 0,
         state: 0,
+        teamName: 0,
         no: 1,
     };
 
@@ -370,7 +372,11 @@ const importFindColumns = (worksheet: ExcelJS.Worksheet, headerRowNumber: number
             .replace(/[^a-z0-9]+/g, " ")
             .split(" ")
             .filter(Boolean);
-        if (value.includes("name")) columns.name = colNumber;
+        if (value === "team name" || value === "team") {
+            columns.teamName = colNumber;
+        } else if (value.includes("name")) {
+            columns.name = colNumber;
+        }
         if (value.includes("passport") || headerTokens.includes("ic") || value.includes("identity")) columns.identity = colNumber;
         if (value.includes("birth") || value.includes("dob")) columns.birthdate = colNumber;
         if (value.includes("gender")) columns.gender = colNumber;
@@ -812,6 +818,7 @@ const importParseWorkbook = (
                     eventType: event.type,
                     sheetName: worksheet.name,
                     sourceRow: rowNumber,
+                    name: "",
                     members: [child.workbookKey, parent.workbookKey],
                 });
             }
@@ -820,6 +827,7 @@ const importParseWorkbook = (
 
         let currentBlock: string[] = [];
         let currentBlockRow = 0;
+        let currentBlockName = "";
         let currentBlockHasErrors = false;
         const expectedSize = importGetExpectedTeamSize(event);
         const flushBlock = () => {
@@ -839,6 +847,7 @@ const importParseWorkbook = (
                     eventType: event.type,
                     sheetName: worksheet.name,
                     sourceRow: currentBlockRow,
+                    name: currentBlockName,
                     members: currentBlock,
                 });
                 for (const athleteKey of currentBlock) {
@@ -847,6 +856,7 @@ const importParseWorkbook = (
             }
             currentBlock = [];
             currentBlockRow = 0;
+            currentBlockName = "";
             currentBlockHasErrors = false;
         };
 
@@ -867,6 +877,8 @@ const importParseWorkbook = (
             if (startsBlock) {
                 flushBlock();
                 currentBlockRow = rowNumber;
+                currentBlockName =
+                    columns.teamName > 0 ? importCellToString(row.getCell(columns.teamName).value).trim() : "";
             } else if (currentBlockRow === 0) {
                 currentBlockRow = rowNumber;
             }
@@ -1343,11 +1355,11 @@ const importCommitRegistrationsAndTeams = async ({
     }
 
     const existingTeamsSnap = await db.collection("teams").where("tournament_id", "==", tournamentId).get();
-    const existingTeamKeys = new Set(
+    const existingTeamsByKey: Map<string, DocumentReference> = new Map(
         existingTeamsSnap.docs.map((docSnap) => {
             const team = docSnap.data() as {event_id?: string; leader_id?: string; members?: Array<{global_id?: string}>};
             const memberIds = (team.members ?? []).map((member) => member.global_id ?? "").sort();
-            return `${team.event_id ?? ""}|${team.leader_id ?? ""}|${memberIds.join(",")}`;
+            return [`${team.event_id ?? ""}|${team.leader_id ?? ""}|${memberIds.join(",")}`, docSnap.ref] as const;
         }),
     );
 
@@ -1371,7 +1383,15 @@ const importCommitRegistrationsAndTeams = async ({
             .map((member) => member.global_id)
             .sort()
             .join(",")}`;
-        if (existingTeamKeys.has(teamKey)) {
+        const existingTeam = existingTeamsByKey.get(teamKey);
+        if (existingTeam) {
+            if (team.name) {
+                await existingTeam.update({
+                    name: team.name,
+                    import_batch_id: importBatchId,
+                    updated_at: FirestoreTimestamp.now(),
+                });
+            }
             continue;
         }
         const ages = athletes.map((athlete) => importAgeAtTournament(athlete.birthdate, tournamentStartDate));
@@ -1382,7 +1402,7 @@ const importCommitRegistrationsAndTeams = async ({
                 ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length)
                 : ages[0];
         const teamRef = db.collection("teams").doc();
-        const teamName = athletes.map((athlete) => athlete.name).join(" & ");
+        const teamName = team.name || athletes.map((athlete) => athlete.name).join(" & ");
         await teamRef.set({
             id: teamRef.id,
             name: teamName,
@@ -1398,7 +1418,7 @@ const importCommitRegistrationsAndTeams = async ({
             created_at: FirestoreTimestamp.now(),
             updated_at: FirestoreTimestamp.now(),
         });
-        existingTeamKeys.add(teamKey);
+        existingTeamsByKey.set(teamKey, teamRef);
         createdTeams += 1;
     }
 
@@ -1468,13 +1488,14 @@ const importBuildReportRows = (parsed: ParsedWorkbookImport, events: ImportEvent
             break;
         }
         const memberNames = team.members.map((memberKey) => parsed.athletes.get(memberKey)?.name ?? memberKey);
+        const teamName = team.name || memberNames.join(" & ");
         teamRows += 1;
         rows.push({
             sheet: team.sheetName,
             row: team.sourceRow,
             level: "info",
             category: "teams",
-            message: `${team.eventType} | ${memberNames.join(" / ")}`,
+            message: `${team.eventType} | ${teamName} | ${memberNames.join(" / ")}`,
         });
     }
 
