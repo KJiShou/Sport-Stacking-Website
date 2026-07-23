@@ -33,6 +33,7 @@ import {deleteTournamentStorage} from "./storageService";
 import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
 import {recalculateUserBestTimesByGlobalIds} from "./userBestTimesService";
 import {deleteVerificationRequestsByTeamId} from "./verificationRequestService";
+import {deleteAdminTeam, upsertAdminTeam} from "./adminTeamService";
 
 // Utility function to check if a string is a UUID v4
 function isUUID(value: string): boolean {
@@ -551,7 +552,7 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
         const teamsQuery = query(collection(db, "teams"), where("tournament_id", "==", tournamentId));
         const teamsSnapshot = await getDocs(teamsQuery);
 
-        const teamDeletePromises = teamsSnapshot.docs.map((docSnapshot) => deleteDoc(docSnapshot.ref));
+        const teamDeletePromises = teamsSnapshot.docs.map((docSnapshot) => deleteTeam(tournamentId, docSnapshot.id));
 
         await Promise.all(teamDeletePromises);
     } catch (error) {
@@ -728,79 +729,13 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
 }
 
 export async function createTeam(tournamentId: string, teamData: Omit<Team, "id" | "tournament_id">): Promise<string> {
-    const teamsCollectionRef = collection(db, "teams");
-    const canonicalParts = getCanonicalTeamParts(tournamentId, teamData);
-    const tournamentEvents = await fetchTournamentEvents(tournamentId);
-    const eventType = getNormalizedTeamEventType(teamData, tournamentEvents);
-    if (isParentChildEventType(eventType)) {
-        const parentIds = (teamData.members ?? []).map((member) => member.global_id?.trim()).filter(Boolean);
-        if (parentIds.length !== 1) {
-            throw new Error("Parent & Child requires exactly one parent Global ID.");
-        }
-    }
-
-    const existingTeamQuery =
-        canonicalParts.eventId.length > 0
-            ? query(
-                  teamsCollectionRef,
-                  where("tournament_id", "==", tournamentId),
-                  where("event_id", "==", teamData.event_id ?? null),
-              )
-            : query(teamsCollectionRef, where("tournament_id", "==", tournamentId));
-    const existingTeamSnapshot = await getDocs(existingTeamQuery);
-
-    const existingDuplicateTeam = existingTeamSnapshot.docs.find((docSnap) =>
-        hasSameCanonicalTeamParts(docSnap.data() as Team, canonicalParts),
-    );
-    if (existingDuplicateTeam) {
-        return existingDuplicateTeam.id;
-    }
-
-    const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
-    const ages: number[] = [];
-    for (const id of memberIds) {
-        const registrationQuery = query(
-            collection(db, "registrations"),
-            where("tournament_id", "==", tournamentId),
-            where("user_global_id", "==", id),
-        );
-        const registrationSnapshot = await getDocs(registrationQuery);
-        const registration = registrationSnapshot.docs[0]?.data() as Registration | undefined;
-        if (registration?.age != null) {
-            ages.push(registration.age);
-        }
-    }
-
-    const resolvedTeamAge = calculateTeamAge(ages, eventType);
-    const teamDocRef = doc(teamsCollectionRef, canonicalTeamDocId(canonicalParts.key));
-
-    return await runTransaction(db, async (transaction) => {
-        const existingTeamDoc = await transaction.get(teamDocRef);
-        if (existingTeamDoc.exists()) {
-            return existingTeamDoc.id;
-        }
-
-        transaction.set(teamDocRef, {
-            ...teamData,
-            id: teamDocRef.id,
-            team_age: resolvedTeamAge,
-            tournament_id: tournamentId,
-            event_id: teamData.event_id ?? null,
-        });
-        return teamDocRef.id;
-    });
+    const result = await upsertAdminTeam(tournamentId, teamData);
+    return result.teamId;
 }
 
-export async function deleteTeam(teamId: string): Promise<void> {
+export async function deleteTeam(tournamentId: string, teamId: string): Promise<void> {
     try {
-        const teamRef = doc(db, "teams", teamId);
-        const teamDoc = await getDoc(teamRef);
-
-        if (!teamDoc.exists()) {
-            throw new Error("Team not found");
-        }
-
-        await deleteDoc(teamRef);
+        await deleteAdminTeam(tournamentId, teamId);
     } catch (error) {
         console.error("Error deleting team:", error);
         throw error;
@@ -946,17 +881,22 @@ export async function addMemberToTeam(tournamentId: string, teamId: string, memb
 
         const updatedMembers = [...members, newMember];
 
-        await updateDoc(teamRef, {
-            members: updatedMembers,
-            looking_for_member: updatedMembers.length >= 3 ? false : team.looking_for_member, // Stop looking if team is full
-        });
+        await upsertAdminTeam(
+            tournamentId,
+            {
+                ...team,
+                members: updatedMembers,
+                looking_for_member: updatedMembers.length >= 3 ? false : team.looking_for_member,
+            },
+            teamId,
+        );
     } catch (error) {
         console.error("Error adding member to team:", error);
         throw error;
     }
 }
 
-export async function removeMemberFromTeam(teamId: string, memberId: string): Promise<void> {
+export async function removeMemberFromTeam(tournamentId: string, teamId: string, memberId: string): Promise<void> {
     try {
         const teamRef = doc(db, "teams", teamId);
         const teamDoc = await getDoc(teamRef);
@@ -973,7 +913,7 @@ export async function removeMemberFromTeam(teamId: string, memberId: string): Pr
             return;
         }
 
-        await updateDoc(teamRef, {members: updatedMembers});
+        await upsertAdminTeam(tournamentId, {...team, members: updatedMembers}, teamId);
     } catch (error) {
         console.error("Error removing member from team:", error);
         throw error;
@@ -981,43 +921,7 @@ export async function removeMemberFromTeam(teamId: string, memberId: string): Pr
 }
 
 export async function updateTeam(tournamentId: string, teamId: string, teamData: Team): Promise<void> {
-    const teamRef = doc(db, "teams", teamId);
-
-    const memberIds = [teamData.leader_id, ...teamData.members.map((m) => m.global_id)].filter(Boolean) as string[];
-    const ages: number[] = [];
-    const tournamentEvents = await fetchTournamentEvents(tournamentId);
-
-    // Normalize event names and get event ids (if present)
-    const normalizedEventNames = Array.isArray(teamData.event)
-        ? teamData.event
-              .map((value) => (typeof value === "string" ? value.trim() : ""))
-              .filter((value): value is string => value.length > 0)
-        : [];
-    // Team edits must not mutate participant registrations here. Admin updates use
-    // the server-side mutation, while pending invitations update only on acceptance.
-    for (const id of memberIds) {
-        const registrationQuery = query(
-            collection(db, "registrations"),
-            where("tournament_id", "==", tournamentId),
-            where("user_global_id", "==", id),
-        );
-        const registrationSnapshot = await getDocs(registrationQuery);
-        const registrationDoc = registrationSnapshot.docs[0];
-        const registration = registrationDoc?.data() as Registration | undefined;
-        if (registration?.age != null) {
-            ages.push(registration.age);
-        }
-    }
-
-    const {id, tournament_id: _ignoredTournamentId, ...restTeamData} = teamData;
-    const teamAge = calculateTeamAge(ages, getNormalizedTeamEventType(teamData, tournamentEvents));
-
-    await updateDoc(teamRef, {
-        ...restTeamData,
-        event: normalizedEventNames,
-        team_age: teamAge,
-        tournament_id: tournamentId,
-    });
+    await upsertAdminTeam(tournamentId, teamData, teamId);
 }
 
 export async function updateTeamNamesForTournament(tournamentId: string): Promise<number> {
@@ -1254,13 +1158,18 @@ export async function dedupeTeamsForTournament(tournamentId: string): Promise<nu
         const registrationChanged = nextRegistrationId !== currentTeam.registration_id;
 
         if (membersChanged || eventChanged || eventIdChanged || leaderChanged || registrationChanged) {
-            await updateDoc(teamDoc.ref, {
-                members: canonicalTeam.members ?? [],
-                event: nextEvent,
-                event_id: canonicalTeam.event_id ?? null,
-                leader_id: nextLeaderId,
-                registration_id: nextRegistrationId,
-            });
+            await upsertAdminTeam(
+                tournamentId,
+                {
+                    ...currentTeam,
+                    members: canonicalTeam.members ?? [],
+                    event: nextEvent,
+                    event_id: canonicalTeam.event_id ?? null,
+                    leader_id: nextLeaderId,
+                    registration_id: nextRegistrationId,
+                },
+                teamId,
+            );
         }
     }
 
@@ -1298,7 +1207,7 @@ export async function dedupeTeamsForTournament(tournamentId: string): Promise<nu
 
     for (const teamId of duplicateTeamIds) {
         try {
-            await deleteTeam(teamId);
+            await deleteTeam(tournamentId, teamId);
         } catch (error) {
             if (!(error instanceof Error && error.message.includes("Team not found"))) {
                 console.error("Failed to delete duplicate team:", error);

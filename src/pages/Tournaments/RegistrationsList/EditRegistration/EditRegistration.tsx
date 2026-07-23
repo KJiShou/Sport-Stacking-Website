@@ -124,6 +124,17 @@ const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds
         return total + getAdditionalFeeForEvent(event);
     }, 0);
 
+const getTeamValidationSnapshot = (team: LegacyTeam | undefined): string | null => {
+    if (!team) {
+        return null;
+    }
+
+    return JSON.stringify({
+        leaderId: stripTeamLeaderPrefix(team.leader_id ?? "").trim(),
+        memberIds: (team.members ?? []).map((member) => member.global_id?.trim() ?? ""),
+    });
+};
+
 export default function EditTournamentRegistrationPage() {
     const {tournamentId, registrationId} = useParams();
     const {user} = useAuthContext();
@@ -150,6 +161,8 @@ export default function EditTournamentRegistrationPage() {
     const [isMounted, setIsMounted] = useState<boolean>(false);
     const mountedRef = useRef(false);
     const initialEventIdsRef = useRef<string[]>([]);
+    const initialTeamValidationSnapshotsRef = useRef<Record<string, string | null>>({});
+    const initialTeamRecruitmentIdsRef = useRef<Record<string, string[]>>({});
 
     const [recruitmentForm] = Form.useForm();
     const baseRegistrationFee = useMemo(() => {
@@ -197,6 +210,31 @@ export default function EditTournamentRegistrationPage() {
                 const team = teams.find((candidate) => teamMatchesEvent(candidate, event, events));
                 const eventType = (event.type ?? "").toLowerCase();
                 const isDoubleEvent = eventType.includes("double");
+                const isTeamRelayEvent = eventType.includes("team relay");
+                const wasInitiallySelected = initialEventIdsRef.current.some((eventId) => matchesEventKey(eventId, event));
+                const initialTeam = initialTeams.find((candidate) => teamMatchesEvent(candidate, event, events));
+                const initialTeamSnapshot = initialTeam
+                    ? initialTeamValidationSnapshotsRef.current[initialTeam.id]
+                    : null;
+                const teamConfigurationChanged = getTeamValidationSnapshot(team) !== initialTeamSnapshot;
+                const currentTeamRecruitmentIds = team
+                    ? teamRecruitments
+                          .filter((recruitment) => recruitment.status === "active" && recruitment.team_id === team.id)
+                          .map((recruitment) => recruitment.id)
+                          .sort()
+                    : [];
+                const initialTeamRecruitmentIds = initialTeam
+                    ? (initialTeamRecruitmentIdsRef.current[initialTeam.id] ?? [])
+                    : [];
+                const recruitmentChanged =
+                    JSON.stringify(currentTeamRecruitmentIds) !== JSON.stringify(initialTeamRecruitmentIds);
+
+                // Existing incomplete Team Relay records can remain pending while an admin edits
+                // another event. A newly selected or modified Team Relay must still be complete
+                // (or have an active recruitment) before it can be saved.
+                if (isTeamRelayEvent && wasInitiallySelected && !teamConfigurationChanged && !recruitmentChanged) {
+                    continue;
+                }
                 const hasActiveRecruitment = isDoubleEvent
                     ? doubleRecruitments.some(
                           (recruitment) =>
@@ -349,7 +387,7 @@ export default function EditTournamentRegistrationPage() {
                 await Promise.all(
                     duplicateCleanupIds.map(async (teamId) => {
                         try {
-                            await deleteTeam(teamId);
+                            await deleteTeam(tournamentId ?? "", teamId);
                         } catch (error) {
                             if (!(error instanceof Error && error.message.includes("Team not found"))) {
                                 console.error("Failed to delete duplicate team:", error);
@@ -582,7 +620,7 @@ export default function EditTournamentRegistrationPage() {
                 });
                 if (recruitmentTeam.id && initialTeams.some((team) => team.id === recruitmentTeam.id)) {
                     try {
-                        await deleteTeam(recruitmentTeam.id);
+                        await deleteTeam(tournamentId, recruitmentTeam.id);
                     } catch (error) {
                         if (!(error instanceof Error && error.message.includes("Team not found"))) {
                             console.error("Failed to delete double team after recruitment:", error);
@@ -651,7 +689,7 @@ export default function EditTournamentRegistrationPage() {
         } catch (error) {
             if (createdRecruitmentTeamId) {
                 try {
-                    await deleteTeam(createdRecruitmentTeamId);
+                    await deleteTeam(tournamentId, createdRecruitmentTeamId);
                     setInitialTeams((prev) => prev.filter((team) => team.id !== createdRecruitmentTeamId));
                 } catch (cleanupError) {
                     console.error("Failed to clean up team after recruitment error:", cleanupError);
@@ -808,10 +846,21 @@ export default function EditTournamentRegistrationPage() {
                 getTeamRecruitmentsByLeader(userReg.user_global_id),
                 getDoubleRecruitmentsByParticipant(userReg.user_global_id),
             ]);
-            setTeamRecruitments(
-                leaderRecruitments.filter(
-                    (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
-                ),
+            const activeTeamRecruitments = leaderRecruitments.filter(
+                (recruitment) => recruitment.tournament_id === tournamentId && recruitment.status === "active",
+            );
+            setTeamRecruitments(activeTeamRecruitments);
+            initialTeamValidationSnapshotsRef.current = Object.fromEntries(
+                deduped.teams.map((team) => [team.id, getTeamValidationSnapshot(team)]),
+            );
+            initialTeamRecruitmentIdsRef.current = Object.fromEntries(
+                deduped.teams.map((team) => [
+                    team.id,
+                    activeTeamRecruitments
+                        .filter((recruitment) => recruitment.team_id === team.id)
+                        .map((recruitment) => recruitment.id)
+                        .sort(),
+                ]),
             );
             setDoubleRecruitments(
                 participantDoubleRecruitments.filter((recruitment) => recruitment.tournament_id === tournamentId),

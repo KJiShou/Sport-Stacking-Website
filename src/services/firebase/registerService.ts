@@ -20,6 +20,7 @@ import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByParticipant} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
 import {deleteTeamRecruitment, getTeamRecruitmentsByLeader} from "./teamRecruitmentService";
+import {deleteTeam, updateTeam} from "./tournamentsService";
 import {
     deleteVerificationRequestByTournamentTeamMember,
     deleteVerificationRequestsByRegistrationId,
@@ -29,11 +30,7 @@ import {
 
 const isNonScoringEventType = (type: string): boolean => {
     const normalized = type?.toLowerCase() ?? "";
-    return (
-        normalized === "stackout champion" ||
-        normalized === "stack up champion" ||
-        normalized === "blindfolded cycle"
-    );
+    return normalized === "stackout champion" || normalized === "stack up champion" || normalized === "blindfolded cycle";
 };
 
 async function getApprovedRegistrationCount(tournamentId: string): Promise<number> {
@@ -109,26 +106,19 @@ export async function createRegistration(user: FirestoreUser, data: Registration
     }
 
     const registrationsSnapshot = await getDocs(
-        query(
-            collection(db, "registrations"),
-            where("tournament_id", "==", data.tournament_id),
-        ),
+        query(collection(db, "registrations"), where("tournament_id", "==", data.tournament_id)),
     );
     const existingRegistrations = registrationsSnapshot.docs.map((d) => d.data() as Registration);
 
     // Check event-level limits for non-scoring events
     const events = tournament.events ?? [];
     for (const eventId of data.events_registered ?? []) {
-        const event = events.find(
-            (e: {id?: string | null; type: string}) => e.id === eventId || e.type === eventId,
-        );
+        const event = events.find((e: {id?: string | null; type: string}) => e.id === eventId || e.type === eventId);
 
         if (event && isNonScoringEventType(event.type)) {
             const eventMaxParticipants = event.max_participants;
             if (typeof eventMaxParticipants === "number" && eventMaxParticipants > 0) {
-                const count = existingRegistrations.filter((reg) =>
-                    matchesAnyEventKey(reg.events_registered, event),
-                ).length;
+                const count = existingRegistrations.filter((reg) => matchesAnyEventKey(reg.events_registered, event)).length;
 
                 if (count >= eventMaxParticipants) {
                     throw new Error(`${event.type} has reached the maximum participants.`);
@@ -521,7 +511,7 @@ export async function deleteRegistrationById(
                 } catch (error) {
                     console.error("Error deleting verification requests for removed team:", error);
                 }
-                await deleteDoc(teamDoc.ref);
+                await deleteTeam(tournamentId, team.id ?? teamDoc.id);
             } else if (memberIds.includes(registrationData.user_global_id)) {
                 if (adminDelete) {
                     const eventKeys = getTeamEventKeys(team);
@@ -535,13 +525,13 @@ export async function deleteRegistrationById(
                     const updatedMembers = (team.members ?? []).map((member) =>
                         member.global_id === registrationData.user_global_id ? {...member, verified: false} : member,
                     );
-                    await updateDoc(teamDoc.ref, {members: updatedMembers});
+                    await updateTeam(tournamentId, team.id ?? teamDoc.id, {...team, members: updatedMembers});
                 } else {
                     // 如果用户是队员，则将其从队伍中移除
                     const updatedMembers = (team.members ?? []).filter(
                         (member) => member.global_id !== registrationData.user_global_id,
                     );
-                    await updateDoc(teamDoc.ref, {members: updatedMembers});
+                    await updateTeam(tournamentId, team.id ?? teamDoc.id, {...team, members: updatedMembers});
                 }
                 try {
                     await deleteVerificationRequestByTournamentTeamMember(

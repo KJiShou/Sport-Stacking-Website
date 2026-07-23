@@ -36,8 +36,7 @@ export function resolveTeamEvent(
 
     if (eventsList.length > 0) {
         if (eventId) {
-            eventDefinition =
-                eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
+            eventDefinition = eventsList.find((evt) => getEventKey(evt) === eventId || matchesEventKey(eventId, evt)) ?? null;
         }
 
         if (!eventDefinition && eventName) {
@@ -118,7 +117,7 @@ export function teamMatchesEvent(
  * Deduplicates teams by event.
  *
  * Groups teams that share the same event, then picks a "canonical" team to keep
- * based on: (1) registration ownership, (2) completeness score, (3) ID.
+ * based on: (1) completeness score, (2) registration ownership, (3) ID.
  *
  * Members from all duplicate teams are merged into the canonical team.
  *
@@ -158,14 +157,17 @@ export function dedupeTeamsByEvent(
         }
 
         const rankedTeams = [...teamsInGroup].sort((a, b) => {
+            const completenessDelta = getTeamCompletenessScore(b) - getTeamCompletenessScore(a);
+            if (completenessDelta !== 0) {
+                return completenessDelta;
+            }
+            // Registration ownership is only a tie-breaker. A participant can be
+            // moved into another team's registration, so preferring ownership
+            // first can preserve an empty legacy team and discard the real one.
             const registrationScoreA = a.registration_id === registrationId ? 1 : 0;
             const registrationScoreB = b.registration_id === registrationId ? 1 : 0;
             if (registrationScoreA !== registrationScoreB) {
                 return registrationScoreB - registrationScoreA;
-            }
-            const completenessDelta = getTeamCompletenessScore(b) - getTeamCompletenessScore(a);
-            if (completenessDelta !== 0) {
-                return completenessDelta;
             }
             return (a.id ?? "").localeCompare(b.id ?? "");
         });
