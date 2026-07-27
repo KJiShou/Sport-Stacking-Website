@@ -1,19 +1,16 @@
 import {
     Timestamp,
-    addDoc,
     collection,
-    deleteDoc,
     doc,
     getDoc,
     getDocs,
-    increment,
     query,
     runTransaction,
-    setDoc,
     updateDoc,
     where,
 } from "firebase/firestore";
-import type {FirestoreUser, Registration, Team, Tournament, UserTournamentHistory} from "../../schema";
+import type {DocumentReference, Transaction} from "firebase/firestore";
+import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent, UserTournamentHistory} from "../../schema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {matchesAnyEventKey} from "../../utils/tournament/eventUtils";
 import {db} from "./config";
@@ -28,41 +25,97 @@ import {
     deleteVerificationRequestsByTournamentAndMember,
 } from "./verificationRequestService";
 
-const isNonScoringEventType = (type: string): boolean => {
-    const normalized = type?.toLowerCase() ?? "";
-    return normalized === "stackout champion" || normalized === "stack up champion" || normalized === "blindfolded cycle";
-};
+const isApproved = (registration: Registration | null): boolean => registration?.registration_status === "approved";
 
-async function getApprovedRegistrationCount(tournamentId: string): Promise<number> {
-    const registrationsRef = query(
+const registrationMatchesEvent = (registration: Registration, event: TournamentEvent): boolean =>
+    matchesAnyEventKey(registration.events_registered ?? [], event);
+
+/**
+ * Writes a registration and all affected approved participant counters atomically.
+ * Pending registrations intentionally do not reserve an event place.
+ */
+async function writeRegistrationWithCapacity(
+    tournamentId: string,
+    previous: Registration | null,
+    next: Registration | null,
+    writeRegistration: (transaction: Transaction) => void,
+): Promise<void> {
+    const tournamentRef = doc(db, "tournaments", tournamentId);
+    const eventsQuery = query(collection(db, "events"), where("tournament_id", "==", tournamentId));
+    const approvedRegistrationsQuery = query(
         collection(db, "registrations"),
         where("tournament_id", "==", tournamentId),
         where("registration_status", "==", "approved"),
     );
-    const querySnapshot = await getDocs(registrationsRef);
-    return querySnapshot.size;
-}
+    // The SDK only permits document reads inside a transaction. The transaction
+    // below re-reads every event document before writing its counter, so concurrent
+    // attempts for the same event still conflict and retry safely.
+    const [eventSnapshots, approvedSnapshots] = await Promise.all([getDocs(eventsQuery), getDocs(approvedRegistrationsQuery)]);
 
-async function ensureTournamentHasCapacity(tournamentId: string, maxParticipants?: number | null): Promise<void> {
-    let resolvedMax = maxParticipants;
-
-    if (resolvedMax == null) {
-        const tournamentDoc = await getDoc(doc(db, "tournaments", tournamentId));
-        if (!tournamentDoc.exists()) {
+    await runTransaction(db, async (transaction) => {
+        const [tournamentSnap, ...eventDocs] = await Promise.all([
+            transaction.get(tournamentRef),
+            ...eventSnapshots.docs.map((eventSnapshot) => transaction.get(eventSnapshot.ref)),
+        ]);
+        if (!tournamentSnap.exists()) {
             throw new Error("Tournament not found");
         }
-        const tournament = tournamentDoc.data() as Tournament;
-        resolvedMax = typeof tournament.max_participants === "number" ? tournament.max_participants : null;
-    }
 
-    if (typeof resolvedMax !== "number" || resolvedMax <= 0) {
-        return;
-    }
+        const events = eventDocs.filter((eventSnap) => eventSnap.exists()).map((eventSnap) => ({
+            ref: eventSnap.ref,
+            event: {id: eventSnap.id, ...eventSnap.data()} as TournamentEvent,
+        }));
+        const limitedEvents = events.filter(({event}) =>
+            typeof event.max_participants === "number" && event.max_participants > 0,
+        );
+        const needsBackfill = limitedEvents.some(({event}) => typeof event.approved_participants !== "number");
+        const approvedRegistrations = needsBackfill
+            ? approvedSnapshots.docs.map((snapshot) => snapshot.data() as Registration)
+            : [];
 
-    const approvedCount = await getApprovedRegistrationCount(tournamentId);
-    if (approvedCount >= resolvedMax) {
-        throw new Error("Tournament registration is full.");
-    }
+        const tournament = tournamentSnap.data() as Tournament;
+        const participantDelta = (isApproved(next) ? 1 : 0) - (isApproved(previous) ? 1 : 0);
+        const maxTournamentParticipants = tournament.max_participants;
+        const currentTournamentParticipants = typeof tournament.participants === "number" ? tournament.participants : 0;
+        if (
+            participantDelta > 0 &&
+            typeof maxTournamentParticipants === "number" &&
+            maxTournamentParticipants > 0 &&
+            currentTournamentParticipants + participantDelta > maxTournamentParticipants
+        ) {
+            throw new Error("Tournament registration is full.");
+        }
+
+        const eventUpdates: Array<{ref: DocumentReference; count: number}> = [];
+        for (const {ref, event} of limitedEvents) {
+            const previousSelected = Boolean(previous && isApproved(previous) && registrationMatchesEvent(previous, event));
+            const nextSelected = Boolean(next && isApproved(next) && registrationMatchesEvent(next, event));
+            const delta = (nextSelected ? 1 : 0) - (previousSelected ? 1 : 0);
+            const currentCount =
+                typeof event.approved_participants === "number"
+                    ? event.approved_participants
+                    : approvedRegistrations.filter((registration) => registrationMatchesEvent(registration, event)).length;
+            const nextCount = currentCount + delta;
+
+            if (nextCount > (event.max_participants ?? 0)) {
+                throw new Error(`${event.type} has reached the maximum participants.`);
+            }
+            if (nextCount < 0) {
+                throw new Error(`${event.type} participant count cannot be negative.`);
+            }
+            if (delta !== 0 || typeof event.approved_participants !== "number") {
+                eventUpdates.push({ref, count: nextCount});
+            }
+        }
+
+        writeRegistration(transaction);
+        if (participantDelta !== 0) {
+            transaction.update(tournamentRef, {participants: Math.max(0, currentTournamentParticipants + participantDelta)});
+        }
+        for (const eventUpdate of eventUpdates) {
+            transaction.update(eventUpdate.ref, {approved_participants: eventUpdate.count, updated_at: Timestamp.now()});
+        }
+    });
 }
 
 export async function createRegistration(user: FirestoreUser, data: Registration): Promise<string> {
@@ -96,52 +149,12 @@ export async function createRegistration(user: FirestoreUser, data: Registration
         }
     }
 
-    // Read tournament and registrations outside transaction for event-level limit checking
-    // The transaction ensures atomic write - if concurrent registration slips through,
-    // transaction will fail and user can retry
-    const tournamentDoc = await getDoc(doc(db, "tournaments", data.tournament_id));
-    const tournament = tournamentDoc.data();
-    if (!tournament) {
-        throw new Error("Tournament not found");
-    }
-
-    const registrationsSnapshot = await getDocs(
-        query(collection(db, "registrations"), where("tournament_id", "==", data.tournament_id)),
-    );
-    const existingRegistrations = registrationsSnapshot.docs.map((d) => d.data() as Registration);
-
-    // Check event-level limits for non-scoring events
-    const events = tournament.events ?? [];
-    for (const eventId of data.events_registered ?? []) {
-        const event = events.find((e: {id?: string | null; type: string}) => e.id === eventId || e.type === eventId);
-
-        if (event && isNonScoringEventType(event.type)) {
-            const eventMaxParticipants = event.max_participants;
-            if (typeof eventMaxParticipants === "number" && eventMaxParticipants > 0) {
-                const count = existingRegistrations.filter((reg) => matchesAnyEventKey(reg.events_registered, event)).length;
-
-                if (count >= eventMaxParticipants) {
-                    throw new Error(`${event.type} has reached the maximum participants.`);
-                }
-            }
-        }
-    }
-
-    // Use transaction for atomic write to prevent race conditions on the write itself
-    const ref = await runTransaction(db, async (transaction) => {
-        // Create the registration
-        const newRef = doc(collection(db, "registrations"));
-        const now = Timestamp.now();
-        transaction.set(newRef, {
-            ...data,
-            created_at: data.created_at ?? now,
-            updated_at: now,
-        });
-        return newRef;
+    const ref = doc(collection(db, "registrations"));
+    const now = Timestamp.now();
+    const registration = {...data, id: ref.id, created_at: data.created_at ?? now, updated_at: now} as Registration;
+    await writeRegistrationWithCapacity(data.tournament_id, null, registration, (transaction) => {
+        transaction.set(ref, registration);
     });
-
-    // Update the document to ensure it has its generated ID
-    await updateDoc(ref, {id: ref.id});
     return ref.id;
 }
 
@@ -240,13 +253,6 @@ export async function updateRegistration(data: Registration): Promise<void> {
     const old = snap.data() as Registration;
     const toUpdate: Partial<Record<keyof Registration, Registration[keyof Registration]>> = {};
 
-    const currentStatus = old.registration_status ?? "pending";
-    const nextStatus = data.registration_status ?? currentStatus;
-    const statusChanged = currentStatus !== nextStatus;
-    if (nextStatus === "approved" && currentStatus !== "approved") {
-        await ensureTournamentHasCapacity(data.tournament_id);
-    }
-
     // 对比字段，仅当值有变化（或有值）时才加入更新对象
     for (const key of Object.keys(data) as (keyof typeof data)[]) {
         const newVal = data[key];
@@ -264,15 +270,10 @@ export async function updateRegistration(data: Registration): Promise<void> {
         return;
     }
 
-    await updateDoc(registrationRef, toUpdate);
-
-    if (statusChanged) {
-        const tournamentRef = doc(db, "tournaments", data.tournament_id);
-        const delta = nextStatus === "approved" ? 1 : currentStatus === "approved" ? -1 : 0;
-        if (delta !== 0) {
-            await updateDoc(tournamentRef, {participants: increment(delta)});
-        }
-    }
+    const next = {...old, ...toUpdate} as Registration;
+    await writeRegistrationWithCapacity(data.tournament_id, old, next, (transaction) => {
+        transaction.update(registrationRef, toUpdate);
+    });
 }
 
 type DeleteRegistrationOptions = {
@@ -381,7 +382,9 @@ const removeTeamEventsFromUserRegistration = async (
         const registrationEvents = Array.isArray(registrationData.events_registered) ? registrationData.events_registered : [];
         const filteredRegistrationEvents = filterEventList(registrationEvents, normalizedKeys);
         if (filteredRegistrationEvents.length !== registrationEvents.length) {
-            await updateDoc(registrationDoc.ref, {
+            await updateRegistration({
+                ...registrationData,
+                id: registrationDoc.id,
                 events_registered: filteredRegistrationEvents,
                 updated_at: now,
             });
@@ -583,8 +586,10 @@ export async function deleteRegistrationById(
             // Don't throw error here to avoid breaking the main deletion flow
         }
 
-        // Delete the registration document
-        await deleteDoc(registrationRef);
+        // Delete the registration document and release approved event places atomically.
+        await writeRegistrationWithCapacity(tournamentId, registrationData, null, (transaction) => {
+            transaction.delete(registrationRef);
+        });
 
         try {
             await deleteVerificationRequestsByRegistrationId(regSnap.id);
@@ -598,11 +603,6 @@ export async function deleteRegistrationById(
             }
         } catch (error) {
             console.error("Error deleting verification requests by tournament/member:", error);
-        }
-
-        if (registrationData.registration_status === "approved") {
-            const tournamentRef = doc(db, "tournaments", tournamentId);
-            await updateDoc(tournamentRef, {participants: increment(-1)});
         }
 
         // Remove the registration record from the user's document
