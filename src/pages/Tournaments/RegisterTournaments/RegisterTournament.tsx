@@ -503,8 +503,10 @@ export default function RegisterTournamentPage() {
                     if (!maxParticipants || maxParticipants <= 0) {
                         continue;
                     }
-                    const count = registrations.filter((registration) =>
-                        matchesAnyEventKey(registration.events_registered, event),
+                    const count = registrations.filter(
+                        (registration) =>
+                            registration.registration_status === "approved" &&
+                            matchesAnyEventKey(registration.events_registered, event),
                     ).length;
                     if (count >= maxParticipants) {
                         Message.error(`${getEventLabel(event)} has reached the maximum participants.`);
@@ -801,8 +803,10 @@ export default function RegisterTournamentPage() {
                 const nextFullEventIds = new Set<string>();
                 for (const event of availableGroupedEvents) {
                     const eventKey = getEventKey(event);
-                    registrationCounts[eventKey] = registrations.filter((registration) =>
-                        matchesAnyEventKey(registration.events_registered, event),
+                    registrationCounts[eventKey] = registrations.filter(
+                        (registration) =>
+                            registration.registration_status === "approved" &&
+                            matchesAnyEventKey(registration.events_registered, event),
                     ).length;
 
                     const maxParticipants = typeof event.max_participants === "number" ? event.max_participants : 0;
