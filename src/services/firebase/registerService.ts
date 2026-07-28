@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import type {DocumentReference, Transaction} from "firebase/firestore";
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent, UserTournamentHistory} from "../../schema";
+import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {matchesAnyEventKey} from "../../utils/tournament/eventUtils";
 import {db} from "./config";
@@ -29,6 +30,56 @@ const isApproved = (registration: Registration | null): boolean => registration?
 
 const registrationMatchesEvent = (registration: Registration, event: TournamentEvent): boolean =>
     matchesAnyEventKey(registration.events_registered ?? [], event);
+
+type ResolvedUserProfile = {
+    ref: DocumentReference;
+};
+
+const buildUserRegistrationRecord = (registration: Registration, now: Timestamp): UserRegistrationRecord => ({
+    tournament_id: registration.tournament_id,
+    events: registration.events_registered ?? [],
+    registration_date: registration.created_at ?? now,
+    status: registration.registration_status,
+    rejection_reason: registration.rejection_reason ?? null,
+    created_at: registration.created_at ?? now,
+    updated_at: registration.updated_at ?? now,
+});
+
+const mergeUserRegistrationRecord = (
+    existing: UserRegistrationRecord | undefined,
+    registration: Registration,
+    now: Timestamp,
+): UserRegistrationRecord => ({
+    ...existing,
+    ...buildUserRegistrationRecord(registration, now),
+});
+
+const resolveUserProfileForRegistration = async (
+    registration: Registration,
+): Promise<ResolvedUserProfile> => {
+    const userId = registration.user_id?.trim();
+    if (userId) {
+        const userRef = doc(db, "users", userId);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+            return {ref: userRef};
+        }
+    }
+
+    const globalId = registration.user_global_id?.trim();
+    if (!globalId) {
+        throw new Error(`Unable to find user for registration ${registration.id ?? ""}.`);
+    }
+
+    const usersSnapshot = await getDocs(query(collection(db, "users"), where("global_id", "==", globalId)));
+    if (usersSnapshot.size !== 1) {
+        const reason = usersSnapshot.empty ? "no matching profile" : "multiple matching profiles";
+        throw new Error(`Unable to sync registration ${registration.id ?? ""}: ${reason} for Global ID ${globalId}.`);
+    }
+
+    const userDoc = usersSnapshot.docs[0];
+    return {ref: userDoc.ref};
+};
 
 /**
  * Writes a registration and all affected approved participant counters atomically.
@@ -51,6 +102,8 @@ async function writeRegistrationWithCapacity(
     // below re-reads every event document before writing its counter, so concurrent
     // attempts for the same event still conflict and retry safely.
     const [eventSnapshots, approvedSnapshots] = await Promise.all([getDocs(eventsQuery), getDocs(approvedRegistrationsQuery)]);
+    const profileRegistration = next ?? previous;
+    const profile = profileRegistration ? await resolveUserProfileForRegistration(profileRegistration) : null;
 
     await runTransaction(db, async (transaction) => {
         const [tournamentSnap, ...eventDocs] = await Promise.all([
@@ -59,6 +112,10 @@ async function writeRegistrationWithCapacity(
         ]);
         if (!tournamentSnap.exists()) {
             throw new Error("Tournament not found");
+        }
+        const profileSnap = profile ? await transaction.get(profile.ref) : null;
+        if (profile && !profileSnap?.exists()) {
+            throw new Error(`Unable to find user for registration ${profileRegistration?.id ?? ""}.`);
         }
 
         const events = eventDocs.filter((eventSnap) => eventSnap.exists()).map((eventSnap) => ({
@@ -109,6 +166,26 @@ async function writeRegistrationWithCapacity(
         }
 
         writeRegistration(transaction);
+        if (profile && profileSnap && next) {
+            const profileData = profileSnap.data() as FirestoreUser;
+            const existingRecords = profileData.registration_records ?? [];
+            const existingRecord = existingRecords.find((record) => record.tournament_id === next.tournament_id);
+            transaction.update(profile.ref, {
+                registration_records: [
+                    ...existingRecords.filter((record) => record.tournament_id !== next.tournament_id),
+                    mergeUserRegistrationRecord(existingRecord, next, Timestamp.now()),
+                ],
+                updated_at: Timestamp.now(),
+            });
+        } else if (profile && profileSnap && previous) {
+            const profileData = profileSnap.data() as FirestoreUser;
+            transaction.update(profile.ref, {
+                registration_records: (profileData.registration_records ?? []).filter(
+                    (record) => record.tournament_id !== previous.tournament_id,
+                ),
+                updated_at: Timestamp.now(),
+            });
+        }
         if (participantDelta !== 0) {
             transaction.update(tournamentRef, {participants: Math.max(0, currentTournamentParticipants + participantDelta)});
         }
@@ -210,6 +287,29 @@ export async function fetchRegistrations(tournamentId: string): Promise<Registra
         console.error("Error fetching registrations:", err);
         throw err;
     }
+}
+
+/**
+ * Returns the authoritative registrations for one profile. Both identifiers are
+ * queried because older imported registrations may only contain one of them.
+ */
+export async function fetchRegistrationsForUser(userId?: string | null, globalId?: string | null): Promise<Registration[]> {
+    const queries = [];
+    if (userId?.trim()) {
+        queries.push(getDocs(query(collection(db, "registrations"), where("user_id", "==", userId.trim()))));
+    }
+    if (globalId?.trim()) {
+        queries.push(getDocs(query(collection(db, "registrations"), where("user_global_id", "==", globalId.trim()))));
+    }
+
+    const snapshots = await Promise.all(queries);
+    const registrations = new Map<string, Registration>();
+    for (const snapshot of snapshots) {
+        for (const docSnap of snapshot.docs) {
+            registrations.set(docSnap.id, {...(docSnap.data() as Registration), id: docSnap.id});
+        }
+    }
+    return Array.from(registrations.values());
 }
 
 /**
@@ -490,8 +590,6 @@ export async function deleteRegistrationById(
         }
 
         const registrationData = regSnap.data() as Registration;
-        const userId = registrationData.user_id;
-
         const adminDelete = options?.adminDelete ?? false;
 
         // Delete associated teams
@@ -586,7 +684,7 @@ export async function deleteRegistrationById(
             // Don't throw error here to avoid breaking the main deletion flow
         }
 
-        // Delete the registration document and release approved event places atomically.
+        // Delete the registration document, release approved event places, and remove the profile cache atomically.
         await writeRegistrationWithCapacity(tournamentId, registrationData, null, (transaction) => {
             transaction.delete(registrationRef);
         });
@@ -605,17 +703,6 @@ export async function deleteRegistrationById(
             console.error("Error deleting verification requests by tournament/member:", error);
         }
 
-        // Remove the registration record from the user's document
-        if (userId) {
-            const userRef = doc(db, "users", userId);
-            const userSnap = await getDoc(userRef);
-            if (userSnap.exists()) {
-                const userData = userSnap.data() as FirestoreUser;
-                const updatedRecords =
-                    userData.registration_records?.filter((record) => record.tournament_id !== tournamentId) ?? [];
-                await updateDoc(userRef, {registration_records: updatedRecords});
-            }
-        }
     } catch (error) {
         console.error("Error deleting registration:", error);
         throw error;

@@ -4,8 +4,7 @@ import LoginForm from "@/components/common/Login";
 import {useAuthContext} from "@/context/AuthContext";
 import type {ExpandedEvent, Registration, Tournament, TournamentEvent} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
-import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {addUserRegistrationRecord, getUserByGlobalId, searchUsersByNameOrGlobalIdPrefix} from "@/services/firebase/authService";
+import {getUserByGlobalId, searchUsersByNameOrGlobalIdPrefix} from "@/services/firebase/authService";
 import {
     createDoubleRecruitment,
     getDoubleRecruitmentsByTournament,
@@ -715,17 +714,6 @@ export default function RegisterTournamentPage() {
                 }
             }
 
-            const registrationRecord: UserRegistrationRecord = {
-                status: "pending",
-                tournament_id: tournamentId,
-                events: registrationData.events_registered,
-                registration_date: Timestamp.now(),
-                rejection_reason: null,
-                created_at: Timestamp.now(),
-                updated_at: Timestamp.now(),
-            };
-
-            await addUserRegistrationRecord(user.id ?? "", registrationRecord);
             await refreshProfiles(user.id ?? undefined);
 
             if (needsMemberVerification) {
