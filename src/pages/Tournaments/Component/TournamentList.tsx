@@ -1,6 +1,6 @@
 import LoginForm from "@/components/common/Login";
 import {useAuthContext} from "@/context/AuthContext";
-import type {FinalCriterion, FirestoreUser, PaymentMethod, Tournament, TournamentEvent} from "@/schema"; // 就是你那个 TournamentSchema infer出来的type
+import type {FinalCriterion, FirestoreUser, PaymentMethod, Registration, Tournament, TournamentEvent} from "@/schema"; // 就是你那个 TournamentSchema infer出来的type
 import {countries} from "@/schema/Country";
 import {
     deleteTournamentById,
@@ -56,6 +56,7 @@ import {type ReactNode, useEffect, useRef, useState} from "react";
 import {DEFAULT_AGE_BRACKET, DEFAULT_EVENTS} from "@/constants/tournamentDefaults";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
+import {fetchRegistrationsForUser} from "@/services/firebase/registerService";
 import {deleteFile, uploadFile} from "@/services/firebase/storageService";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
@@ -193,6 +194,8 @@ export default function TournamentList() {
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
 
     const [loading, setLoading] = useState(true);
+    const [registrationsByTournament, setRegistrationsByTournament] = useState<Record<string, Registration>>({});
+    const [registrationLookupState, setRegistrationLookupState] = useState<"idle" | "loading" | "ready" | "error">("idle");
     const mountedRef = useRef(false);
 
     const [agendaUploadList, setAgendaUploadList] = useState<UploadItem[]>([]);
@@ -468,12 +471,14 @@ export default function TournamentList() {
                 }
 
                 if (user) {
-                    userHasRegistered = hasRegistered(user, tournament.id ?? "");
+                    const authoritativeRegistration = registrationsByTournament[tournament.id ?? ""];
+                    userHasRegistered = Boolean(authoritativeRegistration) ||
+                        (registrationLookupState === "error" && hasRegistered(user, tournament.id ?? ""));
                     if (userHasRegistered) {
                         // Get the user's registration details
                         const userRegistration = getUserRegistration(user, tournament.id ?? "");
-                        registrationStatus = userRegistration?.status; // assuming status field exists
-                        rejectionReason = userRegistration?.rejection_reason ?? ""; // assuming rejectionReason field exists
+                        registrationStatus = authoritativeRegistration?.registration_status ?? userRegistration?.status;
+                        rejectionReason = authoritativeRegistration?.rejection_reason ?? userRegistration?.rejection_reason ?? "";
                     }
                 }
 
@@ -782,7 +787,9 @@ export default function TournamentList() {
                     );
                 }
 
-                const alreadyRegistered = hasRegistered(user, tournament.id ?? "");
+                const authoritativeRegistration = registrationsByTournament[tournament.id ?? ""];
+                const alreadyRegistered = Boolean(authoritativeRegistration) ||
+                    (registrationLookupState === "error" && hasRegistered(user, tournament.id ?? ""));
 
                 if (alreadyRegistered) {
                     return (
@@ -814,6 +821,16 @@ export default function TournamentList() {
                 }
                 if (!tournament.registration_start_date || !tournament.registration_end_date) {
                     return;
+                }
+                if (registrationLookupState === "loading" || registrationLookupState === "idle") {
+                    return <Button type="primary" loading disabled>Checking registration</Button>;
+                }
+                if (registrationLookupState === "error") {
+                    return (
+                        <Tooltip content="Unable to confirm your registration status. Please refresh and try again.">
+                            <Button type="primary" disabled>Registration unavailable</Button>
+                        </Tooltip>
+                    );
                 }
                 if (tournamentFull && !isActiveOrEnded) {
                     return renderFullAction(tournament);
@@ -912,6 +929,40 @@ export default function TournamentList() {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        let active = true;
+        if (!user?.id && !user?.global_id) {
+            setRegistrationsByTournament({});
+            setRegistrationLookupState("idle");
+            return () => {
+                active = false;
+            };
+        }
+
+        setRegistrationLookupState("loading");
+        fetchRegistrationsForUser(user.id, user.global_id)
+            .then((registrations) => {
+                if (!active) return;
+                setRegistrationsByTournament(
+                    registrations.reduce<Record<string, Registration>>((result, registration) => {
+                        if (registration.tournament_id && !result[registration.tournament_id]) {
+                            result[registration.tournament_id] = registration;
+                        }
+                        return result;
+                    }, {}),
+                );
+                setRegistrationLookupState("ready");
+            })
+            .catch((error) => {
+                console.error("Failed to load authoritative registration status:", error);
+                if (active) setRegistrationLookupState("error");
+            });
+
+        return () => {
+            active = false;
+        };
+    }, [user?.id, user?.global_id]);
 
     const handleSubmit = async (values: TournamentFormData) => {
         if (!selectedTournament?.id) return;

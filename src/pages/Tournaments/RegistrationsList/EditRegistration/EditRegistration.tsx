@@ -3,8 +3,7 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {DoubleRecruitment, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
-import type {UserRegistrationRecord} from "@/schema/UserSchema";
-import {fetchUsersByGlobalIds, getUserByGlobalId, updateUserRegistrationRecord} from "@/services/firebase/authService";
+import {fetchUsersByGlobalIds, getUserByGlobalId} from "@/services/firebase/authService";
 import {
     createDoubleRecruitment,
     deleteDoubleRecruitment,
@@ -552,18 +551,6 @@ export default function EditTournamentRegistrationPage() {
 
                 await upsertAdminTeam(tournamentId ?? "", teamData, isNew ? undefined : team.id);
             }
-
-            const userRegistrationData: Partial<UserRegistrationRecord> = {
-                status: values?.registration_status ?? "pending",
-                tournament_id: tournamentId ?? "",
-                events: values?.events_registered ?? [],
-                rejection_reason: values?.registration_status === "rejected" ? rejection_reason : null,
-            };
-
-            if (!registrationId || !tournamentId) {
-                throw new Error("Missing registrationId or tournamentId for updating user registration record.");
-            }
-            await updateUserRegistrationRecord(registration?.user_id ?? "", tournamentId, userRegistrationData);
 
             setEdit(false);
             Message.success("Completely save the changes!");

@@ -13,7 +13,7 @@ import {
     updateOverallRecord,
     updateTournamentRecord,
 } from "@/services/firebase/recordService";
-import {fetchApprovedRegistrations} from "@/services/firebase/registerService";
+import {fetchApprovedRegistrations, fetchRegistrationsForUser} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
@@ -244,6 +244,10 @@ export default function TournamentView() {
     const [descriptionModalVisible, setDescriptionModalVisible] = useState(false);
     const [loading, setLoading] = useState(true);
     const [registrations, setRegistrations] = useState<Registration[]>([]);
+    const [personalRegistration, setPersonalRegistration] = useState<Registration | null>(null);
+    const [personalRegistrationLookupState, setPersonalRegistrationLookupState] = useState<"idle" | "loading" | "ready" | "error">(
+        "idle",
+    );
     const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
     const [prelimRecords, setPrelimRecords] = useState<(TournamentRecord | TournamentTeamRecord)[]>([]);
@@ -268,6 +272,33 @@ export default function TournamentView() {
     const deviceBreakpoint = useDeviceBreakpoint();
     const {user} = useAuthContext();
     const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
+
+    useEffect(() => {
+        let active = true;
+        if (!id || (!user?.id && !user?.global_id)) {
+            setPersonalRegistration(null);
+            setPersonalRegistrationLookupState("idle");
+            return () => {
+                active = false;
+            };
+        }
+
+        setPersonalRegistrationLookupState("loading");
+        fetchRegistrationsForUser(user.id, user.global_id)
+            .then((registrations) => {
+                if (!active) return;
+                setPersonalRegistration(registrations.find((registration) => registration.tournament_id === id) ?? null);
+                setPersonalRegistrationLookupState("ready");
+            })
+            .catch((error) => {
+                console.error("Failed to load authoritative registration status:", error);
+                if (active) setPersonalRegistrationLookupState("error");
+            });
+
+        return () => {
+            active = false;
+        };
+    }, [id, user?.id, user?.global_id]);
     const isAdmin = user?.roles?.verify_record || user?.roles?.edit_tournament || false;
     const sortedEvents = [...events].sort((a, b) => {
         const orderDiff = getEventOrderIndex(a.type) - getEventOrderIndex(b.type);
@@ -1312,11 +1343,21 @@ export default function TournamentView() {
                             const tournamentFull = isTournamentFull(tournament);
                             const registrationOpen = isRegistrationOpen(tournament);
                             const registrationWindow = getRegistrationWindow(tournament);
-                            const alreadyRegistered = Boolean(
+                            const cachedRegistration = Boolean(
                                 id && user?.registration_records?.some((record) => record.tournament_id === id),
                             );
+                            const alreadyRegistered = Boolean(personalRegistration) ||
+                                (personalRegistrationLookupState === "error" && cachedRegistration);
+                            const registrationLookupUnavailable =
+                                Boolean(user) &&
+                                (personalRegistrationLookupState === "loading" || personalRegistrationLookupState === "error");
                             const isDisabled =
-                                !id || !hasRegistrationDates || tournamentFull || !registrationOpen || alreadyRegistered;
+                                !id ||
+                                !hasRegistrationDates ||
+                                tournamentFull ||
+                                !registrationOpen ||
+                                alreadyRegistered ||
+                                registrationLookupUnavailable;
                             let disabledMessage = "";
 
                             if (!hasRegistrationDates) {
@@ -1332,6 +1373,23 @@ export default function TournamentView() {
                                 }
                             } else if (alreadyRegistered) {
                                 disabledMessage = "You have already registered for this tournament.";
+                            } else if (personalRegistrationLookupState === "loading") {
+                                disabledMessage = "Checking your registration status.";
+                            } else if (personalRegistrationLookupState === "error") {
+                                disabledMessage = "Unable to confirm your registration status. Please refresh and try again.";
+                            }
+
+                            if (alreadyRegistered && id && personalRegistration?.user_global_id) {
+                                return (
+                                    <Button
+                                        type="primary"
+                                        onClick={() =>
+                                            navigate(`/tournaments/${id}/register/${personalRegistration.user_global_id}/view`)
+                                        }
+                                    >
+                                        View Registration
+                                    </Button>
+                                );
                             }
 
                             const button = (

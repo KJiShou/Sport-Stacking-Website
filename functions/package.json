@@ -10,6 +10,7 @@
     "start": "yarn shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
+    "repair:registration-records": "node --env-file-if-exists=.env.development lib/functions/src/scripts/repairRegistrationRecords.js",
     "repair:teams": "node --env-file-if-exists=.env.development lib/functions/src/scripts/repairTournamentTeamState.js",
     "repair:event-capacity": "node --env-file-if-exists=.env.development lib/functions/src/scripts/repairEventCapacity.js",
     "migrate:develop2-to-default": "node lib/functions/src/scripts/migrateDevelop2ToDefault.js"
