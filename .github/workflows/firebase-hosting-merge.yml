@@ -33,6 +33,11 @@ jobs:
             - name: 🧪 Validate Project
               run: yarn validate
 
+            - name: 🧪 Validate Cloud Functions
+              run: |
+                  yarn workspace functions lint
+                  yarn workspace functions test
+
             - name: 🔑 Inject Firebase & API Keys to .env
               run: |
                   echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}" >> .env
@@ -42,11 +47,33 @@ jobs:
                   echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}" >> .env
                   echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}" >> .env
                   echo "VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}" >> .env
+                  echo "VITE_APP_RELEASE=${{ github.sha }}" >> .env
                   echo "VITE_GOOGLE_MAPS_API_KEY=${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" >> .env
 
             # Step 5: Build Project
             - name: 🛠️ Build Project
               run: yarn build
+
+            - name: 🗺️ Archive production source maps
+              uses: actions/upload-artifact@v4
+              with:
+                  name: web-source-maps-${{ github.sha }}
+                  path: dist/**/*.map
+                  retention-days: 90
+                  if-no-files-found: error
+
+            - name: 🔒 Remove source maps from public Hosting output
+              run: find dist -type f -name '*.map' -delete
+
+            - name: 🔐 Authenticate Firebase CLI
+              uses: google-github-actions/auth@v3
+              with:
+                  project_id: sport-stacking-website
+                  credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SPORT_STACKING_WEBSITE }}
+                  create_credentials_file: true
+
+            - name: 🚀 Deploy Firebase backend
+              run: functions/node_modules/.bin/firebase deploy --project sport-stacking-website --only functions,firestore:rules,firestore:indexes --non-interactive
 
             # Step 6: Deploy to Firebase Hosting (Live)
             - name: 🚀 Deploy to Firebase Hosting (live)

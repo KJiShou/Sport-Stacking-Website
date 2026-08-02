@@ -2,7 +2,7 @@
 
 import LoginForm from "@/components/common/Login";
 import {useAuthContext} from "@/context/AuthContext";
-import type {ExpandedEvent, Registration, Tournament, TournamentEvent} from "@/schema";
+import type {ExpandedEvent, Registration, Team, Tournament, TournamentEvent, VerificationRequest} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
 import {getUserByGlobalId, searchUsersByNameOrGlobalIdPrefix} from "@/services/firebase/authService";
 import {
@@ -17,15 +17,25 @@ import {createTeamRecruitment} from "@/services/firebase/teamRecruitmentService"
 import {
     createTeam,
     fetchOccupiedParticipantIdsByTournamentEvent,
+    fetchTeamsByTournament,
     fetchTournamentById,
     fetchTournamentEvents,
     fetchUnavailableParticipantIdsByEvent,
 } from "@/services/firebase/tournamentsService";
+import {fetchPendingVerificationRequests} from "@/services/firebase/verificationRequestService";
+import {verifyTeamMembership} from "@/services/firebase/verificationService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {getCountryFlag} from "@/utils/countryFlags";
-import {getEventKey, getEventLabel, isTeamEvent, matchesAnyEventKey, sanitizeEventCodes} from "@/utils/tournament/eventUtils";
+import {
+    getEventKey,
+    getEventLabel,
+    getTeamEvents,
+    isTeamEvent,
+    matchesAnyEventKey,
+    sanitizeEventCodes,
+} from "@/utils/tournament/eventUtils";
 import {
     Button,
     Checkbox,
@@ -52,7 +62,7 @@ import dayjs, {type Dayjs} from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import {FirebaseError} from "firebase/app";
 import {Timestamp} from "firebase/firestore";
-import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
+import {type ReactNode, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "react-router-dom";
 import remarkBreaks from "remark-breaks";
 dayjs.extend(isSameOrAfter);
@@ -70,6 +80,12 @@ type MemberSearchOption = {
     value: string;
 };
 
+type TeamInvitation = {
+    request: VerificationRequest;
+    team: Team | null;
+    event?: TournamentEvent;
+};
+
 const isParentChildEvent = (event?: ExpandedEvent, ...references: Array<string | null | undefined>) => {
     const values = [event?.type, event?.id, event ? getEventLabel(event) : undefined, ...references];
     return values.some((value) => {
@@ -77,8 +93,8 @@ const isParentChildEvent = (event?: ExpandedEvent, ...references: Array<string |
         return normalized.includes("parent") && normalized.includes("child");
     });
 };
-const isTeamRelayEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "team relay";
-const isDoubleEvent = (event?: ExpandedEvent) => (event?.type ?? "").toLowerCase() === "double";
+const isTeamRelayEvent = (event?: TournamentEvent) => (event?.type ?? "").toLowerCase() === "team relay";
+const isDoubleEvent = (event?: TournamentEvent) => (event?.type ?? "").toLowerCase() === "double";
 const getFallbackTeamSize = (event?: ExpandedEvent, eventId?: string): number | undefined => {
     if (event?.teamSize !== undefined) {
         return event.teamSize;
@@ -146,6 +162,10 @@ export default function RegisterTournamentPage() {
     const [fullEventIds, setFullEventIds] = useState<Set<string>>(new Set());
     const [memberSearchLoadingByEvent, setMemberSearchLoadingByEvent] = useState<Record<string, boolean>>({});
     const [memberSearchOptionsByEvent, setMemberSearchOptionsByEvent] = useState<Record<string, MemberSearchOption[]>>({});
+    const [teamInvitations, setTeamInvitations] = useState<TeamInvitation[]>([]);
+    const [acceptedInvitationIds, setAcceptedInvitationIds] = useState<string[]>([]);
+    const [invitationLoading, setInvitationLoading] = useState(false);
+    const [invitationLoadError, setInvitationLoadError] = useState<string | null>(null);
     const memberSearchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const baseRegistrationFee = useMemo(
         () => (user?.memberId ? tournament?.member_registration_fee : tournament?.registration_fee) ?? 0,
@@ -157,6 +177,16 @@ export default function RegisterTournamentPage() {
     );
     const totalRegistrationFee = baseRegistrationFee + additionalEventFee;
     const requiresPaymentProof = totalRegistrationFee > 0;
+
+    const acceptedInvitationEventKeys = useMemo(() => {
+        const acceptedIds = new Set(acceptedInvitationIds);
+        return new Set(
+            teamInvitations
+                .filter((invitation) => acceptedIds.has(invitation.request.id))
+                .map((invitation) => (invitation.event ? getEventKey(invitation.event) : ""))
+                .filter(Boolean),
+        );
+    }, [acceptedInvitationIds, teamInvitations]);
 
     useEffect(() => {
         if (!firebaseUser) {
@@ -181,6 +211,87 @@ export default function RegisterTournamentPage() {
                 requiresTeam: event ? isTeamEvent(event) : false,
             };
         });
+
+    const refreshTeamInvitations = useCallback(
+        async (sourceEvents: TournamentEvent[]) => {
+            if (!tournamentId || !user?.global_id) {
+                setTeamInvitations([]);
+                return;
+            }
+
+            setInvitationLoading(true);
+            setInvitationLoadError(null);
+            try {
+                const [requests, teams] = await Promise.all([
+                    fetchPendingVerificationRequests(user.global_id),
+                    fetchTeamsByTournament(tournamentId),
+                ]);
+                const teamsById = new Map(teams.map((team) => [team.id, team]));
+                const invitations = requests
+                    .filter((request) => request.tournament_id === tournamentId)
+                    .map((request): TeamInvitation => {
+                        const team = teamsById.get(request.team_id) ?? null;
+                        const teamEvent = team
+                            ? getTeamEvents(team, sourceEvents).find((event) => isDoubleEvent(event) || isTeamRelayEvent(event))
+                            : undefined;
+                        const resolvedEvent =
+                            teamEvent ??
+                            sourceEvents.find(
+                                (event) =>
+                                    Boolean(request.event_label) &&
+                                    getEventLabel(event).toLowerCase() === request.event_label?.trim().toLowerCase(),
+                            );
+                        const invitationEvent =
+                            resolvedEvent && (isDoubleEvent(resolvedEvent) || isTeamRelayEvent(resolvedEvent))
+                                ? resolvedEvent
+                                : undefined;
+                        return {request, team, event: invitationEvent};
+                    })
+                    .filter((invitation) => Boolean(invitation.event));
+
+                setTeamInvitations(invitations);
+                setAcceptedInvitationIds((previous) =>
+                    previous.filter((requestId) => invitations.some((invitation) => invitation.request.id === requestId)),
+                );
+            } catch (error) {
+                console.error("Failed to load team invitations:", error);
+                setInvitationLoadError("Unable to load team invitations. You can retry or continue registration.");
+            } finally {
+                setInvitationLoading(false);
+            }
+        },
+        [tournamentId, user?.global_id],
+    );
+
+    const handleInvitationDecision = (invitation: TeamInvitation, accepted: boolean) => {
+        const eventKey = invitation.event ? getEventKey(invitation.event) : "";
+        if (!eventKey) {
+            return;
+        }
+
+        if (!accepted) {
+            setAcceptedInvitationIds((previous) => previous.filter((id) => id !== invitation.request.id));
+            return;
+        }
+
+        setAcceptedInvitationIds((previous) => [
+            ...previous.filter((id) => {
+                const existing = teamInvitations.find((candidate) => candidate.request.id === id);
+                return existing?.event ? getEventKey(existing.event) !== eventKey : true;
+            }),
+            invitation.request.id,
+        ]);
+
+        // An invitee must not create a second team for an event they are accepting.
+        const currentEventIds: string[] = form.getFieldValue("events_registered") || [];
+        const nextEventIds = currentEventIds.filter((currentEventId) => !matchesAnyEventKey([currentEventId], invitation.event));
+        if (nextEventIds.length !== currentEventIds.length) {
+            form.setFieldsValue({events_registered: nextEventIds});
+            setHaveTeam(buildTeamEntries(nextEventIds));
+            setSelectedEventIds(nextEventIds);
+            setLookingForTeams((previous) => previous.filter((id) => id !== eventKey));
+        }
+    };
 
     const ensureOccupiedIdsForEvent = async (eventId: string): Promise<Set<string>> => {
         const normalizedEventId = eventId.trim();
@@ -431,6 +542,9 @@ export default function RegisterTournamentPage() {
                 event: entry.event,
                 team: getSubmittedTeam(entry),
             }));
+            const acceptedInvitations = teamInvitations.filter((invitation) =>
+                acceptedInvitationIds.includes(invitation.request.id),
+            );
 
             for (const {eventId: teamId, event: entryEvent, team} of submittedTeams) {
                 const relatedEvent = entryEvent ?? findEventByKey(teamId) ?? availableEvents.find((evt) => evt.type === teamId);
@@ -714,7 +828,50 @@ export default function RegisterTournamentPage() {
                 }
             }
 
+            const invitationVerificationFailures: Array<{invitation: TeamInvitation; message: string}> = [];
+            for (const invitation of acceptedInvitations) {
+                try {
+                    await verifyTeamMembership({
+                        tournamentId,
+                        teamId: invitation.request.team_id,
+                        memberId: invitation.request.member_id,
+                        registrationId,
+                    });
+                } catch (error) {
+                    console.error("Failed to accept team invitation during registration:", {
+                        requestId: invitation.request.id,
+                        error,
+                    });
+                    invitationVerificationFailures.push({
+                        invitation,
+                        message: error instanceof Error ? error.message : "Verification failed.",
+                    });
+                }
+            }
+
             await refreshProfiles(user.id ?? undefined);
+
+            if (invitationVerificationFailures.length > 0) {
+                const failureSummary = invitationVerificationFailures
+                    .map(
+                        ({invitation, message}) =>
+                            `${invitation.event ? getEventLabel(invitation.event) : (invitation.request.event_label ?? "Team event")}: ${message}`,
+                    )
+                    .join("\n");
+                Modal.info({
+                    title: "Registration successful, but some invitations need attention",
+                    content: (
+                        <div>
+                            <Paragraph>Your tournament registration was saved. These invitations are still pending:</Paragraph>
+                            <Paragraph style={{whiteSpace: "pre-line"}}>{failureSummary}</Paragraph>
+                            <Paragraph>You can retry them from Verification Requests.</Paragraph>
+                        </div>
+                    ),
+                    okText: "View Verification Requests",
+                    onOk: () => navigate("/verify-requests"),
+                });
+                return;
+            }
 
             if (needsMemberVerification) {
                 Modal.info({
@@ -808,6 +965,7 @@ export default function RegisterTournamentPage() {
                 setAvailableEvents(availableGroupedEvents);
                 setOptions(availableGroupedEvents);
                 setFullEventIds(nextFullEventIds);
+                await refreshTeamInvitations(fetchedEvents);
 
                 // Required event IDs for Individual events
                 const requiredEventIds = availableGroupedEvents
@@ -923,7 +1081,7 @@ export default function RegisterTournamentPage() {
             }
         };
         fetch();
-    }, [tournamentId, user]);
+    }, [tournamentId, user, refreshTeamInvitations]);
 
     useEffect(() => {
         if (!user?.name || haveTeam.length === 0) return;
@@ -1043,6 +1201,68 @@ export default function RegisterTournamentPage() {
                         <Form.Item disabled label="Organizer" field="organizer">
                             <Input disabled placeholder="Update your organizer at profile" />
                         </Form.Item>
+                        {invitationLoading || teamInvitations.length > 0 || invitationLoadError ? (
+                            <div className="mb-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                                <Title heading={6} className="mb-2">
+                                    Team Invitations
+                                </Title>
+                                <Paragraph type="secondary" className="mb-3">
+                                    You have been invited to join a Double or Team Relay. Accepting here will verify your
+                                    membership after registration. Team event fees are paid by the leader.
+                                </Paragraph>
+                                {invitationLoadError ? (
+                                    <div className="flex items-center gap-3 text-sm text-red-600">
+                                        <span>{invitationLoadError}</span>
+                                        <Button
+                                            size="small"
+                                            type="outline"
+                                            loading={invitationLoading}
+                                            onClick={() => void refreshTeamInvitations(availableEvents)}
+                                        >
+                                            Retry
+                                        </Button>
+                                    </div>
+                                ) : null}
+                                {!invitationLoading && !invitationLoadError && teamInvitations.length === 0 ? (
+                                    <Typography.Text type="secondary">
+                                        No pending Double or Team Relay invitations.
+                                    </Typography.Text>
+                                ) : null}
+                                {teamInvitations.map((invitation) => {
+                                    const invitationId = invitation.request.id;
+                                    const eventLabel = invitation.event
+                                        ? getEventLabel(invitation.event)
+                                        : invitation.request.event_label || "Team event";
+                                    const isAccepted = acceptedInvitationIds.includes(invitationId);
+                                    return (
+                                        <div
+                                            key={invitationId}
+                                            className="mb-2 flex flex-col gap-1 rounded-md border border-blue-100 bg-white p-3 last:mb-0"
+                                        >
+                                            <Typography.Text style={{fontWeight: 600}}>{eventLabel}</Typography.Text>
+                                            <Typography.Text>
+                                                <strong>Team:</strong>{" "}
+                                                {invitation.team?.name || invitation.request.team_name || "-"}
+                                            </Typography.Text>
+                                            <Typography.Text>
+                                                <strong>Invited by:</strong> {invitation.request.leader_label || "-"}
+                                            </Typography.Text>
+                                            <Checkbox
+                                                checked={isAccepted}
+                                                onChange={(checked: boolean) => handleInvitationDecision(invitation, checked)}
+                                            >
+                                                Accept with registration
+                                            </Checkbox>
+                                            {!isAccepted ? (
+                                                <Typography.Text type="secondary">
+                                                    Not now — keep this invitation pending.
+                                                </Typography.Text>
+                                            ) : null}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : null}
                         <Form.Item
                             label={
                                 <div>
@@ -1100,18 +1320,20 @@ export default function RegisterTournamentPage() {
                                             const key = getEventKey(option);
                                             const isRequired = requiredKeys.includes(key);
                                             const isFull = fullEventIds.has(key);
+                                            const isAcceptedInvitation = acceptedInvitationEventKeys.has(key);
                                             const displayText = getEventLabel(option);
                                             const fullReason = "Full (pending approvals included)";
                                             return (
                                                 <Tooltip key={key} content={isFull ? fullReason : undefined}>
                                                     <Checkbox
                                                         value={key}
-                                                        disabled={isRequired || isFull}
+                                                        disabled={isRequired || isFull || isAcceptedInvitation}
                                                         style={{
-                                                            opacity: isRequired || isFull ? 0.6 : 1,
+                                                            opacity: isRequired || isFull || isAcceptedInvitation ? 0.6 : 1,
                                                         }}
                                                     >
                                                         {displayText} {isRequired && "(Required)"} {isFull && `(${fullReason})`}
+                                                        {isAcceptedInvitation && "(Accepted invitation)"}
                                                     </Checkbox>
                                                 </Tooltip>
                                             );

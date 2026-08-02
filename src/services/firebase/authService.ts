@@ -41,6 +41,7 @@ import {FirestoreUserSchema} from "../../schema";
 import type {UserTournamentHistory} from "../../schema/UserHistorySchema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {isSameBirthdateDay, normalizeBirthdateForWrite, parseBirthdate} from "../../utils/birthdate";
+import {captureClientError, createOperationId, getRelease} from "../observability";
 import {auth, db, functions, storage} from "./config";
 
 export type GoogleSignInIntent = "login" | "register";
@@ -244,19 +245,21 @@ export const signInWithGoogle = async (intent: GoogleSignInIntent): Promise<void
 };
 
 export const cacheGoogleAvatar = async (photoURL: string): Promise<string> => {
-    const callable = httpsCallable(functions, "cacheGoogleAvatarCallable");
-    const result = await callable({photoURL});
-    const data = result.data as {url?: string};
-    if (!data?.url) {
-        throw new Error("Failed to cache Google avatar.");
+    try {
+        const callable = httpsCallable(functions, "cacheGoogleAvatarCallable");
+        const result = await callable({photoURL});
+        const data = result.data as {url?: string};
+        if (!data?.url) {
+            throw new Error("Failed to cache Google avatar.");
+        }
+        return data.url;
+    } catch (error) {
+        void captureClientError(error, {entityType: "avatar", entityId: "google"});
+        throw error;
     }
-    return data.url;
 };
 
-type TransferProfileOwnershipResult = Pick<
-    FirestoreUser,
-    "email" | "owner_uids" | "primary_owner_email" | "account_status"
-> & {
+type TransferProfileOwnershipResult = Pick<FirestoreUser, "email" | "owner_uids" | "primary_owner_email" | "account_status"> & {
     profileId: string;
 };
 
@@ -267,6 +270,7 @@ type CreateProfileClaimRequestInput = {
     birthdate_hint?: unknown;
     tournament_hint?: string | null;
     note?: string | null;
+    meta?: {operationId: string; release: string};
 };
 
 type ReviewProfileClaimRequestResult = {
@@ -299,9 +303,10 @@ export const transferProfileOwnership = async (
 ): Promise<TransferProfileOwnershipResult> => {
     try {
         const callable = httpsCallable(functions, "transferProfileOwnership");
-        const result = await callable({profileId, targetEmail});
+        const result = await callable({profileId, targetEmail, meta: {operationId: createOperationId(), release: getRelease()}});
         return result.data as TransferProfileOwnershipResult;
     } catch (error) {
+        void captureClientError(error, {entityType: "profile-ownership", entityId: profileId});
         throw new Error(resolveCallableErrorMessage(error));
     }
 };
@@ -336,9 +341,15 @@ export const createProfileClaimRequest = async (
     const normalizedInput = {
         ...input,
         birthdate_hint: input.birthdate_hint ? normalizeBirthdateForWrite(input.birthdate_hint) : null,
+        meta: input.meta ?? {operationId: createOperationId(), release: getRelease()},
     };
-    const result = await callable(normalizedInput);
-    return result.data as {requestId: string; status: "pending"};
+    try {
+        const result = await callable(normalizedInput);
+        return result.data as {requestId: string; status: "pending"};
+    } catch (error) {
+        void captureClientError(error, {entityType: "profile-claim"});
+        throw error;
+    }
 };
 
 export const approveProfileClaimRequest = async (
@@ -346,8 +357,13 @@ export const approveProfileClaimRequest = async (
     profileId: string,
 ): Promise<ReviewProfileClaimRequestResult> => {
     const callable = httpsCallable(functions, "approveProfileClaimRequest");
-    const result = await callable({requestId, profileId});
-    return result.data as ReviewProfileClaimRequestResult;
+    try {
+        const result = await callable({requestId, profileId, meta: {operationId: createOperationId(), release: getRelease()}});
+        return result.data as ReviewProfileClaimRequestResult;
+    } catch (error) {
+        void captureClientError(error, {entityType: "profile-claim", entityId: requestId});
+        throw error;
+    }
 };
 
 export const rejectProfileClaimRequest = async (
@@ -355,8 +371,17 @@ export const rejectProfileClaimRequest = async (
     rejectionReason: string,
 ): Promise<ReviewProfileClaimRequestResult> => {
     const callable = httpsCallable(functions, "rejectProfileClaimRequest");
-    const result = await callable({requestId, rejectionReason});
-    return result.data as ReviewProfileClaimRequestResult;
+    try {
+        const result = await callable({
+            requestId,
+            rejectionReason,
+            meta: {operationId: createOperationId(), release: getRelease()},
+        });
+        return result.data as ReviewProfileClaimRequestResult;
+    } catch (error) {
+        void captureClientError(error, {entityType: "profile-claim", entityId: requestId});
+        throw error;
+    }
 };
 
 export const fetchProfileClaimRequests = async (status?: ProfileClaimRequest["status"]): Promise<ProfileClaimRequest[]> => {
@@ -439,11 +464,7 @@ export const register = async (userData: RegisterUserData) => {
     return uid;
 };
 
-export const registerWithGoogle = async (
-    firebaseUser: User,
-    extraData: GoogleRegisterData,
-    imageFile?: string,
-) => {
+export const registerWithGoogle = async (firebaseUser: User, extraData: GoogleRegisterData, imageFile?: string) => {
     if (!firebaseUser.email) {
         throw new Error("Google account does not have an email");
     }
@@ -704,7 +725,8 @@ export async function backfillUserAccountOwnershipFields(): Promise<number> {
     for (const docSnap of usersSnapshot.docs) {
         const data = docSnap.data() as FirestoreUser;
         const identityType = data.identity_type ?? (/^\d{12}$/.test(data.IC ?? "") ? "MYKAD" : data.IC ? "PASSPORT" : "NONE");
-        const identityKey = data.identity_key ?? buildIdentityKey(identityType, data.IC, data.passport_country ?? data.country?.[0]);
+        const identityKey =
+            data.identity_key ?? buildIdentityKey(identityType, data.IC, data.passport_country ?? data.country?.[0]);
         const payload: Partial<FirestoreUser> & {updated_at: Timestamp} = {
             updated_at: Timestamp.now(),
         };

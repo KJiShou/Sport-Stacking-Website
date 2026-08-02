@@ -4,9 +4,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
-  "workspaces": [
-    "functions"
-  ],
+  "workspaces": ["functions"],
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
@@ -16,6 +14,8 @@
     "format": "biome format . --write",
     "lint": "biome lint .",
     "check": "biome check .",
+    "rules:smoke": "functions/node_modules/.bin/firebase emulators:exec --only firestore --project demo-observability --config firebase.rules.smoke.json \"node scripts/firestoreRulesSmoke.mjs\"",
+    "symbolicate": "node scripts/symbolicateStack.mjs",
     "fix": "biome check . --apply",
     "preview": "vite preview",
     "setup": "./install-extensions.sh && yarn",
@@ -78,6 +78,7 @@
     "prettier": "^3.1.0",
     "prettier-eslint": "^16.1.2",
     "sass-embedded": "^1.83.0",
+    "source-map": "^0.6.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3",
     "vite": "^6.2.1"

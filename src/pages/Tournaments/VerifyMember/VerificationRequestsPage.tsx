@@ -52,7 +52,10 @@ export default function VerificationRequestsPage() {
     }
 
     const handleVerify = async (request: VerificationRequest, isRegisteredForTournament: boolean) => {
-        if (!isRegisteredForTournament) {
+        const isParentChild =
+            (request.event_label ?? "").toLowerCase().includes("parent") &&
+            (request.event_label ?? "").toLowerCase().includes("child");
+        if (!isRegisteredForTournament && !isParentChild) {
             Message.error("Register this tournament first before verification.");
             return;
         }
@@ -122,6 +125,9 @@ export default function VerificationRequestsPage() {
                                 const isRegisteredForTournament = registeredTournamentKeys.has(
                                     `${request.target_global_id}:${request.tournament_id}`,
                                 );
+                                const isParentChild =
+                                    (request.event_label ?? "").toLowerCase().includes("parent") &&
+                                    (request.event_label ?? "").toLowerCase().includes("child");
                                 return (
                                     <Card key={request.id} title={request.event_label || "Team Verification"}>
                                         <div className="flex flex-col gap-2">
@@ -140,13 +146,13 @@ export default function VerificationRequestsPage() {
                                             <Text type="secondary">
                                                 Requested: {createdAt ? dayjs(createdAt).format("YYYY-MM-DD HH:mm") : "-"}
                                             </Text>
-                                            {!isRegisteredForTournament ? (
+                                            {!isRegisteredForTournament && !isParentChild ? (
                                                 <Text type="warning">Register this tournament first before verification.</Text>
                                             ) : null}
                                             <div className="mt-2">
                                                 <Button
                                                     type="primary"
-                                                    disabled={!isRegisteredForTournament}
+                                                    disabled={!isRegisteredForTournament && !isParentChild}
                                                     loading={verifyingRequestId === request.id}
                                                     onClick={() => {
                                                         void handleVerify(request, isRegisteredForTournament);
@@ -154,7 +160,7 @@ export default function VerificationRequestsPage() {
                                                 >
                                                     Verify Now
                                                 </Button>
-                                                {!isRegisteredForTournament ? (
+                                                {!isRegisteredForTournament && !isParentChild ? (
                                                     <Button
                                                         className="ml-2"
                                                         type="outline"

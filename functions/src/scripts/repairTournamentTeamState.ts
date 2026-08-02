@@ -1,5 +1,6 @@
 import {getApps, initializeApp} from "firebase-admin/app";
-import {FieldValue, Timestamp, type DocumentReference, type QueryDocumentSnapshot, getFirestore} from "firebase-admin/firestore";
+import {type DocumentReference, FieldValue, type QueryDocumentSnapshot, Timestamp, getFirestore} from "firebase-admin/firestore";
+import {writeScriptAudit} from "../observability.js";
 
 type TeamMember = {global_id?: string; verified?: boolean};
 type TeamData = {
@@ -55,9 +56,7 @@ const buildRegistrationTeamSnapshot = (teamId: string, data: TeamData): Registra
 });
 
 const syncRegistrationTeamSnapshots = async (): Promise<void> => {
-    const teamsQuery = tournamentId
-        ? db.collection("teams").where("tournament_id", "==", tournamentId)
-        : db.collection("teams");
+    const teamsQuery = tournamentId ? db.collection("teams").where("tournament_id", "==", tournamentId) : db.collection("teams");
     const registrationsQuery = tournamentId
         ? db.collection("registrations").where("tournament_id", "==", tournamentId)
         : db.collection("registrations");
@@ -87,7 +86,9 @@ const syncRegistrationTeamSnapshots = async (): Promise<void> => {
 
     const updates: Array<{ref: DocumentReference; teams: RegistrationTeamSnapshot[]}> = [];
     for (const registration of registrationSnapshot.docs) {
-        const existing = Array.isArray(registration.data().teams) ? (registration.data().teams as RegistrationTeamSnapshot[]) : [];
+        const existing = Array.isArray(registration.data().teams)
+            ? (registration.data().teams as RegistrationTeamSnapshot[])
+            : [];
         const expected = expectedByRegistration.get(registration.id) ?? [];
         const expectedByTeamId = new Map(expected.map((team) => [team.team_id, team]));
         const next = [...expectedByTeamId.values()];
@@ -108,7 +109,9 @@ const syncRegistrationTeamSnapshots = async (): Promise<void> => {
                 teamsScanned: teamSnapshot.size,
                 registrationsScanned: registrationSnapshot.size,
                 registrationsToUpdate: updates.length,
-                examples: updates.slice(0, 20).map((update) => ({registrationId: update.ref.id, teamIds: update.teams.map((team) => team.team_id)})),
+                examples: updates
+                    .slice(0, 20)
+                    .map((update) => ({registrationId: update.ref.id, teamIds: update.teams.map((team) => team.team_id)})),
             },
             null,
             2,
@@ -122,6 +125,19 @@ const syncRegistrationTeamSnapshots = async (): Promise<void> => {
         }
         await batch.commit();
     }
+    await writeScriptAudit(db, {
+        action: "repair.registration-teams.apply",
+        status: "success",
+        entityType: "registration",
+        entityId: tournamentId || "all",
+        tournamentId: tournamentId || null,
+        changedFields: ["teams"],
+        after: {
+            registrationsUpdated: updates.length,
+            teamsScanned: teamSnapshot.size,
+            registrationsScanned: registrationSnapshot.size,
+        },
+    });
 };
 
 const main = async () => {
@@ -311,6 +327,21 @@ const main = async () => {
                 {merge: true},
             );
     }
+
+    await writeScriptAudit(db, {
+        action: "repair.tournament-team-state.apply",
+        status: "success",
+        entityType: "tournament",
+        entityId: tournamentId,
+        tournamentId,
+        changedFields: ["teams", "verification_requests", "events_registered", "registration_records"],
+        after: {
+            orphanTeamsRemoved: orphanTeams.length,
+            staleRequestsExpired: staleRequests.length,
+            missingRequestsCreated: missingRequests.filter((item) => !item.conflict).length,
+            conflictsSkipped: missingRequests.filter((item) => item.conflict).length,
+        },
+    });
 
     console.info("Repair applied. Re-run without --apply to confirm the remaining report.");
 };

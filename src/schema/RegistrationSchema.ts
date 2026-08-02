@@ -40,6 +40,9 @@ export const RegistrationSchema = z.object({
     final_status: z.string().optional().nullable(),
     created_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),
+    registration_source: z.enum(["member", "admin", "import"]).optional().nullable(),
+    registered_by_uid: z.string().optional().nullable(),
+    registered_by_global_id: z.string().optional().nullable(),
 });
 
 export type Registration = z.infer<typeof RegistrationSchema>;

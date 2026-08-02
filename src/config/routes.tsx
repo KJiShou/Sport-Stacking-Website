@@ -5,6 +5,7 @@ import ParticipantListPage from "@/pages/Tournaments/ParticipantList/Participant
 import PrelimResultsPage from "@/pages/Tournaments/PrelimResults/PrelimResultsPage";
 import PrintResultsPage from "@/pages/Tournaments/PrintResults/PrintResultsPage";
 import ViewRegisterTournament from "@/pages/Tournaments/RegisterTournaments/ViewRegistration/ViewRegisterTournament";
+import AdminRegisterMemberPage from "@/pages/Tournaments/RegistrationsList/AdminRegisterMemberPage";
 import EditTournamentRegistrationPage from "@/pages/Tournaments/RegistrationsList/EditRegistration/EditRegistration";
 import RegistrationsListPage from "@/pages/Tournaments/RegistrationsList/RegistrationsList";
 import ScoreSheetPage from "@/pages/Tournaments/ScoreSheet/ScoreSheetPage";
@@ -51,6 +52,10 @@ const routes: AppRoute[] = [
     {
         path: "/tournaments/:tournamentId/registrations",
         component: RegistrationsListPage,
+    },
+    {
+        path: "/tournaments/:tournamentId/registrations/new",
+        component: AdminRegisterMemberPage,
     },
     {
         path: "/tournaments/:tournamentId/registrations/:registrationId/edit",

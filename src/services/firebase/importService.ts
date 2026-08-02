@@ -1,4 +1,6 @@
 import {httpsCallable} from "firebase/functions";
+import {captureClientError, createOperationId, getRelease} from "../observability";
+import {measureOperation} from "../performance";
 import {functions} from "./config";
 
 export type ImportWorkbookMode = "preview" | "commit";
@@ -39,6 +41,7 @@ type ImportWorkbookInput = {
     defaultCountry: string;
     defaultState: string;
     sheetMappings?: Record<string, string>;
+    meta?: {operationId: string; release: string};
 };
 
 export const importTournamentWorkbook = async (input: ImportWorkbookInput): Promise<ImportWorkbookResult> => {
@@ -50,6 +53,14 @@ export const importTournamentWorkbook = async (input: ImportWorkbookInput): Prom
     const callable = httpsCallable<ImportWorkbookInput, ImportWorkbookResult>(functions, "importTournamentWorkbook", {
         timeout: 540000,
     });
-    const result = await callable(input);
-    return result.data;
+    try {
+        const traceName = input.mode === "preview" ? "excel_preview" : "excel_commit";
+        const result = await measureOperation(traceName, () =>
+            callable({...input, meta: input.meta ?? {operationId: createOperationId(), release: getRelease()}}),
+        );
+        return result.data;
+    } catch (error) {
+        void captureClientError(error, {entityType: "tournament-import", tournamentId: input.tournamentId});
+        throw error;
+    }
 };

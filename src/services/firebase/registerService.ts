@@ -1,19 +1,10 @@
-import {
-    Timestamp,
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    query,
-    runTransaction,
-    updateDoc,
-    where,
-} from "firebase/firestore";
+import {Timestamp, collection, doc, getDoc, getDocs, query, runTransaction, updateDoc, where} from "firebase/firestore";
 import type {DocumentReference, Transaction} from "firebase/firestore";
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent, UserTournamentHistory} from "../../schema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {matchesAnyEventKey} from "../../utils/tournament/eventUtils";
+import {captureClientError} from "../observability";
 import {db} from "./config";
 import {deleteDoubleRecruitment, getDoubleRecruitmentsByParticipant} from "./doubleRecruitmentService";
 import {deleteIndividualRecruitment, getIndividualRecruitmentsByParticipant} from "./individualRecruitmentService";
@@ -54,9 +45,7 @@ const mergeUserRegistrationRecord = (
     ...buildUserRegistrationRecord(registration, now),
 });
 
-const resolveUserProfileForRegistration = async (
-    registration: Registration,
-): Promise<ResolvedUserProfile> => {
+const resolveUserProfileForRegistration = async (registration: Registration): Promise<ResolvedUserProfile> => {
     const userId = registration.user_id?.trim();
     if (userId) {
         const userRef = doc(db, "users", userId);
@@ -91,108 +80,118 @@ async function writeRegistrationWithCapacity(
     next: Registration | null,
     writeRegistration: (transaction: Transaction) => void,
 ): Promise<void> {
-    const tournamentRef = doc(db, "tournaments", tournamentId);
-    const eventsQuery = query(collection(db, "events"), where("tournament_id", "==", tournamentId));
-    const approvedRegistrationsQuery = query(
-        collection(db, "registrations"),
-        where("tournament_id", "==", tournamentId),
-        where("registration_status", "==", "approved"),
-    );
-    // The SDK only permits document reads inside a transaction. The transaction
-    // below re-reads every event document before writing its counter, so concurrent
-    // attempts for the same event still conflict and retry safely.
-    const [eventSnapshots, approvedSnapshots] = await Promise.all([getDocs(eventsQuery), getDocs(approvedRegistrationsQuery)]);
-    const profileRegistration = next ?? previous;
-    const profile = profileRegistration ? await resolveUserProfileForRegistration(profileRegistration) : null;
-
-    await runTransaction(db, async (transaction) => {
-        const [tournamentSnap, ...eventDocs] = await Promise.all([
-            transaction.get(tournamentRef),
-            ...eventSnapshots.docs.map((eventSnapshot) => transaction.get(eventSnapshot.ref)),
-        ]);
-        if (!tournamentSnap.exists()) {
-            throw new Error("Tournament not found");
-        }
-        const profileSnap = profile ? await transaction.get(profile.ref) : null;
-        if (profile && !profileSnap?.exists()) {
-            throw new Error(`Unable to find user for registration ${profileRegistration?.id ?? ""}.`);
-        }
-
-        const events = eventDocs.filter((eventSnap) => eventSnap.exists()).map((eventSnap) => ({
-            ref: eventSnap.ref,
-            event: {id: eventSnap.id, ...eventSnap.data()} as TournamentEvent,
-        }));
-        const limitedEvents = events.filter(({event}) =>
-            typeof event.max_participants === "number" && event.max_participants > 0,
+    try {
+        const tournamentRef = doc(db, "tournaments", tournamentId);
+        const eventsQuery = query(collection(db, "events"), where("tournament_id", "==", tournamentId));
+        const approvedRegistrationsQuery = query(
+            collection(db, "registrations"),
+            where("tournament_id", "==", tournamentId),
+            where("registration_status", "==", "approved"),
         );
-        const needsBackfill = limitedEvents.some(({event}) => typeof event.approved_participants !== "number");
-        const approvedRegistrations = needsBackfill
-            ? approvedSnapshots.docs.map((snapshot) => snapshot.data() as Registration)
-            : [];
+        // The SDK only permits document reads inside a transaction. The transaction
+        // below re-reads every event document before writing its counter, so concurrent
+        // attempts for the same event still conflict and retry safely.
+        const [eventSnapshots, approvedSnapshots] = await Promise.all([
+            getDocs(eventsQuery),
+            getDocs(approvedRegistrationsQuery),
+        ]);
+        const profileRegistration = next ?? previous;
+        const profile = profileRegistration ? await resolveUserProfileForRegistration(profileRegistration) : null;
 
-        const tournament = tournamentSnap.data() as Tournament;
-        const participantDelta = (isApproved(next) ? 1 : 0) - (isApproved(previous) ? 1 : 0);
-        const maxTournamentParticipants = tournament.max_participants;
-        const currentTournamentParticipants = typeof tournament.participants === "number" ? tournament.participants : 0;
-        if (
-            participantDelta > 0 &&
-            typeof maxTournamentParticipants === "number" &&
-            maxTournamentParticipants > 0 &&
-            currentTournamentParticipants + participantDelta > maxTournamentParticipants
-        ) {
-            throw new Error("Tournament registration is full.");
-        }
-
-        const eventUpdates: Array<{ref: DocumentReference; count: number}> = [];
-        for (const {ref, event} of limitedEvents) {
-            const previousSelected = Boolean(previous && isApproved(previous) && registrationMatchesEvent(previous, event));
-            const nextSelected = Boolean(next && isApproved(next) && registrationMatchesEvent(next, event));
-            const delta = (nextSelected ? 1 : 0) - (previousSelected ? 1 : 0);
-            const currentCount =
-                typeof event.approved_participants === "number"
-                    ? event.approved_participants
-                    : approvedRegistrations.filter((registration) => registrationMatchesEvent(registration, event)).length;
-            const nextCount = currentCount + delta;
-
-            if (nextCount > (event.max_participants ?? 0)) {
-                throw new Error(`${event.type} has reached the maximum participants.`);
+        await runTransaction(db, async (transaction) => {
+            const [tournamentSnap, ...eventDocs] = await Promise.all([
+                transaction.get(tournamentRef),
+                ...eventSnapshots.docs.map((eventSnapshot) => transaction.get(eventSnapshot.ref)),
+            ]);
+            if (!tournamentSnap.exists()) {
+                throw new Error("Tournament not found");
             }
-            if (nextCount < 0) {
-                throw new Error(`${event.type} participant count cannot be negative.`);
+            const profileSnap = profile ? await transaction.get(profile.ref) : null;
+            if (profile && !profileSnap?.exists()) {
+                throw new Error(`Unable to find user for registration ${profileRegistration?.id ?? ""}.`);
             }
-            if (delta !== 0 || typeof event.approved_participants !== "number") {
-                eventUpdates.push({ref, count: nextCount});
-            }
-        }
 
-        writeRegistration(transaction);
-        if (profile && profileSnap && next) {
-            const profileData = profileSnap.data() as FirestoreUser;
-            const existingRecords = profileData.registration_records ?? [];
-            const existingRecord = existingRecords.find((record) => record.tournament_id === next.tournament_id);
-            transaction.update(profile.ref, {
-                registration_records: [
-                    ...existingRecords.filter((record) => record.tournament_id !== next.tournament_id),
-                    mergeUserRegistrationRecord(existingRecord, next, Timestamp.now()),
-                ],
-                updated_at: Timestamp.now(),
-            });
-        } else if (profile && profileSnap && previous) {
-            const profileData = profileSnap.data() as FirestoreUser;
-            transaction.update(profile.ref, {
-                registration_records: (profileData.registration_records ?? []).filter(
-                    (record) => record.tournament_id !== previous.tournament_id,
-                ),
-                updated_at: Timestamp.now(),
-            });
-        }
-        if (participantDelta !== 0) {
-            transaction.update(tournamentRef, {participants: Math.max(0, currentTournamentParticipants + participantDelta)});
-        }
-        for (const eventUpdate of eventUpdates) {
-            transaction.update(eventUpdate.ref, {approved_participants: eventUpdate.count, updated_at: Timestamp.now()});
-        }
-    });
+            const events = eventDocs
+                .filter((eventSnap) => eventSnap.exists())
+                .map((eventSnap) => ({
+                    ref: eventSnap.ref,
+                    event: {id: eventSnap.id, ...eventSnap.data()} as TournamentEvent,
+                }));
+            const limitedEvents = events.filter(
+                ({event}) => typeof event.max_participants === "number" && event.max_participants > 0,
+            );
+            const needsBackfill = limitedEvents.some(({event}) => typeof event.approved_participants !== "number");
+            const approvedRegistrations = needsBackfill
+                ? approvedSnapshots.docs.map((snapshot) => snapshot.data() as Registration)
+                : [];
+
+            const tournament = tournamentSnap.data() as Tournament;
+            const participantDelta = (isApproved(next) ? 1 : 0) - (isApproved(previous) ? 1 : 0);
+            const maxTournamentParticipants = tournament.max_participants;
+            const currentTournamentParticipants = typeof tournament.participants === "number" ? tournament.participants : 0;
+            if (
+                participantDelta > 0 &&
+                typeof maxTournamentParticipants === "number" &&
+                maxTournamentParticipants > 0 &&
+                currentTournamentParticipants + participantDelta > maxTournamentParticipants
+            ) {
+                throw new Error("Tournament registration is full.");
+            }
+
+            const eventUpdates: Array<{ref: DocumentReference; count: number}> = [];
+            for (const {ref, event} of limitedEvents) {
+                const previousSelected = Boolean(previous && isApproved(previous) && registrationMatchesEvent(previous, event));
+                const nextSelected = Boolean(next && isApproved(next) && registrationMatchesEvent(next, event));
+                const delta = (nextSelected ? 1 : 0) - (previousSelected ? 1 : 0);
+                const currentCount =
+                    typeof event.approved_participants === "number"
+                        ? event.approved_participants
+                        : approvedRegistrations.filter((registration) => registrationMatchesEvent(registration, event)).length;
+                const nextCount = currentCount + delta;
+
+                if (nextCount > (event.max_participants ?? 0)) {
+                    throw new Error(`${event.type} has reached the maximum participants.`);
+                }
+                if (nextCount < 0) {
+                    throw new Error(`${event.type} participant count cannot be negative.`);
+                }
+                if (delta !== 0 || typeof event.approved_participants !== "number") {
+                    eventUpdates.push({ref, count: nextCount});
+                }
+            }
+
+            writeRegistration(transaction);
+            if (profile && profileSnap && next) {
+                const profileData = profileSnap.data() as FirestoreUser;
+                const existingRecords = profileData.registration_records ?? [];
+                const existingRecord = existingRecords.find((record) => record.tournament_id === next.tournament_id);
+                transaction.update(profile.ref, {
+                    registration_records: [
+                        ...existingRecords.filter((record) => record.tournament_id !== next.tournament_id),
+                        mergeUserRegistrationRecord(existingRecord, next, Timestamp.now()),
+                    ],
+                    updated_at: Timestamp.now(),
+                });
+            } else if (profile && profileSnap && previous) {
+                const profileData = profileSnap.data() as FirestoreUser;
+                transaction.update(profile.ref, {
+                    registration_records: (profileData.registration_records ?? []).filter(
+                        (record) => record.tournament_id !== previous.tournament_id,
+                    ),
+                    updated_at: Timestamp.now(),
+                });
+            }
+            if (participantDelta !== 0) {
+                transaction.update(tournamentRef, {participants: Math.max(0, currentTournamentParticipants + participantDelta)});
+            }
+            for (const eventUpdate of eventUpdates) {
+                transaction.update(eventUpdate.ref, {approved_participants: eventUpdate.count, updated_at: Timestamp.now()});
+            }
+        });
+    } catch (error) {
+        void captureClientError(error, {entityType: "registration", tournamentId});
+        throw error;
+    }
 }
 
 export async function createRegistration(user: FirestoreUser, data: Registration): Promise<string> {
@@ -702,7 +701,6 @@ export async function deleteRegistrationById(
         } catch (error) {
             console.error("Error deleting verification requests by tournament/member:", error);
         }
-
     } catch (error) {
         console.error("Error deleting registration:", error);
         throw error;

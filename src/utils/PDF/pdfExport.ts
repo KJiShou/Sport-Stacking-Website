@@ -1,7 +1,6 @@
 // @ts-nocheck
 // src/utils/pdfExportUtils.ts
 import defaultIconSrc from "@/assets/icon.avif";
-import notoSansSCFontUrl from "@/assets/fonts/NotoSansSC-VF.ttf?url";
 import type {
     AllPrelimResultsPDFParams,
     BracketResults,
@@ -29,7 +28,9 @@ import {
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {nanoid} from "nanoid";
+import notoSansSCFontUrl from "../../assets/fonts/NotoSansSC-VF.ttf?url";
 import type {AgeBracket, FinalCriterion, Registration, Team, Tournament, TournamentEvent} from "../../schema";
+import {measureSyncOperation} from "../../services/performance";
 
 // Utility Functions
 const PDF_DEFAULT_FONT_FAMILY = "times";
@@ -199,7 +200,7 @@ const createPDFFilename = (parts: string[]): string =>
         .toLowerCase();
 
 const openPDFInNewTab = (doc: jsPDF, filename: string): void => {
-    const pdfBlob = doc.output("blob");
+    const pdfBlob = measureSyncOperation("pdf_render_output", () => doc.output("blob"));
     const pdfUrl = URL.createObjectURL(pdfBlob);
     const newWindow = window.open("", "_blank");
 

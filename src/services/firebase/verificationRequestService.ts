@@ -1,6 +1,7 @@
 import type {VerificationRequest} from "@/schema";
 import {collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, where, writeBatch} from "firebase/firestore";
 import {httpsCallable} from "firebase/functions";
+import {captureClientError, createOperationId, getRelease} from "../observability";
 import {db, functions} from "./config";
 
 const VERIFICATION_REQUEST_COLLECTION = "verification_requests";
@@ -291,9 +292,14 @@ export async function rejectTeamInvitation(requestId: string): Promise<void> {
     if (!normalizedRequestId) {
         throw new Error("Invalid verification request.");
     }
-    const rejectInvitation = httpsCallable<{requestId: string}, {success: boolean; status: string}>(
-        functions,
-        "rejectTeamInvitation",
-    );
-    await rejectInvitation({requestId: normalizedRequestId});
+    const rejectInvitation = httpsCallable<
+        {requestId: string; meta?: {operationId: string; release: string}},
+        {success: boolean; status: string}
+    >(functions, "rejectTeamInvitation");
+    try {
+        await rejectInvitation({requestId: normalizedRequestId, meta: {operationId: createOperationId(), release: getRelease()}});
+    } catch (error) {
+        void captureClientError(error, {entityType: "verification-request", entityId: normalizedRequestId});
+        throw error;
+    }
 }
