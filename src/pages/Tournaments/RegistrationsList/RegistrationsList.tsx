@@ -650,6 +650,22 @@ export default function RegistrationsListPage() {
                                 const registrationStatus = registration?.registration_status;
                                 const canApprove =
                                     isParentChild || registrationStatus === "pending" || registrationStatus === "approved";
+                                let invitationTagColor = "red";
+                                if (isParentChild) {
+                                    invitationTagColor = "green";
+                                } else if (registrationStatus === "approved") {
+                                    invitationTagColor = "blue";
+                                } else if (registrationStatus === "pending") {
+                                    invitationTagColor = "orange";
+                                }
+
+                                let invitationTagLabel = "Not registered";
+                                if (isParentChild) {
+                                    invitationTagLabel = "Parent profile only";
+                                } else if (registrationStatus) {
+                                    invitationTagLabel = `${registrationStatus} registration`;
+                                }
+
                                 return (
                                     <Card key={invitation.id} size="small" title={invitation.event_label ?? "Team invitation"}>
                                         <div className="flex flex-col gap-1">
@@ -662,23 +678,7 @@ export default function RegistrationsListPage() {
                                             <span>
                                                 <strong>Leader:</strong> {invitation.leader_label ?? "-"}
                                             </span>
-                                            <Tag
-                                                color={
-                                                    isParentChild
-                                                        ? "green"
-                                                        : registrationStatus === "approved"
-                                                          ? "blue"
-                                                          : registrationStatus === "pending"
-                                                            ? "orange"
-                                                            : "red"
-                                                }
-                                            >
-                                                {isParentChild
-                                                    ? "Parent profile only"
-                                                    : registrationStatus
-                                                      ? `${registrationStatus} registration`
-                                                      : "Not registered"}
-                                            </Tag>
+                                            <Tag color={invitationTagColor}>{invitationTagLabel}</Tag>
                                             {!canApprove && (
                                                 <Typography.Text type="warning">
                                                     {registrationStatus === "rejected"

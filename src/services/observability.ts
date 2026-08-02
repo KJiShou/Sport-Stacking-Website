@@ -46,8 +46,7 @@ const fingerprint = (message: string, stack: string, route: string): string =>
     `${message}\n${stack.split("\n").slice(0, 3).join("\n")}\n${route}`;
 
 export const createOperationId = (): string => {
-    if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return crypto.randomUUID();
 };
 
 export const captureClientError = async (value: unknown, context: ClientErrorContext = {}): Promise<void> => {

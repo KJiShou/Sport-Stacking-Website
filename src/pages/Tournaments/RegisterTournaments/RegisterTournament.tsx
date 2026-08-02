@@ -293,6 +293,19 @@ export default function RegisterTournamentPage() {
         }
     };
 
+    const handleLookingForTeamChange = (eventId: string, checked: boolean) => {
+        form.setFieldValue(`teams.${eventId}.looking_for_team_members`, false);
+        setLookingForTeams((previous) => {
+            if (!checked) {
+                return previous.filter((id) => id !== eventId);
+            }
+            if (previous.includes(eventId)) {
+                return previous;
+            }
+            return [...previous, eventId];
+        });
+    };
+
     const ensureOccupiedIdsForEvent = async (eventId: string): Promise<Set<string>> => {
         const normalizedEventId = eventId.trim();
         if (!normalizedEventId || !tournamentId) {
@@ -1375,21 +1388,9 @@ export default function RegisterTournamentPage() {
                                                         key={`individual-looking-${eventId}`}
                                                         checked={lookingForTeams.includes(eventId)}
                                                         disabled={!!lookingForTeamMembers}
-                                                        onChange={(checked: boolean) => {
-                                                            // Uncheck 'Looking for Team Members' if checking this
-                                                            form.setFieldValue(
-                                                                `teams.${eventId}.looking_for_team_members`,
-                                                                false,
-                                                            );
-                                                            // Update looking for teams state
-                                                            setLookingForTeams((prev) =>
-                                                                checked
-                                                                    ? prev.includes(eventId)
-                                                                        ? prev
-                                                                        : [...prev, eventId]
-                                                                    : prev.filter((id) => id !== eventId),
-                                                            );
-                                                        }}
+                                                        onChange={(checked: boolean) =>
+                                                            handleLookingForTeamChange(eventId, checked)
+                                                        }
                                                     >
                                                         <strong>{eventLabel}</strong>
                                                     </Checkbox>

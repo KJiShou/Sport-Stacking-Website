@@ -107,7 +107,6 @@ export default function AdminRegisterMemberPage() {
         member && selectedEventIds.length > 0 && allRequiredIndividualEventsSelected && teamDetailsComplete,
     );
     const memberAge = member && tournament ? getAgeAtTournament(member.birthdate, tournament.start_date) : null;
-
     useEffect(() => {
         if (!tournamentId) {
             setLoadingData(false);
@@ -218,6 +217,102 @@ export default function AdminRegisterMemberPage() {
             });
         }
     };
+
+    let eventSelectionContent = (
+        <div className="space-y-6">
+            {individualEvents.length > 0 && (
+                <div>
+                    <Typography.Text bold className="mb-3 block text-base">
+                        Individual Events
+                    </Typography.Text>
+                    <div className="grid gap-3">
+                        {individualEvents.map((event) => {
+                            const eventId = event.id ?? "";
+                            const selected = selectedEventIds.includes(eventId);
+                            return (
+                                <label
+                                    key={eventId}
+                                    htmlFor={`individual-event-${eventId}`}
+                                    className={`flex cursor-pointer rounded-lg border p-4 transition-colors ${
+                                        selected ? "border-blue-500 bg-blue-50/60" : "border-gray-200 hover:border-blue-300"
+                                    }`}
+                                >
+                                    <Checkbox
+                                        id={`individual-event-${eventId}`}
+                                        checked={selected}
+                                        onChange={(checked) => toggleEvent(eventId, checked)}
+                                    />
+                                    <div className="ml-3 min-w-0">
+                                        <Typography.Text bold>{getEventLabel(event)}</Typography.Text>
+                                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
+                                            <span>Age: {getAgeLabel(event)}</span>
+                                            <span>Gender: {getGenderLabel(event.gender)}</span>
+                                            <span>Individual event</span>
+                                        </div>
+                                    </div>
+                                </label>
+                            );
+                        })}
+                    </div>
+                    {requiredIndividualEvents.length > 0 && (
+                        <Typography.Text type="secondary" className="mt-2 block text-sm">
+                            All eligible Individual events must be selected for this member.
+                        </Typography.Text>
+                    )}
+                </div>
+            )}
+            {teamEvents.length > 0 && (
+                <div>
+                    <Typography.Text bold className="mb-3 block text-base">
+                        Team Events
+                    </Typography.Text>
+                    <div className="grid gap-3">
+                        {teamEvents.map((event) => {
+                            const eventId = event.id ?? "";
+                            const selected = selectedEventIds.includes(eventId);
+                            return (
+                                <label
+                                    key={eventId}
+                                    htmlFor={`team-event-${eventId}`}
+                                    className={`flex cursor-pointer rounded-lg border p-4 transition-colors ${
+                                        selected ? "border-blue-500 bg-blue-50/60" : "border-gray-200 hover:border-blue-300"
+                                    }`}
+                                >
+                                    <Checkbox
+                                        id={`team-event-${eventId}`}
+                                        checked={selected}
+                                        onChange={(checked) => toggleEvent(eventId, checked)}
+                                    />
+                                    <div className="ml-3 min-w-0">
+                                        <Typography.Text bold>{getEventLabel(event)}</Typography.Text>
+                                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
+                                            <span>Age: {getAgeLabel(event)}</span>
+                                            <span>Gender: {getGenderLabel(event.gender)}</span>
+                                            <span>Team size: {teamSizeForEvent(event)} participants</span>
+                                        </div>
+                                    </div>
+                                </label>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+
+    if (!member) {
+        eventSelectionContent = (
+            <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3">
+                <Empty description="Select a member to see eligible events." />
+            </div>
+        );
+    } else if (eligibleEvents.length === 0) {
+        eventSelectionContent = (
+            <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3">
+                <Empty description="This member is not eligible for any events." />
+            </div>
+        );
+    }
 
     const searchTeamMembers = async (eventId: string, value: string) => {
         const trimmedValue = value.trim();
@@ -410,7 +505,7 @@ export default function AdminRegisterMemberPage() {
                                     </div>
                                     <div>
                                         <div className="text-xs uppercase tracking-wide text-gray-400">Age at tournament</div>
-                                        <div className="font-medium text-gray-700">{memberAge === null ? "—" : memberAge}</div>
+                                        <div className="font-medium text-gray-700">{memberAge ?? "—"}</div>
                                     </div>
                                 </div>
                             </div>
@@ -425,99 +520,7 @@ export default function AdminRegisterMemberPage() {
                             Select the events for this member. Events are filtered by the member&apos;s eligibility, and no event
                             is selected by default.
                         </Typography.Paragraph>
-                        {!member ? (
-                            <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3">
-                                <Empty description="Select a member to see eligible events." />
-                            </div>
-                        ) : eligibleEvents.length === 0 ? (
-                            <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3">
-                                <Empty description="This member is not eligible for any events." />
-                            </div>
-                        ) : (
-                            <div className="space-y-6">
-                                {individualEvents.length > 0 && (
-                                    <div>
-                                        <Typography.Text bold className="mb-3 block text-base">
-                                            Individual Events
-                                        </Typography.Text>
-                                        <div className="grid gap-3">
-                                            {individualEvents.map((event) => {
-                                                const eventId = event.id ?? "";
-                                                const selected = selectedEventIds.includes(eventId);
-                                                return (
-                                                    <label
-                                                        key={eventId}
-                                                        htmlFor={`individual-event-${eventId}`}
-                                                        className={`flex cursor-pointer rounded-lg border p-4 transition-colors ${
-                                                            selected
-                                                                ? "border-blue-500 bg-blue-50/60"
-                                                                : "border-gray-200 hover:border-blue-300"
-                                                        }`}
-                                                    >
-                                                        <Checkbox
-                                                            id={`individual-event-${eventId}`}
-                                                            checked={selected}
-                                                            onChange={(checked) => toggleEvent(eventId, checked)}
-                                                        />
-                                                        <div className="ml-3 min-w-0">
-                                                            <Typography.Text bold>{getEventLabel(event)}</Typography.Text>
-                                                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-                                                                <span>Age: {getAgeLabel(event)}</span>
-                                                                <span>Gender: {getGenderLabel(event.gender)}</span>
-                                                                <span>Individual event</span>
-                                                            </div>
-                                                        </div>
-                                                    </label>
-                                                );
-                                            })}
-                                        </div>
-                                        {requiredIndividualEvents.length > 0 && (
-                                            <Typography.Text type="secondary" className="mt-2 block text-sm">
-                                                All eligible Individual events must be selected for this member.
-                                            </Typography.Text>
-                                        )}
-                                    </div>
-                                )}
-                                {teamEvents.length > 0 && (
-                                    <div>
-                                        <Typography.Text bold className="mb-3 block text-base">
-                                            Team Events
-                                        </Typography.Text>
-                                        <div className="grid gap-3">
-                                            {teamEvents.map((event) => {
-                                                const eventId = event.id ?? "";
-                                                const selected = selectedEventIds.includes(eventId);
-                                                return (
-                                                    <label
-                                                        key={eventId}
-                                                        htmlFor={`team-event-${eventId}`}
-                                                        className={`flex cursor-pointer rounded-lg border p-4 transition-colors ${
-                                                            selected
-                                                                ? "border-blue-500 bg-blue-50/60"
-                                                                : "border-gray-200 hover:border-blue-300"
-                                                        }`}
-                                                    >
-                                                        <Checkbox
-                                                            id={`team-event-${eventId}`}
-                                                            checked={selected}
-                                                            onChange={(checked) => toggleEvent(eventId, checked)}
-                                                        />
-                                                        <div className="ml-3 min-w-0">
-                                                            <Typography.Text bold>{getEventLabel(event)}</Typography.Text>
-                                                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-                                                                <span>Age: {getAgeLabel(event)}</span>
-                                                                <span>Gender: {getGenderLabel(event.gender)}</span>
-                                                                <span>Team size: {teamSizeForEvent(event)} participants</span>
-                                                            </div>
-                                                        </div>
-                                                    </label>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        {eventSelectionContent}
                     </section>
 
                     {selectedTeamEvents.length > 0 && (

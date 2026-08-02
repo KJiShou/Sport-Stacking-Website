@@ -404,6 +404,80 @@ type RegisterUserData = Omit<FirestoreUser, "id" | "birthdate"> & {birthdate: un
 type GoogleRegisterData = Omit<FirestoreUser, "id" | "email" | "image_url" | "birthdate"> & {birthdate: unknown};
 type UpdateUserProfileData = Partial<Omit<FirestoreUser, "email" | "IC" | "id" | "birthdate">> & {birthdate?: unknown};
 
+const claimGoogleProfileByIdentityKey = async (
+    uid: string,
+    email: string,
+    identityKey: string | null,
+    birthdate: unknown,
+): Promise<string | null> => {
+    if (!identityKey) {
+        return null;
+    }
+
+    const identityQuery = query(collection(db, "users"), where("identity_key", "==", identityKey));
+    const identitySnapshot = await getDocs(identityQuery);
+    if (identitySnapshot.empty) {
+        return null;
+    }
+
+    const existingDoc = identitySnapshot.docs[0];
+    const existingData = existingDoc.data() as FirestoreUser;
+    const owners = existingData.owner_uids ?? (existingDoc.id === uid ? [uid] : []);
+    if (owners.includes(uid)) {
+        return existingDoc.id;
+    }
+
+    const canClaim =
+        (existingData.account_status ?? "claimed") === "unclaimed" && isSameBirthdate(existingData.birthdate, birthdate);
+    if (!canClaim) {
+        throw new Error("This IC/passport is already linked to another account.");
+    }
+
+    await updateDoc(existingDoc.ref, {
+        owner_uids: arrayUnion(uid),
+        account_status: "claimed",
+        primary_owner_email: email,
+        email: existingData.email ?? email,
+        updated_at: Timestamp.now(),
+    });
+    return existingDoc.id;
+};
+
+const claimGoogleProfileByIc = async (
+    uid: string,
+    email: string,
+    identityNumber: string | null | undefined,
+    birthdate: unknown,
+): Promise<string | null> => {
+    const identityQuery = query(collection(db, "users"), where("IC", "==", identityNumber));
+    const identitySnapshot = await getDocs(identityQuery);
+    if (identitySnapshot.empty) {
+        return null;
+    }
+
+    const matchingDocs = identitySnapshot.docs.filter((docSnap) => (docSnap.data() as FirestoreUser).email === email);
+    if (matchingDocs.length === 0) {
+        throw new Error("This IC is already registered with another email.");
+    }
+
+    const claimableDoc = matchingDocs.find((docSnap) => {
+        const data = docSnap.data() as FirestoreUser;
+        return (data.account_status ?? "claimed") === "unclaimed" && isSameBirthdate(data.birthdate, birthdate);
+    });
+    if (!claimableDoc) {
+        throw new Error("This IC/passport is already registered.");
+    }
+
+    await updateDoc(claimableDoc.ref, {
+        owner_uids: arrayUnion(uid),
+        account_status: "claimed",
+        primary_owner_email: email,
+        email,
+        updated_at: Timestamp.now(),
+    });
+    return claimableDoc.id;
+};
+
 export const register = async (userData: RegisterUserData) => {
     const {email, password, IC, birthdate, ...rest} = userData;
     if (!email) {
@@ -477,60 +551,19 @@ export const registerWithGoogle = async (firebaseUser: User, extraData: GoogleRe
         birthdate: normalizeBirthdateForWrite(extraData.birthdate),
     };
 
-    if (identityKey) {
-        const identityQuery = query(collection(db, "users"), where("identity_key", "==", identityKey));
-        const identitySnapshot = await getDocs(identityQuery);
-        if (!identitySnapshot.empty) {
-            const existingDoc = identitySnapshot.docs[0];
-            const existingData = existingDoc.data() as FirestoreUser;
-            const owners = existingData.owner_uids ?? (existingDoc.id === uid ? [uid] : []);
-            if (owners.includes(uid)) {
-                return existingDoc.id;
-            }
-            if (
-                (existingData.account_status ?? "claimed") === "unclaimed" &&
-                isSameBirthdate(existingData.birthdate, normalizedExtraData.birthdate)
-            ) {
-                await updateDoc(existingDoc.ref, {
-                    owner_uids: arrayUnion(uid),
-                    account_status: "claimed",
-                    primary_owner_email: firebaseUser.email,
-                    email: existingData.email ?? firebaseUser.email,
-                    updated_at: Timestamp.now(),
-                });
-                return existingDoc.id;
-            }
-            throw new Error("This IC/passport is already linked to another account.");
-        }
+    const identityProfileId = await claimGoogleProfileByIdentityKey(
+        uid,
+        firebaseUser.email,
+        identityKey,
+        normalizedExtraData.birthdate,
+    );
+    if (identityProfileId !== null) {
+        return identityProfileId;
     }
 
-    // ✅ 1. Check if IC already exists
-    const q = query(collection(db, "users"), where("IC", "==", extraData.IC));
-    const snapshot = await getDocs(q);
-
-    if (!snapshot.empty) {
-        const matchingDocs = snapshot.docs.filter((docSnap) => (docSnap.data() as FirestoreUser).email === firebaseUser.email);
-        if (matchingDocs.length === 0) {
-            throw new Error("This IC is already registered with another email.");
-        }
-        const claimableDoc = matchingDocs.find((docSnap) => {
-            const data = docSnap.data() as FirestoreUser;
-            return (
-                (data.account_status ?? "claimed") === "unclaimed" &&
-                isSameBirthdate(data.birthdate, normalizedExtraData.birthdate)
-            );
-        });
-        if (claimableDoc) {
-            await updateDoc(claimableDoc.ref, {
-                owner_uids: arrayUnion(uid),
-                account_status: "claimed",
-                primary_owner_email: firebaseUser.email,
-                email: firebaseUser.email,
-                updated_at: Timestamp.now(),
-            });
-            return claimableDoc.id;
-        }
-        throw new Error("This IC/passport is already registered.");
+    const icProfileId = await claimGoogleProfileByIc(uid, firebaseUser.email, extraData.IC, normalizedExtraData.birthdate);
+    if (icProfileId !== null) {
+        return icProfileId;
     }
 
     // ✅ 2. Use Firebase UID as the first profile doc id, then generated docs for additional profiles.
