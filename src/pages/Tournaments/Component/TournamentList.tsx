@@ -55,6 +55,7 @@ import {type ReactNode, useEffect, useRef, useState} from "react";
 
 import {DEFAULT_AGE_BRACKET, DEFAULT_EVENTS} from "@/constants/tournamentDefaults";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
+import {getTournamentFeeValidationError} from "@/schema";
 import type {UserRegistrationRecord} from "@/schema/UserSchema";
 import {fetchRegistrationsForUser} from "@/services/firebase/registerService";
 import {deleteFile, uploadFile} from "@/services/firebase/storageService";
@@ -1139,7 +1140,7 @@ export default function TournamentList() {
             // Check if tournament is ongoing or ended - restrict name and location changes
             const isOngoingOrEnded = selectedTournament.status === "On Going" || selectedTournament.status === "End";
 
-            updateTournament(user, selectedTournament.id, {
+            await updateTournament(user, selectedTournament.id, {
                 name: isOngoingOrEnded ? selectedTournament.name : values.name,
                 start_date: startDate,
                 end_date: endDate,
@@ -1582,7 +1583,14 @@ export default function TournamentList() {
                                 <Form.Item
                                     label="Registration Fee"
                                     field="registration_fee"
-                                    rules={[{required: true, message: "Please input registration fee"}]}
+                                    rules={[
+                                        {required: true, message: "Please input registration fee"},
+                                        {
+                                            validator: (value, callback) => {
+                                                callback(getTournamentFeeValidationError(value, "Registration fee"));
+                                            },
+                                        },
+                                    ]}
                                 >
                                     <InputNumber min={0} style={{width: "100%"}} placeholder="Enter registration fee" />
                                 </Form.Item>
@@ -1590,7 +1598,14 @@ export default function TournamentList() {
                                 <Form.Item
                                     label="Member Registration Fee"
                                     field="member_registration_fee"
-                                    rules={[{required: true, message: "Please input member registration fee"}]}
+                                    rules={[
+                                        {required: true, message: "Please input member registration fee"},
+                                        {
+                                            validator: (value, callback) => {
+                                                callback(getTournamentFeeValidationError(value, "Member registration fee"));
+                                            },
+                                        },
+                                    ]}
                                 >
                                     <InputNumber min={0} style={{width: "100%"}} placeholder="Enter member registration fee" />
                                 </Form.Item>

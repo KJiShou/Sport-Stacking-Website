@@ -61,6 +61,23 @@ export const PaymentMethodSchema = z.object({
 
 export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
 
+/**
+ * Registration fees must be finite, non-negative numbers. Keeping this as a
+ * shared schema lets both the forms and the Firestore service enforce the same
+ * rule.
+ */
+export const TournamentFeeSchema = z.number().finite().nonnegative();
+
+export const getTournamentFeeValidationError = (value: unknown, label: string): string | undefined => {
+    if (value === undefined || value === null || value === "") {
+        return `${label} is required.`;
+    }
+
+    return TournamentFeeSchema.safeParse(value).success
+        ? undefined
+        : `${label} must be a finite number greater than or equal to 0.`;
+};
+
 // main tournament schema
 export const TournamentSchema = z.object({
     id: z.string().optional().nullable(),
@@ -93,8 +110,8 @@ export const TournamentSchema = z.object({
         .union([z.instanceof(Timestamp), z.instanceof(Date)])
         .optional()
         .nullable(),
-    registration_fee: z.number().optional().nullable(),
-    member_registration_fee: z.number().optional().nullable(),
+    registration_fee: TournamentFeeSchema.optional().nullable(),
+    member_registration_fee: TournamentFeeSchema.optional().nullable(),
     payment_methods: z.array(PaymentMethodSchema).optional().nullable(),
     create_at: z.instanceof(Timestamp).optional().nullable(),
     updated_at: z.instanceof(Timestamp).optional().nullable(),

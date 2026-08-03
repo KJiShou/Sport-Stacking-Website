@@ -3,7 +3,9 @@ export {
     EventSchema,
     FinalCriterionSchema,
     PaymentMethodSchema,
+    TournamentFeeSchema,
     TournamentSchema,
+    getTournamentFeeValidationError,
 } from "./TournamentSchema";
 export type {AgeBracket, FinalCriterion, PaymentMethod, Tournament, TournamentEvent} from "./TournamentSchema";
 
