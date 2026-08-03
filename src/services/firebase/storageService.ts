@@ -1,5 +1,4 @@
 import {deleteObject, getDownloadURL, listAll, ref, uploadBytes, uploadBytesResumable} from "firebase/storage";
-import {captureClientError} from "../observability";
 import {measureOperationWithMetric} from "../performance";
 import {storage} from "./config";
 
@@ -15,10 +14,16 @@ export const uploadAvatar = async (file: File, uid: string): Promise<string> => 
         contentType: file.type ?? "image/jpeg", // 👈 fallback to safe default
     };
 
-    return measureOperationWithMetric("avatar_upload", "fileSizeBytes", file.size, async () => {
-        await uploadBytes(storageRef, file, metadata); // ✅ metadata 放这里
-        return getDownloadURL(storageRef);
-    });
+    return measureOperationWithMetric(
+        "avatar_upload",
+        "fileSizeBytes",
+        file.size,
+        async () => {
+            await uploadBytes(storageRef, file, metadata); // ✅ metadata 放这里
+            return getDownloadURL(storageRef);
+        },
+        {entityType: "avatar-upload"},
+    );
 };
 
 /**
@@ -87,7 +92,6 @@ export function uploadFile(
                         timeoutMs,
                         timestamp: new Date().toISOString(),
                     });
-                    void captureClientError(timeoutError, {entityType: "storage-upload", entityId: path});
                     settleWithReject(timeoutError);
                 }, timeoutMs);
 
@@ -101,7 +105,6 @@ export function uploadFile(
                     },
                     (error) => {
                         console.error("Upload failed:", error);
-                        void captureClientError(error, {entityType: "storage-upload", entityId: path});
                         settleWithReject(error instanceof Error ? error : new Error("UPLOAD_FAILED"));
                     },
                     async () => {
@@ -115,12 +118,12 @@ export function uploadFile(
                                 fileName: fileName ?? null,
                                 timestamp: new Date().toISOString(),
                             });
-                            void captureClientError(error, {entityType: "storage-upload", entityId: path});
                             settleWithReject(error instanceof Error ? error : new Error("DOWNLOAD_URL_FAILED"));
                         }
                     },
                 );
             }),
+        {entityType: "storage-upload", entityId: path},
     );
 }
 

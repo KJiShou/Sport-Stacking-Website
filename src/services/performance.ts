@@ -1,8 +1,22 @@
 import {type FirebasePerformance, type PerformanceTrace, getPerformance, trace} from "firebase/performance";
 import {app} from "./firebase/config";
-import {captureClientError} from "./observability";
+import {type ClientErrorContext, captureClientError} from "./observability";
 
 let performancePromise: Promise<FirebasePerformance | null> | null = null;
+let measurementSequence = 0;
+
+export type PerformanceErrorContext = Pick<
+    ClientErrorContext,
+    "activeProfileGlobalId" | "route" | "tournamentId" | "entityType" | "entityId"
+>;
+
+const reportOperationError = (error: unknown, name: string, context: PerformanceErrorContext): void => {
+    void captureClientError(error, {
+        entityType: "performance-operation",
+        entityId: name,
+        ...context,
+    });
+};
 
 const stopTraceSafely = (currentTrace: PerformanceTrace | null): void => {
     try {
@@ -23,7 +37,11 @@ export const initializePerformance = (): void => {
     void getPerformanceIfSupported();
 };
 
-export const measureOperation = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+export const measureOperation = async <T>(
+    name: string,
+    operation: () => Promise<T>,
+    errorContext: PerformanceErrorContext = {},
+): Promise<T> => {
     try {
         const performance = await getPerformanceIfSupported();
         if (!performance) return await operation();
@@ -47,7 +65,7 @@ export const measureOperation = async <T>(name: string, operation: () => Promise
             stopTraceSafely(currentTrace);
         }
     } catch (error) {
-        void captureClientError(error, {entityType: "performance-operation", entityId: name});
+        reportOperationError(error, name, errorContext);
         throw error;
     }
 };
@@ -57,6 +75,7 @@ export const measureOperationWithMetric = async <T>(
     metricName: string,
     metricValue: number,
     operation: () => Promise<T>,
+    errorContext: PerformanceErrorContext = {},
 ): Promise<T> => {
     try {
         const performance = await getPerformanceIfSupported();
@@ -82,23 +101,24 @@ export const measureOperationWithMetric = async <T>(
             stopTraceSafely(currentTrace);
         }
     } catch (error) {
-        void captureClientError(error, {entityType: "performance-operation", entityId: name});
+        reportOperationError(error, name, errorContext);
         throw error;
     }
 };
 
-export const measureSyncOperation = <T>(name: string, operation: () => T): T => {
+export const measureSyncOperation = <T>(name: string, operation: () => T, errorContext: PerformanceErrorContext = {}): T => {
     if (typeof window === "undefined" || typeof window.performance?.mark !== "function") {
         try {
             return operation();
         } catch (error) {
-            void captureClientError(error, {entityType: "performance-operation", entityId: name});
+            reportOperationError(error, name, errorContext);
             throw error;
         }
     }
     const safeName = name.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 80);
-    const start = `${safeName}-start-${Date.now()}`;
-    const end = `${safeName}-end-${Date.now()}`;
+    const measurementName = `${safeName}-${Date.now()}-${measurementSequence++}`;
+    const start = `${measurementName}-start`;
+    const end = `${measurementName}-end`;
     let firebaseTrace: PerformanceTrace | null = null;
     try {
         try {
@@ -110,14 +130,22 @@ export const measureSyncOperation = <T>(name: string, operation: () => T): T => 
         window.performance.mark(start);
         return operation();
     } catch (error) {
-        void captureClientError(error, {entityType: "performance-operation", entityId: name});
+        reportOperationError(error, name, errorContext);
         throw error;
     } finally {
         try {
             window.performance.mark(end);
-            window.performance.measure(safeName, start, end);
+            window.performance.measure(measurementName, start, end);
         } catch {
             // Performance monitoring must never affect the user operation.
+        } finally {
+            try {
+                window.performance.clearMarks(start);
+                window.performance.clearMarks(end);
+                window.performance.clearMeasures(measurementName);
+            } catch {
+                // Performance monitoring must never affect the user operation.
+            }
         }
         try {
             firebaseTrace?.stop();

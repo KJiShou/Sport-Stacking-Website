@@ -11,6 +11,7 @@ import {
     safeAuditValueForTests,
     sanitizeClientError,
     sanitizeClientStack,
+    shouldAuditFirestoreUserWrite,
 } from "../observability.js";
 
 describe("observability helpers", () => {
@@ -133,5 +134,15 @@ describe("observability helpers", () => {
             sanitizeClientError("failed for jane@example.com token=secret"),
             "failed for [redacted-email] token=[redacted]",
         );
+    });
+
+    it("audits only authenticated unknown principals", () => {
+        for (const authType of ["service_account", "api_key", "system", "unauthenticated"]) {
+            assert.equal(shouldAuditFirestoreUserWrite(authType, "uid-1"), false);
+        }
+        assert.equal(shouldAuditFirestoreUserWrite("unknown"), false);
+        assert.equal(shouldAuditFirestoreUserWrite("unknown", ""), false);
+        assert.equal(shouldAuditFirestoreUserWrite("unknown", "  "), false);
+        assert.equal(shouldAuditFirestoreUserWrite("unknown", "uid-1"), true);
     });
 });

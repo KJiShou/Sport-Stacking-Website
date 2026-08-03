@@ -39,6 +39,7 @@ import {
     sanitizeClientError,
     sanitizeClientStack,
     setAuditLogInTransaction,
+    shouldAuditFirestoreUserWrite,
     writeAuditLog,
     writeAuditLogBestEffort,
 } from "./observability.js";
@@ -2916,9 +2917,10 @@ const getTournamentIdFromChange = (
 const auditFirestoreChange = async (event: AuditChangeEvent, entityType: string): Promise<void> => {
     const change = event.data;
     if (!change) return;
-    // Server-side trigger writes (including the existing synchronization jobs)
-    // are not user actions. Explicit Admin callables write their own audit entry.
-    if (event.authType === "system" || event.authType === "service_account") return;
+    // Server-side, API-key, and unauthenticated writes are not user actions.
+    // Explicit Admin callables write their own audit entry. Firestore's auth
+    // context represents authenticated app users as `unknown` with authId.
+    if (!shouldAuditFirestoreUserWrite(event.authType, event.authId)) return;
 
     const entityId = event.params.documentId ?? "unknown";
     const before = getSnapshotData(change.before);

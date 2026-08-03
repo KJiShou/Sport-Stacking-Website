@@ -14,6 +14,14 @@ export type ActorContext = {
     actorGlobalIds?: string[];
 };
 
+/**
+ * Firestore auth-context events do not expose a `user` auth type. Authenticated
+ * application writes are represented as `unknown` with the principal ID; all
+ * other auth types are non-user, system, or unauthenticated writes.
+ */
+export const shouldAuditFirestoreUserWrite = (authType: string, authId?: string): boolean =>
+    authType === "unknown" && typeof authId === "string" && authId.trim().length > 0;
+
 export type AuditInput = ActorContext & {
     action: string;
     status: "success" | "failure" | "warning";

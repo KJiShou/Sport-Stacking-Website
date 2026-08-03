@@ -23,7 +23,6 @@ import {
     type TournamentTeamRecord,
     TournamentTeamRecordSchema,
 } from "../../schema/RecordSchema";
-import {captureClientError} from "../observability";
 import {measureOperation} from "../performance";
 import {db as firestore} from "./config";
 
@@ -270,12 +269,7 @@ const measureRecordSave = async (
     data: {tournament_id?: string},
     operation: () => Promise<string>,
 ): Promise<string> => {
-    try {
-        return await measureOperation(name, operation);
-    } catch (error) {
-        void captureClientError(error, {entityType: "score-save", tournamentId: data.tournament_id});
-        throw error;
-    }
+    return measureOperation(name, operation, {entityType: "score-save", tournamentId: data.tournament_id});
 };
 
 export const saveRecord = (data: TournamentRecord): Promise<string> =>
