@@ -2,6 +2,7 @@ import {DEFAULT_AGE_BRACKET, DEFAULT_EVENTS} from "@/constants/tournamentDefault
 import {useAuthContext} from "@/context/AuthContext";
 import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {AgeBracket, FinalCriterion, PaymentMethod, Tournament, TournamentEvent} from "@/schema";
+import {getTournamentFeeValidationError} from "@/schema";
 import {countries} from "@/schema/Country";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTournament, updateTournament} from "@/services/firebase/tournamentsService";
@@ -426,11 +427,33 @@ export default function CreateTournamentPage() {
                         />
                     </Form.Item>
 
-                    {/* Max Participants */}
-                    <Form.Item label="Registration Fee" field="registration_fee" rules={[{required: true}]}>
+                    {/* Registration fees */}
+                    <Form.Item
+                        label="Registration Fee"
+                        field="registration_fee"
+                        rules={[
+                            {required: true, message: "Please input registration fee"},
+                            {
+                                validator: (value, callback) => {
+                                    callback(getTournamentFeeValidationError(value, "Registration fee"));
+                                },
+                            },
+                        ]}
+                    >
                         <InputNumber min={0} placeholder="please enter..." />
                     </Form.Item>
-                    <Form.Item label="Member Registration Fee" field="member_registration_fee" rules={[{required: true}]}>
+                    <Form.Item
+                        label="Member Registration Fee"
+                        field="member_registration_fee"
+                        rules={[
+                            {required: true, message: "Please input member registration fee"},
+                            {
+                                validator: (value, callback) => {
+                                    callback(getTournamentFeeValidationError(value, "Member registration fee"));
+                                },
+                            },
+                        ]}
+                    >
                         <InputNumber min={0} placeholder="please enter..." />
                     </Form.Item>
 

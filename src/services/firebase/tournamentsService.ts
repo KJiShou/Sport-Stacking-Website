@@ -16,7 +16,7 @@ import {
     where,
 } from "firebase/firestore";
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "../../schema";
-import {EventSchema, TournamentSchema} from "../../schema";
+import {EventSchema, TournamentFeeSchema, TournamentSchema} from "../../schema";
 import {type LegacyTeam, dedupeTeamsByEvent} from "../../utils/teamDeduplication";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {getTeamEvents, normalizeEventSelections, teamMatchesEventKey} from "../../utils/tournament/eventUtils";
@@ -42,6 +42,12 @@ function isUUID(value: string): boolean {
     const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     return uuidV4Regex.test(value);
 }
+
+const assertTournamentFee = (value: unknown, label: string): void => {
+    if (!TournamentFeeSchema.safeParse(value).success) {
+        throw new Error(`${label} must be a finite number greater than or equal to 0.`);
+    }
+};
 
 const getNormalizedTeamEventType = (
     teamData: Partial<Pick<Team, "event_id" | "event">>,
@@ -237,6 +243,9 @@ export async function createTournament(
         throw new Error("Unauthorized: You do not have permission to create a tournament.");
     }
 
+    assertTournamentFee(data.registration_fee, "Registration fee");
+    assertTournamentFee(data.member_registration_fee, "Member registration fee");
+
     if (!data.name) {
         throw new Error("Tournament name is required.");
     }
@@ -415,6 +424,15 @@ export async function saveTournamentEvents(tournamentId: string, events: Tournam
 export async function updateTournament(user: FirestoreUser, tournamentId: string, data: Omit<Tournament, "id">): Promise<void> {
     if (!user?.roles?.edit_tournament && !(user.global_id === data.editor || user.global_id === data.recorder)) {
         throw new Error("Unauthorized");
+    }
+
+    // Partial updates (for example, uploading a logo after creation) may omit
+    // fee fields, but any fee supplied by a caller must still be valid.
+    if (Object.prototype.hasOwnProperty.call(data, "registration_fee")) {
+        assertTournamentFee(data.registration_fee, "Registration fee");
+    }
+    if (Object.prototype.hasOwnProperty.call(data, "member_registration_fee")) {
+        assertTournamentFee(data.member_registration_fee, "Member registration fee");
     }
 
     const tournamentRef = doc(db, "tournaments", tournamentId);
