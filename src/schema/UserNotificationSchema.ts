@@ -4,7 +4,7 @@ import {z} from "zod";
 export const UserNotificationSchema = z.object({
     id: z.string(),
     target_global_id: z.string(),
-    type: z.enum(["team_invitation_rejected"]),
+    type: z.enum(["team_invitation_rejected", "tournament_registration"]),
     status: z.enum(["unread", "read"]),
     title: z.string(),
     message: z.string(),

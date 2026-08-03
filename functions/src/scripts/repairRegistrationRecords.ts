@@ -1,5 +1,6 @@
 import {getApps, initializeApp} from "firebase-admin/app";
-import {Timestamp, type QueryDocumentSnapshot, getFirestore} from "firebase-admin/firestore";
+import {type QueryDocumentSnapshot, Timestamp, getFirestore} from "firebase-admin/firestore";
+import {writeScriptAudit} from "../observability.js";
 
 type RegistrationRecord = {
     tournament_id: string;
@@ -60,7 +61,10 @@ const buildRecord = (source: RegistrationSource, now: Timestamp): RegistrationRe
 });
 
 const main = async (): Promise<void> => {
-    const [registrationSnapshot, userSnapshot] = await Promise.all([db.collection("registrations").get(), db.collection("users").get()]);
+    const [registrationSnapshot, userSnapshot] = await Promise.all([
+        db.collection("registrations").get(),
+        db.collection("users").get(),
+    ]);
     const usersById = new Map(userSnapshot.docs.map((user) => [user.id, user]));
     const usersByGlobalId = new Map<string, QueryDocumentSnapshot>();
     const duplicateUserGlobalIds = new Set<string>();
@@ -123,7 +127,9 @@ const main = async (): Promise<void> => {
         const record = buildRecord(source, now);
         const userData = user.data() as UserSource;
         const currentRecords = Array.isArray(userData.registration_records)
-            ? (userData.registration_records.filter((item): item is RegistrationRecord => Boolean(item && typeof item === "object")) as RegistrationRecord[])
+            ? (userData.registration_records.filter((item): item is RegistrationRecord =>
+                  Boolean(item && typeof item === "object"),
+              ) as RegistrationRecord[])
             : [];
         const existing = currentRecords.find((item) => item.tournament_id === record.tournament_id);
         if (existing && recordsEqual(existing, record)) {
@@ -163,6 +169,19 @@ const main = async (): Promise<void> => {
         }
         await batch.commit();
     }
+    await writeScriptAudit(db, {
+        action: "repair.registration-records.apply",
+        status: "success",
+        entityType: "registration-records",
+        entityId: "batch",
+        changedFields: ["registration_records"],
+        after: {
+            usersUpdated: updates.size,
+            registrationsScanned: registrationSnapshot.size,
+            unmatchedRegistrations: unmatchedRegistrations.length,
+            ambiguousRegistrations: ambiguousRegistrations.length,
+        },
+    });
     console.info(`Synchronized registration records for ${updates.size} user(s).`);
 };
 

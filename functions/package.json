@@ -6,6 +6,7 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
+    "test": "yarn build && firebase emulators:exec --only firestore --project sport-stacking-website-test --config ../firebase.functions.test.json \"node --test lib/functions/src/__tests__/*.test.js\"",
     "shell": "npm run build && firebase functions:shell",
     "start": "yarn shell",
     "deploy": "firebase deploy --only functions",

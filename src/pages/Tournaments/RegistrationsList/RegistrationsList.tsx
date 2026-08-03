@@ -1,6 +1,11 @@
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import {countries} from "@/schema/Country";
+import {
+    type AdminPendingTeamInvitation,
+    approveAdminTeamInvitation,
+    fetchAdminPendingTeamInvitations,
+} from "@/services/firebase/adminRegistrationService";
 import {fetchUsersByIds} from "@/services/firebase/authService";
 import {type ImportWorkbookResult, importTournamentWorkbook} from "@/services/firebase/importService";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
@@ -13,6 +18,7 @@ import {findDuplicateEventSelections, getTeamEvents, groupEventSelections} from 
 import {downloadTournamentImportTemplate} from "@/utils/tournament/importTemplate";
 import {
     Button,
+    Card,
     Form,
     Input,
     Message,
@@ -23,6 +29,7 @@ import {
     type TableColumnProps,
     Tabs,
     Tag,
+    Typography,
     Upload,
 } from "@arco-design/web-react";
 import Table from "@arco-design/web-react/es/Table/table";
@@ -45,10 +52,7 @@ const parsePositivePage = (value: string | null): number => {
 const normalizeParticipantId = (value?: string | null): string => value?.trim().toLowerCase() ?? "";
 
 const getFallbackTeamEventType = (team: Team): string => {
-    const references = [
-        ...(Array.isArray(team.event) ? team.event : []),
-        typeof team.event_id === "string" ? team.event_id : "",
-    ]
+    const references = [...(Array.isArray(team.event) ? team.event : []), typeof team.event_id === "string" ? team.event_id : ""]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -66,9 +70,7 @@ const getFallbackTeamEventType = (team: Team): string => {
 const getTeamVerificationLabel = (team: Team, events: TournamentEvent[], verified: boolean): string => {
     const eventType = getTeamEvents(team, events)[0]?.type ?? getFallbackTeamEventType(team);
     const label =
-        eventType.toLowerCase().includes("team relay") || eventType.toLowerCase().includes("double")
-            ? eventType
-            : "Team";
+        eventType.toLowerCase().includes("team relay") || eventType.toLowerCase().includes("double") ? eventType : "Team";
 
     return `${label} ${verified ? "Verified" : "Not Verified"}`;
 };
@@ -105,6 +107,14 @@ export default function RegistrationsListPage() {
     const [importFileList, setImportFileList] = useState<UploadItem[]>([]);
     const [importResult, setImportResult] = useState<ImportWorkbookResult | null>(null);
     const [importResultView, setImportResultView] = useState<ImportResultView>("registrations");
+    const [teamInvitations, setTeamInvitations] = useState<AdminPendingTeamInvitation[]>([]);
+    const [teamInvitationsLoading, setTeamInvitationsLoading] = useState(false);
+    const [approvingInvitationId, setApprovingInvitationId] = useState<string | null>(null);
+    const canImportWorkbook =
+        user?.roles?.modify_admin === true ||
+        user?.roles?.edit_tournament === true ||
+        user?.global_id === tournament?.editor ||
+        user?.global_id === tournament?.recorder;
 
     const teamVerificationByRegistration = useMemo(() => {
         return registrations.reduce(
@@ -124,9 +134,7 @@ export default function RegistrationsListPage() {
                         normalizeParticipantId(stripTeamLeaderPrefix(team.leader_id)) === registrationGlobalId;
                     const memberMatch =
                         registrationGlobalId.length > 0 &&
-                        (team.members ?? []).some(
-                            (member) => normalizeParticipantId(member.global_id) === registrationGlobalId,
-                        );
+                        (team.members ?? []).some((member) => normalizeParticipantId(member.global_id) === registrationGlobalId);
 
                     if (directRegistrationMatch || leaderMatch || memberMatch) {
                         matchedTeams.set(team.id, team);
@@ -163,6 +171,40 @@ export default function RegistrationsListPage() {
             console.error("Failed to refresh registrations:", error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const loadTeamInvitations = async () => {
+        if (!tournamentId || !canImportWorkbook) {
+            setTeamInvitations([]);
+            return;
+        }
+
+        setTeamInvitationsLoading(true);
+        try {
+            const pendingInvitations = await fetchAdminPendingTeamInvitations(tournamentId);
+            setTeamInvitations(pendingInvitations);
+        } catch (error) {
+            setTeamInvitations([]);
+            console.error("Failed to load team invitations:", error);
+            Message.warning("Registrations loaded, but team invitations could not be loaded.");
+        } finally {
+            setTeamInvitationsLoading(false);
+        }
+    };
+
+    const handleApproveTeamInvitation = async (request: AdminPendingTeamInvitation) => {
+        setApprovingInvitationId(request.id);
+        try {
+            await approveAdminTeamInvitation(request.id);
+            Message.success("Team invitation approved.");
+            setTeamInvitations((previous) => previous.filter((item) => item.id !== request.id));
+            await refreshRegistrationsList();
+            await loadTeamInvitations();
+        } catch (error) {
+            Message.error(error instanceof Error ? error.message : "Failed to approve team invitation.");
+        } finally {
+            setApprovingInvitationId(null);
         }
     };
 
@@ -499,11 +541,9 @@ export default function RegistrationsListPage() {
         const ic = userMap[registration.user_id]?.IC?.toLowerCase() ?? "";
         return globalId.includes(query) || name.includes(query) || ic.includes(query);
     });
-    const canImportWorkbook =
-        user?.roles?.modify_admin === true ||
-        user?.roles?.edit_tournament === true ||
-        user?.global_id === tournament?.editor ||
-        user?.global_id === tournament?.recorder;
+    useEffect(() => {
+        void loadTeamInvitations();
+    }, [canImportWorkbook, tournamentId]);
     const importResultRows = useMemo(() => {
         if (!importResult) {
             return [];
@@ -554,6 +594,11 @@ export default function RegistrationsListPage() {
                                 </Button>
                             </>
                         )}
+                        {canImportWorkbook && (
+                            <Button type="primary" onClick={() => navigate(`/tournaments/${tournamentId}/registrations/new`)}>
+                                Register Member
+                            </Button>
+                        )}
                         <Input
                             placeholder="Search by name or ID"
                             allowClear
@@ -592,6 +637,72 @@ export default function RegistrationsListPage() {
                     })}
                 />
             </div>
+            {canImportWorkbook && (teamInvitationsLoading || teamInvitations.length > 0) && (
+                <div className="bg-white flex flex-col w-full h-fit gap-4 p-4 md:p-6 xl:p-8 shadow-lg md:rounded-lg">
+                    <Title heading={5}>Team Invitations</Title>
+                    <Spin loading={teamInvitationsLoading}>
+                        <div className="grid grid-cols-1 gap-3">
+                            {teamInvitations.map((invitation) => {
+                                const registration = registrations.find((item) => item.user_global_id === invitation.member_id);
+                                const isParentChild =
+                                    (invitation.event_label ?? "").toLowerCase().includes("parent") &&
+                                    (invitation.event_label ?? "").toLowerCase().includes("child");
+                                const registrationStatus = registration?.registration_status;
+                                const canApprove =
+                                    isParentChild || registrationStatus === "pending" || registrationStatus === "approved";
+                                let invitationTagColor = "red";
+                                if (isParentChild) {
+                                    invitationTagColor = "green";
+                                } else if (registrationStatus === "approved") {
+                                    invitationTagColor = "blue";
+                                } else if (registrationStatus === "pending") {
+                                    invitationTagColor = "orange";
+                                }
+
+                                let invitationTagLabel = "Not registered";
+                                if (isParentChild) {
+                                    invitationTagLabel = "Parent profile only";
+                                } else if (registrationStatus) {
+                                    invitationTagLabel = `${registrationStatus} registration`;
+                                }
+
+                                return (
+                                    <Card key={invitation.id} size="small" title={invitation.event_label ?? "Team invitation"}>
+                                        <div className="flex flex-col gap-1">
+                                            <span>
+                                                <strong>Team:</strong> {invitation.team_name ?? "-"}
+                                            </span>
+                                            <span>
+                                                <strong>Member:</strong> {invitation.member_id}
+                                            </span>
+                                            <span>
+                                                <strong>Leader:</strong> {invitation.leader_label ?? "-"}
+                                            </span>
+                                            <Tag color={invitationTagColor}>{invitationTagLabel}</Tag>
+                                            {!canApprove && (
+                                                <Typography.Text type="warning">
+                                                    {registrationStatus === "rejected"
+                                                        ? "Member's tournament registration is rejected."
+                                                        : "Member must register this tournament before approval."}
+                                                </Typography.Text>
+                                            )}
+                                            <Button
+                                                className="w-fit"
+                                                type="primary"
+                                                loading={approvingInvitationId === invitation.id}
+                                                disabled={!canApprove}
+                                                onClick={() => void handleApproveTeamInvitation(invitation)}
+                                            >
+                                                Approve Invitation
+                                            </Button>
+                                        </div>
+                                    </Card>
+                                );
+                            })}
+                        </div>
+                    </Spin>
+                </div>
+            )}
             <Modal
                 title="Import Tournament Excel"
                 visible={importModalVisible}

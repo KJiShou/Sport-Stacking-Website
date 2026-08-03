@@ -48,6 +48,7 @@ export default defineConfig(({mode}) => {
         build: {
             chunkSizeWarningLimit: 1000,
             outDir: "dist",
+            sourcemap: mode === "production" ? "hidden" : false,
         },
         define: {
             // ✅ 将变量注入为全局变量，供代码中使用

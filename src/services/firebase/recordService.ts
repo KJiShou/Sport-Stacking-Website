@@ -23,6 +23,7 @@ import {
     type TournamentTeamRecord,
     TournamentTeamRecordSchema,
 } from "../../schema/RecordSchema";
+import {measureOperation} from "../performance";
 import {db as firestore} from "./config";
 
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
@@ -113,9 +114,7 @@ const buildEventKeyForCategory = (eventType: RecordEventType, category: Category
 const isTeamTournamentRecord = (record: TournamentRecord | TournamentTeamRecord): record is TournamentTeamRecord =>
     "team_id" in record && typeof record.team_id === "string";
 
-const determineRecordRound = (
-    record: TournamentRecord | TournamentTeamRecord,
-): RecordRound => {
+const determineRecordRound = (record: TournamentRecord | TournamentTeamRecord): RecordRound => {
     if (record.classification === "prelim") {
         return "prelim";
     }
@@ -137,7 +136,7 @@ interface FetchRecordsOptions {
     classification?: string;
 }
 
-export const saveRecord = async (data: TournamentRecord): Promise<string> => {
+const saveRecordInternal = async (data: TournamentRecord): Promise<string> => {
     const now = new Date().toISOString();
     const hasValidId = typeof data.id === "string" && data.id.trim().length > 0;
     const targetCollection = getRecordsCollectionByClassification(data.classification);
@@ -184,7 +183,7 @@ export const saveRecord = async (data: TournamentRecord): Promise<string> => {
     return recordId;
 };
 
-export const saveTeamRecord = async (data: TournamentTeamRecord): Promise<string> => {
+const saveTeamRecordInternal = async (data: TournamentTeamRecord): Promise<string> => {
     const now = new Date().toISOString();
     const targetCollection = getRecordsCollectionByClassification(data.classification);
     let recordRef: ReturnType<typeof doc>;
@@ -215,7 +214,7 @@ export const saveTeamRecord = async (data: TournamentTeamRecord): Promise<string
     return recordId;
 };
 
-export const saveOverallRecord = async (data: TournamentOverallRecord): Promise<string> => {
+const saveOverallRecordInternal = async (data: TournamentOverallRecord): Promise<string> => {
     const now = new Date().toISOString();
     let recordRef: ReturnType<typeof doc>;
     let recordId: string;
@@ -264,6 +263,23 @@ export const saveOverallRecord = async (data: TournamentOverallRecord): Promise<
 
     return recordId;
 };
+
+const measureRecordSave = async (
+    name: string,
+    data: {tournament_id?: string},
+    operation: () => Promise<string>,
+): Promise<string> => {
+    return measureOperation(name, operation, {entityType: "score-save", tournamentId: data.tournament_id});
+};
+
+export const saveRecord = (data: TournamentRecord): Promise<string> =>
+    measureRecordSave("score_save", data, () => saveRecordInternal(data));
+
+export const saveTeamRecord = (data: TournamentTeamRecord): Promise<string> =>
+    measureRecordSave("team_score_save", data, () => saveTeamRecordInternal(data));
+
+export const saveOverallRecord = (data: TournamentOverallRecord): Promise<string> =>
+    measureRecordSave("overall_score_save", data, () => saveOverallRecordInternal(data));
 
 export const getTournamentPrelimRecords = async (tournamentId: string): Promise<(TournamentRecord | TournamentTeamRecord)[]> => {
     const records: (TournamentRecord | TournamentTeamRecord)[] = [];

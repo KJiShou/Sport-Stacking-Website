@@ -8,10 +8,20 @@ service cloud.firestore {
             allow write: if false;
         }
 
+        // Audit and rate-limit data is server-authoritative. The broad legacy
+        // rule below intentionally remains for existing application data, but
+        // these collections must never be writable or readable from a client.
+        match /audit_logs/{document=**} {
+            allow read, write: if false;
+        }
+        match /client_error_rate_limits/{document=**} {
+            allow read, write: if false;
+        }
+
         // Preserve the application's current permissions for every other root
-        // collection while making teams the only server-authoritative resource.
+        // collection while making teams and observability resources server-authoritative.
         match /{collection}/{document=**} {
-            allow read, write: if collection != "teams";
+            allow read, write: if collection != "teams" && collection != "audit_logs" && collection != "client_error_rate_limits";
         }
     }
 }

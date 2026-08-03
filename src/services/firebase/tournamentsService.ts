@@ -20,6 +20,9 @@ import {EventSchema, TournamentSchema} from "../../schema";
 import {type LegacyTeam, dedupeTeamsByEvent} from "../../utils/teamDeduplication";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
 import {getTeamEvents, normalizeEventSelections, teamMatchesEventKey} from "../../utils/tournament/eventUtils";
+import {captureClientError} from "../observability";
+import {measureOperation} from "../performance";
+import {deleteAdminTeam, upsertAdminTeam} from "./adminTeamService";
 import {
     fetchUsersByGlobalIds,
     removeUserRegistrationRecordsByTournament,
@@ -32,7 +35,6 @@ import {deleteTournamentStorage} from "./storageService";
 import {deleteTeamRecruitment, getActiveTeamRecruitments} from "./teamRecruitmentService";
 import {recalculateUserBestTimesByGlobalIds} from "./userBestTimesService";
 import {deleteVerificationRequestsByTeamId} from "./verificationRequestService";
-import {deleteAdminTeam, upsertAdminTeam} from "./adminTeamService";
 
 // Utility function to check if a string is a UUID v4
 function isUUID(value: string): boolean {
@@ -341,7 +343,7 @@ export type TournamentWithEvents = Tournament & {events: TournamentEvent[]};
 
 export async function fetchTournamentEvents(tournamentId: string): Promise<TournamentEvent[]> {
     const eventsQuery = query(collection(db, "events"), where("tournament_id", "==", tournamentId));
-    const snapshot = await getDocs(eventsQuery);
+    const snapshot = await measureOperation("tournament_events_load", () => getDocs(eventsQuery));
 
     return snapshot.docs
         .map((docSnapshot) => {
@@ -466,7 +468,7 @@ export async function fetchTournamentsByType(type: "current" | "history"): Promi
             throw new Error("Invalid tournament type");
         }
 
-        const snapshot = await getDocs(tournamentsQuery);
+        const snapshot = await measureOperation("tournaments_list_load", () => getDocs(tournamentsQuery));
 
         const tournaments = snapshot.docs
             .map((doc) => {
@@ -502,7 +504,7 @@ export async function fetchTournamentsByType(type: "current" | "history"): Promi
 export async function fetchTournamentById(tournamentId: string): Promise<Tournament | null> {
     try {
         const docRef = doc(db, "tournaments", tournamentId);
-        const docSnap = await getDoc(docRef);
+        const docSnap = await measureOperation("tournament_load", () => getDoc(docRef));
 
         if (!docSnap.exists()) {
             console.info("Tournament document not found:", tournamentId);
@@ -525,6 +527,7 @@ export async function deleteTournamentById(user: FirestoreUser, tournamentId: st
         // Delete all related data in sequence
         await deleteTournamentCascade(tournamentId);
     } catch (error) {
+        void captureClientError(error, {entityType: "tournament", entityId: tournamentId});
         console.error("Error deleting tournament:", error);
         throw error;
     }
@@ -736,6 +739,7 @@ export async function deleteTeam(tournamentId: string, teamId: string): Promise<
     try {
         await deleteAdminTeam(tournamentId, teamId);
     } catch (error) {
+        void captureClientError(error, {entityType: "team", entityId: teamId, tournamentId});
         console.error("Error deleting team:", error);
         throw error;
     }

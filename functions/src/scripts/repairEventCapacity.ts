@@ -1,5 +1,6 @@
 import {getApps, initializeApp} from "firebase-admin/app";
 import {Timestamp, getFirestore} from "firebase-admin/firestore";
+import {writeScriptAudit} from "../observability.js";
 
 type EventData = {
     id?: string;
@@ -29,12 +30,17 @@ if (!getApps().length) initializeApp();
 const app = getApps()[0] ?? initializeApp();
 const db = getFirestore(app);
 
-const normalize = (value: string): string => value.trim().toLowerCase().replace(/[\\s_-]+/g, "");
+const normalize = (value: string): string =>
+    value
+        .trim()
+        .toLowerCase()
+        .replace(/[\\s_-]+/g, "");
 const matchesEvent = (registration: RegistrationData, eventId: string, event: EventData): boolean => {
     const candidates = new Set([eventId, event.id ?? "", event.type ?? ""].map(normalize));
     return (registration.events_registered ?? []).some((selection) => candidates.has(normalize(selection)));
 };
-const createdAtMillis = (registration: RegistrationData): number => registration.created_at?.toMillis() ?? Number.MAX_SAFE_INTEGER;
+const createdAtMillis = (registration: RegistrationData): number =>
+    registration.created_at?.toMillis() ?? Number.MAX_SAFE_INTEGER;
 
 const main = async (): Promise<void> => {
     const [tournamentSnapshot, eventSnapshot, registrationSnapshot] = await Promise.all([
@@ -49,13 +55,17 @@ const main = async (): Promise<void> => {
         .filter(({data}) => typeof data.max_participants === "number" && data.max_participants > 0);
     const approved = registrationSnapshot.docs
         .filter((snapshot) => (snapshot.data() as RegistrationData).registration_status === "approved")
-        .sort((left, right) => createdAtMillis(left.data() as RegistrationData) - createdAtMillis(right.data() as RegistrationData));
+        .sort(
+            (left, right) => createdAtMillis(left.data() as RegistrationData) - createdAtMillis(right.data() as RegistrationData),
+        );
 
     const demoted = new Map<string, Set<string>>();
     for (const event of limitedEvents) {
         const maxParticipants = event.data.max_participants;
         if (typeof maxParticipants !== "number" || maxParticipants <= 0) continue;
-        const approvedForEvent = approved.filter((registration) => matchesEvent(registration.data() as RegistrationData, event.id, event.data));
+        const approvedForEvent = approved.filter((registration) =>
+            matchesEvent(registration.data() as RegistrationData, event.id, event.data),
+        );
         for (const registration of approvedForEvent.slice(maxParticipants)) {
             const labels = demoted.get(registration.id) ?? new Set<string>();
             labels.add(event.data.type ?? event.id);
@@ -79,7 +89,11 @@ const main = async (): Promise<void> => {
             const registration = registrationSnapshot.docs.find((item) => item.id === registrationId)?.data() as RegistrationData;
             return {registrationId, name: registration.user_name ?? "", events: Array.from(events)};
         }),
-        eventCounts: eventCounts.map((event) => ({eventId: event.id, event: event.data.type ?? event.id, approvedParticipants: event.approvedParticipants})),
+        eventCounts: eventCounts.map((event) => ({
+            eventId: event.id,
+            event: event.data.type ?? event.id,
+            approvedParticipants: event.approvedParticipants,
+        })),
     };
     console.info(JSON.stringify(report, null, 2));
     if (!apply) return;
@@ -98,13 +112,29 @@ const main = async (): Promise<void> => {
                     updated_at: Timestamp.now(),
                 });
             } else if (write.kind === "event") {
-                batch.update(write.event.ref, {approved_participants: write.event.approvedParticipants, updated_at: Timestamp.now()});
+                batch.update(write.event.ref, {
+                    approved_participants: write.event.approvedParticipants,
+                    updated_at: Timestamp.now(),
+                });
             } else {
                 batch.update(tournamentSnapshot.ref, {participants: remainingApproved.length, updated_at: Timestamp.now()});
             }
         }
         await batch.commit();
     }
+    await writeScriptAudit(db, {
+        action: "repair.event-capacity.apply",
+        status: "success",
+        entityType: "tournament",
+        entityId: tournamentId,
+        tournamentId,
+        changedFields: ["registration_status", "approved_participants", "participants"],
+        after: {
+            demotions: demoted.size,
+            approvedRegistrations: remainingApproved.length,
+            eventsUpdated: eventCounts.length,
+        },
+    });
 };
 
 main().catch((error: unknown) => {

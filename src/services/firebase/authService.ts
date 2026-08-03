@@ -41,6 +41,7 @@ import {FirestoreUserSchema} from "../../schema";
 import type {UserTournamentHistory} from "../../schema/UserHistorySchema";
 import type {UserRegistrationRecord} from "../../schema/UserSchema";
 import {isSameBirthdateDay, normalizeBirthdateForWrite, parseBirthdate} from "../../utils/birthdate";
+import {captureClientError, createOperationId, getRelease} from "../observability";
 import {auth, db, functions, storage} from "./config";
 
 export type GoogleSignInIntent = "login" | "register";
@@ -244,19 +245,21 @@ export const signInWithGoogle = async (intent: GoogleSignInIntent): Promise<void
 };
 
 export const cacheGoogleAvatar = async (photoURL: string): Promise<string> => {
-    const callable = httpsCallable(functions, "cacheGoogleAvatarCallable");
-    const result = await callable({photoURL});
-    const data = result.data as {url?: string};
-    if (!data?.url) {
-        throw new Error("Failed to cache Google avatar.");
+    try {
+        const callable = httpsCallable(functions, "cacheGoogleAvatarCallable");
+        const result = await callable({photoURL});
+        const data = result.data as {url?: string};
+        if (!data?.url) {
+            throw new Error("Failed to cache Google avatar.");
+        }
+        return data.url;
+    } catch (error) {
+        void captureClientError(error, {entityType: "avatar", entityId: "google"});
+        throw error;
     }
-    return data.url;
 };
 
-type TransferProfileOwnershipResult = Pick<
-    FirestoreUser,
-    "email" | "owner_uids" | "primary_owner_email" | "account_status"
-> & {
+type TransferProfileOwnershipResult = Pick<FirestoreUser, "email" | "owner_uids" | "primary_owner_email" | "account_status"> & {
     profileId: string;
 };
 
@@ -267,6 +270,7 @@ type CreateProfileClaimRequestInput = {
     birthdate_hint?: unknown;
     tournament_hint?: string | null;
     note?: string | null;
+    meta?: {operationId: string; release: string};
 };
 
 type ReviewProfileClaimRequestResult = {
@@ -299,9 +303,10 @@ export const transferProfileOwnership = async (
 ): Promise<TransferProfileOwnershipResult> => {
     try {
         const callable = httpsCallable(functions, "transferProfileOwnership");
-        const result = await callable({profileId, targetEmail});
+        const result = await callable({profileId, targetEmail, meta: {operationId: createOperationId(), release: getRelease()}});
         return result.data as TransferProfileOwnershipResult;
     } catch (error) {
+        void captureClientError(error, {entityType: "profile-ownership", entityId: profileId});
         throw new Error(resolveCallableErrorMessage(error));
     }
 };
@@ -336,9 +341,15 @@ export const createProfileClaimRequest = async (
     const normalizedInput = {
         ...input,
         birthdate_hint: input.birthdate_hint ? normalizeBirthdateForWrite(input.birthdate_hint) : null,
+        meta: input.meta ?? {operationId: createOperationId(), release: getRelease()},
     };
-    const result = await callable(normalizedInput);
-    return result.data as {requestId: string; status: "pending"};
+    try {
+        const result = await callable(normalizedInput);
+        return result.data as {requestId: string; status: "pending"};
+    } catch (error) {
+        void captureClientError(error, {entityType: "profile-claim"});
+        throw error;
+    }
 };
 
 export const approveProfileClaimRequest = async (
@@ -346,8 +357,13 @@ export const approveProfileClaimRequest = async (
     profileId: string,
 ): Promise<ReviewProfileClaimRequestResult> => {
     const callable = httpsCallable(functions, "approveProfileClaimRequest");
-    const result = await callable({requestId, profileId});
-    return result.data as ReviewProfileClaimRequestResult;
+    try {
+        const result = await callable({requestId, profileId, meta: {operationId: createOperationId(), release: getRelease()}});
+        return result.data as ReviewProfileClaimRequestResult;
+    } catch (error) {
+        void captureClientError(error, {entityType: "profile-claim", entityId: requestId});
+        throw error;
+    }
 };
 
 export const rejectProfileClaimRequest = async (
@@ -355,8 +371,17 @@ export const rejectProfileClaimRequest = async (
     rejectionReason: string,
 ): Promise<ReviewProfileClaimRequestResult> => {
     const callable = httpsCallable(functions, "rejectProfileClaimRequest");
-    const result = await callable({requestId, rejectionReason});
-    return result.data as ReviewProfileClaimRequestResult;
+    try {
+        const result = await callable({
+            requestId,
+            rejectionReason,
+            meta: {operationId: createOperationId(), release: getRelease()},
+        });
+        return result.data as ReviewProfileClaimRequestResult;
+    } catch (error) {
+        void captureClientError(error, {entityType: "profile-claim", entityId: requestId});
+        throw error;
+    }
 };
 
 export const fetchProfileClaimRequests = async (status?: ProfileClaimRequest["status"]): Promise<ProfileClaimRequest[]> => {
@@ -378,6 +403,80 @@ export const fetchProfileClaimRequests = async (status?: ProfileClaimRequest["st
 type RegisterUserData = Omit<FirestoreUser, "id" | "birthdate"> & {birthdate: unknown; password: string};
 type GoogleRegisterData = Omit<FirestoreUser, "id" | "email" | "image_url" | "birthdate"> & {birthdate: unknown};
 type UpdateUserProfileData = Partial<Omit<FirestoreUser, "email" | "IC" | "id" | "birthdate">> & {birthdate?: unknown};
+
+const claimGoogleProfileByIdentityKey = async (
+    uid: string,
+    email: string,
+    identityKey: string | null,
+    birthdate: unknown,
+): Promise<string | null> => {
+    if (!identityKey) {
+        return null;
+    }
+
+    const identityQuery = query(collection(db, "users"), where("identity_key", "==", identityKey));
+    const identitySnapshot = await getDocs(identityQuery);
+    if (identitySnapshot.empty) {
+        return null;
+    }
+
+    const existingDoc = identitySnapshot.docs[0];
+    const existingData = existingDoc.data() as FirestoreUser;
+    const owners = existingData.owner_uids ?? (existingDoc.id === uid ? [uid] : []);
+    if (owners.includes(uid)) {
+        return existingDoc.id;
+    }
+
+    const canClaim =
+        (existingData.account_status ?? "claimed") === "unclaimed" && isSameBirthdate(existingData.birthdate, birthdate);
+    if (!canClaim) {
+        throw new Error("This IC/passport is already linked to another account.");
+    }
+
+    await updateDoc(existingDoc.ref, {
+        owner_uids: arrayUnion(uid),
+        account_status: "claimed",
+        primary_owner_email: email,
+        email: existingData.email ?? email,
+        updated_at: Timestamp.now(),
+    });
+    return existingDoc.id;
+};
+
+const claimGoogleProfileByIc = async (
+    uid: string,
+    email: string,
+    identityNumber: string | null | undefined,
+    birthdate: unknown,
+): Promise<string | null> => {
+    const identityQuery = query(collection(db, "users"), where("IC", "==", identityNumber));
+    const identitySnapshot = await getDocs(identityQuery);
+    if (identitySnapshot.empty) {
+        return null;
+    }
+
+    const matchingDocs = identitySnapshot.docs.filter((docSnap) => (docSnap.data() as FirestoreUser).email === email);
+    if (matchingDocs.length === 0) {
+        throw new Error("This IC is already registered with another email.");
+    }
+
+    const claimableDoc = matchingDocs.find((docSnap) => {
+        const data = docSnap.data() as FirestoreUser;
+        return (data.account_status ?? "claimed") === "unclaimed" && isSameBirthdate(data.birthdate, birthdate);
+    });
+    if (!claimableDoc) {
+        throw new Error("This IC/passport is already registered.");
+    }
+
+    await updateDoc(claimableDoc.ref, {
+        owner_uids: arrayUnion(uid),
+        account_status: "claimed",
+        primary_owner_email: email,
+        email,
+        updated_at: Timestamp.now(),
+    });
+    return claimableDoc.id;
+};
 
 export const register = async (userData: RegisterUserData) => {
     const {email, password, IC, birthdate, ...rest} = userData;
@@ -439,11 +538,7 @@ export const register = async (userData: RegisterUserData) => {
     return uid;
 };
 
-export const registerWithGoogle = async (
-    firebaseUser: User,
-    extraData: GoogleRegisterData,
-    imageFile?: string,
-) => {
+export const registerWithGoogle = async (firebaseUser: User, extraData: GoogleRegisterData, imageFile?: string) => {
     if (!firebaseUser.email) {
         throw new Error("Google account does not have an email");
     }
@@ -456,60 +551,19 @@ export const registerWithGoogle = async (
         birthdate: normalizeBirthdateForWrite(extraData.birthdate),
     };
 
-    if (identityKey) {
-        const identityQuery = query(collection(db, "users"), where("identity_key", "==", identityKey));
-        const identitySnapshot = await getDocs(identityQuery);
-        if (!identitySnapshot.empty) {
-            const existingDoc = identitySnapshot.docs[0];
-            const existingData = existingDoc.data() as FirestoreUser;
-            const owners = existingData.owner_uids ?? (existingDoc.id === uid ? [uid] : []);
-            if (owners.includes(uid)) {
-                return existingDoc.id;
-            }
-            if (
-                (existingData.account_status ?? "claimed") === "unclaimed" &&
-                isSameBirthdate(existingData.birthdate, normalizedExtraData.birthdate)
-            ) {
-                await updateDoc(existingDoc.ref, {
-                    owner_uids: arrayUnion(uid),
-                    account_status: "claimed",
-                    primary_owner_email: firebaseUser.email,
-                    email: existingData.email ?? firebaseUser.email,
-                    updated_at: Timestamp.now(),
-                });
-                return existingDoc.id;
-            }
-            throw new Error("This IC/passport is already linked to another account.");
-        }
+    const identityProfileId = await claimGoogleProfileByIdentityKey(
+        uid,
+        firebaseUser.email,
+        identityKey,
+        normalizedExtraData.birthdate,
+    );
+    if (identityProfileId !== null) {
+        return identityProfileId;
     }
 
-    // ✅ 1. Check if IC already exists
-    const q = query(collection(db, "users"), where("IC", "==", extraData.IC));
-    const snapshot = await getDocs(q);
-
-    if (!snapshot.empty) {
-        const matchingDocs = snapshot.docs.filter((docSnap) => (docSnap.data() as FirestoreUser).email === firebaseUser.email);
-        if (matchingDocs.length === 0) {
-            throw new Error("This IC is already registered with another email.");
-        }
-        const claimableDoc = matchingDocs.find((docSnap) => {
-            const data = docSnap.data() as FirestoreUser;
-            return (
-                (data.account_status ?? "claimed") === "unclaimed" &&
-                isSameBirthdate(data.birthdate, normalizedExtraData.birthdate)
-            );
-        });
-        if (claimableDoc) {
-            await updateDoc(claimableDoc.ref, {
-                owner_uids: arrayUnion(uid),
-                account_status: "claimed",
-                primary_owner_email: firebaseUser.email,
-                email: firebaseUser.email,
-                updated_at: Timestamp.now(),
-            });
-            return claimableDoc.id;
-        }
-        throw new Error("This IC/passport is already registered.");
+    const icProfileId = await claimGoogleProfileByIc(uid, firebaseUser.email, extraData.IC, normalizedExtraData.birthdate);
+    if (icProfileId !== null) {
+        return icProfileId;
     }
 
     // ✅ 2. Use Firebase UID as the first profile doc id, then generated docs for additional profiles.
@@ -704,7 +758,8 @@ export async function backfillUserAccountOwnershipFields(): Promise<number> {
     for (const docSnap of usersSnapshot.docs) {
         const data = docSnap.data() as FirestoreUser;
         const identityType = data.identity_type ?? (/^\d{12}$/.test(data.IC ?? "") ? "MYKAD" : data.IC ? "PASSPORT" : "NONE");
-        const identityKey = data.identity_key ?? buildIdentityKey(identityType, data.IC, data.passport_country ?? data.country?.[0]);
+        const identityKey =
+            data.identity_key ?? buildIdentityKey(identityType, data.IC, data.passport_country ?? data.country?.[0]);
         const payload: Partial<FirestoreUser> & {updated_at: Timestamp} = {
             updated_at: Timestamp.now(),
         };

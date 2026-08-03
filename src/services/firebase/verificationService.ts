@@ -1,3 +1,4 @@
+import {captureClientError, createOperationId, getRelease} from "../observability";
 import {auth} from "./config";
 
 const DEFAULT_VERIFY_ENDPOINT = "https://updateverification-jzbhzqtcdq-uc.a.run.app";
@@ -16,6 +17,7 @@ export interface VerifyMembershipPayload {
     teamId: string;
     memberId: string;
     registrationId: string;
+    meta?: {operationId: string; release: string};
 }
 
 type VerificationErrorResponse = {
@@ -36,24 +38,36 @@ export class VerificationError extends Error {
 }
 
 export async function verifyTeamMembership(payload: VerifyMembershipPayload): Promise<void> {
-    const token = await auth.currentUser?.getIdToken();
-    if (!token) {
-        throw new Error("You must be signed in to verify.");
-    }
+    try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) {
+            throw new Error("You must be signed in to verify.");
+        }
 
-    const response = await fetch(getVerifyEndpoint(), {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-    });
+        const response = await fetch(getVerifyEndpoint(), {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                ...payload,
+                meta: payload.meta ?? {operationId: createOperationId(), release: getRelease()},
+            }),
+        });
 
-    const result = (await response.json().catch(() => ({}))) as VerificationErrorResponse;
-    if (!response.ok) {
-        const errorMessage = typeof result?.error === "string" ? result.error : "Verification failed.";
-        const errorCode = typeof result?.code === "string" ? result.code : undefined;
-        throw new VerificationError(errorMessage, response.status, errorCode);
+        const result = (await response.json().catch(() => ({}))) as VerificationErrorResponse;
+        if (!response.ok) {
+            const errorMessage = typeof result?.error === "string" ? result.error : "Verification failed.";
+            const errorCode = typeof result?.code === "string" ? result.code : undefined;
+            throw new VerificationError(errorMessage, response.status, errorCode);
+        }
+    } catch (error) {
+        void captureClientError(error, {
+            entityType: "verification-request",
+            entityId: payload.teamId,
+            tournamentId: payload.tournamentId,
+        });
+        throw error;
     }
 }
