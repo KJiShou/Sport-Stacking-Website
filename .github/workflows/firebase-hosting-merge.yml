@@ -76,7 +76,7 @@ jobs:
               run: |
                   functions/node_modules/.bin/firebase deploy \
                     --project sport-stacking-website \
-                    --only functions,firestore:rules,firestore:indexes \
+                    --only functions,firestore \
                     --non-interactive \
                     --debug
 
