@@ -96,6 +96,8 @@ jobs:
                   # batch small so Cloud Run's regional CPU allocation quota is not
                   # exhausted while revisions are starting at the same time.
                   batch_size=5
+                  max_batch_attempts=3
+                  quota_retry_delay_seconds=70
                   for ((offset = 0; offset < ${#function_names[@]}; offset += batch_size)); do
                       batch=("${function_names[@]:offset:batch_size}")
                       selectors=()
@@ -104,12 +106,25 @@ jobs:
                       done
                       only=$(IFS=,; echo "${selectors[*]}")
 
-                      echo "Deploying Firebase Functions batch $((offset / batch_size + 1)): ${only}"
-                      "$firebase_cli" deploy \
-                          --project sport-stacking-website \
-                          --only "$only" \
-                          --non-interactive \
-                          --debug
+                      batch_number=$((offset / batch_size + 1))
+                      for ((attempt = 1; attempt <= max_batch_attempts; attempt++)); do
+                          echo "Deploying Firebase Functions batch ${batch_number} (attempt ${attempt}/${max_batch_attempts}): ${only}"
+                          if "$firebase_cli" deploy \
+                              --project sport-stacking-website \
+                              --only "$only" \
+                              --non-interactive \
+                              --debug; then
+                              break
+                          fi
+
+                          if ((attempt == max_batch_attempts)); then
+                              echo "Firebase Functions batch ${batch_number} failed after ${max_batch_attempts} attempts."
+                              exit 1
+                          fi
+
+                          echo "Batch ${batch_number} failed; waiting ${quota_retry_delay_seconds}s for Cloud Run quota recovery before retrying."
+                          sleep "$quota_retry_delay_seconds"
+                      done
                   done
 
                   "$firebase_cli" deploy \
