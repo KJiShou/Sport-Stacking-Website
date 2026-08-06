@@ -1,14 +1,37 @@
-import {Grid, Link, Typography} from "@arco-design/web-react";
+import {Grid, Typography} from "@arco-design/web-react";
+import type {ReactNode} from "react";
 import {IconEmail, IconFacebook, IconLocation, IconPhone} from "@arco-design/web-react/icon";
 import type * as React from "react";
 
-const {Title, Text, Paragraph} = Typography;
+const {Title, Text} = Typography;
 const {Row, Col} = Grid;
+
+interface FooterSectionProps {
+    icon: ReactNode;
+    title: string;
+    children: ReactNode;
+}
+
+const FooterSection = ({icon, title, children}: FooterSectionProps) => (
+    <Col xs={24} sm={12} md={4}>
+        <section className="app-footer__section">
+            <div className="app-footer__section-icon" aria-hidden="true">
+                {icon}
+            </div>
+            <div className="app-footer__section-content">
+                <Title heading={6} style={{color: "#000000", marginBottom: "0.5rem"}}>
+                    {title}
+                </Title>
+                <div className="app-footer__section-body">{children}</div>
+            </div>
+        </section>
+    </Col>
+);
 
 const WhatsAppIcon: React.FC = () => (
     <svg
-        width="32"
-        height="32"
+        width="24"
+        height="24"
         viewBox="0 0 32 32"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -27,94 +50,52 @@ const WhatsAppIcon: React.FC = () => (
 
 const Footer: React.FC = () => {
     return (
-        <footer
-            className="bg-white "
-            style={{
-                color: "#000000",
-                padding: "3rem 2rem 1.5rem",
-            }}
-        >
+        <footer className="app-footer bg-white">
             <div style={{maxWidth: "1400px", margin: "0 auto"}}>
                 <Row gutter={[16, 24]} justify="space-between">
-                    {/* Visit Section */}
-                    <Col xs={24} sm={12} md={4}>
-                        <div style={{display: "flex", gap: "1rem", alignItems: "flex-start"}}>
-                            <div>
-                                <IconLocation style={{fontSize: "2rem", marginTop: "0.25rem", flexShrink: 0}} />
-                                <Title heading={6} style={{color: "#000000", marginBottom: "0.5rem"}}>
-                                    Visit
-                                </Title>
-                                <Paragraph style={{color: "#000000", margin: 0, lineHeight: 1.6}}>
-                                    128, 1st Floor, Plaza Serdang Raya, Jln Serdang Raya, Tmn Serdang Raya, 43300 Seri Kembangan,
-                                    Selangor
-                                    <br />
-                                    Malaysia
-                                </Paragraph>
-                            </div>
-                        </div>
-                    </Col>
+                    <FooterSection icon={<IconLocation />} title="Visit">
+                        <a
+                            href="https://maps.google.com/?q=Plaza+Serdang+Raya+Selangor"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="app-footer__link"
+                        >
+                            128, 1st Floor, Plaza Serdang Raya, Jln Serdang Raya, Tmn Serdang Raya, 43300 Seri Kembangan,
+                            Selangor, Malaysia
+                        </a>
+                    </FooterSection>
 
-                    {/* Call Section */}
-                    <Col xs={24} sm={12} md={4}>
-                        <div style={{display: "flex", gap: "1rem", alignItems: "flex-start"}}>
-                            <div>
-                                <IconPhone style={{fontSize: "2rem", marginTop: "0.25rem", flexShrink: 0}} />
-                                <Title heading={6} style={{color: "#000000", marginBottom: "0.5rem"}}>
-                                    Call
-                                </Title>
-                                <Paragraph style={{color: "#000000", margin: 0, lineHeight: 1.6}}>
-                                    T: +6012-2099116 or
-                                    <br />
-                                    +6012-2011364
-                                </Paragraph>
-                            </div>
-                        </div>
-                    </Col>
+                    <FooterSection icon={<IconPhone />} title="Call">
+                        <a href="tel:+60122099116" className="app-footer__link">
+                            +6012-2099116
+                        </a>
+                        <a href="tel:+60122011364" className="app-footer__link">
+                            +6012-2011364
+                        </a>
+                    </FooterSection>
 
-                    {/* WhatsApp Section */}
-                    <Col xs={24} sm={12} md={4}>
-                        <div style={{display: "flex", gap: "1rem", alignItems: "flex-start"}}>
-                            <div>
-                                <WhatsAppIcon />
-                                <Title heading={6} style={{color: "#000000", marginBottom: "0.5rem"}}>
-                                    WhatsApp
-                                </Title>
-                                <Link href="https://wa.link/gukxyp" target="_blank" rel="noopener noreferrer">
-                                    Chat with us
-                                </Link>
-                            </div>
-                        </div>
-                    </Col>
+                    <FooterSection icon={<WhatsAppIcon />} title="WhatsApp">
+                        <a href="https://wa.link/gukxyp" target="_blank" rel="noopener noreferrer" className="app-footer__link">
+                            Chat with us
+                        </a>
+                    </FooterSection>
 
-                    {/* Email Section */}
-                    <Col xs={24} sm={12} md={4}>
-                        <div style={{display: "flex", gap: "1rem", alignItems: "flex-start"}}>
-                            <div>
-                                <IconEmail style={{fontSize: "2rem", marginTop: "0.25rem", flexShrink: 0}} />
-                                <Title heading={6} style={{color: "#000000", marginBottom: "0.5rem"}}>
-                                    Email
-                                </Title>
-                                <Link style={{margin: 0}}>
-                                    <a href="mailto:jjclub.info@gmail.com">jjclub.info@gmail.com</a>
-                                </Link>
-                            </div>
-                        </div>
-                    </Col>
+                    <FooterSection icon={<IconEmail />} title="Email">
+                        <a href="mailto:jjclub.info@gmail.com" className="app-footer__link">
+                            jjclub.info@gmail.com
+                        </a>
+                    </FooterSection>
 
-                    {/* Follow Us Section */}
-                    <Col xs={24} sm={12} md={4}>
-                        <div style={{display: "flex", gap: "1rem", alignItems: "flex-start"}}>
-                            <div>
-                                <IconFacebook style={{fontSize: "2rem", marginTop: "0.25rem", flexShrink: 0}} />
-                                <Title heading={6} style={{color: "#000000", marginBottom: "0.5rem"}}>
-                                    Follow Us
-                                </Title>
-                                <Link href="https://www.facebook.com/issfmy" target="_blank" rel="noopener noreferrer">
-                                    Facebook Page
-                                </Link>
-                            </div>
-                        </div>
-                    </Col>
+                    <FooterSection icon={<IconFacebook />} title="Follow Us">
+                        <a
+                            href="https://www.facebook.com/issfmy"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="app-footer__link"
+                        >
+                            Facebook Page
+                        </a>
+                    </FooterSection>
                 </Row>
 
                 {/* Copyright Section */}
@@ -126,7 +107,7 @@ const Footer: React.FC = () => {
                         textAlign: "center",
                     }}
                 >
-                    <Text style={{color: "#000000"}}>© 2025 by J&J Stacking Centre</Text>
+                    <Text style={{color: "#000000"}}>© {new Date().getFullYear()} by J&J Stacking Centre</Text>
                 </div>
             </div>
         </footer>

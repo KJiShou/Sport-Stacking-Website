@@ -39,6 +39,7 @@ import {
     InputNumber,
     Message,
     Modal,
+    Pagination,
     Select,
     Spin,
     Table,
@@ -50,6 +51,7 @@ import {
 import {IconDelete, IconEdit, IconEye, IconMore, IconPlus, IconRefresh, IconUser, IconUserAdd} from "@arco-design/web-react/icon";
 import {useEffect, useState} from "react";
 import {useNavigate, useSearchParams} from "react-router-dom";
+import {MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
 import {DeviceBreakpoint} from "../../utils/DeviceInspector/deviceStore";
 
@@ -69,6 +71,23 @@ export default function TeamRecruitmentManagement() {
     const [individuals, setIndividuals] = useState<IndividualRecruitment[]>([]);
     const [doubles, setDoubles] = useState<DoubleRecruitment[]>([]);
     const [teams, setTeams] = useState<TeamRecruitment[]>([]);
+    const [mobilePages, setMobilePages] = useState({individuals: 1, doubles: 1, teams: 1});
+    const MOBILE_PAGE_SIZE = 10;
+
+    const mobileRows = <T,>(rows: T[], key: keyof typeof mobilePages) => {
+        const page = mobilePages[key];
+        return rows.slice((page - 1) * MOBILE_PAGE_SIZE, page * MOBILE_PAGE_SIZE);
+    };
+
+    const mobilePagination = (key: keyof typeof mobilePages, total: number) =>
+        total > MOBILE_PAGE_SIZE ? (
+            <Pagination
+                current={mobilePages[key]}
+                pageSize={MOBILE_PAGE_SIZE}
+                total={total}
+                onChange={(page) => setMobilePages((current) => ({...current, [key]: page}))}
+            />
+        ) : null;
 
     // Modal states
     const [assignmentModalVisible, setAssignmentModalVisible] = useState(false);
@@ -78,9 +97,6 @@ export default function TeamRecruitmentManagement() {
         primary: DoubleRecruitment;
         partners: DoubleRecruitment[];
     } | null>(null);
-    const [detailModalVisible, setDetailModalVisible] = useState(false);
-    const [selectedIndividual, setSelectedIndividual] = useState<IndividualRecruitment | null>(null);
-
     // Filter states
     const [eventFilter, setEventFilter] = useState<string>("");
     const [statusFilter, setStatusFilter] = useState<string>("");
@@ -272,7 +288,9 @@ export default function TeamRecruitmentManagement() {
             // Check if either participant is already in a team for this event
             const occupied = await fetchOccupiedParticipantIdsByTournamentEvent(primary.tournament_id, primary.event_id);
             if (occupied.has(primary.participant_id)) {
-                Message.error(`${primary.participant_name} is already in a team for this event. Their recruitment cannot be matched.`);
+                Message.error(
+                    `${primary.participant_name} is already in a team for this event. Their recruitment cannot be matched.`,
+                );
                 return;
             }
             if (occupied.has(partner.participant_id)) {
@@ -447,15 +465,15 @@ export default function TeamRecruitmentManagement() {
                     >
                         Assign
                     </Button>
-                        <Button
-                            size="mini"
-                            status="danger"
-                            icon={<IconDelete />}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteIndividual(record);
-                            }}
-                        />
+                    <Button
+                        size="mini"
+                        status="danger"
+                        icon={<IconDelete />}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteIndividual(record);
+                        }}
+                    />
                 </div>
             ),
         },
@@ -654,6 +672,10 @@ export default function TeamRecruitmentManagement() {
         }
     }, [selectedTournament, isAdmin]);
 
+    useEffect(() => {
+        setMobilePages({individuals: 1, doubles: 1, teams: 1});
+    }, [selectedTournament, eventFilter, statusFilter]);
+
     // Render access denied after all hooks
     if (!isAdmin) {
         return (
@@ -667,20 +689,21 @@ export default function TeamRecruitmentManagement() {
     }
 
     return (
-        <div className="flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
+        <div className="admin-page recruitment-management-page flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
             <Spin loading={loading} tip="Loading recruitment data..." className="w-full">
                 <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                     <div className="w-full">
-                        {/* Header */}
-                        <div className="flex justify-between items-center mb-6">
-                            <Title heading={2}>Team Recruitment Management</Title>
-                            <Button type="primary" icon={<IconRefresh />} onClick={loadRecruitmentData} loading={loading}>
-                                Refresh
-                            </Button>
-                        </div>
+                        <MobilePageHeader
+                            title="Team Recruitment Management"
+                            actions={
+                                <Button type="primary" icon={<IconRefresh />} onClick={loadRecruitmentData} loading={loading}>
+                                    Refresh
+                                </Button>
+                            }
+                        />
 
                         {/* Tournament Filter */}
-                        <div className="mb-6 flex flex-wrap gap-4 items-center">
+                        <div className="mb-6 flex flex-wrap gap-4 items-center recruitment-filters">
                             <div>
                                 <label htmlFor="tournament-select" className="block text-sm font-medium mb-1">
                                     Tournament:
@@ -702,7 +725,7 @@ export default function TeamRecruitmentManagement() {
                             </div>
 
                             {/* Summary Cards */}
-                            <div className="flex gap-4 ml-auto">
+                            <div className="recruitment-summary flex gap-4 ml-auto">
                                 <Card className="text-center">
                                     <div className="text-2xl font-bold text-blue-600">{individuals.length}</div>
                                     <div className="text-sm text-gray-600">Looking for Teams</div>
@@ -721,26 +744,67 @@ export default function TeamRecruitmentManagement() {
                         <Divider />
 
                         {/* Tabs */}
-                        <Tabs defaultActiveTab="individuals">
+                        <ResponsiveTabs defaultActiveTab="individuals">
                             <TabPane key="individuals" title={`Individuals Looking for Teams (${individuals.length})`}>
                                 {individuals.length === 0 ? (
                                     <Empty description="No individuals looking for teams" />
                                 ) : (
-                                    <Table
-                                        rowKey="id"
-                                        columns={individualColumns}
-                                        data={individuals}
-                                        pagination={{pageSize: 10}}
-                                        onRow={(individual) => ({
-                                            onClick: () => {
-                                                navigate(
-                                                    `/tournaments/${selectedTournament}/registrations/${individual.registration_id}/edit`,
-                                                );
-                                            },
-                                        })}
-                                        className="mt-4"
-                                        scroll={{x: 800}}
-                                    />
+                                    <>
+                                        <div className="recruitment-mobile-cards">
+                                            {mobileRows(individuals, "individuals").map((record) => (
+                                                <Card key={record.id} className="admin-mobile-card" bordered>
+                                                    <div className="recruitment-card__header">
+                                                        <div>
+                                                            <span className="recruitment-card__label">Participant</span>
+                                                            <strong>{record.participant_name}</strong>
+                                                        </div>
+                                                        <Tag color={record.status === "active" ? "blue" : "green"}>
+                                                            {record.status}
+                                                        </Tag>
+                                                    </div>
+                                                    <p>{record.participant_id}</p>
+                                                    <p>
+                                                        {record.event_name} · Age {record.age} ·{" "}
+                                                        {formatGenderLabel(record.gender)}
+                                                    </p>
+                                                    <p>{record.country || "Country not provided"}</p>
+                                                    {isAdmin ? (
+                                                        <div className="recruitment-card__actions">
+                                                            <Button
+                                                                type="primary"
+                                                                disabled={record.status !== "active"}
+                                                                onClick={() => handleAssignToTeam(record)}
+                                                            >
+                                                                Assign
+                                                            </Button>
+                                                            <Button
+                                                                status="danger"
+                                                                onClick={() => handleDeleteIndividual(record)}
+                                                            >
+                                                                Delete
+                                                            </Button>
+                                                        </div>
+                                                    ) : null}
+                                                </Card>
+                                            ))}
+                                        </div>
+                                        {mobilePagination("individuals", individuals.length)}
+                                        <Table
+                                            className="mt-4 admin-table-scroll"
+                                            rowKey="id"
+                                            columns={individualColumns}
+                                            data={individuals}
+                                            pagination={{pageSize: 10}}
+                                            onRow={(individual) => ({
+                                                onClick: () => {
+                                                    navigate(
+                                                        `/tournaments/${selectedTournament}/registrations/${individual.registration_id}/edit`,
+                                                    );
+                                                },
+                                            })}
+                                            scroll={{x: 800}}
+                                        />
+                                    </>
                                 )}
                             </TabPane>
 
@@ -748,21 +812,59 @@ export default function TeamRecruitmentManagement() {
                                 {doubles.length === 0 ? (
                                     <Empty description="No doubles looking for partners" />
                                 ) : (
-                                    <Table
-                                        rowKey="id"
-                                        columns={doubleColumns}
-                                        data={doubles}
-                                        pagination={{pageSize: 10}}
-                                        onRow={(recruitment) => ({
-                                            onClick: () => {
-                                                navigate(
-                                                    `/tournaments/${selectedTournament}/registrations/${recruitment.registration_id}/edit`,
-                                                );
-                                            },
-                                        })}
-                                        className="mt-4"
-                                        scroll={{x: 800}}
-                                    />
+                                    <>
+                                        <div className="recruitment-mobile-cards">
+                                            {mobileRows(doubles, "doubles").map((record) => (
+                                                <Card key={record.id} className="admin-mobile-card" bordered>
+                                                    <div className="recruitment-card__header">
+                                                        <div>
+                                                            <span className="recruitment-card__label">Double participant</span>
+                                                            <strong>{record.participant_name}</strong>
+                                                        </div>
+                                                        <Tag color={record.status === "active" ? "blue" : "green"}>
+                                                            {record.status}
+                                                        </Tag>
+                                                    </div>
+                                                    <p>{record.participant_id}</p>
+                                                    <p>
+                                                        {record.event_name} · Age {record.age} ·{" "}
+                                                        {formatGenderLabel(record.gender)}
+                                                    </p>
+                                                    <p>{record.country || "Country not provided"}</p>
+                                                    {isAdmin ? (
+                                                        <div className="recruitment-card__actions">
+                                                            <Button
+                                                                type="primary"
+                                                                disabled={record.status !== "active"}
+                                                                onClick={() => handleAssignDouble(record)}
+                                                            >
+                                                                Match
+                                                            </Button>
+                                                            <Button status="danger" onClick={() => handleDeleteDouble(record)}>
+                                                                Delete
+                                                            </Button>
+                                                        </div>
+                                                    ) : null}
+                                                </Card>
+                                            ))}
+                                        </div>
+                                        {mobilePagination("doubles", doubles.length)}
+                                        <Table
+                                            className="mt-4 admin-table-scroll"
+                                            rowKey="id"
+                                            columns={doubleColumns}
+                                            data={doubles}
+                                            pagination={{pageSize: 10}}
+                                            onRow={(recruitment) => ({
+                                                onClick: () => {
+                                                    navigate(
+                                                        `/tournaments/${selectedTournament}/registrations/${recruitment.registration_id}/edit`,
+                                                    );
+                                                },
+                                            })}
+                                            scroll={{x: 800}}
+                                        />
+                                    </>
                                 )}
                             </TabPane>
 
@@ -770,28 +872,66 @@ export default function TeamRecruitmentManagement() {
                                 {teams.length === 0 ? (
                                     <Empty description="No teams looking for members" />
                                 ) : (
-                                    <Table
-                                        rowKey="id"
-                                        columns={teamColumns}
-                                        data={teams}
-                                        pagination={{pageSize: 10}}
-                                        onRow={(team) => ({
-                                            onClick: () => {
-                                                navigate(
-                                                    `/tournaments/${selectedTournament}/registrations/${team.registration_id}/edit`,
-                                                );
-                                            },
-                                        })}
-                                        className="mt-4"
-                                        scroll={{x: 600}}
-                                    />
+                                    <>
+                                        <div className="recruitment-mobile-cards">
+                                            {mobileRows(teams, "teams").map((record) => (
+                                                <Card key={record.id} className="admin-mobile-card" bordered>
+                                                    <div className="recruitment-card__header">
+                                                        <div>
+                                                            <span className="recruitment-card__label">Team</span>
+                                                            <strong>{record.team_name}</strong>
+                                                        </div>
+                                                        <Tag color={record.status === "active" ? "blue" : "gray"}>
+                                                            {record.status}
+                                                        </Tag>
+                                                    </div>
+                                                    <p>Leader: {formatTeamLeaderId(record.leader_id, record.event_name)}</p>
+                                                    <p>{record.event_name}</p>
+                                                    <p>Members needed: {record.max_members_needed || "Not specified"}</p>
+                                                    <p>{record.requirements || "No requirements"}</p>
+                                                    <div className="recruitment-card__actions">
+                                                        <Button
+                                                            type="primary"
+                                                            onClick={() => {
+                                                                setEditingTeamRecruitment(record);
+                                                                teamRecruitmentForm.setFieldsValue({
+                                                                    max_members_needed: record.max_members_needed,
+                                                                    status: record.status,
+                                                                    requirements: record.requirements ?? "",
+                                                                });
+                                                                setEditTeamRecruitmentModalVisible(true);
+                                                            }}
+                                                        >
+                                                            Edit
+                                                        </Button>
+                                                    </div>
+                                                </Card>
+                                            ))}
+                                        </div>
+                                        {mobilePagination("teams", teams.length)}
+                                        <Table
+                                            className="mt-4 admin-table-scroll"
+                                            rowKey="id"
+                                            columns={teamColumns}
+                                            data={teams}
+                                            pagination={{pageSize: 10}}
+                                            onRow={(team) => ({
+                                                onClick: () => {
+                                                    navigate(
+                                                        `/tournaments/${selectedTournament}/registrations/${team.registration_id}/edit`,
+                                                    );
+                                                },
+                                            })}
+                                            scroll={{x: 600}}
+                                        />
+                                    </>
                                 )}
                             </TabPane>
-                        </Tabs>
+                        </ResponsiveTabs>
                     </div>
 
                     {/* Assignment Modal */}
-                    <Modal
+                    <ResponsiveOverlay
                         title="Assign Participant to Team"
                         visible={assignmentModalVisible}
                         onCancel={() => {
@@ -799,9 +939,17 @@ export default function TeamRecruitmentManagement() {
                             setAssignmentData(null);
                             assignmentForm.resetFields();
                         }}
-                        onOk={() => assignmentForm.submit()}
-                        okText="Assign"
-                        className="w-full max-w-2xl"
+                        className="admin-responsive-modal"
+                        desktopWidth="min(95vw, 720px)"
+                        mobileMode="fullscreen"
+                        footer={[
+                            <Button key="cancel" onClick={() => setAssignmentModalVisible(false)}>
+                                Cancel
+                            </Button>,
+                            <Button key="assign" type="primary" onClick={() => assignmentForm.submit()} loading={loading}>
+                                Assign
+                            </Button>,
+                        ]}
                     >
                         {assignmentData && (
                             <Form form={assignmentForm} layout="vertical" onSubmit={executeAssignment}>
@@ -877,9 +1025,9 @@ export default function TeamRecruitmentManagement() {
                                 </Form.Item>
                             </Form>
                         )}
-                    </Modal>
+                    </ResponsiveOverlay>
 
-                    <Modal
+                    <ResponsiveOverlay
                         title="Match Double Partners"
                         visible={doubleAssignmentModalVisible}
                         onCancel={() => {
@@ -887,9 +1035,17 @@ export default function TeamRecruitmentManagement() {
                             setDoubleAssignmentData(null);
                             doubleAssignmentForm.resetFields();
                         }}
-                        onOk={() => doubleAssignmentForm.submit()}
-                        okText="Create Team"
-                        className="w-full max-w-2xl"
+                        className="admin-responsive-modal"
+                        desktopWidth="min(95vw, 720px)"
+                        mobileMode="fullscreen"
+                        footer={[
+                            <Button key="cancel" onClick={() => setDoubleAssignmentModalVisible(false)}>
+                                Cancel
+                            </Button>,
+                            <Button key="create" type="primary" onClick={() => doubleAssignmentForm.submit()} loading={loading}>
+                                Create Team
+                            </Button>,
+                        ]}
                     >
                         {doubleAssignmentData && (
                             <Form form={doubleAssignmentForm} layout="vertical" onSubmit={executeDoubleAssignment}>
@@ -972,9 +1128,9 @@ export default function TeamRecruitmentManagement() {
                                 </Form.Item>
                             </Form>
                         )}
-                    </Modal>
+                    </ResponsiveOverlay>
 
-                    <Modal
+                    <ResponsiveOverlay
                         title="Edit Team Recruitment"
                         visible={editTeamRecruitmentModalVisible}
                         onCancel={() => {
@@ -982,9 +1138,17 @@ export default function TeamRecruitmentManagement() {
                             setEditingTeamRecruitment(null);
                             teamRecruitmentForm.resetFields();
                         }}
-                        onOk={handleSaveTeamRecruitment}
-                        okText="Save"
-                        className="w-full max-w-2xl"
+                        className="admin-responsive-modal"
+                        desktopWidth="min(95vw, 720px)"
+                        mobileMode="fullscreen"
+                        footer={[
+                            <Button key="cancel" onClick={() => setEditTeamRecruitmentModalVisible(false)}>
+                                Cancel
+                            </Button>,
+                            <Button key="save" type="primary" onClick={() => void handleSaveTeamRecruitment()} loading={loading}>
+                                Save
+                            </Button>,
+                        ]}
                     >
                         {editingTeamRecruitment && (
                             <Form form={teamRecruitmentForm} layout="vertical">
@@ -1032,21 +1196,7 @@ export default function TeamRecruitmentManagement() {
                                 </Form.Item>
                             </Form>
                         )}
-                    </Modal>
-
-                    {/* Detail Modal */}
-                    <Modal
-                        title="Participant Details"
-                        visible={detailModalVisible}
-                        onCancel={() => {
-                            setDetailModalVisible(false);
-                            setSelectedIndividual(null);
-                        }}
-                        footer={null}
-                        className="w-full max-w-2xl"
-                    >
-                        {/* Detail modal removed as per requirements */}
-                    </Modal>
+                    </ResponsiveOverlay>
                 </div>
             </Spin>
         </div>

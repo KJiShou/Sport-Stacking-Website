@@ -26,14 +26,14 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
+import {Button, Input, InputNumber, Message, Modal, Table, Tabs} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
-import {IconSearch, IconUndo} from "@arco-design/web-react/icon";
+import {IconSearch} from "@arco-design/web-react/icon";
 import {useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
+import {CountryFlag, MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 
-const {Title} = Typography;
 const {TabPane} = Tabs;
 const MESSAGE_DURATION_SECONDS = 5;
 const VALIDATION_PREVIEW_LIMIT = 20;
@@ -1215,24 +1215,24 @@ export default function ScoringPage() {
     const currentEvent = events?.find((evt) => evt.id === currentEventTab || evt.type === currentEventTab);
 
     return (
-        <div className="flex flex-col h-full bg-ghostwhite p-6 gap-6">
-            <Button type="outline" onClick={() => navigate("/tournaments")} className="w-fit">
-                <IconUndo /> Go Back
-            </Button>
+        <div className="scoring-page flex flex-col h-full bg-ghostwhite p-6 gap-6">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-6 shadow-lg rounded-lg">
-                <div className="w-full flex justify-between items-center">
-                    <Title heading={3}>{tournament.name} Prelim Score</Title>
-                    <div className="flex gap-4 items-center">
+                <MobilePageHeader
+                    title={`${tournament.name} Prelim Score`}
+                    backTo="/tournaments"
+                    backLabel="Go Back"
+                    actions={
                         <Input
                             placeholder="Search by Global ID or Name"
                             value={searchTerm}
                             onChange={setSearchTerm}
                             prefix={<IconSearch />}
+                            className="scoring-search"
                             style={{width: 250}}
                         />
-                    </div>
-                </div>
-                <Tabs
+                    }
+                />
+                <ResponsiveTabs
                     type="line"
                     destroyOnHide
                     className="w-full"
@@ -1254,258 +1254,336 @@ export default function ScoringPage() {
                         const hasCodes = scoringCodes.length > 0;
                         return (
                             <TabPane key={tabKey} title={getEventLabel(evt)}>
-                                <Tabs
+                                <ResponsiveTabs
                                     type="capsule"
                                     tabPosition="top"
                                     destroyOnHide
                                     activeTab={currentBracketTab}
                                     onChange={(key) => setCurrentBracketTab(key)}
                                 >
-                                    {evt.age_brackets.map((br) => (
-                                        <TabPane key={br.name} title={`${br.name} (${br.min_age}-${br.max_age})`}>
-                                            {isTeamEvent ? (
-                                                hasCodes ? (
+                                    {evt.age_brackets.map((br) => {
+                                        const bracketTeams = filterTeams(
+                                            teamScoreList.filter((t) => {
+                                                const teamAge = getTeamMaxAge(t);
+                                                return (
+                                                    teamMatchesEvent(t, evt) &&
+                                                    teamAge !== undefined &&
+                                                    teamAge >= br.min_age &&
+                                                    teamAge <= br.max_age
+                                                );
+                                            }),
+                                        );
+                                        const bracketParticipants = filterParticipants(
+                                            registrationList.filter(
+                                                (r) =>
+                                                    registrationMatchesEvent(r.events_registered, evt, r.gender) &&
+                                                    r.age >= br.min_age &&
+                                                    r.age <= br.max_age,
+                                            ),
+                                        );
+
+                                        return (
+                                            <TabPane key={br.name} title={`${br.name} (${br.min_age}-${br.max_age})`}>
+                                                <div className="scoring-mobile-cards">
+                                                    {isTeamEvent
+                                                        ? bracketTeams.map((team) => {
+                                                              const scores = team.scores[eventTypeKey];
+                                                              const complete = Boolean(
+                                                                  scores?.try1 && scores?.try2 && scores?.try3,
+                                                              );
+                                                              return (
+                                                                  <div className="scoring-mobile-card" key={team.id}>
+                                                                      <div className="scoring-mobile-card__header">
+                                                                          <div>
+                                                                              <span className="scoring-mobile-card__label">
+                                                                                  Team
+                                                                              </span>
+                                                                              <strong>{team.name}</strong>
+                                                                          </div>
+                                                                          <span
+                                                                              className={`scoring-status ${complete ? "is-complete" : "is-incomplete"}`}
+                                                                          >
+                                                                              {complete ? "Complete" : "Incomplete"}
+                                                                          </span>
+                                                                      </div>
+                                                                      <p>
+                                                                          Leader:{" "}
+                                                                          {formatTeamLeaderId(team.leader_id, eventTypeKey)}
+                                                                      </p>
+                                                                      <p>
+                                                                          Members:{" "}
+                                                                          {team.members
+                                                                              .map((member) => member.global_id)
+                                                                              .join(", ") || "—"}
+                                                                      </p>
+                                                                      <Button
+                                                                          type="primary"
+                                                                          onClick={() => openModal(null, team, eventIdForModal)}
+                                                                      >
+                                                                          Edit Score
+                                                                      </Button>
+                                                                  </div>
+                                                              );
+                                                          })
+                                                        : bracketParticipants.map((participant) => {
+                                                              const scores = participant.scores[eventTypeKey];
+                                                              const complete = Boolean(
+                                                                  scores?.try1 && scores?.try2 && scores?.try3,
+                                                              );
+                                                              return (
+                                                                  <div className="scoring-mobile-card" key={participant.user_id}>
+                                                                      <div className="scoring-mobile-card__header">
+                                                                          <div>
+                                                                              <span className="scoring-mobile-card__label">
+                                                                                  Participant
+                                                                              </span>
+                                                                              <strong>{participant.user_name}</strong>
+                                                                          </div>
+                                                                          <span
+                                                                              className={`scoring-status ${complete ? "is-complete" : "is-incomplete"}`}
+                                                                          >
+                                                                              {complete ? "Complete" : "Incomplete"}
+                                                                          </span>
+                                                                      </div>
+                                                                      <p>{participant.user_global_id}</p>
+                                                                      <p className="country-cell">
+                                                                          <CountryFlag country={participant.country} size="md" />
+                                                                          {participant.country || "Unknown"}
+                                                                      </p>
+                                                                      <p>Best Time: {scores ? getBestTime(scores) : "N/A"}</p>
+                                                                      <Button
+                                                                          type="primary"
+                                                                          onClick={() =>
+                                                                              openModal(participant, null, eventIdForModal)
+                                                                          }
+                                                                      >
+                                                                          Edit Score
+                                                                      </Button>
+                                                                  </div>
+                                                              );
+                                                          })}
+                                                </div>
+                                                {isTeamEvent ? (
+                                                    hasCodes ? (
+                                                        <Table
+                                                            style={{width: "100%"}}
+                                                            columns={getTeamExpandableColumns(
+                                                                scoringCodes,
+                                                                eventIdForModal,
+                                                                eventTypeKey,
+                                                            )}
+                                                            data={bracketTeams}
+                                                            pagination={false}
+                                                            loading={loading}
+                                                            rowKey="id"
+                                                        />
+                                                    ) : (
+                                                        <Table
+                                                            style={{width: "100%"}}
+                                                            columns={getTeamColumns(eventIdForModal, eventTypeKey)}
+                                                            data={bracketTeams}
+                                                            pagination={false}
+                                                            loading={loading}
+                                                            rowKey="id"
+                                                        />
+                                                    )
+                                                ) : hasCodes ? (
                                                     <Table
                                                         style={{width: "100%"}}
-                                                        columns={getTeamExpandableColumns(
+                                                        columns={getExpandableColumns(
                                                             scoringCodes,
                                                             eventIdForModal,
                                                             eventTypeKey,
                                                         )}
-                                                        data={filterTeams(
-                                                            teamScoreList.filter((t) => {
-                                                                const teamAge = getTeamMaxAge(t);
-                                                                return (
-                                                                    teamMatchesEvent(t, evt) &&
-                                                                    teamAge !== undefined &&
-                                                                    teamAge >= br.min_age &&
-                                                                    teamAge <= br.max_age
-                                                                );
-                                                            }),
-                                                        )}
+                                                        data={bracketParticipants}
                                                         pagination={false}
                                                         loading={loading}
-                                                        rowKey="id"
+                                                        rowKey="user_id"
                                                     />
                                                 ) : (
                                                     <Table
                                                         style={{width: "100%"}}
-                                                        columns={getTeamColumns(eventIdForModal, eventTypeKey)}
-                                                        data={filterTeams(
-                                                            teamScoreList.filter((t) => {
-                                                                const teamAge = getTeamMaxAge(t);
-                                                                return (
-                                                                    teamMatchesEvent(t, evt) &&
-                                                                    teamAge !== undefined &&
-                                                                    teamAge >= br.min_age &&
-                                                                    teamAge <= br.max_age
-                                                                );
-                                                            }),
-                                                        )}
+                                                        columns={getIndividualColumns(eventIdForModal, eventTypeKey)}
+                                                        data={bracketParticipants}
                                                         pagination={false}
                                                         loading={loading}
-                                                        rowKey="id"
+                                                        rowKey="user_id"
                                                     />
-                                                )
-                                            ) : hasCodes ? (
-                                                <Table
-                                                    style={{width: "100%"}}
-                                                    columns={getExpandableColumns(scoringCodes, eventIdForModal, eventTypeKey)}
-                                                    data={filterParticipants(
-                                                        registrationList.filter(
-                                                            (r) =>
-                                                                registrationMatchesEvent(r.events_registered, evt, r.gender) &&
-                                                                r.age >= br.min_age &&
-                                                                r.age <= br.max_age,
-                                                        ),
-                                                    )}
-                                                    pagination={false}
-                                                    loading={loading}
-                                                    rowKey="user_id"
-                                                />
-                                            ) : (
-                                                <Table
-                                                    style={{width: "100%"}}
-                                                    columns={getIndividualColumns(eventIdForModal, eventTypeKey)}
-                                                    data={filterParticipants(
-                                                        registrationList.filter(
-                                                            (r) =>
-                                                                registrationMatchesEvent(r.events_registered, evt, r.gender) &&
-                                                                r.age >= br.min_age &&
-                                                                r.age <= br.max_age,
-                                                        ),
-                                                    )}
-                                                    pagination={false}
-                                                    loading={loading}
-                                                    rowKey="user_id"
-                                                />
-                                            )}
-                                            <div className="flex justify-end mt-4">
-                                                <Button
-                                                    type="primary"
-                                                    status="success"
-                                                    loading={loading}
-                                                    onClick={async () => {
-                                                        if (!tournamentId) return;
-                                                        setLoading(true);
-                                                        try {
-                                                            // Validate only the current age bracket before allowing completion
-                                                            const validationErrors: string[] = [];
+                                                )}
+                                                <div className="scoring-done-actions flex justify-end mt-4">
+                                                    <Button
+                                                        type="primary"
+                                                        status="success"
+                                                        loading={loading}
+                                                        onClick={async () => {
+                                                            if (!tournamentId) return;
+                                                            setLoading(true);
+                                                            try {
+                                                                // Validate only the current age bracket before allowing completion
+                                                                const validationErrors: string[] = [];
 
-                                                            // Get all preliminary records once
-                                                            const allPrelimRecords =
-                                                                await getTournamentPrelimRecords(tournamentId);
+                                                                // Get all preliminary records once
+                                                                const allPrelimRecords =
+                                                                    await getTournamentPrelimRecords(tournamentId);
 
-                                                            const event = evt;
-                                                            const eventType = event.type;
-                                                            const eventId = event.id;
-                                                            const eventCodes = sanitizeEventCodes(event.codes);
-                                                            const isTeamEventType = [
-                                                                "double",
-                                                                "team relay",
-                                                                "parent & child",
-                                                            ].includes(eventType.toLowerCase());
+                                                                const event = evt;
+                                                                const eventType = event.type;
+                                                                const eventId = event.id;
+                                                                const eventCodes = sanitizeEventCodes(event.codes);
+                                                                const isTeamEventType = [
+                                                                    "double",
+                                                                    "team relay",
+                                                                    "parent & child",
+                                                                ].includes(eventType.toLowerCase());
 
-                                                            const bracket = br;
-                                                            if (isTeamEventType) {
-                                                                const teamsForBracket = teamScoreList.filter((t) => {
-                                                                    const teamAge = getTeamMaxAge(t);
-                                                                    return (
-                                                                        teamMatchesEvent(t, event) &&
-                                                                        teamAge !== undefined &&
-                                                                        teamAge >= bracket.min_age &&
-                                                                        teamAge <= bracket.max_age
-                                                                    );
-                                                                });
+                                                                const bracket = br;
+                                                                if (isTeamEventType) {
+                                                                    const teamsForBracket = teamScoreList.filter((t) => {
+                                                                        const teamAge = getTeamMaxAge(t);
+                                                                        return (
+                                                                            teamMatchesEvent(t, event) &&
+                                                                            teamAge !== undefined &&
+                                                                            teamAge >= bracket.min_age &&
+                                                                            teamAge <= bracket.max_age
+                                                                        );
+                                                                    });
 
-                                                                for (const team of teamsForBracket) {
-                                                                    if (eventCodes.length > 0) {
-                                                                        for (const code of eventCodes) {
+                                                                    for (const team of teamsForBracket) {
+                                                                        if (eventCodes.length > 0) {
+                                                                            for (const code of eventCodes) {
+                                                                                const hasRecord = allPrelimRecords.some(
+                                                                                    (record) =>
+                                                                                        isTeamTournamentRecord(record) &&
+                                                                                        record.team_id === team.id &&
+                                                                                        (eventId
+                                                                                            ? record.event_id === eventId
+                                                                                            : record.event === eventType) &&
+                                                                                        record.code === code,
+                                                                                );
+                                                                                if (!hasRecord) {
+                                                                                    validationErrors.push(
+                                                                                        `Team "${team.name}" missing ${code} record for ${eventType} (${bracket.name})`,
+                                                                                    );
+                                                                                }
+                                                                            }
+                                                                        } else {
                                                                             const hasRecord = allPrelimRecords.some(
                                                                                 (record) =>
                                                                                     isTeamTournamentRecord(record) &&
                                                                                     record.team_id === team.id &&
                                                                                     (eventId
                                                                                         ? record.event_id === eventId
-                                                                                        : record.event === eventType) &&
-                                                                                    record.code === code,
+                                                                                        : record.event === eventType),
                                                                             );
                                                                             if (!hasRecord) {
                                                                                 validationErrors.push(
-                                                                                    `Team "${team.name}" missing ${code} record for ${eventType} (${bracket.name})`,
+                                                                                    `Team "${team.name}" missing record for ${eventType} (${bracket.name})`,
                                                                                 );
                                                                             }
                                                                         }
-                                                                    } else {
-                                                                        const hasRecord = allPrelimRecords.some(
-                                                                            (record) =>
-                                                                                isTeamTournamentRecord(record) &&
-                                                                                record.team_id === team.id &&
-                                                                                (eventId
-                                                                                    ? record.event_id === eventId
-                                                                                    : record.event === eventType),
-                                                                        );
-                                                                        if (!hasRecord) {
-                                                                            validationErrors.push(
-                                                                                `Team "${team.name}" missing record for ${eventType} (${bracket.name})`,
-                                                                            );
-                                                                        }
                                                                     }
-                                                                }
-                                                            } else {
-                                                                const participantsForBracket = registrationList.filter(
-                                                                    (r) =>
-                                                                        registrationMatchesEvent(
-                                                                            r.events_registered,
-                                                                            event,
-                                                                            r.gender,
-                                                                        ) &&
-                                                                        r.age >= bracket.min_age &&
-                                                                        r.age <= bracket.max_age,
-                                                                );
+                                                                } else {
+                                                                    const participantsForBracket = registrationList.filter(
+                                                                        (r) =>
+                                                                            registrationMatchesEvent(
+                                                                                r.events_registered,
+                                                                                event,
+                                                                                r.gender,
+                                                                            ) &&
+                                                                            r.age >= bracket.min_age &&
+                                                                            r.age <= bracket.max_age,
+                                                                    );
 
-                                                                for (const participant of participantsForBracket) {
-                                                                    if (eventCodes.length > 0) {
-                                                                        for (const code of eventCodes) {
+                                                                    for (const participant of participantsForBracket) {
+                                                                        if (eventCodes.length > 0) {
+                                                                            for (const code of eventCodes) {
+                                                                                const hasRecord = allPrelimRecords.some(
+                                                                                    (record) =>
+                                                                                        isIndividualTournamentRecord(record) &&
+                                                                                        record.participant_id ===
+                                                                                            participant.user_id &&
+                                                                                        (eventId
+                                                                                            ? record.event_id === eventId
+                                                                                            : record.event === eventType) &&
+                                                                                        record.code === code,
+                                                                                );
+                                                                                if (!hasRecord) {
+                                                                                    validationErrors.push(
+                                                                                        `${participant.user_name} (${participant.user_global_id}) missing ${code} record for ${eventType} (${bracket.name})`,
+                                                                                    );
+                                                                                }
+                                                                            }
+                                                                        } else {
                                                                             const hasRecord = allPrelimRecords.some(
                                                                                 (record) =>
                                                                                     isIndividualTournamentRecord(record) &&
-                                                                                    record.participant_id === participant.user_id &&
+                                                                                    record.participant_id ===
+                                                                                        participant.user_id &&
                                                                                     (eventId
                                                                                         ? record.event_id === eventId
-                                                                                        : record.event === eventType) &&
-                                                                                    record.code === code,
+                                                                                        : record.event === eventType),
                                                                             );
                                                                             if (!hasRecord) {
                                                                                 validationErrors.push(
-                                                                                    `${participant.user_name} (${participant.user_global_id}) missing ${code} record for ${eventType} (${bracket.name})`,
+                                                                                    `${participant.user_name} (${participant.user_global_id}) missing record for ${eventType} (${bracket.name})`,
                                                                                 );
                                                                             }
                                                                         }
-                                                                    } else {
-                                                                        const hasRecord = allPrelimRecords.some(
-                                                                            (record) =>
-                                                                                isIndividualTournamentRecord(record) &&
-                                                                                record.participant_id === participant.user_id &&
-                                                                                (eventId
-                                                                                    ? record.event_id === eventId
-                                                                                    : record.event === eventType),
-                                                                        );
-                                                                        if (!hasRecord) {
-                                                                            validationErrors.push(
-                                                                                `${participant.user_name} (${participant.user_global_id}) missing record for ${eventType} (${bracket.name})`,
-                                                                            );
-                                                                        }
                                                                     }
                                                                 }
-                                                            }
 
-                                                            // If there are validation errors, show them
+                                                                // If there are validation errors, show them
 
-                                                            if (validationErrors.length > 0) {
-                                                                showValidationErrorsModal(
-                                                                    `Cannot complete preliminary round for ${eventType}`,
-                                                                    validationErrors,
-                                                                    "The current age bracket still has missing preliminary records.",
-                                                                );
+                                                                if (validationErrors.length > 0) {
+                                                                    showValidationErrorsModal(
+                                                                        `Cannot complete preliminary round for ${eventType}`,
+                                                                        validationErrors,
+                                                                        "The current age bracket still has missing preliminary records.",
+                                                                    );
+                                                                    setLoading(false);
+                                                                    return;
+                                                                }
+
+                                                                // All records are complete, proceed
+                                                                try {
+                                                                    await updateParticipantRankingsAndResults(
+                                                                        tournamentId,
+                                                                        "prelim",
+                                                                    );
+                                                                    Message.success(
+                                                                        "Participant rankings and results updated successfully!",
+                                                                    );
+                                                                } catch (updateError) {
+                                                                    console.error("Error updating rankings:", updateError);
+                                                                    Message.warning(
+                                                                        "Records saved but failed to update rankings.",
+                                                                    );
+                                                                }
+                                                                navigate(`/tournaments/${tournamentId}/record/prelim`);
+                                                            } catch (error) {
+                                                                console.error("Failed to check records:", error);
+                                                                Message.error("Failed to check records.");
+                                                            } finally {
                                                                 setLoading(false);
-                                                                return;
                                                             }
-
-                                                            // All records are complete, proceed
-                                                            try {
-                                                                await updateParticipantRankingsAndResults(tournamentId, "prelim");
-                                                                Message.success(
-                                                                    "Participant rankings and results updated successfully!",
-                                                                );
-                                                            } catch (updateError) {
-                                                                console.error("Error updating rankings:", updateError);
-                                                                Message.warning("Records saved but failed to update rankings.");
-                                                            }
-                                                            navigate(`/tournaments/${tournamentId}/record/prelim`);
-                                                        } catch (error) {
-                                                            console.error("Failed to check records:", error);
-                                                            Message.error("Failed to check records.");
-                                                        } finally {
-                                                            setLoading(false);
-                                                        }
-                                                    }}
-                                                    style={{marginLeft: 8}}
-                                                >
-                                                    Prelim Done
-                                                </Button>
-                                            </div>
-                                        </TabPane>
-                                    ))}
-                                </Tabs>
+                                                        }}
+                                                        style={{marginLeft: 8}}
+                                                    >
+                                                        Prelim Done
+                                                    </Button>
+                                                </div>
+                                            </TabPane>
+                                        );
+                                    })}
+                                </ResponsiveTabs>
                             </TabPane>
                         );
                     })}
-                </Tabs>
+                </ResponsiveTabs>
             </div>
 
             {/* Modal for editing records */}
-            <Modal
+            <ResponsiveOverlay
                 title={`Edit Record - ${selectedParticipant?.user_name || selectedTeam?.name || "Unknown"}`}
                 visible={modalVisible}
                 onCancel={closeModal}
@@ -1517,7 +1595,9 @@ export default function ScoringPage() {
                         Save Record
                     </Button>,
                 ]}
-                style={{width: "800px"}}
+                className="score-editor-modal"
+                desktopWidth="800px"
+                mobileMode="fullscreen"
             >
                 {modalVisible && (
                     <div className="space-y-4">
@@ -1567,6 +1647,7 @@ export default function ScoringPage() {
                                                                 val === undefined || val === null ? "" : String(val),
                                                             )
                                                         }
+                                                        inputMode="decimal"
                                                         precision={3}
                                                         min={0}
                                                         style={{width: "100%"}}
@@ -1587,6 +1668,7 @@ export default function ScoringPage() {
                                                                 val === undefined || val === null ? "" : String(val),
                                                             )
                                                         }
+                                                        inputMode="decimal"
                                                         precision={3}
                                                         min={0}
                                                         style={{width: "100%"}}
@@ -1607,6 +1689,7 @@ export default function ScoringPage() {
                                                                 val === undefined || val === null ? "" : String(val),
                                                             )
                                                         }
+                                                        inputMode="decimal"
                                                         precision={3}
                                                         min={0}
                                                         style={{width: "100%"}}
@@ -1647,6 +1730,7 @@ export default function ScoringPage() {
                                                     val === undefined || val === null ? "" : String(val),
                                                 )
                                             }
+                                            inputMode="decimal"
                                             precision={3}
                                             min={0}
                                             style={{width: "100%"}}
@@ -1671,6 +1755,7 @@ export default function ScoringPage() {
                                                     val === undefined || val === null ? "" : String(val),
                                                 )
                                             }
+                                            inputMode="decimal"
                                             precision={3}
                                             min={0}
                                             style={{width: "100%"}}
@@ -1695,6 +1780,7 @@ export default function ScoringPage() {
                                                     val === undefined || val === null ? "" : String(val),
                                                 )
                                             }
+                                            inputMode="decimal"
                                             precision={3}
                                             min={0}
                                             style={{width: "100%"}}
@@ -1711,7 +1797,7 @@ export default function ScoringPage() {
                         )}
                     </div>
                 )}
-            </Modal>
+            </ResponsiveOverlay>
         </div>
     );
 }

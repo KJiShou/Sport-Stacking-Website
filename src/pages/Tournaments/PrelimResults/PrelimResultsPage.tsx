@@ -36,13 +36,13 @@ import {
     buildFinalistClassificationMap,
     isEligibleForFinalistSelection,
 } from "@/utils/tournament/finalistStyling";
-import {Button, Dropdown, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
+import {Button, Dropdown, Message, Modal, Table, Tabs} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
-import {IconCaretRight, IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
+import {IconCaretRight, IconCopy, IconPrinter} from "@arco-design/web-react/icon";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
+import {MobilePageHeader, MobileRankingTable, ResponsiveTabs} from "@/components/responsive";
 
-const {Title} = Typography;
 const {TabPane} = Tabs;
 type PrintScope = "all" | "event" | "age";
 
@@ -144,9 +144,7 @@ const isIndividualRecord = (record: TournamentRecord | TournamentTeamRecord): re
     (record as TournamentRecord).participant_id !== undefined;
 
 const getTeamId = (record: Partial<TournamentTeamRecord | AggregatedPrelimResult>): string | undefined =>
-    record.team_id ??
-    (record as {teamId?: string}).teamId ??
-    (record as {participantId?: string}).participantId;
+    record.team_id ?? (record as {teamId?: string}).teamId ?? (record as {participantId?: string}).participantId;
 
 const getParticipantId = (record: Partial<TournamentRecord | AggregatedPrelimResult>): string | undefined =>
     record.participant_id ?? (record as {participantId?: string}).participantId ?? record.id;
@@ -548,7 +546,9 @@ const buildExpandedRows = (
 
         const baseMatch = allRecords.find((candidate) => {
             const candidateParticipantId = isTeamEvent
-                ? (isTeamRecord(candidate) ? candidate.team_id : getParticipantId(candidate))
+                ? isTeamRecord(candidate)
+                    ? candidate.team_id
+                    : getParticipantId(candidate)
                 : getParticipantId(candidate);
 
             if (!candidateParticipantId || candidateParticipantId !== targetParticipantId) {
@@ -1343,17 +1343,14 @@ export default function PrelimResultsPage() {
     }, [tournamentId]);
 
     return (
-        <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-            <Button
-                type="outline"
-                onClick={() => navigate(`/tournaments/${tournamentId}/start/record`)}
-                className="w-fit pt-2 pb-2"
-            >
-                <IconUndo /> Go Back
-            </Button>
+        <div className="results-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+            <MobilePageHeader
+                title="Preliminary Results"
+                backTo={`/tournaments/${tournamentId}/start/record`}
+                backLabel="Back to Scoring"
+            />
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <div className="w-full flex justify-between items-center">
-                    <Title heading={3}>Preliminary Results</Title>
+                <div className="results-header w-full flex justify-between items-center mobile-stack">
                     <div className="flex flex-wrap items-center gap-2">
                         <Button
                             type="primary"
@@ -1479,7 +1476,7 @@ export default function PrelimResultsPage() {
                         </Dropdown>
                     </div>
                 </div>
-                <Tabs
+                <ResponsiveTabs
                     type="line"
                     className="w-full"
                     activeTab={currentEventTab}
@@ -1502,7 +1499,7 @@ export default function PrelimResultsPage() {
                         return (
                             <TabPane key={tabKey} title={eventLabel}>
                                 {event.age_brackets && event.age_brackets.length > 0 ? (
-                                    <Tabs
+                                    <ResponsiveTabs
                                         type="capsule"
                                         className="w-full"
                                         activeTab={currentBracketTab}
@@ -1517,7 +1514,35 @@ export default function PrelimResultsPage() {
                                                     : undefined;
                                             return (
                                                 <TabPane key={bracket.name} title={bracket.name}>
+                                                    <div className="results-mobile-ranking-table">
+                                                        <MobileRankingTable
+                                                            data={bracketResults}
+                                                            loading={loading}
+                                                            rowKey={(record) => record.id}
+                                                            rank={(record) => record.rank}
+                                                            name={(record) => record.name}
+                                                            result={(record) =>
+                                                                Number.isFinite(record.bestTime) ? record.bestTime.toFixed(3) : "N/A"
+                                                            }
+                                                            details={(record) => (
+                                                                <div className="results-mobile-card__details">
+                                                                    <span>{isTeamEvent ? "Team" : "Athlete"}</span>
+                                                                    <span>Event: {eventLabel}</span>
+                                                                    <span>Age: {bracket.name}</span>
+                                                                    {record.classification ? <span>{record.classification}</span> : null}
+                                                                    {eventCodes.length > 1
+                                                                        ? buildExpandedRows(record, event, eventCodes, isTeamEvent, allRecords)
+                                                                        : (
+                                                                            <span>
+                                                                                Try 1: {record.try1?.toFixed?.(3) ?? "N/A"}; Try 2: {record.try2?.toFixed?.(3) ?? "N/A"}; Try 3: {record.try3?.toFixed?.(3) ?? "N/A"}
+                                                                            </span>
+                                                                        )}
+                                                                </div>
+                                                            )}
+                                                        />
+                                                    </div>
                                                     <Table
+                                                        className="results-desktop-table"
                                                         style={{width: "100%"}}
                                                         rowKey={(record) => record.id}
                                                         columns={columns}
@@ -1529,9 +1554,10 @@ export default function PrelimResultsPage() {
                                                 </TabPane>
                                             );
                                         })}
-                                    </Tabs>
+                                    </ResponsiveTabs>
                                 ) : (
                                     <Table
+                                        className="results-desktop-table"
                                         style={{width: "100%"}}
                                         rowKey={(record) => record.id}
                                         columns={columns}
@@ -1543,7 +1569,7 @@ export default function PrelimResultsPage() {
                             </TabPane>
                         );
                     })}
-                </Tabs>
+                </ResponsiveTabs>
             </div>
         </div>
     );

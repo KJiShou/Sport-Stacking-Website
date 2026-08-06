@@ -1,4 +1,4 @@
-import {Button, Card, Carousel, Empty, Grid, Image, Modal, Spin, Typography} from "@arco-design/web-react";
+import {Button, Card, Carousel, Empty, Grid, Image, Spin, Typography} from "@arco-design/web-react";
 import {IconCalendar, IconClockCircle, IconLocation, IconTrophy} from "@arco-design/web-react/icon";
 import type React from "react";
 import {useEffect, useState} from "react";
@@ -6,10 +6,10 @@ import {Link} from "react-router-dom";
 import type {HomeCarouselImage} from "../../schema/HomeCarouselSchema";
 import type {GlobalResult, GlobalTeamResult} from "../../schema/RecordSchema";
 import type {Tournament} from "../../schema/TournamentSchema";
+import {CountryFlag, ResponsiveOverlay} from "../../components/responsive";
 import {getActiveCarouselImages} from "../../services/firebase/homeCarouselService";
 import {getNextTournaments} from "../../services/firebase/homeTournamentService";
 import {getBestRecords} from "../../services/firebase/recordService";
-import {getCountryFlag} from "../../utils/countryFlags";
 import {formatStackingTime} from "../../utils/time";
 
 const {Title, Paragraph, Text} = Typography;
@@ -131,11 +131,17 @@ const Home: React.FC = () => {
     return (
         <div className="flex flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-left p-6 shadow-lg rounded-lg">
-                <div style={{minHeight: "100vh"}}>
+                <div style={{minHeight: "100dvh"}}>
                     {/* Hero Carousel */}
                     {carouselImages.length > 0 && (
                         <section style={{marginBottom: "2rem"}}>
-                            <Carousel autoPlay indicatorType="dot" showArrow="hover" style={{height: "500px"}}>
+                            <Carousel
+                                autoPlay
+                                indicatorType="dot"
+                                showArrow="always"
+                                className="home-hero-carousel"
+                                style={{height: "500px"}}
+                            >
                                 {carouselImages.map((image) => (
                                     <div key={image.id}>
                                         <div
@@ -275,7 +281,7 @@ const Home: React.FC = () => {
                                                                     borderRadius: "12px",
                                                                     background: statusStyles.badgeBg,
                                                                     color: statusStyles.badgeColor,
-                                                                    fontSize: "0.875rem",
+                                                                    fontSize: "13px",
                                                                 }}
                                                             >
                                                                 {tournament.status}
@@ -373,7 +379,7 @@ const Home: React.FC = () => {
                                                             }}
                                                         >
                                                             <IconClockCircle style={{color: "var(--color-primary-6)"}} />
-                                                            <Title heading={6} style={{margin: 0, fontSize: "0.875rem"}}>
+                                                            <Title heading={6} style={{margin: 0, fontSize: "14px"}}>
                                                                 {record.event}
                                                             </Title>
                                                         </div>
@@ -402,19 +408,13 @@ const Home: React.FC = () => {
                                                                 <Text
                                                                     type="secondary"
                                                                     style={{
-                                                                        fontSize: "0.875rem",
+                                                                        fontSize: "13px",
                                                                         display: "flex",
                                                                         alignItems: "center",
                                                                         gap: 6,
                                                                     }}
                                                                 >
-                                                                    {getCountryFlag(record.country) && (
-                                                                        <img
-                                                                            src={getCountryFlag(record.country)}
-                                                                            alt={`${record.country} flag`}
-                                                                            style={{width: 16, height: 12}}
-                                                                        />
-                                                                    )}
+                                                                    <CountryFlag country={record.country} size="sm" />
                                                                     {record.country}
                                                                 </Text>
                                                             )}
@@ -528,12 +528,12 @@ const Home: React.FC = () => {
                                 Ready to Start Stacking?
                             </Title>
                             <Paragraph
-                                style={{fontSize: "1.125rem", marginBottom: "2rem", maxWidth: "600px", margin: "0 auto 2rem"}}
+                                style={{fontSize: "16px", marginBottom: "2rem", maxWidth: "600px", margin: "0 auto 2rem"}}
                             >
                                 Join our community and discover the exciting world of sport stacking. Whether you're a beginner or
                                 an experienced stacker, we have something for everyone!
                             </Paragraph>
-                            <div style={{display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap"}}>
+                            <div className="home-cta-actions" style={{display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap"}}>
                                 <Link to="/tournaments">
                                     <Button type="primary" size="large">
                                         View Tournaments
@@ -547,14 +547,15 @@ const Home: React.FC = () => {
                     </div>
 
                     {/* Image Detail Modal */}
-                    <Modal
+                    <ResponsiveOverlay
                         visible={detailModalVisible}
                         onCancel={() => {
                             setDetailModalVisible(false);
                             setSelectedImage(null);
                         }}
                         footer={null}
-                        className={`max-w-[95vw] md:max-w-[80vw] lg:max-w-[60vw]`}
+                        mobileMode="fullscreen"
+                        desktopWidth="min(90vw, 900px)"
                     >
                         {selectedImage && (
                             <div>
@@ -591,7 +592,7 @@ const Home: React.FC = () => {
                                 )}
                             </div>
                         )}
-                    </Modal>
+                    </ResponsiveOverlay>
                 </div>
             </div>
         </div>

@@ -1,15 +1,17 @@
 import {
     Button,
+    Card,
     Form,
     Grid,
     Input,
     InputNumber,
     Message,
-    Modal,
+    Pagination,
     Popconfirm,
     Space,
     Switch,
     Table,
+    Tag,
     Typography,
     Upload,
 } from "@arco-design/web-react";
@@ -18,6 +20,7 @@ import {IconDelete, IconDown, IconEdit, IconPlus, IconUp} from "@arco-design/web
 import type React from "react";
 import {useEffect, useState} from "react";
 import type {HomeCarouselImage} from "../../schema/HomeCarouselSchema";
+import {MobilePageHeader, ResponsiveOverlay} from "../../components/responsive";
 import {
     addCarouselImage,
     deleteCarouselImage,
@@ -27,7 +30,7 @@ import {
 } from "../../services/firebase/homeCarouselService";
 
 const FormItem = Form.Item;
-const {Title, Text} = Typography;
+const {Text} = Typography;
 
 interface FormData {
     title: string;
@@ -44,6 +47,8 @@ export const CarouselManagement: React.FC = () => {
     const [editingImage, setEditingImage] = useState<HomeCarouselImage | null>(null);
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
     const [form] = Form.useForm<FormData>();
+    const [mobilePage, setMobilePage] = useState(1);
+    const MOBILE_PAGE_SIZE = 10;
 
     useEffect(() => {
         loadImages();
@@ -54,6 +59,7 @@ export const CarouselManagement: React.FC = () => {
         try {
             const data = await getAllCarouselImages();
             setImages(data);
+            setMobilePage(1);
         } catch (error) {
             Message.error("Failed to load carousel images");
             console.error(error);
@@ -248,25 +254,94 @@ export const CarouselManagement: React.FC = () => {
     ];
 
     return (
-        <div className="flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
+        <div className="admin-page carousel-management-page flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
             <div className="bg-white flex flex-col w-full h-fit gap-4 p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <div className="w-full flex justify-between items-center mb-4">
-                    <Title heading={3}>Carousel Management</Title>
-                    <Button type="primary" icon={<IconPlus />} onClick={handleAdd}>
-                        Add Image
-                    </Button>
-                </div>
+                <MobilePageHeader
+                    title="Carousel Management"
+                    actions={
+                        <Button type="primary" icon={<IconPlus />} onClick={handleAdd}>
+                            Add Image
+                        </Button>
+                    }
+                />
                 <div className="w-full">
-                    <Table loading={loading} columns={columns} data={images} rowKey="id" pagination={{pageSize: 10}} stripe />
+                    <div className="admin-table-scroll">
+                        <Table loading={loading} columns={columns} data={images} rowKey="id" pagination={{pageSize: 10}} stripe />
+                    </div>
+                    <div className="carousel-mobile-cards">
+                        {images.slice((mobilePage - 1) * MOBILE_PAGE_SIZE, mobilePage * MOBILE_PAGE_SIZE).map((image, index) => {
+                            const absoluteIndex = (mobilePage - 1) * MOBILE_PAGE_SIZE + index;
+                            return (
+                                <Card key={image.id} className="mobile-card-content" title={image.title || "Untitled image"}>
+                                    <img
+                                        src={image.imageUrl}
+                                        alt={image.title || "Carousel preview"}
+                                        className="carousel-mobile-preview"
+                                    />
+                                    <div className="mt-2 flex items-center justify-between gap-2">
+                                        <Text type="secondary">Order {image.order}</Text>
+                                        <Tag color={image.active ? "green" : "gray"}>{image.active ? "Active" : "Inactive"}</Tag>
+                                    </div>
+                                    <div className="mt-3 flex flex-col gap-2">
+                                        <Button
+                                            className="mobile-full-width-button"
+                                            onClick={() => handleEdit(image)}
+                                            icon={<IconEdit />}
+                                        >
+                                            Edit
+                                        </Button>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                className="flex-1"
+                                                disabled={absoluteIndex === 0}
+                                                onClick={() => void handleMoveUp(image, absoluteIndex)}
+                                            >
+                                                <IconUp />
+                                            </Button>
+                                            <Button
+                                                className="flex-1"
+                                                disabled={absoluteIndex === images.length - 1}
+                                                onClick={() => void handleMoveDown(image, absoluteIndex)}
+                                            >
+                                                <IconDown />
+                                            </Button>
+                                            <Popconfirm title="Delete this image?" onOk={() => void handleDelete(image)}>
+                                                <Button status="danger" className="flex-1">
+                                                    <IconDelete />
+                                                </Button>
+                                            </Popconfirm>
+                                        </div>
+                                    </div>
+                                </Card>
+                            );
+                        })}
+                        {images.length > MOBILE_PAGE_SIZE ? (
+                            <Pagination
+                                current={mobilePage}
+                                pageSize={MOBILE_PAGE_SIZE}
+                                total={images.length}
+                                onChange={setMobilePage}
+                            />
+                        ) : null}
+                    </div>
                 </div>
             </div>
 
-            <Modal
+            <ResponsiveOverlay
                 title={editingImage ? "Edit Carousel Image" : "Add Carousel Image"}
                 visible={modalVisible}
-                onOk={handleSubmit}
                 onCancel={() => setModalVisible(false)}
-                style={{width: "600px"}}
+                className="admin-responsive-modal"
+                desktopWidth="min(95vw, 600px)"
+                mobileMode="fullscreen"
+                footer={[
+                    <Button key="cancel" onClick={() => setModalVisible(false)}>
+                        Cancel
+                    </Button>,
+                    <Button key="save" type="primary" onClick={() => void handleSubmit()} loading={loading}>
+                        Save
+                    </Button>,
+                ]}
             >
                 <Form form={form} layout="vertical">
                     {!editingImage && (
@@ -305,7 +380,7 @@ export const CarouselManagement: React.FC = () => {
                         <Switch />
                     </FormItem>
                 </Form>
-            </Modal>
+            </ResponsiveOverlay>
         </div>
     );
 };

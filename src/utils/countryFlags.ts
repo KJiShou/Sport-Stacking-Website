@@ -224,6 +224,8 @@ const countryToCode: Record<string, string> = {
     Zimbabwe: "ZW",
 };
 
+const knownCountryCodes = new Set(Object.values(countryToCode));
+
 /**
  * Get flag icon URL from country code
  * @param countryCode ISO 3166-1 alpha-2 country code
@@ -241,8 +243,14 @@ export function getFlagIconUrl(countryCode: string, style: "1x1" | "4x3" = "4x3"
  * @param style Flag style - '1x1' (square) or '4x3' (rectangular), default is '4x3'
  * @returns Flag icon URL or empty string if not found
  */
-export function getCountryFlag(countryName: string, style: "1x1" | "4x3" = "4x3"): string {
-    const code = countryToCode[countryName];
+export function getCountryFlag(countryName: string | null | undefined, style: "1x1" | "4x3" = "4x3"): string {
+    const normalizedName = countryName?.trim() ?? "";
+    const code =
+        normalizedName.length === 2
+            ? knownCountryCodes.has(normalizedName.toUpperCase())
+                ? normalizedName.toUpperCase()
+                : undefined
+            : Object.entries(countryToCode).find(([name]) => name.toLowerCase() === normalizedName.toLowerCase())?.[1];
     return code ? getFlagIconUrl(code, style) : "";
 }
 
@@ -251,8 +259,13 @@ export function getCountryFlag(countryName: string, style: "1x1" | "4x3" = "4x3"
  * @param countryName Full country name
  * @returns ISO 3166-1 alpha-2 country code or undefined if not found
  */
-export function getCountryCode(countryName: string): string | undefined {
-    return countryToCode[countryName];
+export function getCountryCode(countryName: string | null | undefined): string | undefined {
+    const normalizedName = countryName?.trim() ?? "";
+    if (normalizedName.length === 2) {
+        const normalizedCode = normalizedName.toUpperCase();
+        return knownCountryCodes.has(normalizedCode) ? normalizedCode : undefined;
+    }
+    return Object.entries(countryToCode).find(([name]) => name.toLowerCase() === normalizedName.toLowerCase())?.[1];
 }
 
 /**
@@ -260,6 +273,6 @@ export function getCountryCode(countryName: string): string | undefined {
  * @param countryName Full country name
  * @returns boolean indicating if flag exists
  */
-export function hasCountryFlag(countryName: string): boolean {
-    return countryName in countryToCode;
+export function hasCountryFlag(countryName: string | null | undefined): boolean {
+    return Boolean(getCountryCode(countryName));
 }

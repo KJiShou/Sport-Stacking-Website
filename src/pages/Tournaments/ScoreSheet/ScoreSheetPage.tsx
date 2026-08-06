@@ -22,6 +22,7 @@ import {
     Typography,
 } from "@arco-design/web-react";
 import {IconCopy, IconLaunch, IconLeft, IconPrinter, IconRefresh} from "@arco-design/web-react/icon";
+import {ResponsiveTabs} from "@/components/responsive";
 import {useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 
@@ -336,10 +337,10 @@ const ScoreSheetPage = () => {
 
     return (
         <div
-            className="p-0 md:p-6 xl:p-10"
+            className="score-sheet-page p-0 md:p-6 xl:p-10"
             style={{
                 background: "linear-gradient(180deg, #f6f8fb 0%, #edf2f7 100%)",
-                minHeight: "calc(100vh - 96px)",
+                minHeight: "calc(100dvh - 9.6rem)",
             }}
         >
             <style>
@@ -437,7 +438,7 @@ const ScoreSheetPage = () => {
             </Card>
 
             <Card bordered={false} style={{borderRadius: 16, boxShadow: "0 10px 24px rgba(15, 23, 42, 0.06)"}}>
-                <Tabs
+                <ResponsiveTabs
                     type="line"
                     activeTab={activeEventId}
                     onChange={(key) => {
@@ -453,10 +454,10 @@ const ScoreSheetPage = () => {
                     {payload.sections.map((section) => (
                         <Tabs.TabPane key={section.event.id} title={getEventLabel(section.event)} />
                     ))}
-                </Tabs>
+                </ResponsiveTabs>
 
                 {currentSection ? (
-                    <Tabs type="capsule" activeTab={activeBracketKey} onChange={setActiveBracketKey} style={{marginTop: 8}}>
+                    <ResponsiveTabs type="capsule" activeTab={activeBracketKey} onChange={setActiveBracketKey} style={{marginTop: 8}}>
                         {currentSection.brackets.map((bracket) => {
                             const classificationPart = bracket.classification ?? "all";
                             const key = `${bracket.bracket.name}::${classificationPart}`;
@@ -466,7 +467,7 @@ const ScoreSheetPage = () => {
 
                             return <Tabs.TabPane key={key} title={`${bracket.bracket.name}${classificationLabel}`} />;
                         })}
-                    </Tabs>
+                    </ResponsiveTabs>
                 ) : null}
 
                 <div className="mt-4 flex justify-start sm:justify-end">

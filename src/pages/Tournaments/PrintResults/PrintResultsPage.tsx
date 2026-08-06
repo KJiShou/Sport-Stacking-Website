@@ -43,8 +43,9 @@ import {Button, Card, Dropdown, Message, Select, Space, Tabs, Typography} from "
 import {IconPrinter} from "@arco-design/web-react/icon";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {useParams} from "react-router-dom";
+import {MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 
-const {Title, Text} = Typography;
+const {Text} = Typography;
 const {TabPane} = Tabs;
 type PrintScope = "all" | "event" | "age";
 type ResultRound = "prelim" | "final";
@@ -154,6 +155,7 @@ export default function PrintResultsPage() {
     const [currentEventId, setCurrentEventId] = useState<string>("");
     const [currentBracketName, setCurrentBracketName] = useState<string>("");
     const [currentClassificationTab, setCurrentClassificationTab] = useState<string>("");
+    const [mobilePrintScope, setMobilePrintScope] = useState<ResultRound | null>(null);
 
     const sortedEvents = useMemo(
         () =>
@@ -544,11 +546,9 @@ export default function PrintResultsPage() {
     };
 
     return (
-        <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+        <div className="print-results-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-stretch p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <Title heading={3} className="mb-4">
-                    Print Results
-                </Title>
+                <MobilePageHeader title="Print Results" />
 
                 {tournament && (
                     <Card className="mb-4">
@@ -558,11 +558,11 @@ export default function PrintResultsPage() {
                     </Card>
                 )}
 
-                <Tabs activeTab={currentRound} onChange={(tab) => setCurrentRound(tab as ResultRound)} className="mb-4">
+                <ResponsiveTabs activeTab={currentRound} onChange={(tab) => setCurrentRound(tab as ResultRound)} className="mb-4">
                     <TabPane key="prelim" title="Preliminary Results">
                         <Card className="mb-4">
-                            <div className="flex flex-wrap gap-4 mb-4">
-                                <div className="flex items-center gap-2">
+                            <div className="print-filter-row flex flex-wrap gap-4 mb-4">
+                                <div className="print-filter-field flex items-center gap-2">
                                     <Text>Event:</Text>
                                     <Select
                                         placeholder="Select event"
@@ -571,7 +571,7 @@ export default function PrintResultsPage() {
                                         {...eventDropdownProps}
                                     />
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="print-filter-field flex items-center gap-2">
                                     <Text>Age Bracket:</Text>
                                     <Select
                                         placeholder="Select bracket"
@@ -584,49 +584,60 @@ export default function PrintResultsPage() {
                             </div>
 
                             <div className="flex flex-wrap gap-2">
-                                <Dropdown
-                                    trigger="click"
-                                    droplist={
-                                        <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
-                                            <Button
-                                                type="text"
-                                                className="text-left"
-                                                loading={loading}
-                                                onClick={() => handlePrintPrelimResults("all")}
-                                            >
-                                                Print All
-                                            </Button>
-                                            <Button
-                                                type="text"
-                                                className="text-left"
-                                                loading={loading}
-                                                onClick={() => handlePrintPrelimResults("event")}
-                                            >
-                                                Print Current Event
-                                            </Button>
-                                            <Button
-                                                type="text"
-                                                className="text-left"
-                                                loading={loading}
-                                                onClick={() => handlePrintPrelimResults("age")}
-                                            >
-                                                Print Current Age
-                                            </Button>
-                                        </div>
-                                    }
+                                <div className="print-action-desktop">
+                                    <Dropdown
+                                        trigger="click"
+                                        droplist={
+                                            <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
+                                                <Button
+                                                    type="text"
+                                                    className="text-left"
+                                                    loading={loading}
+                                                    onClick={() => handlePrintPrelimResults("all")}
+                                                >
+                                                    Print All
+                                                </Button>
+                                                <Button
+                                                    type="text"
+                                                    className="text-left"
+                                                    loading={loading}
+                                                    onClick={() => handlePrintPrelimResults("event")}
+                                                >
+                                                    Print Current Event
+                                                </Button>
+                                                <Button
+                                                    type="text"
+                                                    className="text-left"
+                                                    loading={loading}
+                                                    onClick={() => handlePrintPrelimResults("age")}
+                                                >
+                                                    Print Current Age
+                                                </Button>
+                                            </div>
+                                        }
+                                    >
+                                        <Button type="primary" icon={<IconPrinter />} loading={loading}>
+                                            Print Preliminary Results
+                                        </Button>
+                                    </Dropdown>
+                                </div>
+                                <Button
+                                    className="print-action-mobile"
+                                    type="primary"
+                                    icon={<IconPrinter />}
+                                    loading={loading}
+                                    onClick={() => setMobilePrintScope("prelim")}
                                 >
-                                    <Button type="primary" icon={<IconPrinter />} loading={loading}>
-                                        Print Preliminary Results
-                                    </Button>
-                                </Dropdown>
+                                    Print Preliminary Results
+                                </Button>
                             </div>
                         </Card>
                     </TabPane>
 
                     <TabPane key="final" title="Final Results">
                         <Card className="mb-4">
-                            <div className="flex flex-wrap gap-4 mb-4">
-                                <div className="flex items-center gap-2">
+                            <div className="print-filter-row flex flex-wrap gap-4 mb-4">
+                                <div className="print-filter-field flex items-center gap-2">
                                     <Text>Event:</Text>
                                     <Select
                                         placeholder="Select event"
@@ -635,7 +646,7 @@ export default function PrintResultsPage() {
                                         {...eventDropdownProps}
                                     />
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="print-filter-field flex items-center gap-2">
                                     <Text>Age Bracket:</Text>
                                     <Select
                                         placeholder="Select bracket"
@@ -648,41 +659,52 @@ export default function PrintResultsPage() {
                             </div>
 
                             <div className="flex flex-wrap gap-2">
-                                <Dropdown
-                                    trigger="click"
-                                    droplist={
-                                        <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
-                                            <Button
-                                                type="text"
-                                                className="text-left"
-                                                loading={loading}
-                                                onClick={() => handlePrintFinalResults("all")}
-                                            >
-                                                Print All
-                                            </Button>
-                                            <Button
-                                                type="text"
-                                                className="text-left"
-                                                loading={loading}
-                                                onClick={() => handlePrintFinalResults("event")}
-                                            >
-                                                Print Current Event
-                                            </Button>
-                                            <Button
-                                                type="text"
-                                                className="text-left"
-                                                loading={loading}
-                                                onClick={() => handlePrintFinalResults("age")}
-                                            >
-                                                Print Current Age
-                                            </Button>
-                                        </div>
-                                    }
+                                <div className="print-action-desktop">
+                                    <Dropdown
+                                        trigger="click"
+                                        droplist={
+                                            <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
+                                                <Button
+                                                    type="text"
+                                                    className="text-left"
+                                                    loading={loading}
+                                                    onClick={() => handlePrintFinalResults("all")}
+                                                >
+                                                    Print All
+                                                </Button>
+                                                <Button
+                                                    type="text"
+                                                    className="text-left"
+                                                    loading={loading}
+                                                    onClick={() => handlePrintFinalResults("event")}
+                                                >
+                                                    Print Current Event
+                                                </Button>
+                                                <Button
+                                                    type="text"
+                                                    className="text-left"
+                                                    loading={loading}
+                                                    onClick={() => handlePrintFinalResults("age")}
+                                                >
+                                                    Print Current Age
+                                                </Button>
+                                            </div>
+                                        }
+                                    >
+                                        <Button type="primary" icon={<IconPrinter />} loading={loading}>
+                                            Print Final Results
+                                        </Button>
+                                    </Dropdown>
+                                </div>
+                                <Button
+                                    className="print-action-mobile"
+                                    type="primary"
+                                    icon={<IconPrinter />}
+                                    loading={loading}
+                                    onClick={() => setMobilePrintScope("final")}
                                 >
-                                    <Button type="primary" icon={<IconPrinter />} loading={loading}>
-                                        Print Final Results
-                                    </Button>
-                                </Dropdown>
+                                    Print Final Results
+                                </Button>
                                 <Button
                                     type="primary"
                                     status="success"
@@ -695,8 +717,67 @@ export default function PrintResultsPage() {
                             </div>
                         </Card>
                     </TabPane>
-                </Tabs>
+                </ResponsiveTabs>
             </div>
+            <ResponsiveOverlay
+                title={mobilePrintScope === "final" ? "Print Final Results" : "Print Preliminary Results"}
+                visible={mobilePrintScope !== null}
+                onCancel={() => setMobilePrintScope(null)}
+                mobileMode="sheet"
+                footer={
+                    <Button type="secondary" onClick={() => setMobilePrintScope(null)}>
+                        Cancel
+                    </Button>
+                }
+            >
+                <div className="print-action-sheet">
+                    <Button
+                        type="primary"
+                        long
+                        loading={loading}
+                        onClick={() => {
+                            setMobilePrintScope(null);
+                            if (mobilePrintScope === "final") {
+                                void handlePrintFinalResults("all");
+                            } else {
+                                void handlePrintPrelimResults("all");
+                            }
+                        }}
+                    >
+                        Print All
+                    </Button>
+                    <Button
+                        type="outline"
+                        long
+                        loading={loading}
+                        onClick={() => {
+                            setMobilePrintScope(null);
+                            if (mobilePrintScope === "final") {
+                                void handlePrintFinalResults("event");
+                            } else {
+                                void handlePrintPrelimResults("event");
+                            }
+                        }}
+                    >
+                        Print Current Event
+                    </Button>
+                    <Button
+                        type="outline"
+                        long
+                        loading={loading}
+                        onClick={() => {
+                            setMobilePrintScope(null);
+                            if (mobilePrintScope === "final") {
+                                void handlePrintFinalResults("age");
+                            } else {
+                                void handlePrintPrelimResults("age");
+                            }
+                        }}
+                    >
+                        Print Current Age
+                    </Button>
+                </div>
+            </ResponsiveOverlay>
         </div>
     );
 }

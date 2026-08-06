@@ -46,6 +46,9 @@
     -webkit-text-size-adjust: 100%;
 
     --color-ghostwhite: #f5f6fa;
+    --mobile-page-padding: 1.6rem;
+    --mobile-panel-gap: 1.6rem;
+    --mobile-touch-target: 4.4rem;
 }
 
 html {
@@ -57,6 +60,2285 @@ main {
     margin: 0;
     padding: 0;
     color: #444;
+}
+
+html,
+body,
+#root {
+    width: 100%;
+    min-width: 0;
+}
+
+#root {
+    min-width: 0;
+}
+
+.app-page {
+    width: 100%;
+    min-width: 0;
+}
+
+.app-panel {
+    min-width: 0;
+    border-radius: 0.8rem;
+}
+
+.mobile-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.6rem;
+    width: 100%;
+    min-width: 0;
+    margin-bottom: 1.6rem;
+}
+
+.mobile-page-header__main,
+.mobile-page-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    min-width: 0;
+}
+
+.mobile-page-header__copy {
+    min-width: 0;
+}
+
+.mobile-page-header__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.mobile-page-header__back {
+    flex-shrink: 0;
+}
+
+.tournament-view-header .mobile-page-header__main {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.responsive-overlay__body {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.responsive-data-view__mobile {
+    display: none;
+}
+
+.responsive-data-view__tablet {
+    display: none;
+}
+
+.mobile-sticky-actions {
+    display: block;
+}
+
+.mobile-sticky-actions__spacer {
+    display: none;
+}
+
+.mobile-sticky-actions__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.2rem;
+    margin-bottom: 0.8rem;
+    color: var(--color-text-2);
+    font-size: 1.4rem;
+}
+
+.mobile-sticky-actions__summary strong {
+    color: var(--color-text-1);
+    font-size: 1.6rem;
+}
+
+.mobile-scroll-tabs {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.mobile-scroll-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.mobile-table-scroll {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Keep long desktop overlays usable as well as their mobile Drawer variant. */
+.arco-modal.responsive-overlay .arco-modal-content {
+    display: flex;
+    max-height: calc(100dvh - 4rem);
+    flex-direction: column;
+}
+
+.arco-modal.responsive-overlay .arco-modal-body {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.arco-modal.responsive-overlay .responsive-overlay__body {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.arco-modal.responsive-overlay .arco-modal-footer {
+    flex-shrink: 0;
+}
+
+@media (max-width: 991px) {
+    .mobile-table-scroll::before {
+        display: block;
+        padding: 0.6rem 0;
+        color: var(--color-text-3);
+        font-size: 1.3rem;
+        content: "Swipe horizontally to see more";
+    }
+
+    .mobile-table-scroll .arco-table {
+        min-width: max-content;
+    }
+}
+
+.mobile-card-content {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.create-tournament-form {
+    width: min(100%, 90rem);
+}
+
+.tournament-registration-form {
+    width: min(100%, 90rem);
+}
+
+.edit-registration-form {
+    width: min(100%, 90rem);
+}
+
+.mobile-form-sections {
+    width: 100%;
+}
+
+.mobile-form-sections .arco-collapse-item-content-box {
+    padding: 1.6rem 0;
+}
+
+.register-profile-form,
+.register-claim-form {
+    width: 100%;
+}
+
+.user-profile-edit-form {
+    width: min(100%, 72rem);
+}
+
+.forgot-password-form {
+    width: min(100%, 42rem);
+}
+
+.registration-member-select {
+    min-width: 0;
+}
+
+.athlete-ranking-table--tablet,
+.athlete-ranking-table--mobile {
+    display: none;
+}
+
+.athlete-ranking-filter-layout {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    width: 100%;
+    min-width: 0;
+}
+
+.athlete-ranking-search {
+    flex: 0 1 26rem;
+    min-width: 20rem;
+}
+
+.athlete-filter-controls--desktop {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+    min-width: 0;
+}
+
+.country-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.country-flag {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.2rem;
+    object-fit: cover;
+    overflow: hidden;
+}
+
+.country-flag--fallback {
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+.country-flag--loading {
+    background: var(--color-fill-2);
+}
+
+.ranking-row-details {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.2rem;
+    padding: 0.8rem 0;
+}
+
+.ranking-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.ranking-detail-item--wide {
+    grid-column: 1 / -1;
+}
+
+.ranking-detail-label {
+    color: var(--color-text-3);
+    font-size: 1.3rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.mobile-ranking-table {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.mobile-ranking-table .arco-table {
+    min-width: 30rem;
+}
+
+.mobile-ranking-table .arco-table-th,
+.mobile-ranking-table .arco-table-td {
+    padding: 1rem 0.8rem;
+    vertical-align: top;
+}
+
+.mobile-ranking-table .arco-table-expand-icon-cell {
+    width: 4.4rem;
+    min-width: 4.4rem;
+    padding: 0;
+}
+
+.mobile-ranking-table .arco-table-expand-icon-cell button {
+    width: 4.4rem;
+    height: 4.4rem;
+    min-width: 4.4rem;
+    min-height: 4.4rem;
+    border: 0;
+    border-radius: 0.6rem;
+    background: transparent;
+}
+
+.mobile-ranking-table__expand-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 4.4rem;
+    min-width: 4.4rem;
+    height: 4.4rem;
+    min-height: 4.4rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.6rem;
+    background: transparent;
+    color: rgb(var(--primary-6));
+    cursor: pointer;
+}
+
+.mobile-ranking-table__expand-icon:hover {
+    background: rgb(var(--primary-1));
+}
+
+.mobile-ranking-table__expand-icon:focus-visible {
+    outline: 2px solid rgb(var(--primary-6));
+    outline-offset: -2px;
+}
+
+.mobile-ranking-table__name {
+    display: block;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-weight: 600;
+}
+
+.mobile-ranking-table__result {
+    display: block;
+    white-space: nowrap;
+    font-weight: 700;
+    text-align: right;
+}
+
+.mobile-ranking-table__details {
+    min-width: 0;
+    padding: 0.4rem 0.8rem 0.8rem;
+    overflow-wrap: anywhere;
+}
+
+.mobile-ranking-table__details .arco-table-container {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.mobile-ranking-table__pagination {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1.2rem;
+}
+
+.ranking-results-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.2rem;
+    margin-top: 1.6rem;
+}
+
+.ranking-results-count {
+    color: var(--color-text-3);
+    white-space: nowrap;
+}
+
+.mobile-filter-drawer-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.8rem;
+}
+
+.athlete-filter-drawer-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+}
+
+.athlete-profile-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+}
+
+.athlete-profile-card {
+    padding: 1.4rem;
+    border: 1px solid var(--color-border-2);
+    border-radius: 0.8rem;
+    background: var(--color-fill-1);
+    overflow-wrap: anywhere;
+}
+
+.tournament-list-cards {
+    display: none;
+}
+
+.tournament-mobile-card {
+    padding: 1.4rem;
+    border: 1px solid var(--color-border-2);
+    border-radius: 0.8rem;
+    background: var(--color-bg-2);
+    overflow-wrap: anywhere;
+}
+
+.scoring-page .arco-table-container {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.scoring-mobile-cards {
+    display: none;
+}
+
+.scoring-mobile-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    padding: 1.4rem;
+    border: 1px solid var(--color-border-2);
+    border-radius: 0.8rem;
+    background: var(--color-bg-2);
+    overflow-wrap: anywhere;
+}
+
+.scoring-mobile-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.2rem;
+}
+
+.scoring-mobile-card__header > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.scoring-mobile-card__label {
+    color: var(--color-text-3);
+    font-size: 1.3rem;
+    text-transform: uppercase;
+}
+
+.scoring-mobile-card p {
+    margin: 0;
+    color: var(--color-text-2);
+    font-size: 1.4rem;
+}
+
+.scoring-status {
+    flex: 0 0 auto;
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+.scoring-status.is-complete {
+    color: #168f45;
+}
+
+.scoring-status.is-incomplete {
+    color: #d97706;
+}
+
+.scoring-search {
+    max-width: 100%;
+}
+
+.results-page .arco-table-container {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.results-mobile-ranking-table {
+    display: none;
+}
+
+.results-mobile-card__details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 1.2rem;
+    color: var(--color-text-2);
+    font-size: 1.3rem;
+}
+
+.results-mobile-card__details > span {
+    padding: 0.4rem 0.8rem;
+    border-radius: 999px;
+    background: var(--color-fill-2);
+}
+
+.tournament-view-page .arco-table-container {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.tournament-view-mobile-ranking-table {
+    display: none;
+}
+
+.tournament-view-full-result-action {
+    display: none;
+}
+
+.tournament-view-mobile-result-card__details,
+.tournament-view-mobile-result-card__attempts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 1.2rem;
+    color: var(--color-text-2);
+    font-size: 1.3rem;
+}
+
+.tournament-view-mobile-result-card__details > span,
+.tournament-view-mobile-result-card__attempts > span {
+    padding: 0.4rem 0.8rem;
+    border-radius: 999px;
+    background: var(--color-fill-2);
+}
+
+.tournament-view-mobile-result-card__scores {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    flex: 1 1 100%;
+    gap: 0.8rem;
+    width: 100%;
+    margin-top: 0.4rem;
+}
+
+.tournament-view-mobile-result-card__score {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.8rem 0.5rem;
+    border: 1px solid var(--color-border-2);
+    border-radius: 0.8rem;
+    background: var(--color-bg-2);
+    text-align: center;
+}
+
+.tournament-view-mobile-result-card__score-label {
+    color: var(--color-text-3);
+    font-size: 1.15rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.tournament-view-mobile-result-card__score-value {
+    min-width: 0;
+    color: rgb(var(--primary-6));
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.tournament-view-mobile-result-card__members {
+    display: block;
+    margin-top: 1.2rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--color-border-2);
+    color: var(--color-text-2);
+    font-size: 1.3rem;
+    overflow-wrap: anywhere;
+}
+
+.score-sheet-page .arco-table-container {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.records-page .arco-tabs-nav {
+    max-width: 100%;
+}
+
+.records-mobile-ranking-table {
+    display: none;
+}
+
+.mobile-filter-trigger {
+    display: none;
+    position: relative;
+    flex: 0 0 4.4rem;
+    width: 4.4rem;
+    min-width: 4.4rem;
+    height: 4.4rem;
+    min-height: 4.4rem;
+}
+
+.mobile-filter-trigger__button {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 4.4rem !important;
+    min-width: 4.4rem;
+    height: 4.4rem !important;
+    min-height: 4.4rem;
+    padding: 0 !important;
+    border-radius: 0 0.6rem 0.6rem 0;
+}
+
+.mobile-filter-trigger__button .arco-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 !important;
+    font-size: 2rem;
+}
+
+.mobile-filter-trigger__count {
+    position: absolute;
+    top: -0.45rem;
+    right: -0.45rem;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.8rem;
+    height: 1.8rem;
+    padding: 0 0.4rem;
+    border: 2px solid var(--color-bg-2);
+    border-radius: 999px;
+    background: rgb(var(--primary-6));
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.mobile-search-filter-row {
+    min-width: 0;
+}
+
+.records-mobile-card__details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
+    margin-top: 1.2rem;
+    color: var(--color-text-2);
+    font-size: 1.3rem;
+}
+
+.records-mobile-card__details > span {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.records-mobile-card__members {
+    margin-top: 1.2rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--color-border-2);
+    overflow-wrap: anywhere;
+}
+
+.records-mobile-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 1.2rem;
+}
+
+.records-mobile-card__actions > * {
+    flex: 1 1 12rem;
+}
+
+.mobile-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    color: var(--color-text-2);
+    font-size: 1.4rem;
+}
+
+.score-sheet-page .arco-table-th:first-child,
+.score-sheet-page .arco-table-td:first-child,
+.results-page .arco-table-th:first-child,
+.results-page .arco-table-td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--color-bg-2);
+}
+
+.score-sheet-page .arco-table-th:nth-child(2),
+.score-sheet-page .arco-table-td:nth-child(2) {
+    position: sticky;
+    left: 8.8rem;
+    z-index: 3;
+    background: var(--color-bg-2);
+}
+
+.results-page .arco-table-th:nth-child(2),
+.results-page .arco-table-td:nth-child(2) {
+    position: sticky;
+    left: 8rem;
+    z-index: 3;
+    background: var(--color-bg-2);
+}
+
+.tournament-view-preview-table .arco-table-th:first-child,
+.tournament-view-preview-table .arco-table-td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--color-bg-2);
+}
+
+.tournament-view-preview-table .arco-table-th:nth-child(2),
+.tournament-view-preview-table .arco-table-td:nth-child(2) {
+    position: sticky;
+    left: 6rem;
+    z-index: 3;
+    background: var(--color-bg-2);
+}
+
+.tournament-view-preview-table .arco-table-th:first-child,
+.tournament-view-preview-table .arco-table-th:nth-child(2) {
+    background: var(--color-neutral-2);
+}
+
+.athlete-ranking-table--overlay .arco-table-th:first-child,
+.athlete-ranking-table--overlay .arco-table-td:first-child,
+.records-table-scroll .arco-table-th:first-child,
+.records-table-scroll .arco-table-td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: var(--color-bg-2);
+}
+
+.athlete-ranking-table--overlay .arco-table-th:nth-child(2),
+.athlete-ranking-table--overlay .arco-table-td:nth-child(2) {
+    position: sticky;
+    left: 6.4rem;
+    z-index: 3;
+    background: var(--color-bg-2);
+}
+
+.records-table-scroll .arco-table-th:nth-child(2),
+.records-table-scroll .arco-table-td:nth-child(2) {
+    position: sticky;
+    left: 6rem;
+    z-index: 3;
+    background: var(--color-bg-2);
+}
+
+/* Keep the sticky Records columns visually aligned with the scrolling table. */
+.records-table-scroll .arco-table-th:first-child,
+.records-table-scroll .arco-table-th:nth-child(2) {
+    background: var(--color-neutral-2);
+}
+
+.records-table-scroll .arco-table-tr.even-row .arco-table-td:nth-child(-n + 2) {
+    background: var(--color-bg-2);
+}
+
+.records-table-scroll .arco-table-tr.odd-row .arco-table-td:nth-child(-n + 2) {
+    background: var(--color-fill-1);
+}
+
+.records-search input:focus-visible {
+    outline: none;
+    outline-offset: 0;
+}
+
+.records-action-button {
+    white-space: nowrap;
+}
+
+.records-action-button.arco-btn-group {
+    display: inline-flex;
+    flex-wrap: nowrap;
+}
+
+.records-action-button > .arco-btn {
+    flex: 0 0 auto;
+}
+
+.print-filter-field {
+    min-width: 0;
+}
+
+.print-action-mobile {
+    display: none;
+}
+
+.print-action-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+}
+
+.admin-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.admin-page .arco-table-container {
+    max-width: 100%;
+}
+
+.admin-page .arco-modal-content {
+    max-width: 100%;
+}
+
+.admin-modal-actions,
+.admin-modal-actions__group {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.admin-modal-actions {
+    justify-content: space-between;
+    width: 100%;
+}
+
+.admin-modal-actions__group {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.registrations-mobile-cards {
+    display: none;
+}
+
+.registration-mobile-card {
+    cursor: pointer;
+}
+
+.registration-mobile-card:focus-visible {
+    outline: 3px solid rgba(var(--primary-6), 0.35);
+    outline-offset: 2px;
+}
+
+.registrations-import-preview-cards {
+    display: none;
+}
+
+.carousel-mobile-cards {
+    display: none;
+}
+
+.user-management-mobile-cards {
+    display: none;
+}
+
+.permission-mobile-cards {
+    display: none;
+}
+
+.recruitment-mobile-cards {
+    display: none;
+}
+
+.recruitment-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.2rem;
+}
+
+.recruitment-card__header > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.recruitment-card__label {
+    color: var(--color-text-3);
+    font-size: 1.3rem;
+    text-transform: uppercase;
+}
+
+.recruitment-mobile-cards p {
+    margin: 0.8rem 0 0;
+    color: var(--color-text-2);
+    font-size: 1.4rem;
+    overflow-wrap: anywhere;
+}
+
+.recruitment-card__actions {
+    display: flex;
+    gap: 0.8rem;
+    margin-top: 1.2rem;
+}
+
+.recruitment-card__actions > * {
+    flex: 1 1 0;
+}
+
+.recruitment-summary {
+    min-width: 0;
+}
+
+.admin-mobile-card {
+    padding: 1.4rem;
+    border: 1px solid var(--color-border-2);
+    border-radius: 0.8rem;
+    background: var(--color-bg-2);
+    overflow-wrap: anywhere;
+}
+
+.participants-mobile-cards {
+    display: none;
+}
+
+.participants-mobile-card {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.participants-mobile-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.2rem;
+}
+
+.participants-mobile-card__header > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.participants-mobile-card__label {
+    color: var(--color-text-3);
+    font-size: 1.3rem;
+    text-transform: uppercase;
+}
+
+.participants-mobile-card p {
+    margin: 0.8rem 0 0;
+    color: var(--color-text-2);
+    font-size: 1.4rem;
+}
+
+.carousel-mobile-preview {
+    display: block;
+    width: 100%;
+    max-height: 20rem;
+    object-fit: cover;
+    border-radius: 0.6rem;
+}
+
+.view-registration-form,
+.edit-registration-page form {
+    width: min(100%, 90rem);
+}
+
+.user-profile-mobile-cards {
+    display: none;
+}
+
+.user-profile-mobile-card {
+    min-width: 0;
+    padding: 1.4rem;
+    border: 1px solid var(--color-border-2);
+    border-radius: 0.8rem;
+    background: var(--color-bg-2);
+    overflow-wrap: anywhere;
+}
+
+.user-profile-mobile-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.2rem;
+}
+
+.user-profile-mobile-card__value {
+    flex: 0 0 auto;
+    color: rgb(var(--primary-6));
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.user-profile-mobile-card__details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.2rem;
+    margin-top: 1.2rem;
+    color: var(--color-text-2);
+}
+
+.user-profile-mobile-card__details span {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.3rem;
+    overflow-wrap: anywhere;
+}
+
+.user-profile-mobile-card__details small {
+    color: var(--color-text-3);
+    font-size: 1.3rem;
+}
+
+.user-profile-mobile-card__events {
+    margin-top: 1.2rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--color-border-2);
+    color: var(--color-text-2);
+    overflow-wrap: anywhere;
+}
+
+.developer-danger-panel {
+    padding: 1.6rem;
+    border: 1px solid #f2b8b5;
+    border-radius: 0.8rem;
+    background: #fff7f6;
+}
+
+.home-hero-carousel {
+    width: 100%;
+}
+
+.home-cta-actions > a {
+    display: inline-flex;
+}
+
+.home-hero-carousel img {
+    max-width: 100%;
+}
+
+.notification-message {
+    margin-bottom: 0;
+}
+
+.notification-card[role="button"] {
+    cursor: pointer;
+}
+
+.notification-card[role="button"]:focus-visible {
+    outline: 3px solid rgba(var(--primary-6), 0.35);
+    outline-offset: 2px;
+}
+
+.verify-result {
+    width: min(100%, 64rem);
+    margin: 0 auto;
+    padding: 2.4rem 1.6rem;
+}
+
+.verify-result .arco-result-title,
+.verify-result .arco-result-subtitle {
+    overflow-wrap: anywhere;
+}
+
+.notification-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.notification-expand {
+    align-self: flex-start;
+    min-height: 3.6rem;
+    padding: 0 0.4rem;
+}
+
+.notification-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+}
+
+.mobile-request-action {
+    margin-left: 0.8rem;
+}
+
+.app-navbar {
+    box-sizing: border-box;
+    height: 6.4rem;
+    padding: 0 1.6rem;
+}
+
+.app-content {
+    margin-top: 6.4rem !important;
+    min-height: calc(100dvh - 6.4rem) !important;
+}
+
+.app-navbar__brand {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    flex-shrink: 0;
+    min-width: 0;
+    font-weight: 700;
+    color: var(--color-text-1);
+    text-decoration: none;
+}
+
+.app-navbar__brand:focus-visible {
+    border-radius: 0.8rem;
+    outline: 3px solid rgba(var(--primary-6), 0.35);
+    outline-offset: 3px;
+}
+
+:where(a, button, [role="button"], input, select, textarea):focus-visible {
+    outline: 3px solid rgba(var(--primary-6), 0.35);
+    outline-offset: 2px;
+}
+
+.app-navbar__brand-mark {
+    display: block;
+    flex: 0 0 auto;
+    width: 4.4rem;
+    height: 4.4rem;
+    border-radius: 0.8rem;
+    object-fit: contain;
+    background: #fff;
+}
+
+.app-navbar__brand-name {
+    white-space: nowrap;
+}
+
+.app-navbar__desktop-menu {
+    align-self: stretch;
+    flex: 1 1 0;
+    height: 6.4rem;
+    min-width: 0;
+    margin: 0 1.2rem;
+    background: transparent;
+}
+
+.app-navbar__desktop-menu.arco-menu-horizontal .arco-menu-inner {
+    height: 100%;
+    padding: 1rem 2rem;
+}
+
+.app-navbar__desktop-menu .arco-menu-item,
+.app-navbar__desktop-menu .arco-menu-inline-header {
+    min-height: 4.4rem;
+    line-height: 4.4rem;
+}
+
+.app-navbar__desktop-menu .arco-menu-selected-label {
+    bottom: -1rem;
+}
+
+.app-navbar__mobile-trigger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 4.4rem;
+    min-width: 4.4rem;
+    height: 4.4rem;
+    min-height: 4.4rem;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.app-navbar__mobile-trigger .arco-icon {
+    font-size: 2.4rem;
+}
+
+.app-navbar__account {
+    flex-shrink: 0;
+}
+
+.app-navbar__account-menu.arco-dropdown-menu {
+    max-height: none;
+    overflow: visible;
+}
+
+.app-navbar__account-trigger {
+    display: inline-flex;
+    align-items: center;
+    min-width: 4.4rem;
+    min-height: 4.4rem;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: inherit;
+}
+
+.app-navbar__account-button {
+    display: inline-flex;
+    min-width: 4.4rem;
+    min-height: 4.4rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.app-navbar__account-trigger .arco-icon {
+    font-size: 1.8rem;
+}
+
+.app-footer a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.app-footer {
+    padding: 3rem 2rem 1.5rem;
+    color: #000;
+}
+
+.app-footer__section {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    min-width: 0;
+}
+
+.app-footer__section-icon {
+    display: inline-flex;
+    flex: 0 0 2.4rem;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.4rem;
+    min-height: 2.4rem;
+    font-size: 2.2rem;
+}
+
+.app-footer__section-content {
+    min-width: 0;
+}
+
+.app-footer__section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.app-footer__link {
+    display: flex !important;
+    min-height: 44px !important;
+    align-items: center;
+    color: #000;
+    overflow-wrap: anywhere;
+}
+
+.app-footer__link:hover,
+.app-footer__link:focus-visible {
+    color: rgb(var(--primary-6));
+    text-decoration: underline;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+    .responsive-data-view__desktop {
+        display: none;
+    }
+
+    .responsive-data-view__tablet {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+
+    .responsive-data-view__mobile {
+        display: none;
+    }
+
+    .athlete-ranking-table--desktop {
+        display: none;
+    }
+
+    .athlete-ranking-table--tablet {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
+    .athlete-ranking-table--tablet .arco-table {
+        min-width: 520px;
+    }
+
+    .athlete-ranking-table--tablet .arco-table-expand-icon {
+        display: inline-flex;
+        width: 4.4rem;
+        height: 4.4rem;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .ranking-row-details {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 767px) {
+    .recruitment-mobile-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+
+    .recruitment-management-page .admin-table-scroll {
+        display: none;
+    }
+
+    .participants-mobile-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+        margin-bottom: 1.2rem;
+    }
+
+    .participant-list-page .mobile-table-scroll {
+        display: none;
+    }
+
+    .results-page .results-desktop-table {
+        display: none;
+    }
+
+    .results-mobile-ranking-table {
+        display: block;
+        margin-bottom: 1.2rem;
+    }
+
+    .scoring-mobile-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+        margin-bottom: 1.2rem;
+    }
+
+    .scoring-page .arco-table-container {
+        display: none;
+    }
+
+    .records-filter-inline-desktop {
+        display: none !important;
+    }
+
+    .records-filter-row {
+        flex-direction: row !important;
+        align-items: stretch !important;
+        width: 100% !important;
+    }
+
+    .records-search {
+        flex: 1 1 auto;
+        width: auto !important;
+        min-width: 0;
+    }
+
+    .records-mobile-ranking-table {
+        display: block;
+    }
+
+    .records-table-scroll {
+        display: none;
+    }
+
+    .records-mobile-card__actions > * {
+        flex-basis: 100%;
+    }
+
+    .mobile-search-filter-row {
+        gap: 0 !important;
+    }
+
+    .mobile-search-filter-row > .mobile-filter-trigger {
+        display: inline-flex;
+        margin-left: -1px;
+    }
+
+    .mobile-search-filter-row > .arco-input-search,
+    .mobile-search-filter-row > .arco-input-wrapper,
+    .mobile-search-filter-row > .tournament-search,
+    .mobile-search-filter-row > .records-search,
+    .mobile-search-filter-row > .athlete-ranking-search {
+        flex: 1 1 auto;
+        width: auto !important;
+        min-width: 0;
+        height: 4.4rem;
+    }
+
+    .mobile-search-filter-row > .arco-input-search .arco-input-wrapper,
+    .mobile-search-filter-row > .arco-input-wrapper,
+    .mobile-search-filter-row > .tournament-search,
+    .mobile-search-filter-row > .records-search,
+    .mobile-search-filter-row > .athlete-ranking-search {
+        border-radius: 0.6rem 0 0 0.6rem;
+    }
+
+    button,
+    [role="button"],
+    a.arco-btn,
+    .arco-btn,
+    .arco-input-wrapper,
+    .arco-select-view,
+    .arco-picker,
+    .arco-input-number {
+        min-height: var(--mobile-touch-target);
+    }
+
+    .arco-btn-only-icon {
+        min-width: var(--mobile-touch-target);
+        min-height: var(--mobile-touch-target);
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+    }
+
+    .app-page {
+        padding-left: var(--mobile-page-padding);
+        padding-right: var(--mobile-page-padding);
+    }
+
+    /* Most legacy route shells use a white panel nested directly inside the
+       ghostwhite page background. Keep that panel padding consistent on
+       phones without changing the desktop spacing scale. */
+    .app-content .bg-ghostwhite > .bg-white,
+    .app-content .bg-ghostwhite > .bg-white > .bg-white {
+        padding: var(--mobile-page-padding) !important;
+    }
+
+    .admin-permissions-page .admin-table-scroll {
+        display: none;
+    }
+
+    .admin-permissions-page .arco-input-search,
+    .user-management-page .arco-input {
+        width: 100% !important;
+        max-width: none !important;
+    }
+
+    .permission-mobile-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+    .user-management-page > .arco-spin .admin-table-scroll,
+    .user-management-page .admin-table-scroll {
+        display: none;
+    }
+
+    .user-management-mobile-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+    .carousel-management-page .admin-table-scroll {
+        display: none;
+    }
+
+    .carousel-mobile-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+    .view-registration-form,
+    .edit-registration-page form {
+        width: 100%;
+    }
+
+    .participant-list-page .arco-table-container {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .tournament-view-page .flex.flex-wrap.justify-center {
+        align-items: stretch;
+        width: 100%;
+    }
+
+    .tournament-view-page .flex.flex-wrap.justify-center > *,
+    .tournament-view-page .flex.flex-wrap.justify-center .arco-btn {
+        width: 100%;
+    }
+
+    .tournament-view-preview-table {
+        display: none;
+    }
+
+    .tournament-view-mobile-ranking-table {
+        display: block;
+        margin-bottom: 1.2rem;
+    }
+
+    .tournament-view-full-result-action {
+        display: flex;
+    }
+    .registrations-list-header > div:last-child {
+        width: 100%;
+        align-items: stretch;
+    }
+
+    .registrations-list-header > div:last-child > *,
+    .registrations-list-header .arco-input {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .registrations-list-table {
+        display: none;
+    }
+
+    .registrations-mobile-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+        width: 100%;
+    }
+
+    .registrations-import-preview-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+
+    .registrations-import-preview-table {
+        display: none;
+    }
+
+    .registrations-import-body {
+        max-height: none !important;
+    }
+
+    .registrations-import-footer {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .registrations-import-footer > div {
+        display: flex;
+        width: 100%;
+        gap: 0.8rem;
+    }
+
+    .registrations-import-footer > div > * {
+        flex: 1 1 0;
+    }
+
+    .registrations-import-modal {
+        width: calc(100vw - 2rem) !important;
+        max-width: calc(100vw - 2rem) !important;
+        margin: 1rem !important;
+    }
+    .admin-page {
+        padding: 1.6rem !important;
+    }
+
+    .admin-page > .arco-spin,
+    .admin-page .arco-spin {
+        min-width: 0;
+    }
+
+    .admin-page .mobile-stack > * {
+        width: 100% !important;
+    }
+
+    .admin-page .arco-modal,
+    .admin-responsive-modal {
+        width: calc(100vw - 2rem) !important;
+        max-width: calc(100vw - 2rem) !important;
+        margin: 1rem !important;
+    }
+
+    .admin-page .arco-modal-footer {
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    }
+
+    .admin-page .arco-modal-footer .arco-btn {
+        margin: 0.4rem 0;
+    }
+
+    .admin-modal-actions,
+    .admin-modal-actions__group {
+        align-items: stretch;
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .admin-modal-actions > *,
+    .admin-modal-actions__group > * {
+        width: 100%;
+    }
+
+    .recruitment-filters {
+        align-items: stretch !important;
+        flex-direction: column;
+    }
+
+    .recruitment-filters > * {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .recruitment-filters .arco-select {
+        width: 100% !important;
+    }
+
+    .recruitment-summary {
+        width: 100%;
+        padding-bottom: 0.4rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .recruitment-summary > .arco-card {
+        flex: 0 0 min(68vw, 18rem);
+    }
+    .user-profile-edit-form {
+        width: 100%;
+    }
+
+    .user-profile-mobile-cards {
+        display: flex;
+        width: 100%;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+
+    .user-profile-edit-form .arco-form-item-layout-horizontal {
+        display: block;
+    }
+    .register-tabs {
+        width: 100%;
+    }
+
+    .register-profile-form,
+    .register-claim-form {
+        min-width: 0;
+    }
+    .print-results-page {
+        padding: 1.6rem !important;
+    }
+
+    .print-filter-row,
+    .print-filter-field {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .print-filter-field .arco-select {
+        width: 100% !important;
+    }
+
+    .print-action-desktop {
+        display: none;
+    }
+
+    .print-action-mobile {
+        display: inline-flex;
+        width: 100%;
+    }
+    .results-page {
+        padding: 1.6rem !important;
+    }
+
+    .results-header > div:last-child {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .results-header > div:last-child > *,
+    .results-header > div:last-child .arco-btn {
+        width: 100%;
+    }
+    .scoring-page {
+        padding: 1.6rem !important;
+    }
+
+    .scoring-search {
+        width: 100% !important;
+    }
+
+    .scoring-done-actions,
+    .scoring-done-actions .arco-btn {
+        width: 100%;
+        margin-left: 0 !important;
+    }
+
+    .score-editor-modal {
+        width: calc(100vw - 2rem) !important;
+        max-width: calc(100vw - 2rem) !important;
+        margin: 1rem !important;
+    }
+
+    .score-editor-modal .grid-cols-4 {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+    .participant-list-header .arco-input-search,
+    .participant-list-header .arco-btn {
+        width: 100% !important;
+    }
+    .edit-registration-form {
+        width: 100%;
+    }
+
+    .registration-status-actions {
+        flex-direction: column;
+    }
+
+    .registration-status-actions > * {
+        width: 100% !important;
+    }
+    .tournament-registration-form {
+        width: 100%;
+    }
+
+    .registration-member-select {
+        width: 100% !important;
+    }
+
+    .tournament-description-modal {
+        width: calc(100vw - 2rem) !important;
+        max-width: calc(100vw - 2rem) !important;
+        margin: 1rem !important;
+    }
+
+    .tournament-edit-modal-content {
+        max-height: none !important;
+        overflow: visible !important;
+        padding-right: 0 !important;
+    }
+    .create-tournament-form {
+        width: 100%;
+    }
+
+    .create-tournament-form .arco-form-item-label-col {
+        min-width: 0;
+    }
+
+    .event-field-actions {
+        flex-direction: row !important;
+        width: 100%;
+    }
+
+    .event-field-actions > * {
+        flex: 1 1 0;
+    }
+
+    .age-criteria-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .age-criteria-row > * {
+        min-width: 0;
+    }
+
+    .age-criteria-row > .arco-form-item {
+        width: 100% !important;
+    }
+
+    .age-criteria-row .arco-select,
+    .age-criteria-row .arco-input-number {
+        width: 100% !important;
+    }
+
+    .age-criteria-row .arco-btn {
+        flex: 0 0 auto;
+    }
+    .tournament-list-heading {
+        align-items: stretch !important;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+
+    .tournament-date-filter-desktop {
+        display: none;
+    }
+
+    .tournament-filter-row {
+        flex-direction: row !important;
+        align-items: stretch !important;
+    }
+
+    .tournament-search {
+        flex: 1 1 auto;
+        width: auto !important;
+        min-width: 0;
+    }
+
+    .tournament-filter-clear {
+        display: none;
+    }
+
+    .tournament-list-title {
+        font-size: 2.2rem;
+        line-height: 1.2;
+    }
+
+    .tournament-list-create {
+        margin-left: 0 !important;
+    }
+
+    .tournament-list-create > *,
+    .tournament-list-create .arco-btn {
+        width: 100%;
+    }
+
+    .tournament-list-table {
+        display: none;
+    }
+
+    .tournament-list-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+    .mobile-request-action {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 0.8rem;
+    }
+    .notification-message {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+    }
+    .athlete-ranking-filter-layout {
+        flex-direction: row;
+        align-items: stretch;
+    }
+
+    .athlete-ranking-search {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
+        height: 4.4rem;
+    }
+
+    .athlete-filter-drawer-fields .arco-select {
+        width: 100% !important;
+    }
+
+    .athlete-filter-controls--desktop {
+        display: none;
+    }
+
+    .athlete-ranking-reset {
+        display: none;
+    }
+
+    .athlete-ranking-table--desktop,
+    .athlete-ranking-table--tablet {
+        display: none;
+    }
+
+    .athlete-ranking-table--mobile {
+        display: block;
+    }
+
+    .ranking-row-details {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1.2rem;
+        padding-top: 1.2rem;
+        border-top: 1px solid var(--color-border-2);
+    }
+
+    .ranking-results-footer {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .ranking-results-count {
+        font-size: 1.3rem;
+    }
+
+    .ranking-results-footer .arco-pagination {
+        align-self: flex-end;
+    }
+
+    .mobile-filter-drawer-actions {
+        justify-content: stretch;
+    }
+
+    .mobile-filter-drawer-actions > * {
+        flex: 1 1 0;
+    }
+
+    .arco-input,
+    .arco-input-inner,
+    .arco-select-view-value,
+    .arco-btn,
+    .arco-tabs-tab {
+        font-size: 1.6rem;
+    }
+
+    .text-xs {
+        font-size: 1.3rem !important;
+        line-height: 1.5 !important;
+    }
+
+    input,
+    textarea,
+    select {
+        font-size: 16px;
+    }
+
+    .tournament-mobile-card .text-sm {
+        font-size: 1.3rem;
+    }
+
+    .tournament-mobile-card .text-base {
+        font-size: 1.6rem;
+    }
+    .home-hero-carousel,
+    .home-hero-carousel .arco-carousel-item {
+        height: clamp(22rem, 58vw, 32rem) !important;
+    }
+
+    .home-hero-carousel .arco-carousel-item > div {
+        min-width: 0;
+    }
+
+    .home-hero-carousel .arco-typography-title {
+        font-size: 1.8rem !important;
+        line-height: 1.25 !important;
+    }
+
+    .home-hero-carousel .arco-typography-paragraph {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .home-cta-actions,
+    .home-cta-actions > a,
+    .home-cta-actions .arco-btn {
+        width: 100%;
+    }
+
+    .app-content {
+        margin-top: calc(6.4rem + env(safe-area-inset-top)) !important;
+        min-height: calc(100dvh - 6.4rem - env(safe-area-inset-top)) !important;
+    }
+
+    .app-navbar {
+        height: calc(6.4rem + env(safe-area-inset-top));
+        padding: calc(0.8rem + env(safe-area-inset-top)) 1.2rem 0.8rem;
+        gap: 0.8rem;
+    }
+
+    .app-navbar__brand-name {
+        max-width: 14rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .app-navbar__desktop-menu {
+        display: none;
+    }
+
+    .app-navbar__mobile-trigger {
+        display: inline-flex;
+        order: -1;
+    }
+
+    .app-navbar__brand-mark {
+        width: 4rem;
+        height: 4rem;
+    }
+
+    .app-navbar__mobile-trigger,
+    .app-navbar__account-trigger {
+        width: 4.4rem;
+        min-width: 4.4rem;
+        height: 4.4rem;
+    }
+
+    .app-navbar__account {
+        margin-left: auto !important;
+    }
+
+    .app-navbar__account .arco-btn {
+        padding: 0 1.2rem;
+    }
+
+    .app-navbar__mobile-drawer .arco-menu-item,
+    .app-navbar__mobile-drawer .arco-menu-inline-header {
+        min-height: 4.8rem;
+        line-height: 4.8rem;
+        font-size: 1.6rem;
+    }
+
+    .app-navbar__mobile-drawer .arco-drawer-content {
+        min-height: 0;
+        padding: 1.2rem 1.6rem calc(1.6rem + env(safe-area-inset-bottom));
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .app-navbar__mobile-drawer .arco-drawer-close-icon,
+    .responsive-overlay--mobile .arco-drawer-close-icon,
+    .mobile-filter-drawer .arco-drawer-close-icon {
+        top: calc(0.2rem + env(safe-area-inset-top));
+        right: 0.8rem;
+        display: inline-flex;
+        width: var(--mobile-touch-target);
+        height: var(--mobile-touch-target);
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+    }
+
+    .app-navbar__mobile-drawer .arco-drawer-header,
+    .responsive-overlay--mobile .arco-drawer-header,
+    .mobile-filter-drawer .arco-drawer-header {
+        padding-right: 6rem;
+    }
+
+    .mobile-account-menu .arco-menu-item,
+    .mobile-account-menu .arco-menu-inline-header {
+        min-height: 4.8rem;
+        line-height: 4.8rem;
+        font-size: 1.6rem;
+    }
+
+    .app-footer {
+        padding: 2.4rem 1.6rem 1.2rem !important;
+    }
+
+    .app-footer .arco-col {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    .app-footer__section {
+        gap: 0.8rem;
+    }
+
+    .app-footer__section-body {
+        font-size: 1.4rem;
+    }
+
+    .mobile-page-header {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+
+    .mobile-page-header__main,
+    .mobile-page-header__actions {
+        align-items: stretch;
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .mobile-page-header__actions > * {
+        width: 100%;
+    }
+
+    .mobile-page-header__back {
+        width: fit-content !important;
+    }
+
+    .responsive-data-view__desktop {
+        display: none;
+    }
+
+    .responsive-data-view__mobile {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+    }
+
+    .mobile-sticky-actions {
+        display: block;
+        position: sticky;
+        z-index: 20;
+        bottom: 0;
+        margin: 1.6rem -1.6rem -1.6rem;
+        padding: 1rem 1.6rem calc(1rem + env(safe-area-inset-bottom));
+        background: rgba(255, 255, 255, 0.96);
+        border-top: 1px solid var(--color-border-2);
+        box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(8px);
+    }
+
+    .mobile-sticky-actions__inner {
+        display: flex;
+        flex-direction: column;
+        gap: 0.8rem;
+    }
+
+    .mobile-sticky-actions__inner > * {
+        width: 100%;
+    }
+
+    .mobile-sticky-actions__spacer {
+        display: block;
+        height: 1.6rem;
+    }
+
+    .responsive-overlay--mobile .arco-drawer-content {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        padding: calc(1.6rem + env(safe-area-inset-top)) 1.6rem 1.6rem;
+        overflow: hidden;
+    }
+
+    .responsive-overlay--mobile .arco-drawer-body,
+    .mobile-filter-drawer .arco-drawer-body {
+        display: flex;
+        min-height: 0;
+        flex: 1 1 auto;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .responsive-overlay--mobile .responsive-overlay__body {
+        display: block;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .responsive-overlay--mobile {
+        width: 100vw !important;
+        max-width: 100vw !important;
+        margin: 0 !important;
+        border-radius: 0;
+    }
+
+    .responsive-overlay--mobile.responsive-overlay--fullscreen {
+        height: 100dvh !important;
+    }
+
+    .responsive-overlay--mobile .arco-drawer-footer {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+        background: var(--color-bg-2);
+    }
+
+    .mobile-filter-drawer__body {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        gap: 1.6rem;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .mobile-filter-drawer__footer {
+        display: flex;
+        gap: 0.8rem;
+    }
+
+    .mobile-filter-drawer__footer > * {
+        flex: 1 1 0;
+    }
+
+    .responsive-tabs {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .responsive-tabs .arco-tabs-nav {
+        margin-bottom: 0;
+    }
+
+    .arco-tabs-nav {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .arco-tabs-nav-tab {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        min-height: 4.4rem;
+        align-items: center;
+    }
+
+    .arco-modal {
+        max-width: calc(100vw - 2rem);
+    }
+
+    .arco-form-item-control-wrapper,
+    .arco-form-item-control,
+    .arco-form-item {
+        min-width: 0;
+    }
+
+    .mobile-full-width-button,
+    .mobile-full-width-button.arco-btn {
+        width: 100%;
+    }
+
+    .mobile-stack {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+
+    .mobile-stack > * {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    /* Only ResponsiveOverlay instances get the mobile full-screen modal shell.
+       Arco's imperative Modal.confirm/info/warning dialogs intentionally stay
+       compact so that confirmations do not become an unexpected full-screen
+       workflow on phones. */
+    .arco-modal.responsive-overlay {
+        width: 100vw !important;
+        max-width: 100vw !important;
+        height: 100dvh;
+        max-height: 100dvh;
+        margin: 0 !important;
+        border-radius: 0;
+    }
+
+    .arco-modal.responsive-overlay .arco-modal-content {
+        display: flex;
+        height: 100%;
+        max-height: 100%;
+        flex-direction: column;
+    }
+
+    .arco-modal.responsive-overlay .responsive-overlay__body {
+        display: block;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .arco-modal.responsive-overlay .arco-modal-footer {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+        background: var(--color-bg-2);
+    }
+
+    .arco-modal.responsive-overlay .arco-modal-footer .arco-btn {
+        margin: 0.4rem 0;
+    }
+
+    :where(.arco-btn, .arco-input, .arco-input-number, .arco-select-view, .arco-picker):focus-visible,
+    :where(a, button, [role="button"]):focus-visible {
+        outline: 3px solid rgba(var(--primary-6), 0.35);
+        outline-offset: 2px;
+    }
+
 }
 
 *,

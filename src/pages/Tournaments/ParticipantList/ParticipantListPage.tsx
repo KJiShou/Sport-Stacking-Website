@@ -33,16 +33,16 @@ import {
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import {Button, Dropdown, Input, Menu, Message, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
+import {Button, Card, Dropdown, Input, Menu, Message, Pagination, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
-import {IconUndo} from "@arco-design/web-react/icon";
 import {nanoid} from "nanoid";
 // src/pages/ParticipantListPage.tsx
 import React, {useEffect, useRef, useState} from "react";
-import {useLocation, useNavigate, useParams, useSearchParams} from "react-router-dom";
+import {useLocation, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
+import {MobilePageHeader, ResponsiveTabs} from "@/components/responsive";
 
-const {Title, Text} = Typography;
+const {Text} = Typography;
 const {TabPane} = Tabs;
 const PAGE_SIZE_INDIVIDUAL = 10;
 const PAGE_SIZE_TEAM = 5;
@@ -54,7 +54,6 @@ const parsePositivePage = (value: string | null): number => {
 
 export default function ParticipantListPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
-    const navigate = useNavigate();
     const location = useLocation();
     const [searchParams, setSearchParams] = useSearchParams();
     const [loading, setLoading] = useState(false);
@@ -552,7 +551,7 @@ export default function ParticipantListPage() {
                         type="primary"
                         size="default"
                         droplist={droplist}
-                        trigger={["click", "hover"]}
+                        trigger={["click"]}
                         buttonProps={{
                             onClick: () => window.open(`/tournaments/${tournamentId}/registrations/${record.id}/edit`, "_blank"),
                         }}
@@ -565,14 +564,11 @@ export default function ParticipantListPage() {
     ];
 
     return (
-        <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-            <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
-                <IconUndo /> Go Back
-            </Button>
+        <div className="participant-list-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <div className="w-full flex justify-between items-center">
-                    <Title heading={3}>{tournament.name} Participants</Title>
-                    <div className="flex items-center gap-4">
+                <div className="participant-list-header w-full flex justify-between items-center mobile-stack">
+                    <MobilePageHeader title={`${tournament.name} Participants`} backTo="/tournaments" backLabel="Go Back" />
+                    <div className="flex items-center gap-4 mobile-stack">
                         <Input.Search
                             placeholder="Search by name or ID"
                             allowClear
@@ -585,7 +581,7 @@ export default function ParticipantListPage() {
                         />
                         <Dropdown.Button
                             type="primary"
-                            trigger={["click", "hover"]}
+                            trigger={["click"]}
                             droplist={
                                 <div
                                     className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
@@ -636,7 +632,13 @@ export default function ParticipantListPage() {
                         </Dropdown.Button>
                     </div>
                 </div>
-                <Tabs type="line" destroyOnHide className="w-full" activeTab={currentEventTab} onChange={handleEventTabChange}>
+                <ResponsiveTabs
+                    type="line"
+                    destroyOnHide
+                    className="w-full"
+                    activeTab={currentEventTab}
+                    onChange={handleEventTabChange}
+                >
                     {sortedEvents.map((evt) => {
                         const tabKey = evt.id ?? evt.type;
                         const isTeamEventForTab = isTeamEvent(evt);
@@ -646,7 +648,7 @@ export default function ParticipantListPage() {
                         return (
                             <TabPane key={tabKey} title={getEventLabel(evt)}>
                                 {" "}
-                                <Tabs
+                                <ResponsiveTabs
                                     type="capsule"
                                     tabPosition="top"
                                     destroyOnHide
@@ -799,7 +801,7 @@ export default function ParticipantListPage() {
                                                                     type="primary"
                                                                     size="default"
                                                                     droplist={droplist}
-                                                                    trigger={["click", "hover"]}
+                                                                    trigger={["click"]}
                                                                     buttonProps={{
                                                                         onClick: () =>
                                                                             window.open(
@@ -817,48 +819,155 @@ export default function ParticipantListPage() {
                                             ];
                                             return (
                                                 <TabPane key={br.name} title={`${br.name} (${br.min_age}-${br.max_age})`}>
-                                                    <Table
-                                                        style={{width: "100%"}}
-                                                        columns={teamColumns}
-                                                        data={rowsForBracket}
-                                                        pagination={{
-                                                            pageSize: PAGE_SIZE_TEAM,
-                                                            current: currentPage,
-                                                            showTotal: true,
-                                                        }}
-                                                        loading={loading}
-                                                        rowKey={(rec) => `${rec.id}`}
-                                                        pagePosition="bottomCenter"
-                                                        onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
-                                                    />
+                                                    <div className="participants-mobile-cards">
+                                                        {rowsForBracket
+                                                            .slice(
+                                                                (currentPage - 1) * PAGE_SIZE_TEAM,
+                                                                currentPage * PAGE_SIZE_TEAM,
+                                                            )
+                                                            .map((record) => (
+                                                                <Card
+                                                                    key={record.id}
+                                                                    className="participants-mobile-card"
+                                                                    bordered
+                                                                >
+                                                                    <div className="participants-mobile-card__header">
+                                                                        <div>
+                                                                            <span className="participants-mobile-card__label">
+                                                                                Team
+                                                                            </span>
+                                                                            <strong>{record.name}</strong>
+                                                                        </div>
+                                                                        <Tag color="arcoblue">{record.team_age ?? "—"}</Tag>
+                                                                    </div>
+                                                                    <p>
+                                                                        Leader: {formatTeamLeaderId(record.leader_id, evt.type)}
+                                                                    </p>
+                                                                    <p>
+                                                                        Members:{" "}
+                                                                        {record.members
+                                                                            .map(
+                                                                                (member) =>
+                                                                                    combinedNameMap[member.global_id] ??
+                                                                                    member.global_id,
+                                                                            )
+                                                                            .join(", ") || "—"}
+                                                                    </p>
+                                                                    <Button
+                                                                        type="primary"
+                                                                        className="mobile-full-width-button"
+                                                                        onClick={() =>
+                                                                            window.open(
+                                                                                `/tournaments/${tournamentId}/registrations/${record.registrationId}/edit${location.search}`,
+                                                                                "_blank",
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        Edit Team
+                                                                    </Button>
+                                                                </Card>
+                                                            ))}
+                                                    </div>
+                                                    {rowsForBracket.length > PAGE_SIZE_TEAM ? (
+                                                        <Pagination
+                                                            current={currentPage}
+                                                            pageSize={PAGE_SIZE_TEAM}
+                                                            total={rowsForBracket.length}
+                                                            onChange={setCurrentPage}
+                                                        />
+                                                    ) : null}
+                                                    <div className="mobile-table-scroll">
+                                                        <Table
+                                                            style={{width: "100%"}}
+                                                            columns={teamColumns}
+                                                            data={rowsForBracket}
+                                                            pagination={{
+                                                                pageSize: PAGE_SIZE_TEAM,
+                                                                current: currentPage,
+                                                                showTotal: true,
+                                                            }}
+                                                            loading={loading}
+                                                            rowKey={(rec) => `${rec.id}`}
+                                                            pagePosition="bottomCenter"
+                                                            onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
+                                                        />
+                                                    </div>
                                                 </TabPane>
                                             );
                                         }
                                         const individualRows = regs.filter((r) => r.age >= br.min_age && r.age <= br.max_age);
                                         return (
                                             <TabPane key={br.name} title={`${br.name} (${br.min_age}-${br.max_age})`}>
-                                                <Table
-                                                    style={{width: "100%"}}
-                                                    columns={individualColumns}
-                                                    data={individualRows}
-                                                    pagination={{
-                                                        pageSize: PAGE_SIZE_INDIVIDUAL,
-                                                        current: currentPage,
-                                                        showTotal: true,
-                                                    }}
-                                                    loading={loading}
-                                                    rowKey={(r) => r.id ?? r.user_id ?? nanoid()}
-                                                    pagePosition="bottomCenter"
-                                                    onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
-                                                />
+                                                <div className="participants-mobile-cards">
+                                                    {individualRows
+                                                        .slice(
+                                                            (currentPage - 1) * PAGE_SIZE_INDIVIDUAL,
+                                                            currentPage * PAGE_SIZE_INDIVIDUAL,
+                                                        )
+                                                        .map((record) => (
+                                                            <Card
+                                                                key={record.id ?? record.user_id}
+                                                                className="participants-mobile-card"
+                                                                bordered
+                                                            >
+                                                                <div className="participants-mobile-card__header">
+                                                                    <div>
+                                                                        <span className="participants-mobile-card__label">
+                                                                            Participant
+                                                                        </span>
+                                                                        <strong>{record.user_name}</strong>
+                                                                    </div>
+                                                                    <Tag color="arcoblue">Age {record.age}</Tag>
+                                                                </div>
+                                                                <p>{record.user_global_id}</p>
+                                                                <p>{record.phone_number || "No phone number"}</p>
+                                                                <Button
+                                                                    type="primary"
+                                                                    className="mobile-full-width-button"
+                                                                    onClick={() =>
+                                                                        window.open(
+                                                                            `/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`,
+                                                                            "_blank",
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Edit Participant
+                                                                </Button>
+                                                            </Card>
+                                                        ))}
+                                                </div>
+                                                {individualRows.length > PAGE_SIZE_INDIVIDUAL ? (
+                                                    <Pagination
+                                                        current={currentPage}
+                                                        pageSize={PAGE_SIZE_INDIVIDUAL}
+                                                        total={individualRows.length}
+                                                        onChange={setCurrentPage}
+                                                    />
+                                                ) : null}
+                                                <div className="mobile-table-scroll">
+                                                    <Table
+                                                        style={{width: "100%"}}
+                                                        columns={individualColumns}
+                                                        data={individualRows}
+                                                        pagination={{
+                                                            pageSize: PAGE_SIZE_INDIVIDUAL,
+                                                            current: currentPage,
+                                                            showTotal: true,
+                                                        }}
+                                                        loading={loading}
+                                                        rowKey={(r) => r.id ?? r.user_id ?? nanoid()}
+                                                        pagePosition="bottomCenter"
+                                                        onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
+                                                    />
+                                                </div>
                                             </TabPane>
                                         );
                                     })}
-                                </Tabs>
+                                </ResponsiveTabs>
                             </TabPane>
                         );
                     })}
-                </Tabs>
+                </ResponsiveTabs>
             </div>
         </div>
     );

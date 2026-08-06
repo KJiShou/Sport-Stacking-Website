@@ -6,7 +6,6 @@ import {ConfigProvider, Layout} from "@arco-design/web-react";
 import enUS from "@arco-design/web-react/es/locale/en-US";
 import {Helmet as HelmetBase} from "react-helmet";
 import type {HelmetProps} from "react-helmet";
-import image from "./assets/icon.avif";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import {Footer, Navbar} from "./components/layout";
 import routes from "./config/routes";
@@ -56,15 +55,15 @@ const App: FC = () => {
         <ConfigProvider locale={enUS}>
             <Router>
                 <Helmet>
-                    <link rel="icon" type="image/avif" href={image} />
+                    <link rel="icon" type="image/png" href="/icon.png" />
                 </Helmet>
                 <RedirectOrLogoutMissingProfile />
                 <DeviceInspector />
-                <Layout className="max-w-full w-full h-screen">
+                <Layout className="max-w-full w-full min-h-[100dvh] h-auto">
                     <Navbar /> {/* 固定顶部 */}
                     <ProtectedRoute>
                         {/* 使用窗口滚动，移除内部滚动容器 */}
-                        <Content className="mt-24 flex flex-col min-h-[calc(100vh-6rem)]">
+                        <Content className="app-content mt-24 flex flex-col min-h-[calc(100vh-6rem)]">
                             <div className="flex-grow">
                                 <Routes>
                                     {routes.map((route) => (

@@ -14,6 +14,7 @@
     "format": "biome format . --write",
     "lint": "biome lint .",
     "check": "biome check .",
+    "responsive:smoke": "node scripts/mobileResponsiveSmoke.mjs",
     "rules:smoke": "functions/node_modules/.bin/firebase emulators:exec --only firestore --project demo-observability --config firebase.rules.smoke.json \"node scripts/firestoreRulesSmoke.mjs\"",
     "symbolicate": "node scripts/symbolicateStack.mjs",
     "fix": "biome check . --apply",

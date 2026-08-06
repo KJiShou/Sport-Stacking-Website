@@ -20,14 +20,14 @@ import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from
 import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {getEventLabel, getEventTypeOrderIndex, isScoreTrackedEvent} from "@/utils/tournament/eventUtils";
-import {Button, Input, InputNumber, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
+import {Button, Input, InputNumber, Message, Modal, Table, Tabs} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
-import {IconSearch, IconUndo} from "@arco-design/web-react/icon";
+import {IconSearch} from "@arco-design/web-react/icon";
 import {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {useMount} from "react-use";
+import {CountryFlag, MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 
-const {Title} = Typography;
 const {TabPane} = Tabs;
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
 const MESSAGE_DURATION_SECONDS = 5;
@@ -827,24 +827,24 @@ export default function FinalScoringPage() {
     };
 
     return (
-        <div className="flex flex-col h-full bg-ghostwhite p-6 gap-6">
-            <Button type="outline" onClick={() => navigate(`/tournaments/${tournamentId}/record/prelim`)} className="w-fit">
-                <IconUndo /> Go Back
-            </Button>
+        <div className="scoring-page flex flex-col h-full bg-ghostwhite p-6 gap-6">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-6 shadow-lg rounded-lg">
-                <div className="w-full flex justify-between items-center">
-                    <Title heading={3}>{tournament?.name} Final Score</Title>
-                    <div className="flex gap-4 items-center">
+                <MobilePageHeader
+                    title={`${tournament?.name ?? "Tournament"} Final Score`}
+                    backTo={`/tournaments/${tournamentId}/record/prelim`}
+                    backLabel="Back to Preliminary Results"
+                    actions={
                         <Input
                             placeholder="Search by Global ID or Name"
                             value={searchTerm}
                             onChange={setSearchTerm}
                             prefix={<IconSearch />}
+                            className="scoring-search"
                             style={{width: 250}}
                         />
-                    </div>
-                </div>
-                <Tabs
+                    }
+                />
+                <ResponsiveTabs
                     type="line"
                     destroyOnHide
                     className="w-full"
@@ -864,7 +864,7 @@ export default function FinalScoringPage() {
                         const isTeamEvent = ["double", "team relay", "parent & child"].includes(evt.type.toLowerCase());
                         return (
                             <TabPane key={tabKey} title={getEventLabel(evt)}>
-                                <Tabs
+                                <ResponsiveTabs
                                     type="capsule"
                                     tabPosition="top"
                                     destroyOnHide
@@ -873,7 +873,7 @@ export default function FinalScoringPage() {
                                 >
                                     {evt.age_brackets.map((br) => (
                                         <TabPane key={br.name} title={`${br.name} (${br.min_age}-${br.max_age})`}>
-                                            <Tabs
+                                            <ResponsiveTabs
                                                 type="rounded"
                                                 tabPosition="top"
                                                 destroyOnHide
@@ -894,9 +894,138 @@ export default function FinalScoringPage() {
                                                     const participantIdsInClassification = new Set(
                                                         relevantFinalists.flatMap((f) => f.participant_ids ?? []),
                                                     );
+                                                    const finalTeams = filterTeams(
+                                                        teams.filter(
+                                                            (team) =>
+                                                                team.event_id === evt.id &&
+                                                                team.team_age >= br.min_age &&
+                                                                team.team_age <= br.max_age &&
+                                                                participantIdsInClassification.has(team.id),
+                                                        ),
+                                                    );
+                                                    const finalParticipants = filterParticipants(
+                                                        registrations.filter(
+                                                            (registration) =>
+                                                                registration.age >= br.min_age &&
+                                                                registration.age <= br.max_age &&
+                                                                participantIdsInClassification.has(registration.user_id),
+                                                        ),
+                                                    );
 
                                                     return (
                                                         <TabPane key={fc.classification} title={`${fc.classification}`}>
+                                                            <div className="scoring-mobile-cards">
+                                                                {isTeamEvent
+                                                                    ? finalTeams.map((team) => {
+                                                                          const complete = evt.codes.every((code) =>
+                                                                              records.some(
+                                                                                  (record) =>
+                                                                                      record.event === eventTypeKey &&
+                                                                                      "team_id" in record &&
+                                                                                      record.team_id === team.id &&
+                                                                                      record.code === code &&
+                                                                                      (!eventIdForModal ||
+                                                                                          record.event_id === eventIdForModal),
+                                                                              ),
+                                                                          );
+                                                                          return (
+                                                                              <div className="scoring-mobile-card" key={team.id}>
+                                                                                  <div className="scoring-mobile-card__header">
+                                                                                      <div>
+                                                                                          <span className="scoring-mobile-card__label">
+                                                                                              Team
+                                                                                          </span>
+                                                                                          <strong>{team.name}</strong>
+                                                                                      </div>
+                                                                                      <span
+                                                                                          className={`scoring-status ${complete ? "is-complete" : "is-incomplete"}`}
+                                                                                      >
+                                                                                          {complete ? "Complete" : "Incomplete"}
+                                                                                      </span>
+                                                                                  </div>
+                                                                                  <p>
+                                                                                      Leader:{" "}
+                                                                                      {formatTeamLeaderId(
+                                                                                          team.leader_id,
+                                                                                          eventTypeKey,
+                                                                                      )}
+                                                                                  </p>
+                                                                                  <p>
+                                                                                      Members:{" "}
+                                                                                      {team.members
+                                                                                          .map((member) => member.global_id)
+                                                                                          .join(", ") || "—"}
+                                                                                  </p>
+                                                                                  <Button
+                                                                                      type="primary"
+                                                                                      onClick={() => {
+                                                                                          setSelectedTeam(team);
+                                                                                          setSelectedParticipant(null);
+                                                                                          setIsIndividual(false);
+                                                                                          setCurrentEvent(evt);
+                                                                                          setModalState(true);
+                                                                                      }}
+                                                                                  >
+                                                                                      Edit Score
+                                                                                  </Button>
+                                                                              </div>
+                                                                          );
+                                                                      })
+                                                                    : finalParticipants.map((participant) => {
+                                                                          const complete = evt.codes.every((code) =>
+                                                                              records.some(
+                                                                                  (record) =>
+                                                                                      record.event === eventTypeKey &&
+                                                                                      "participant_id" in record &&
+                                                                                      record.participant_id ===
+                                                                                          participant.user_id &&
+                                                                                      record.code === code &&
+                                                                                      (!eventIdForModal ||
+                                                                                          record.event_id === eventIdForModal),
+                                                                              ),
+                                                                          );
+                                                                          return (
+                                                                              <div
+                                                                                  className="scoring-mobile-card"
+                                                                                  key={participant.user_id}
+                                                                              >
+                                                                                  <div className="scoring-mobile-card__header">
+                                                                                      <div>
+                                                                                          <span className="scoring-mobile-card__label">
+                                                                                              Participant
+                                                                                          </span>
+                                                                                          <strong>{participant.user_name}</strong>
+                                                                                      </div>
+                                                                                      <span
+                                                                                          className={`scoring-status ${complete ? "is-complete" : "is-incomplete"}`}
+                                                                                      >
+                                                                                          {complete ? "Complete" : "Incomplete"}
+                                                                                      </span>
+                                                                                  </div>
+                                                                                  <p>{participant.user_global_id}</p>
+                                                                                  <p className="country-cell">
+                                                                                      <CountryFlag
+                                                                                          country={participant.country}
+                                                                                          size="md"
+                                                                                      />
+                                                                                      {participant.country || "Unknown"}
+                                                                                  </p>
+                                                                                  <Button
+                                                                                      type="primary"
+                                                                                      onClick={() => {
+                                                                                          setSelectedParticipant(participant);
+                                                                                          setSelectedTeam(null);
+                                                                                          setIsIndividual(true);
+                                                                                          setCurrentEvent(evt);
+                                                                                          setModalState(true);
+                                                                                      }}
+                                                                                  >
+                                                                                      Edit Score
+                                                                                  </Button>
+                                                                              </div>
+                                                                          );
+                                                                      })}
+                                                            </div>
                                                             {isTeamEvent ? (
                                                                 <Table
                                                                     style={{width: "100%"}}
@@ -905,21 +1034,7 @@ export default function FinalScoringPage() {
                                                                         eventIdForModal,
                                                                         eventTypeKey,
                                                                     )}
-                                                                    data={filterTeams(
-                                                                        teams.filter((t) => {
-                                                                            // Team must belong to current event and be within bracket
-                                                                            const matchesEvent = t.event_id === evt.id;
-                                                                            const matchesAge =
-                                                                                t.team_age >= br.min_age &&
-                                                                                t.team_age <= br.max_age;
-                                                                            const isInClassification =
-                                                                                participantIdsInClassification.has(t.id);
-
-                                                                            return (
-                                                                                matchesEvent && matchesAge && isInClassification
-                                                                            );
-                                                                        }),
-                                                                    )}
+                                                                    data={finalTeams}
                                                                     pagination={false}
                                                                     loading={loading}
                                                                     rowKey="id"
@@ -932,17 +1047,7 @@ export default function FinalScoringPage() {
                                                                         eventIdForModal,
                                                                         eventTypeKey,
                                                                     )}
-                                                                    data={filterParticipants(
-                                                                        registrations.filter((r) => {
-                                                                            // Participant within age bracket
-                                                                            const matchesAge =
-                                                                                r.age >= br.min_age && r.age <= br.max_age;
-                                                                            const isInClassification =
-                                                                                participantIdsInClassification.has(r.user_id);
-
-                                                                            return matchesAge && isInClassification;
-                                                                        }),
-                                                                    )}
+                                                                    data={finalParticipants}
                                                                     pagination={false}
                                                                     loading={loading}
                                                                     rowKey="user_id"
@@ -951,8 +1056,8 @@ export default function FinalScoringPage() {
                                                         </TabPane>
                                                     );
                                                 })}
-                                            </Tabs>
-                                            <div className="flex justify-end mt-4">
+                                            </ResponsiveTabs>
+                                            <div className="scoring-done-actions flex justify-end mt-4">
                                                 <Button
                                                     type="primary"
                                                     status="success"
@@ -965,15 +1070,15 @@ export default function FinalScoringPage() {
                                             </div>
                                         </TabPane>
                                     ))}
-                                </Tabs>
+                                </ResponsiveTabs>
                             </TabPane>
                         );
                     })}
-                </Tabs>
+                </ResponsiveTabs>
             </div>
 
             {/* Modal for editing records */}
-            <Modal
+            <ResponsiveOverlay
                 title={`Edit Record - ${isIndividual && selectedParticipant ? selectedParticipant.user_name : ""}${!isIndividual && selectedTeam ? selectedTeam.name : ""}`}
                 visible={modalState}
                 onCancel={() => setModalState(false)}
@@ -985,7 +1090,9 @@ export default function FinalScoringPage() {
                         Save Record
                     </Button>,
                 ]}
-                style={{width: "800px"}}
+                className="score-editor-modal"
+                desktopWidth="800px"
+                mobileMode="fullscreen"
             >
                 {modalState && (
                     <div className="space-y-4">
@@ -1035,6 +1142,7 @@ export default function FinalScoringPage() {
                                                                 val === undefined || val === null ? "" : String(val),
                                                             )
                                                         }
+                                                        inputMode="decimal"
                                                         precision={3}
                                                         min={0}
                                                         style={{width: "100%"}}
@@ -1055,6 +1163,7 @@ export default function FinalScoringPage() {
                                                                 val === undefined || val === null ? "" : String(val),
                                                             )
                                                         }
+                                                        inputMode="decimal"
                                                         precision={3}
                                                         min={0}
                                                         style={{width: "100%"}}
@@ -1075,6 +1184,7 @@ export default function FinalScoringPage() {
                                                                 val === undefined || val === null ? "" : String(val),
                                                             )
                                                         }
+                                                        inputMode="decimal"
                                                         precision={3}
                                                         min={0}
                                                         style={{width: "100%"}}
@@ -1094,7 +1204,7 @@ export default function FinalScoringPage() {
                         ) : null}
                     </div>
                 )}
-            </Modal>
+            </ResponsiveOverlay>
         </div>
     );
 }

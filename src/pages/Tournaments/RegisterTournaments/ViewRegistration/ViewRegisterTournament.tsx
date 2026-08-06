@@ -16,6 +16,7 @@ import {
     fetchTournamentEvents,
 } from "@/services/firebase/tournamentsService";
 import {getEventKey, getEventLabel, matchesAnyEventKey, matchesEventKey} from "@/utils/tournament/eventUtils";
+import {MobilePageHeader} from "@/components/responsive";
 import {
     Button,
     Checkbox,
@@ -33,13 +34,12 @@ import {
     Tooltip,
     Typography,
 } from "@arco-design/web-react";
-import {IconDelete, IconExclamationCircle, IconUndo} from "@arco-design/web-react/icon";
+import {IconDelete, IconExclamationCircle} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 
-const {Title} = Typography;
 const Option = Select.Option;
 
 const filterDisplayedEvents = (selected: string[], events: TournamentEvent[]): string[] => {
@@ -74,8 +74,7 @@ const calculateAdditionalEventFee = (events: TournamentEvent[], selectedEventIds
     }, 0);
 
 const isTeamMember = (team: Team, globalId: string | null | undefined): boolean =>
-    team.leader_id === globalId ||
-    (team.members ?? []).some((member) => member.global_id === globalId);
+    team.leader_id === globalId || (team.members ?? []).some((member) => member.global_id === globalId);
 
 export default function ViewTournamentRegistrationPage() {
     const {tournamentId} = useParams();
@@ -184,7 +183,8 @@ export default function ViewTournamentRegistrationPage() {
                 }
                 setRegistration(userReg);
                 const registrationOwner = userReg.user_global_id ? await getUserByGlobalId(userReg.user_global_id) : undefined;
-                const hasMemberId = typeof registrationOwner?.memberId === "string" && registrationOwner.memberId.trim().length > 0;
+                const hasMemberId =
+                    typeof registrationOwner?.memberId === "string" && registrationOwner.memberId.trim().length > 0;
                 setRegistrationOwnerIsMember(hasMemberId);
 
                 const registrationTeams = userReg.id ? await fetchTeamsByRegistrationId(userReg.id) : [];
@@ -294,15 +294,11 @@ export default function ViewTournamentRegistrationPage() {
         ) ?? [];
 
     return (
-        <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-            <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
-                <IconUndo /> Go Back
-            </Button>
+        <div className="view-registration-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+            <MobilePageHeader title="View Registration" backTo="/tournaments" backLabel="Go Back" />
             <Spin loading={loading} tip="Loading…" className={"w-full"}>
                 <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                    <Title heading={4}>View Registration</Title>
-
-                    <Form form={form} layout="vertical">
+                    <Form form={form} layout="vertical" className="view-registration-form">
                         <Form.Item label="ID" field="id">
                             <Input disabled />
                         </Form.Item>
@@ -381,7 +377,8 @@ export default function ViewTournamentRegistrationPage() {
                                                             status={m.verified ? "success" : "danger"}
                                                             disabled
                                                         >
-                                                            {getParticipantDisplay(m.global_id)} · {m.verified ? "Verified" : "Pending verification"}
+                                                            {getParticipantDisplay(m.global_id)} ·{" "}
+                                                            {m.verified ? "Verified" : "Pending verification"}
                                                         </Button>
                                                     ))}
                                                 </div>

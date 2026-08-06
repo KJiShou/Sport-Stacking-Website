@@ -1,6 +1,7 @@
 import {useAuthContext} from "@/context/AuthContext";
 import {backfillUserAccountOwnershipFields} from "@/services/firebase/authService";
 import {recalculateAllAthletesBestPerformanceAndTournamentHistory} from "@/services/firebase/developerService";
+import {MobilePageHeader} from "@/components/responsive";
 import {Button, Descriptions, Message, Modal, Typography} from "@arco-design/web-react";
 import {useState} from "react";
 
@@ -73,10 +74,10 @@ export default function DeveloperSettingPage() {
     }
 
     return (
-        <div className="flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
+        <div className="admin-page developer-setting-page flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
             <div className="bg-white flex flex-col w-full h-fit gap-6 p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <div>
-                    <Title heading={2}>Developer Setting</Title>
+                    <MobilePageHeader title="Developer Setting" />
                     <Paragraph type="secondary">Maintenance tools for global data consistency. Use with caution.</Paragraph>
                 </div>
 
@@ -94,16 +95,33 @@ export default function DeveloperSettingPage() {
                     ]}
                 />
 
-                <div>
-                    <Button type="primary" status="warning" loading={loading} onClick={handleRecalculate}>
-                        Recalculate All Athletes Data
-                    </Button>
-                </div>
-                <div>
-                    <Button type="primary" loading={backfillLoading} onClick={handleBackfillAccountFields}>
-                        Backfill User Account Fields
-                    </Button>
-                </div>
+                <section className="developer-danger-panel" aria-labelledby="developer-danger-title">
+                    <Title heading={5} id="developer-danger-title">
+                        Maintenance actions
+                    </Title>
+                    <Paragraph type="secondary">
+                        These actions update data across every athlete and tournament. Review the impact before confirming.
+                    </Paragraph>
+                    <div className="mobile-stack flex gap-3">
+                        <Button
+                            className="mobile-full-width-button"
+                            type="primary"
+                            status="warning"
+                            loading={loading}
+                            onClick={handleRecalculate}
+                        >
+                            Recalculate All Athletes Data
+                        </Button>
+                        <Button
+                            className="mobile-full-width-button"
+                            type="primary"
+                            loading={backfillLoading}
+                            onClick={handleBackfillAccountFields}
+                        >
+                            Backfill User Account Fields
+                        </Button>
+                    </div>
+                </section>
             </div>
         </div>
     );

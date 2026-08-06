@@ -2,11 +2,7 @@ import type {Team} from "@/schema";
 import {getUserByGlobalId} from "@/services/firebase/authService";
 import {db} from "@/services/firebase/config";
 import {fetchTournamentEvents} from "@/services/firebase/tournamentsService";
-import {
-    MEMBER_NOT_REGISTERED_CODE,
-    VerificationError,
-    verifyTeamMembership,
-} from "@/services/firebase/verificationService";
+import {MEMBER_NOT_REGISTERED_CODE, VerificationError, verifyTeamMembership} from "@/services/firebase/verificationService";
 import {getTeamEventLabels} from "@/utils/tournament/eventUtils";
 import {Button, Result, Spin, Typography} from "@arco-design/web-react";
 import {doc, getDoc} from "firebase/firestore";
@@ -68,7 +64,7 @@ export default function VerifyPage() {
         }
 
         return (
-            <div style={{marginTop: "1rem"}}>
+            <div className="mobile-card-content" style={{marginTop: "1rem"}}>
                 {verificationDetails.eventLabel ? (
                     <Paragraph>
                         <strong>Event:</strong> {verificationDetails.eventLabel}
@@ -121,10 +117,10 @@ export default function VerifyPage() {
 
             try {
                 await verifyTeamMembership({
-                        tournamentId,
-                        teamId,
-                        memberId,
-                        registrationId,
+                    tournamentId,
+                    teamId,
+                    memberId,
+                    registrationId,
                 });
                 setStatus("success");
             } catch (err) {
@@ -154,7 +150,7 @@ export default function VerifyPage() {
             ? `Verifying your participation in ${verificationDetails.eventLabel}...`
             : "Verifying your participation...";
         return (
-            <div style={{padding: "4rem", textAlign: "center"}}>
+            <div className="verify-page" style={{padding: "4rem", textAlign: "center"}}>
                 <Spin size={32} tip={loadingTip} />
                 {renderVerificationDetails()}
             </div>
@@ -164,6 +160,7 @@ export default function VerifyPage() {
     if (status === "success") {
         return (
             <Result
+                className="verify-result"
                 status="success"
                 title="Verification Successful!"
                 subTitle={
@@ -179,6 +176,7 @@ export default function VerifyPage() {
     if (status === "unauthorized") {
         return (
             <Result
+                className="verify-result"
                 status="error"
                 title="Unauthorized"
                 subTitle={
@@ -194,6 +192,7 @@ export default function VerifyPage() {
     if (status === "missing") {
         return (
             <Result
+                className="verify-result"
                 status="error"
                 title="Invalid Link"
                 subTitle={
@@ -209,13 +208,18 @@ export default function VerifyPage() {
     if (status === "not_registered") {
         return (
             <Result
+                className="verify-result"
                 status="error"
                 title="Not Registered"
                 subTitle={
                     <div>
                         <Paragraph>You have not registered for this tournament, so you cannot be verified.</Paragraph>
                         {registerTournamentId ? (
-                            <Button type="primary" onClick={() => navigate(`/tournaments/${registerTournamentId}/register`)}>
+                            <Button
+                                type="primary"
+                                className="mobile-full-width-button"
+                                onClick={() => navigate(`/tournaments/${registerTournamentId}/register`)}
+                            >
                                 Register Now
                             </Button>
                         ) : null}
@@ -228,6 +232,7 @@ export default function VerifyPage() {
 
     return (
         <Result
+            className="verify-result"
             status="error"
             title="Verification Failed"
             subTitle={
