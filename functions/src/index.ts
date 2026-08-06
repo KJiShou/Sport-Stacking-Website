@@ -1059,6 +1059,45 @@ const profileSnapshotBelongsToUid = (
     return profile.id === uid;
 };
 
+const getOwnedProfileSnapshots = async (uid: string): Promise<QueryDocumentSnapshot[]> => {
+    const [ownedProfilesSnapshot, legacyProfileSnapshot] = await Promise.all([
+        db.collection("users").where("owner_uids", "array-contains", uid).get(),
+        db.collection("users").doc(uid).get(),
+    ]);
+    const profileMap = new Map<string, QueryDocumentSnapshot>();
+
+    for (const profile of ownedProfilesSnapshot.docs) {
+        profileMap.set(profile.id, profile);
+    }
+    if (legacyProfileSnapshot.exists && profileSnapshotBelongsToUid(legacyProfileSnapshot, uid)) {
+        profileMap.set(legacyProfileSnapshot.id, legacyProfileSnapshot as QueryDocumentSnapshot);
+    }
+
+    return [...profileMap.values()];
+};
+
+const getProfileSortKey = (profile: {id: string; data: () => Record<string, unknown> | undefined}): string => {
+    const globalId = profile.data()?.global_id;
+    return typeof globalId === "string" && globalId.trim() ? globalId.trim() : profile.id;
+};
+
+const resolvePrimaryOwnedProfile = (profiles: QueryDocumentSnapshot[], uid: string): QueryDocumentSnapshot | null => {
+    const uidProfile = profiles.find((profile) => {
+        const data = profile.data() as {id?: unknown};
+        return profile.id === uid || data.id === uid;
+    });
+    if (uidProfile) {
+        return uidProfile;
+    }
+
+    return (
+        [...profiles].sort((left, right) => {
+            const keyComparison = getProfileSortKey(left).localeCompare(getProfileSortKey(right));
+            return keyComparison || left.id.localeCompare(right.id);
+        })[0] ?? null
+    );
+};
+
 type AuthorizedTournamentProfile = {
     globalId: string;
     roles?: {modify_admin?: boolean; edit_tournament?: boolean};
@@ -4151,6 +4190,114 @@ export const transferProfileOwnership = onCall(callableFunctionOptions, async (r
         email: targetEmail,
         primary_owner_email: targetEmail,
         account_status: "claimed",
+    };
+});
+
+export const releaseOwnedProfile = onCall(callableFunctionOptions, async (request) => {
+    const requesterUid = request.auth?.uid;
+    if (!requesterUid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+    }
+
+    const payload = request.data as {profileId?: unknown; meta?: unknown};
+    const operation = normalizeOperationMeta(payload.meta);
+    const profileId = typeof payload.profileId === "string" ? payload.profileId.trim() : "";
+    if (!profileId) {
+        throw new HttpsError("invalid-argument", "Profile ID is required.");
+    }
+
+    const profileRef = db.collection("users").doc(profileId);
+    const profileSnapshot = await profileRef.get();
+    if (!profileSnapshot.exists) {
+        throw new HttpsError("not-found", "Profile not found.");
+    }
+    if (!profileSnapshotBelongsToUid(profileSnapshot, requesterUid)) {
+        throw new HttpsError("permission-denied", "You can only remove profiles linked to your account.");
+    }
+
+    const ownedProfiles = await getOwnedProfileSnapshots(requesterUid);
+    const primaryProfile = resolvePrimaryOwnedProfile(ownedProfiles, requesterUid);
+    if (primaryProfile?.id === profileId) {
+        throw new HttpsError("failed-precondition", "The primary profile cannot be removed from the account.");
+    }
+
+    const profileData = profileSnapshot.data() as {
+        global_id?: string | null;
+        owner_uids?: string[] | null;
+        account_status?: string | null;
+        email?: string | null;
+        primary_owner_email?: string | null;
+    };
+    const currentOwnerUids = Array.isArray(profileData.owner_uids) ? profileData.owner_uids : [requesterUid];
+    if (!currentOwnerUids.includes(requesterUid)) {
+        throw new HttpsError("permission-denied", "You can only remove profiles linked to your account.");
+    }
+    const nextOwnerUids = currentOwnerUids.filter((uid) => uid !== requesterUid);
+    let nextOwnerEmail: string | null = null;
+    if (nextOwnerUids.length > 0) {
+        try {
+            nextOwnerEmail = (await getAuth().getUser(nextOwnerUids[0])).email ?? null;
+        } catch (error) {
+            // Firestore emulator tests and older imported profiles may not have a
+            // corresponding Auth record. Preserve the profile's existing email in
+            // that case; production accounts resolve the current owner email above.
+            console.warn("Failed to resolve the remaining profile owner; preserving the profile email.", error);
+            nextOwnerEmail = profileData.email ?? null;
+        }
+    }
+
+    const actorContext = await resolveActorContext(db, requesterUid, operation.activeProfileGlobalId);
+    const now = FirestoreTimestamp.now();
+    await db.runTransaction(async (transaction) => {
+        const freshSnapshot = await transaction.get(profileRef);
+        if (!freshSnapshot.exists) {
+            throw new HttpsError("not-found", "Profile not found.");
+        }
+
+        const freshData = freshSnapshot.data() as {owner_uids?: string[] | null};
+        const freshOwnerUids = Array.isArray(freshData.owner_uids) ? freshData.owner_uids : [requesterUid];
+        if (!freshOwnerUids.includes(requesterUid)) {
+            throw new HttpsError("permission-denied", "You can only remove profiles linked to your account.");
+        }
+        if (freshOwnerUids.length !== currentOwnerUids.length || freshOwnerUids.some((uid) => !currentOwnerUids.includes(uid))) {
+            throw new HttpsError("failed-precondition", "The profile ownership changed. Please try again.");
+        }
+
+        transaction.update(profileRef, {
+            owner_uids: nextOwnerUids,
+            account_status: nextOwnerUids.length > 0 ? "claimed" : "unclaimed",
+            email: nextOwnerEmail,
+            primary_owner_email: nextOwnerEmail,
+            updated_at: now,
+        });
+        setAuditLogInTransaction(transaction, db, {
+            ...actorContext,
+            action: "profile.ownership-release",
+            status: "success",
+            entityType: "user-profile",
+            entityId: profileId,
+            changedFields: ["owner_uids", "account_status", "email", "primary_owner_email"],
+            before: {
+                global_id: profileData.global_id ?? null,
+                account_status: profileData.account_status ?? null,
+                owner_uids: currentOwnerUids,
+            },
+            after: {
+                global_id: profileData.global_id ?? null,
+                account_status: nextOwnerUids.length > 0 ? "claimed" : "unclaimed",
+                owner_uids: nextOwnerUids,
+            },
+            operationId: operation.operationId,
+            source: "callable",
+        });
+    });
+
+    return {
+        profileId,
+        owner_uids: nextOwnerUids,
+        email: nextOwnerEmail,
+        primary_owner_email: nextOwnerEmail,
+        account_status: nextOwnerUids.length > 0 ? "claimed" : "unclaimed",
     };
 });
 

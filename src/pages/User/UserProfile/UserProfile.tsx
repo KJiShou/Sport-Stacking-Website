@@ -1,15 +1,17 @@
 import {AvatarUploader} from "@/components/common/AvatarUploader";
+import {MobilePageHeader, MobileStickyActions, ResponsiveTabs} from "@/components/responsive";
 import {useAuthContext} from "@/context/AuthContext";
 import type {AllTimeStat, FirestoreUser, FirestoreUserSchema, OnlineBest, RecordItem} from "@/schema";
 import {countries} from "@/schema/Country";
-import {changeUserPassword, deleteAccount, fetchUserByID, updateUserProfile} from "@/services/firebase/authService";
-import {fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {
-    deriveBirthdateFromMykad,
-    formatBirthdateForDisplay,
-    isBirthdateMatchingMykad,
-    parseBirthdate,
-} from "@/utils/birthdate";
+    changeUserPassword,
+    deleteAccount,
+    fetchUserByID,
+    releaseOwnedProfile,
+    updateUserProfile,
+} from "@/services/firebase/authService";
+import {fetchTournamentById} from "@/services/firebase/tournamentsService";
+import {deriveBirthdateFromMykad, formatBirthdateForDisplay, isBirthdateMatchingMykad, parseBirthdate} from "@/utils/birthdate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {Avatar, Spin} from "@arco-design/web-react";
@@ -28,13 +30,12 @@ import {
     Statistic,
     Switch,
     Table,
-    Tabs,
     Typography,
 } from "@arco-design/web-react";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
 import {IconPhone, IconUser} from "@arco-design/web-react/icon";
 // AvatarWithLoading copied from Navbar for consistent avatar UX
-const AvatarWithLoading = ({src}: {src: string}) => {
+const AvatarWithLoading = ({src, size = 192}: {src: string; size?: number}) => {
     const [loading, setLoading] = useState(true);
     return (
         <div className="relative inline-block">
@@ -43,7 +44,7 @@ const AvatarWithLoading = ({src}: {src: string}) => {
                     <Spin size={24} />
                 </div>
             )}
-            <Avatar size={192} className="rounded-full overflow-hidden" style={{visibility: loading ? "hidden" : "visible"}}>
+            <Avatar size={size} className="rounded-full overflow-hidden" style={{visibility: loading ? "hidden" : "visible"}}>
                 <img
                     src={src}
                     alt="avatar"
@@ -84,13 +85,28 @@ const toDate = (value: Date | Timestamp | null | undefined): Date | null => {
     return null;
 };
 
+const resolvePrimaryProfile = (profiles: FirestoreUser[], firebaseUid?: string | null): FirestoreUser | null => {
+    if (profiles.length === 0) {
+        return null;
+    }
+
+    return (
+        profiles.find((profile) => profile.id === firebaseUid) ??
+        [...profiles].sort((left, right) => {
+            const leftKey = left.global_id?.trim() || left.id;
+            const rightKey = right.global_id?.trim() || right.id;
+            return leftKey.localeCompare(rightKey) || left.id.localeCompare(right.id);
+        })[0]
+    );
+};
+
 export default function RegisterPage() {
     const {Row, Col} = Grid;
     const deviceBreakpoint = useDeviceBreakpoint();
-    const isMobile = deviceBreakpoint <= DeviceBreakpoint.md;
+    const isMobile = deviceBreakpoint < DeviceBreakpoint.md;
     const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
     const {id} = useParams<{id: string}>();
-    const {user: authUser, firebaseUser} = useAuthContext();
+    const {activeProfileId, firebaseUser, profiles, refreshProfiles, user: authUser} = useAuthContext();
     const navigate = useNavigate();
     const [form] = Form.useForm();
     const [secForm] = Form.useForm();
@@ -102,11 +118,67 @@ export default function RegisterPage() {
     const [secLoading, setSecLoading] = useState(false);
     const [addPasswordLoading, setAddPasswordLoading] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
+    const [removeLoading, setRemoveLoading] = useState(false);
     const [tournamentStartDates, setTournamentStartDates] = useState<Record<string, Date | null>>({});
+    const [tournamentNames, setTournamentNames] = useState<Record<string, string | null>>({});
     const [searchParams, setSearchParams] = useSearchParams();
     const hasPasswordProvider = Boolean(firebaseUser?.providerData?.some((provider) => provider.providerId === "password"));
+    const selectedOwnedProfile = profiles.find((profile) => profile.id === id) ?? null;
+    const primaryProfile = resolvePrimaryProfile(profiles, firebaseUser?.uid);
+    const isPrimaryProfile = primaryProfile?.id === id;
+    const activeId = activeProfileId ?? authUser?.id ?? null;
+
+    const navigateToProfile = (nextProfileId: string) => {
+        if (nextProfileId === id) {
+            return;
+        }
+
+        const navigateWithoutUnsavedChanges = () => {
+            setIsEditMode(false);
+            navigate(`/users/${nextProfileId}`);
+        };
+
+        if (isEditMode && form.getTouchedFields().length > 0) {
+            Modal.confirm({
+                title: "Discard unsaved changes?",
+                content: "Switching profiles will discard the changes you have not saved.",
+                okText: "Discard and switch",
+                cancelText: "Stay here",
+                onOk: navigateWithoutUnsavedChanges,
+            });
+            return;
+        }
+
+        navigateWithoutUnsavedChanges();
+    };
+
+    const profileSelector =
+        profiles.length > 1 ? (
+            <div className="flex min-w-0 items-center gap-2">
+                <Text type="secondary" className="whitespace-nowrap">
+                    Profile
+                </Text>
+                <Select
+                    value={id}
+                    onChange={(value) => navigateToProfile(value)}
+                    style={{minWidth: isMobile ? 180 : 260, maxWidth: "100%"}}
+                    aria-label="Select profile to view or edit"
+                >
+                    {profiles.map((profile) => (
+                        <Select.Option key={profile.id} value={profile.id}>
+                            {profile.global_id || profile.id} - {profile.name}
+                            {profile.id === activeId ? " (Current)" : ""}
+                        </Select.Option>
+                    ))}
+                </Select>
+            </div>
+        ) : null;
 
     function confirm() {
+        if (!isPrimaryProfile || profiles.length > 1) {
+            return;
+        }
+
         Modal.confirm({
             title: "Delete Account",
             content: "Are you sure you want to delete this account? This action cannot be undone.",
@@ -134,6 +206,43 @@ export default function RegisterPage() {
         });
     }
 
+    function confirmRemoveProfile() {
+        if (!id || isPrimaryProfile) {
+            return;
+        }
+
+        Modal.confirm({
+            title: "Remove Profile",
+            content: "This will unlink the profile from your account while keeping its Global ID, personal bests, and tournament history.",
+            okText: "Remove Profile",
+            cancelText: "Keep Profile",
+            okButtonProps: {status: "danger"},
+            confirmLoading: removeLoading,
+            onOk: async () => {
+                setRemoveLoading(true);
+                try {
+                    const fallbackProfile = primaryProfile ?? profiles.find((profile) => profile.id !== id) ?? null;
+                    const preferredProfileId = activeId === id ? fallbackProfile?.id : activeId ?? undefined;
+                    await releaseOwnedProfile(id);
+                    await refreshProfiles(preferredProfileId);
+                    Message.success("Profile removed from your account");
+
+                    const destinationProfileId = preferredProfileId ?? fallbackProfile?.id;
+                    if (destinationProfileId) {
+                        navigate(`/users/${destinationProfileId}`, {replace: true});
+                    } else {
+                        navigate("/", {replace: true});
+                    }
+                } catch (error) {
+                    console.error("Failed to remove profile:", error);
+                    Message.error(error instanceof Error ? error.message : "Failed to remove profile");
+                } finally {
+                    setRemoveLoading(false);
+                }
+            },
+        });
+    }
+
     let descData = [
         {label: "Email", value: user?.email ?? "-"},
         {label: "Member ID", value: user?.memberId ?? "-"},
@@ -157,24 +266,33 @@ export default function RegisterPage() {
     ];
 
     useEffect(() => {
-        if (authUser?.id !== id) {
-            navigate("/");
-        }
-        setIsEditMode(searchParams.get("isEditMode") === "true");
-    }, []);
-
-    useEffect(() => {
-        if (!id) {
-            setLoading(false);
-            setTournamentStartDates({});
+        if (!selectedOwnedProfile) {
+            const fallbackProfileId = authUser?.id ?? profiles[0]?.id;
+            navigate(fallbackProfileId ? `/users/${fallbackProfileId}` : "/", {replace: true});
             return;
         }
 
+        setIsEditMode(searchParams.get("isEditMode") === "true");
+    }, [authUser?.id, id, navigate, profiles, searchParams, selectedOwnedProfile]);
+
+    useEffect(() => {
+        if (!id || !selectedOwnedProfile) {
+            setUser(null);
+            setLoading(false);
+            setTournamentStartDates({});
+            setTournamentNames({});
+            return;
+        }
+
+        let cancelled = false;
         setLoading(true);
+        setUser(null);
+        form.resetFields();
 
         (async () => {
             try {
                 const data = await fetchUserByID(id);
+                if (cancelled) return;
                 setUser(data ?? null);
 
                 const approvedTournamentIds = Array.from(
@@ -189,14 +307,23 @@ export default function RegisterPage() {
                     approvedTournamentIds.map(async (tournamentId) => {
                         try {
                             const tournament = await fetchTournamentById(tournamentId);
-                            return [tournamentId, toDate(tournament?.start_date)] as const;
+                            return {
+                                tournamentId,
+                                startDate: toDate(tournament?.start_date),
+                                name: tournament?.name?.trim() || null,
+                            };
                         } catch (error) {
                             console.warn(`Failed to fetch tournament ${tournamentId} for user profile`, error);
-                            return [tournamentId, null] as const;
+                            return {tournamentId, startDate: null, name: null};
                         }
                     }),
                 );
-                setTournamentStartDates(Object.fromEntries(tournamentEntries));
+                setTournamentStartDates(
+                    Object.fromEntries(tournamentEntries.map(({tournamentId, startDate}) => [tournamentId, startDate])),
+                );
+                setTournamentNames(Object.fromEntries(tournamentEntries.map(({tournamentId, name}) => [tournamentId, name])));
+
+                if (cancelled) return;
 
                 const birthdate = parseBirthdate(data?.birthdate) ?? deriveBirthdateFromMykad(data?.IC);
                 form.setFieldsValue({
@@ -225,13 +352,22 @@ export default function RegisterPage() {
                 ];
             } catch (err) {
                 console.error(err);
-                setUser(null);
-                setTournamentStartDates({});
+                if (!cancelled) {
+                    setUser(null);
+                    setTournamentStartDates({});
+                    setTournamentNames({});
+                }
             } finally {
-                setLoading(false);
+                if (!cancelled) {
+                    setLoading(false);
+                }
             }
         })();
-    }, [id]);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [form, id, selectedOwnedProfile]);
 
     // 构建统计数据示例
     const allTimeStats: AllTimeStat[] = [
@@ -247,6 +383,7 @@ export default function RegisterPage() {
         country: [country: string, state: string];
         school: string;
         phone_number: string;
+        gender: "Male" | "Female";
         birthdate: unknown;
     }) => {
         if (!id) return;
@@ -267,8 +404,10 @@ export default function RegisterPage() {
                 country: values.country,
                 school: values.school,
                 phone_number: values.phone_number,
+                gender: values.gender,
                 birthdate,
             });
+            await refreshProfiles(activeId ?? undefined);
             setUser((prev) =>
                 prev
                     ? {
@@ -277,12 +416,14 @@ export default function RegisterPage() {
                           country: values.country,
                           school: values.school,
                           phone_number: values.phone_number,
+                          gender: values.gender,
                           birthdate,
                       }
                     : prev,
             );
             Message.success("Profile updated successfully");
             setIsEditMode(false);
+            setSearchParams({});
         } catch (err) {
             console.error(err);
             Message.error("Failed to update profile");
@@ -341,9 +482,10 @@ export default function RegisterPage() {
 
     return (
         <div className="w-full">
+            <MobilePageHeader title="User Profile" actions={profileSelector} className="p-0 md:p-6 xl:p-10" />
             <Spin tip="Loading..." size={40} loading={loading} className="w-full">
                 {isEditMode ? (
-                    <div className={`flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10`}>
+                    <div className={`user-profile-edit-page flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10`}>
                         <div
                             className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}
                         >
@@ -354,11 +496,11 @@ export default function RegisterPage() {
                                     <Text type="secondary">Account ID: {user?.global_id}</Text>
                                 </div>
 
-                                <Tabs defaultActiveTab="basic" className="mt-6">
+                                <ResponsiveTabs defaultActiveTab="basic" className="mt-6">
                                     <TabPane title="Basic Information" key="basic">
                                         <Form
                                             requiredSymbol={false}
-                                            className={`flex flex-col items-start`}
+                                            className={`user-profile-edit-form flex flex-col items-start`}
                                             layout="horizontal"
                                             labelAlign="left"
                                             form={form}
@@ -427,7 +569,7 @@ export default function RegisterPage() {
                                                     }}
                                                     options={countries}
                                                     placeholder="Please select location"
-                                                    expandTrigger="hover"
+                                                    expandTrigger="click"
                                                     value={user?.country}
                                                 />
                                             </Form.Item>
@@ -440,54 +582,56 @@ export default function RegisterPage() {
                                                 <Input placeholder="Please enter your school" />
                                             </Form.Item>
 
-                                            <div className="w-full mx-auto flex flex-col items-center">
-                                                <Button
-                                                    type="primary"
-                                                    long
-                                                    onClick={() => {
-                                                        form.submit();
-                                                        setSearchParams({isEditMode: "false"});
-                                                    }}
-                                                >
-                                                    Save
-                                                </Button>
-                                                <Button
-                                                    long
-                                                    className="mt-4"
-                                                    onClick={async () => {
-                                                        try {
-                                                            setLoading(true);
-                                                            const data = await fetchUserByID(id ?? "");
-                                                            setUser(data ?? null);
-                                                            const birthdate =
-                                                                parseBirthdate(data?.birthdate) ??
-                                                                deriveBirthdateFromMykad(data?.IC);
-                                                            form.setFieldsValue({
-                                                                email: data?.email,
-                                                                IC: data?.IC,
-                                                                name: data?.name,
-                                                                country: data?.country,
-                                                                memberId: data?.memberId,
-                                                                school: data?.school ?? "",
-                                                                gender: data?.gender,
-                                                                birthdate,
-                                                                phone_number: data?.phone_number,
-                                                            });
-                                                        } catch (err) {
-                                                            console.error(err);
-                                                            setUser(null);
-                                                        } finally {
-                                                            setLoading(false);
-                                                        }
-                                                    }}
-                                                >
-                                                    Reset
-                                                </Button>
-                                            </div>
+                                            <MobileStickyActions>
+                                                <div className="w-full mx-auto flex flex-col items-center">
+                                                    <Button
+                                                        type="primary"
+                                                        long
+                                                        onClick={() => {
+                                                            form.submit();
+                                                        }}
+                                                    >
+                                                        Save
+                                                    </Button>
+                                                    <Button
+                                                        long
+                                                        className="mt-4"
+                                                        onClick={async () => {
+                                                            try {
+                                                                setLoading(true);
+                                                                const data = await fetchUserByID(id ?? "");
+                                                                setUser(data ?? null);
+                                                                const birthdate =
+                                                                    parseBirthdate(data?.birthdate) ??
+                                                                    deriveBirthdateFromMykad(data?.IC);
+                                                                form.setFieldsValue({
+                                                                    email: data?.email,
+                                                                    IC: data?.IC,
+                                                                    name: data?.name,
+                                                                    country: data?.country,
+                                                                    memberId: data?.memberId,
+                                                                    school: data?.school ?? "",
+                                                                    gender: data?.gender,
+                                                                    birthdate,
+                                                                    phone_number: data?.phone_number,
+                                                                });
+                                                            } catch (err) {
+                                                                console.error(err);
+                                                                setUser(null);
+                                                            } finally {
+                                                                setLoading(false);
+                                                            }
+                                                        }}
+                                                    >
+                                                        Reset
+                                                    </Button>
+                                                </div>
+                                            </MobileStickyActions>
                                         </Form>
                                     </TabPane>
 
-                                    {hasPasswordProvider ? (
+                                    {isPrimaryProfile &&
+                                        (hasPasswordProvider ? (
                                         <TabPane title="Security Settings" key="security">
                                             <Form
                                                 form={secForm}
@@ -554,21 +698,21 @@ export default function RegisterPage() {
                                                 </div>
                                             </Form>
                                         </TabPane>
-                                    )}
-                                </Tabs>
+                                    ))}
+                                </ResponsiveTabs>
                             </div>
                         </div>
                     </div>
                 ) : (
-                    <div className="flex flex-col md:flex-row bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+                    <div className="user-profile-view flex flex-col md:flex-row bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
                         {/* 左边：基本信息卡片 */}
                         <div className="bg-white flex flex-col w-full md:w-1/3 gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                             {user?.image_url ? (
-                                <AvatarWithLoading src={user.image_url} />
+                                <AvatarWithLoading src={user.image_url} size={isMobile ? 120 : 192} />
                             ) : (
                                 <div className="relative inline-block">
                                     <Avatar
-                                        size={192}
+                                        size={isMobile ? 120 : 192}
                                         style={{backgroundColor: "#3370ff"}}
                                         className={`rounded-full overflow-hidden`}
                                     >
@@ -608,9 +752,26 @@ export default function RegisterPage() {
                             >
                                 Edit Profile
                             </Button>
-                            <Button className="w-full" type="outline" status="danger" onClick={confirm}>
-                                Delete Account
-                            </Button>
+                            {isPrimaryProfile ? (
+                                profiles.length > 1 ? (
+                                    <div className="w-full">
+                                        <Button className="w-full" type="outline" status="danger" disabled>
+                                            Delete Account
+                                        </Button>
+                                        <Text type="secondary" className="mt-2 block text-center text-xs">
+                                            Multi-profile accounts must contact an administrator to delete the account.
+                                        </Text>
+                                    </div>
+                                ) : (
+                                    <Button className="w-full" type="outline" status="danger" onClick={confirm}>
+                                        Delete Account
+                                    </Button>
+                                )
+                            ) : (
+                                <Button className="w-full" type="outline" status="danger" onClick={confirmRemoveProfile} loading={removeLoading}>
+                                    Remove Profile
+                                </Button>
+                            )}
                         </div>
 
                         {/* 右边：包一层，让它整体高度统一 */}
@@ -644,44 +805,66 @@ export default function RegisterPage() {
                                             .filter(Boolean);
                                         return bestTimes.length === 0 ? (
                                             <Empty description="No best times recorded yet." />
+                                        ) : isMobile ? (
+                                            <div className="user-profile-mobile-cards">
+                                                {bestTimes.map((record) =>
+                                                    record ? (
+                                                        <div key={record.event} className="user-profile-mobile-card">
+                                                            <div className="user-profile-mobile-card__header">
+                                                                <strong>{record.event}</strong>
+                                                                <span className="user-profile-mobile-card__value">
+                                                                    {typeof record.time === "number" ? record.time.toFixed(3) : "—"}
+                                                                </span>
+                                                            </div>
+                                                            <div className="user-profile-mobile-card__details">
+                                                                <span>
+                                                                    <small>Season</small>
+                                                                    {record.season ?? "—"}
+                                                                </span>
+                                                                <span>
+                                                                    <small>Last updated</small>
+                                                                    {record.updatedAt ? dayjs(record.updatedAt).format("DD/MM/YYYY") : "—"}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    ) : null,
+                                                )}
+                                            </div>
                                         ) : (
-                                            <Table
-                                                rowKey="event"
-                                                columns={[
-                                                    {title: "Event", dataIndex: "event", width: 120},
-                                                    {
-                                                        title: "Best Time",
-                                                        dataIndex: "time",
-                                                        width: 150,
-                                                        render: (time) => (
-                                                            <span className="font-semibold text-lg">
-                                                                {typeof time === "number" ? time.toFixed(3) : "-"}
-                                                            </span>
-                                                        ),
-                                                    },
-                                                    ...(isMobile
-                                                        ? []
-                                                        : [
-                                                              {
-                                                                  title: "Season",
-                                                                  dataIndex: "season",
-                                                                  width: 120,
-                                                                  render: (season: string | null) => season ?? "—",
-                                                              },
-                                                              {
-                                                                  title: "Last Updated",
-                                                                  dataIndex: "updatedAt",
-                                                                  width: 150,
-                                                                  render: (date: Date | null) =>
-                                                                      date ? dayjs(date).format("DD/MM/YYYY") : "—",
-                                                              },
-                                                          ]),
-                                                ]}
-                                                data={bestTimes}
-                                                pagination={false}
-                                                scroll={{x: true}}
-                                                border={false}
-                                            />
+                                            <div className="mobile-table-scroll">
+                                                <Table
+                                                    rowKey="event"
+                                                    columns={[
+                                                        {title: "Event", dataIndex: "event", width: 120},
+                                                        {
+                                                            title: "Best Time",
+                                                            dataIndex: "time",
+                                                            width: 150,
+                                                            render: (time) => (
+                                                                <span className="font-semibold text-lg">
+                                                                    {typeof time === "number" ? time.toFixed(3) : "-"}
+                                                                </span>
+                                                            ),
+                                                        },
+                                                        {
+                                                            title: "Season",
+                                                            dataIndex: "season",
+                                                            width: 120,
+                                                            render: (season: string | null) => season ?? "—",
+                                                        },
+                                                        {
+                                                            title: "Last Updated",
+                                                            dataIndex: "updatedAt",
+                                                            width: 150,
+                                                            render: (date: Date | null) => (date ? dayjs(date).format("DD/MM/YYYY") : "—"),
+                                                        },
+                                                    ]}
+                                                    data={bestTimes}
+                                                    pagination={false}
+                                                    scroll={{x: true}}
+                                                    border={false}
+                                                />
+                                            </div>
                                         );
                                     })()}
                                 </div>
@@ -697,6 +880,7 @@ export default function RegisterPage() {
                                                 const registrationDate = toDate(reg.registration_date);
                                                 return {
                                                     tournamentId: reg.tournament_id,
+                                                    tournamentName: tournamentNames[reg.tournament_id] ?? null,
                                                     events: reg.events ?? [],
                                                     registrationDate: tournamentStartDates[reg.tournament_id] ?? registrationDate,
                                                     status: reg.status ?? "pending",
@@ -708,6 +892,30 @@ export default function RegisterPage() {
                                             });
                                         return tournaments.length === 0 ? (
                                             <Empty description="No tournament participation records found." />
+                                        ) : isMobile ? (
+                                            <div className="user-profile-mobile-cards">
+                                                {tournaments.map((record) => (
+                                                    <div key={record.tournamentId} className="user-profile-mobile-card">
+                                                        <div className="user-profile-mobile-card__header">
+                                                            <strong className="break-words">
+                                                                {record.tournamentName ?? "Unknown tournament"}
+                                                            </strong>
+                                                            <span>{record.registrationDate ? dayjs(record.registrationDate).format("DD/MM/YYYY") : "—"}</span>
+                                                        </div>
+                                                        <div className="user-profile-mobile-card__details">
+                                                            <span>
+                                                                <small>Prelim rank / time</small>
+                                                                {record.prelimRank ? `#${record.prelimRank}` : "—"} / {record.prelimOverall ? record.prelimOverall.toFixed(3) : "—"}
+                                                            </span>
+                                                            <span>
+                                                                <small>Final rank / time</small>
+                                                                {record.finalRank ? `#${record.finalRank}` : "—"} / {record.finalOverall ? record.finalOverall.toFixed(3) : "—"}
+                                                            </span>
+                                                        </div>
+                                                        <div className="user-profile-mobile-card__events">{record.events.join(", ") || "No events"}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         ) : (
                                             <div className="w-full overflow-x-auto">
                                                 <Table
@@ -718,6 +926,18 @@ export default function RegisterPage() {
                                                             dataIndex: "registrationDate",
                                                             width: 150,
                                                             render: (date) => (date ? dayjs(date).format("DD/MM/YYYY") : "—"),
+                                                        },
+                                                        {
+                                                            title: "Tournament",
+                                                            dataIndex: "tournamentName",
+                                                            width: 260,
+                                                            render: (name: string | null) => name ?? "Unknown tournament",
+                                                        },
+                                                        {
+                                                            title: "Events",
+                                                            dataIndex: "events",
+                                                            width: 220,
+                                                            render: (events: string[]) => events.join(", ") || "—",
                                                         },
                                                         {
                                                             title: "Prelim Rank",
