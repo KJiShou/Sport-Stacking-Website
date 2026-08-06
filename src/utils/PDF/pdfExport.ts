@@ -2137,8 +2137,12 @@ const generateSingleStackingSheet = (
                     return ", ";
             }
         })();
-        const memberNamesValue = memberNames.length > 0 ? memberNames.join(nameSeparator) : "________________________";
-        const memberNameLines = splitMixedTextToSize(doc, memberNamesValue, pageWidth - marginX * 2 - nameX, "bold", 14);
+        const nameValue = isTeamRelayEventType(sheetType)
+            ? team.name?.trim() || "________________________"
+            : memberNames.length > 0
+              ? memberNames.join(nameSeparator)
+              : "________________________";
+        const memberNameLines = splitMixedTextToSize(doc, nameValue, pageWidth - marginX * 2 - nameX, "bold", 14);
         memberNameLines.forEach((line, lineIndex) => {
             drawMixedText(doc, line, nameX, infoY + sectionSpacing * lineIndex, {fontSize: 14, fontStyle: "bold"});
         });
