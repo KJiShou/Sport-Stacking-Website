@@ -1870,20 +1870,33 @@ const resolveTeamEvents = (
 
 type RegistrationTeamSnapshot = NonNullable<Registration["teams"]>[number];
 
-const buildRegistrationTeamSnapshot = (team: Team): RegistrationTeamSnapshot => ({
-    team_id: team.id,
-    label: team.name ?? "",
-    name: team.name ?? "",
-    member: (team.members ?? []).map((member) => ({
-        global_id: member.global_id,
-        verified: Boolean(member.verified),
-    })),
-    leader: {
-        global_id: team.leader_id ?? null,
-        verified: true,
-    },
-    looking_for_team_members: Boolean(team.looking_for_member),
-});
+const normalizeMaintenanceTeamName = (value: string | null | undefined): string =>
+    (value ?? "")
+        .normalize("NFC")
+        .replace(/(?:\u200B|\u200C|\u200D|\uFEFF)/gu, "")
+        .replace(/\s+/gu, " ")
+        .trim();
+
+const maintenanceTeamNamesEqual = (left: string | null | undefined, right: string | null | undefined): boolean =>
+    normalizeMaintenanceTeamName(left) === normalizeMaintenanceTeamName(right);
+
+const buildRegistrationTeamSnapshot = (team: Team, existing?: RegistrationTeamSnapshot): RegistrationTeamSnapshot => {
+    const teamName = team.name ?? "";
+    return {
+        team_id: team.id,
+        label: maintenanceTeamNamesEqual(existing?.label, teamName) ? existing?.label : teamName,
+        name: maintenanceTeamNamesEqual(existing?.name, teamName) ? existing?.name ?? teamName : teamName,
+        member: (team.members ?? []).map((member) => ({
+            global_id: member.global_id,
+            verified: Boolean(member.verified),
+        })),
+        leader: {
+            global_id: team.leader_id ?? null,
+            verified: true,
+        },
+        looking_for_team_members: Boolean(team.looking_for_member),
+    };
+};
 
 /**
  * Keeps the legacy registration team snapshot readable by every confirmed
@@ -1918,14 +1931,14 @@ const syncRegistrationTeamSnapshots = async (teamId: string, beforeTeam: Team | 
     for (const member of afterTeam?.members ?? []) {
         if (member.global_id && member.verified) activeParticipantIds.add(member.global_id);
     }
-    const snapshot = afterTeam ? buildRegistrationTeamSnapshot(afterTeam) : null;
-
     await Promise.all(
         registrationSnapshots.flatMap((result) =>
             result.docs.map((registrationDoc) => {
                 const registration = registrationDoc.data() as Registration;
                 const existingTeams = Array.isArray(registration.teams) ? registration.teams : [];
                 const withoutCurrentTeam = existingTeams.filter((entry) => entry.team_id !== teamId);
+                const existingTeam = existingTeams.find((entry) => entry.team_id === teamId);
+                const snapshot = afterTeam ? buildRegistrationTeamSnapshot(afterTeam, existingTeam) : null;
                 const nextTeams =
                     snapshot && activeParticipantIds.has(registration.user_global_id)
                         ? [...withoutCurrentTeam, snapshot]

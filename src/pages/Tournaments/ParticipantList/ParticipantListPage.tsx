@@ -1,24 +1,27 @@
-import type {Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/schema";
+import type {AgeBracket, Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/schema";
+import TeamNameUpdatePreviewModal from "@/components/common/TeamNameUpdatePreviewModal";
 import {fetchUsersByGlobalIds} from "@/services/firebase/authService";
-import {fetchApprovedRegistrations, fetchRegistrations} from "@/services/firebase/registerService";
+import {fetchApprovedRegistrations} from "@/services/firebase/registerService";
 import {
-    dedupeTeamsForTournament,
     fetchTeamsByTournament,
     fetchTournamentById,
     fetchTournamentEvents,
-    updateTeamNamesForTournament,
 } from "@/services/firebase/tournamentsService";
+import {
+    applyTeamNameUpdatesForTournament,
+    previewTeamNameUpdatesForTournament,
+    type TeamNameUpdatePreview,
+} from "@/services/firebase/teamNameMaintenanceService";
 import {
     exportAllBracketsListToPDF,
     exportCombinedTimeSheetsPDF,
+    exportCurrentEventNameListToPDF,
     exportLargeNameListStickerPDF,
     exportMasterListToPDF,
     exportNameListStickerPDF,
     exportParticipantListToPDF,
-    generateAllTeamStackingSheetsPDF,
     generateStackingSheetPDF,
     generateTeamStackingSheetPDF,
-    getCurrentEventData,
 } from "@/utils/PDF/pdfExport";
 import {formatTeamLeaderId, stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
@@ -26,19 +29,19 @@ import {
     getEventKey,
     getEventLabel,
     getEventTypeOrderIndex,
-    getTeamEventLabels,
     isTeamEvent,
     matchesAnyEventKey,
-    matchesEventKey,
     sanitizeEventCodes,
     teamMatchesEventKey,
 } from "@/utils/tournament/eventUtils";
-import {Button, Card, Dropdown, Input, Menu, Message, Pagination, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
+import {Button, Card, Dropdown, Input, Message, Pagination, Table, Tabs, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
+import {IconArrowLeft, IconDown} from "@arco-design/web-react/icon";
 import {nanoid} from "nanoid";
 // src/pages/ParticipantListPage.tsx
-import React, {useEffect, useRef, useState} from "react";
-import {useLocation, useParams, useSearchParams} from "react-router-dom";
+import type React from "react";
+import {useEffect, useRef, useState} from "react";
+import {useLocation, useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
 import {MobilePageHeader, ResponsiveTabs} from "@/components/responsive";
 
@@ -55,6 +58,7 @@ const parsePositivePage = (value: string | null): number => {
 export default function ParticipantListPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
     const location = useLocation();
+    const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -62,6 +66,9 @@ export default function ParticipantListPage() {
     const [registrationList, setRegistrationList] = useState<Registration[]>([]);
     const [teamList, setTeamList] = useState<Team[]>([]);
     const [supplementalNameMap, setSupplementalNameMap] = useState<Record<string, string>>({});
+    const [teamNamePreview, setTeamNamePreview] = useState<TeamNameUpdatePreview | null>(null);
+    const [teamNamePreviewVisible, setTeamNamePreviewVisible] = useState(false);
+    const [teamNameConfirmLoading, setTeamNameConfirmLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState(() => searchParams.get("search") ?? "");
     const [currentEventTab, setCurrentEventTab] = useState<string>(() => searchParams.get("event") ?? "");
     const [currentBracketTab, setCurrentBracketTab] = useState<string>(() => searchParams.get("bracket") ?? "");
@@ -293,18 +300,19 @@ export default function ParticipantListPage() {
         });
     };
 
-    const handleEventTabChange = (key: string) => {
+    const handleEventSelect = (key: string) => {
         setCurrentEventTab(key);
         setCurrentPage(1);
-
-        if (!events) {
-            return;
-        }
 
         const selectedEvent = events.find((evt) => evt.id === key) || events.find((evt) => evt.type === key);
 
         const nextBracket = selectedEvent?.age_brackets?.[0]?.name ?? "";
         setCurrentBracketTab(nextBracket);
+    };
+
+    const handleBracketSelect = (key: string) => {
+        setCurrentBracketTab(key);
+        setCurrentPage(1);
     };
 
     const handleExportNameListSticker = async () => {
@@ -445,7 +453,32 @@ export default function ParticipantListPage() {
         }
     };
 
-    const handleUpdateTeamNames = async () => {
+    const handlePreviewCurrentEvent = async () => {
+        if (!tournament || !currentEvent) {
+            Message.warning("Tournament event data not loaded");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            await exportCurrentEventNameListToPDF(
+                tournament,
+                currentEvent,
+                registrationList,
+                teamList,
+                ageMap,
+                phoneMap,
+                combinedNameMap,
+            );
+            Message.success("Current event name list PDF opened");
+        } catch (error) {
+            Message.error("Failed to generate current event name list PDF");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePrepareTeamNameUpdate = async () => {
         if (!tournamentId) {
             Message.warning("Tournament ID is missing");
             return;
@@ -453,25 +486,153 @@ export default function ParticipantListPage() {
 
         setLoading(true);
         try {
-            // Deduplicate teams first, then update names
-            const deletedCount = await dedupeTeamsForTournament(tournamentId);
-            const updatedCount = await updateTeamNamesForTournament(tournamentId);
-
-            const parts: string[] = [];
-            if (deletedCount > 0) {
-                parts.push(`Removed ${deletedCount} duplicate team(s).`);
-            }
-            if (updatedCount > 0) {
-                parts.push(`Updated ${updatedCount} team name(s).`);
-            }
-            if (parts.length === 0) {
+            const preview = await previewTeamNameUpdatesForTournament(tournamentId);
+            const {summary} = preview;
+            const hasChanges =
+                summary.teamDocuments > 0 || summary.registrationDocuments > 0 || summary.cleanupDocuments > 0;
+            if (!hasChanges) {
                 Message.success("All team names are already up to date.");
             } else {
-                Message.success(parts.join(" "));
+                setTeamNamePreview(preview);
+                setTeamNamePreviewVisible(true);
             }
+        } catch (error) {
+            console.error("Failed to prepare team name update:", error);
+            Message.error("Failed to update team names");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleConfirmTeamNameUpdate = async () => {
+        if (!tournamentId || !teamNamePreview) return;
+
+        setTeamNameConfirmLoading(true);
+        try {
+            const result = await applyTeamNameUpdatesForTournament(tournamentId, teamNamePreview.fingerprint);
+            const parts: string[] = [];
+            if (result.teamNameUpdates > 0) parts.push(`Updated ${result.teamNameUpdates} team name(s).`);
+            if (result.teamAgeUpdates > 0) parts.push(`Updated ${result.teamAgeUpdates} team age(s).`);
+            if (result.registrationDocuments > 0) parts.push(`Updated ${result.registrationDocuments} registration document(s).`);
+            if (result.duplicateTeams > 0) parts.push(`Removed ${result.duplicateTeams} duplicate team(s).`);
+            setTeamNamePreviewVisible(false);
+            setTeamNamePreview(null);
+            Message.success(parts.join(" ") || "Team updates completed.");
             await refreshParticipantList();
         } catch (error) {
-            Message.error("Failed to update team names");
+            if (error instanceof Error && error.message === "TEAM_NAME_PREVIEW_STALE") {
+                try {
+                    const refreshedPreview = await previewTeamNameUpdatesForTournament(tournamentId);
+                    const refreshedSummary = refreshedPreview.summary;
+                    const hasChanges =
+                        refreshedSummary.teamDocuments > 0 ||
+                        refreshedSummary.registrationDocuments > 0 ||
+                        refreshedSummary.cleanupDocuments > 0;
+                    if (hasChanges) {
+                        setTeamNamePreview(refreshedPreview);
+                        setTeamNamePreviewVisible(true);
+                        Message.warning("The data changed after the preview. The preview was refreshed; please confirm again.");
+                    } else {
+                        setTeamNamePreviewVisible(false);
+                        setTeamNamePreview(null);
+                        Message.success("No team updates remain after the data changed.");
+                    }
+                } catch (previewError) {
+                    console.error("Failed to refresh stale team name preview:", previewError);
+                    setTeamNamePreviewVisible(false);
+                    setTeamNamePreview(null);
+                    Message.error("The data changed and the latest preview could not be loaded. Please try again.");
+                }
+            } else {
+                console.error("Failed to apply team name update:", error);
+                setTeamNamePreviewVisible(false);
+                setTeamNamePreview(null);
+                Message.error("Failed to update team names. Please refresh the participant list and try again.");
+                await refreshParticipantList();
+            }
+        } finally {
+            setTeamNameConfirmLoading(false);
+        }
+    };
+
+    const handlePrintParticipantTimeSheet = async (record: Registration, event: TournamentEvent, bracket: AgeBracket) => {
+        if (!tournament) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        if (isStackOutChampionEvent(event)) {
+            Message.info("StackOut Champion does not require a time sheet.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            await generateStackingSheetPDF(
+                tournament,
+                [record],
+                ageMap,
+                bracket.name,
+                {
+                    logoUrl: tournament.logo ?? "",
+                    eventCodes: sanitizeEventCodes(event.codes),
+                },
+                event.type,
+            );
+        } catch (error) {
+            Message.error("Failed to generate time sheet");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePrintMemberList = async (team: Team, eventKey: string, bracket: AgeBracket) => {
+        if (!tournament) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        setLoading(true);
+        try {
+            await exportParticipantListToPDF({
+                tournament,
+                events,
+                eventKey,
+                bracketName: bracket.name,
+                registrations: registrationList,
+                ageMap,
+                phoneMap,
+                nameMap: combinedNameMap,
+                isTeamEvent: true,
+                team,
+                logoDataUrl: tournament.logo ?? "",
+            });
+        } catch (error) {
+            Message.error("Failed to generate member list");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePrintTeamTimeSheet = async (team: Team, event: TournamentEvent, bracket: AgeBracket) => {
+        if (!tournament) {
+            Message.warning("Tournament data not loaded");
+            return;
+        }
+        setLoading(true);
+        try {
+            await generateTeamStackingSheetPDF(
+                tournament,
+                team,
+                ageMap,
+                bracket.name,
+                {
+                    logoUrl: tournament.logo ?? "",
+                    nameMap: combinedNameMap,
+                    eventCodes: sanitizeEventCodes(event.codes),
+                },
+                event.type,
+            );
+        } catch (error) {
+            Message.error("Failed to generate team time sheet");
         } finally {
             setLoading(false);
         }
@@ -483,8 +644,48 @@ export default function ParticipantListPage() {
         sortedEvents.find((evt) => (evt.id ?? evt.type) === currentEventTab) ??
         sortedEvents.find((evt) => evt.type === currentEventTab) ??
         sortedEvents[0];
+    const currentEventKey = currentEvent ? (currentEvent.id ?? currentEvent.type) : "";
     const currentEventIsTeam = currentEvent ? isTeamEvent(currentEvent) : false;
-    const currentPageSize = currentEventIsTeam ? PAGE_SIZE_TEAM : PAGE_SIZE_INDIVIDUAL;
+    const currentBracket =
+        currentEvent?.age_brackets.find((bracket) => bracket.name === currentBracketTab) ?? currentEvent?.age_brackets[0];
+    const currentRegistrations = currentEvent ? filterRegistrations(currentEventKey, currentEventIsTeam, currentEvent) : [];
+    const teamRows: TeamRow[] = currentEventIsTeam
+        ? filterTeams(currentEventKey).map((team) => ({
+              ...team,
+              registrationId:
+                  registrationList.find((registration) => {
+                      const leaderId = stripTeamLeaderPrefix(team.leader_id);
+                      return registration.user_id === leaderId || registration.user_global_id === leaderId;
+                  })?.id ?? "",
+          }))
+        : [];
+    const rowsForBracket =
+        currentEventIsTeam && currentBracket
+            ? teamRows.filter(
+                  (record) =>
+                      record.team_age !== undefined &&
+                      record.team_age >= currentBracket.min_age &&
+                      record.team_age <= currentBracket.max_age,
+              )
+            : [];
+    const getTeamRegistrationId = (team: TeamRow): string => team.registration_id || team.registrationId;
+    const individualRows =
+        !currentEventIsTeam && currentBracket
+            ? currentRegistrations.filter(
+                  (registration) => registration.age >= currentBracket.min_age && registration.age <= currentBracket.max_age,
+              )
+            : [];
+
+    const renderActionsButton = (droplist: React.ReactNode, label = "Actions") => (
+        <Dropdown droplist={droplist} trigger={["click"]}>
+            <Button type="primary" className="participant-list-actions-button">
+                <span className="participant-list-button-content">
+                    {label}
+                    <IconDown />
+                </span>
+            </Button>
+        </Dropdown>
+    );
 
     const individualColumns: TableColumnProps<Registration>[] = [
         {title: "Global ID", dataIndex: "user_global_id", width: 150},
@@ -496,479 +697,407 @@ export default function ParticipantListPage() {
             render: (_, record) => <Text>{record.phone_number || "N/A"}</Text>,
         },
         {
-            title: "Action",
-            width: 150,
+            title: "Actions",
+            width: 160,
             render: (_, record) => {
-                const {event, bracket} =
-                    getCurrentEventData(
-                        tournament,
-                        events,
-                        currentEventTab,
-                        currentBracketTab,
-                        registrationList,
-                        searchTerm,
-                        teamList,
-                    ) ?? {};
-
-                if (!event || !bracket) return null;
+                if (!currentEvent || !currentBracket) return null;
 
                 const droplist = (
-                    <div className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}>
+                    <div className="participant-list-action-menu">
                         <Button
                             type="text"
-                            className={`text-left`}
+                            className="participant-list-menu-item"
                             loading={loading}
-                            disabled={isStackOutChampionEvent(event)}
-                            onClick={async () => {
-                                if (isStackOutChampionEvent(event)) {
-                                    Message.info("StackOut Champion does not require a time sheet.");
-                                    return;
-                                }
-                                setLoading(true);
-                                await generateStackingSheetPDF(
-                                    tournament,
-                                    [record],
-                                    ageMap,
-                                    bracket.name,
-                                    {
-                                        logoUrl: tournament.logo ?? "",
-                                        eventCodes: sanitizeEventCodes(event.codes),
-                                    },
-                                    event.type,
-                                );
-                                setLoading(false);
-                            }}
+                            onClick={() => window.open(`/tournaments/${tournamentId}/registrations/${record.id}/edit`, "_blank")}
                         >
-                            {event.type.toLowerCase() === "stackout champion" || event.type.toLowerCase() === "stack up champion"
-                                ? "Time Sheet Not Required"
-                                : "Print Time Sheet"}
+                            Edit Participant
+                        </Button>
+                        <Button
+                            type="text"
+                            className="participant-list-menu-item"
+                            loading={loading}
+                            disabled={isStackOutChampionEvent(currentEvent)}
+                            onClick={() => handlePrintParticipantTimeSheet(record, currentEvent, currentBracket)}
+                        >
+                            {isStackOutChampionEvent(currentEvent) ? "Time Sheet Not Required" : "Print Time Sheet"}
                         </Button>
                     </div>
                 );
 
-                return (
-                    <Dropdown.Button
-                        type="primary"
-                        size="default"
-                        droplist={droplist}
-                        trigger={["click"]}
-                        buttonProps={{
-                            onClick: () => window.open(`/tournaments/${tournamentId}/registrations/${record.id}/edit`, "_blank"),
-                        }}
-                    >
-                        Edit
-                    </Dropdown.Button>
-                );
+                return renderActionsButton(droplist);
             },
         },
     ];
 
-    return (
-        <div className="participant-list-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-            <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <div className="participant-list-header w-full flex justify-between items-center mobile-stack">
-                    <MobilePageHeader title={`${tournament.name} Participants`} backTo="/tournaments" backLabel="Go Back" />
-                    <div className="flex items-center gap-4 mobile-stack">
-                        <Input.Search
-                            placeholder="Search by name or ID"
-                            allowClear
-                            style={{width: 300}}
-                            value={searchTerm}
-                            onChange={(val) => {
-                                setSearchTerm(val);
-                                setCurrentPage(1);
-                            }}
-                        />
-                        <Dropdown.Button
-                            type="primary"
-                            trigger={["click"]}
-                            droplist={
-                                <div
-                                    className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
-                                >
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={async () => handlePreviewMasterList()}
-                                    >
-                                        Master List
-                                    </Button>
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={handleExportNameListSticker}
-                                    >
-                                        Name List Sticker
-                                    </Button>
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={handleLargeNameListSticker}
-                                    >
-                                        Large Name List Sticker
-                                    </Button>
-                                    <Button
-                                        type="text"
-                                        loading={loading}
-                                        className={`text-left`}
-                                        onClick={handlePrintAllTimeSheets}
-                                    >
-                                        Time Sheet
-                                    </Button>
-                                    <Button type="text" loading={loading} className={`text-left`} onClick={handleUpdateTeamNames}>
-                                        Update Team Name
-                                    </Button>
-                                </div>
+    const teamColumns: TableColumnProps<Team>[] = [
+        {
+            title: "Team Leader",
+            width: 150,
+            render: (_, record) => <Text>{formatTeamLeaderId(record.leader_id, currentEvent?.type ?? "Team Relay")}</Text>,
+        },
+        {title: "Team Name", dataIndex: "name", width: 200},
+        {
+            title: "Members",
+            width: 300,
+            render: (_, record) => (
+                <Text>
+                    {[
+                        {
+                            id: stripTeamLeaderPrefix(record.leader_id),
+                            name: combinedNameMap[stripTeamLeaderPrefix(record.leader_id)],
+                        },
+                        ...record.members.map((member) => ({
+                            id: member.global_id,
+                            name: combinedNameMap[member.global_id],
+                        })),
+                    ]
+                        .filter((entry) => entry.id)
+                        .map((entry) => `${entry.name ?? entry.id} (${entry.id})`)
+                        .join(", ")}
+                </Text>
+            ),
+        },
+        {
+            title: "Leader Phone",
+            width: 150,
+            render: (_, record) => (
+                <Text>{record.leader_id ? phoneMap[stripTeamLeaderPrefix(record.leader_id)] || "N/A" : "N/A"}</Text>
+            ),
+        },
+        {
+            title: "Team Age",
+            width: 150,
+            render: (_, record) => <Text>{record.team_age ?? "-"}</Text>,
+        },
+        {
+            title: "Actions",
+            width: 160,
+            render: (_, record) => {
+                if (!currentEvent || !currentBracket) return null;
+                const team = record as TeamRow;
+                const droplist = (
+                    <div className="participant-list-action-menu">
+                        <Button
+                            type="text"
+                            className="participant-list-menu-item"
+                            loading={loading}
+                            onClick={() =>
+                                window.open(
+                                    `/tournaments/${tournamentId}/registrations/${getTeamRegistrationId(team)}/edit${location.search}`,
+                                    "_blank",
+                                )
                             }
-                            buttonProps={{
-                                loading: loading,
-                                onClick: () => handlePreviewAllBrackets(),
-                            }}
                         >
-                            All Event Name List
-                        </Dropdown.Button>
+                            Edit Team
+                        </Button>
+                        <Button
+                            type="text"
+                            className="participant-list-menu-item"
+                            loading={loading}
+                            onClick={() => handlePrintMemberList(team, currentEventKey, currentBracket)}
+                        >
+                            Print Member List
+                        </Button>
+                        <Button
+                            type="text"
+                            className="participant-list-menu-item"
+                            loading={loading}
+                            onClick={() => handlePrintTeamTimeSheet(team, currentEvent, currentBracket)}
+                        >
+                            Team Time Sheet
+                        </Button>
                     </div>
-                </div>
-                <ResponsiveTabs
-                    type="line"
-                    destroyOnHide
-                    className="w-full"
-                    activeTab={currentEventTab}
-                    onChange={handleEventTabChange}
-                >
-                    {sortedEvents.map((evt) => {
-                        const tabKey = evt.id ?? evt.type;
-                        const isTeamEventForTab = isTeamEvent(evt);
-                        const regs = filterRegistrations(tabKey, isTeamEventForTab, evt);
-                        const scoringCodes = sanitizeEventCodes(evt.codes);
-                        const hasCodes = scoringCodes.length > 0;
-                        return (
-                            <TabPane key={tabKey} title={getEventLabel(evt)}>
-                                {" "}
-                                <ResponsiveTabs
-                                    type="capsule"
-                                    tabPosition="top"
-                                    destroyOnHide
-                                    activeTab={currentBracketTab}
-                                    onChange={(key) => {
-                                        setCurrentBracketTab(key);
-                                        setCurrentPage(1);
-                                    }}
-                                >
-                                    {evt.age_brackets.map((br) => {
-                                        if (isTeamEventForTab) {
-                                            const teamRows: TeamRow[] = filterTeams(tabKey).map((team) => ({
-                                                ...team,
-                                                registrationId:
-                                                    regs.find((r) => {
-                                                        const leaderId = stripTeamLeaderPrefix(team.leader_id);
-                                                        return r.user_id === leaderId || r.user_global_id === leaderId;
-                                                    })?.id ?? "",
-                                            }));
+                );
 
-                                            const rowsForBracket = teamRows.filter((record) => {
-                                                return (
-                                                    record.team_age !== undefined &&
-                                                    record.team_age >= br.min_age &&
-                                                    record.team_age <= br.max_age
-                                                );
-                                            });
-                                            const teamColumns: TableColumnProps<Team>[] = [
-                                                {
-                                                    title: "Team Leader",
-                                                    width: 150,
-                                                    render: (_, record) => (
-                                                        <Text>{formatTeamLeaderId(record.leader_id, evt.type)}</Text>
-                                                    ),
-                                                },
-                                                {title: "Team Name", dataIndex: "name", width: 200},
-                                                {
-                                                    title: "Members",
-                                                    width: 300,
-                                                    render: (_, record) => (
-                                                        <Text>
-                                                            {[
-                                                                {
-                                                                    id: stripTeamLeaderPrefix(record.leader_id),
-                                                                    name: combinedNameMap[
-                                                                        stripTeamLeaderPrefix(record.leader_id)
-                                                                    ],
-                                                                },
-                                                                ...record.members.map((member) => ({
-                                                                    id: member.global_id,
-                                                                    name: combinedNameMap[member.global_id],
-                                                                })),
-                                                            ]
-                                                                .filter((entry) => entry.id)
-                                                                .map((entry) => `${entry.name ?? entry.id} (${entry.id})`)
-                                                                .join(", ")}
-                                                        </Text>
-                                                    ),
-                                                },
-                                                {
-                                                    title: "Leader Phone",
-                                                    width: 150,
-                                                    render: (_, record) => (
-                                                        <Text>
-                                                            {record.leader_id
-                                                                ? phoneMap[stripTeamLeaderPrefix(record.leader_id)] || "N/A"
-                                                                : "N/A"}
-                                                        </Text>
-                                                    ),
-                                                },
-                                                {
-                                                    title: "Team Age",
-                                                    width: 150,
-                                                    render: (_, record) => {
-                                                        return <Text>{record.team_age ?? "-"}</Text>;
-                                                    },
-                                                },
-                                                {
-                                                    title: "Action",
-                                                    width: 200,
-                                                    render: (_, rec) => {
-                                                        const teamMembers = rec.members.map((member) => {
-                                                            const registration = registrationList.find((r) =>
-                                                                registrationMatchesParticipantId(r, member.global_id),
-                                                            );
-                                                            return {
-                                                                ...member,
-                                                                name: registration ? registration.user_name : member.global_id,
-                                                                registration: registration,
-                                                            };
-                                                        });
+                return renderActionsButton(droplist);
+            },
+        },
+    ];
 
-                                                        const droplist = (
-                                                            <div
-                                                                className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
-                                                            >
-                                                                <Button
-                                                                    type="text"
-                                                                    className={`text-left`}
-                                                                    loading={loading}
-                                                                    onClick={async () => {
-                                                                        setLoading(true);
-                                                                        await exportParticipantListToPDF({
-                                                                            tournament,
-                                                                            events,
-                                                                            eventKey: tabKey,
-                                                                            bracketName: br.name,
-                                                                            registrations: registrationList,
-                                                                            ageMap,
-                                                                            phoneMap,
-                                                                            nameMap: combinedNameMap,
-                                                                            isTeamEvent: true,
-                                                                            team: rec,
-                                                                            logoDataUrl: tournament.logo ?? "",
-                                                                        });
-                                                                        setLoading(false);
-                                                                    }}
-                                                                >
-                                                                    Print Member List
-                                                                </Button>
-                                                                <Button
-                                                                    type="text"
-                                                                    className={`text-left`}
-                                                                    loading={loading}
-                                                                    onClick={async () => {
-                                                                        setLoading(true);
-                                                                        await generateTeamStackingSheetPDF(
-                                                                            tournament,
-                                                                            rec,
-                                                                            ageMap,
-                                                                            br.name,
-                                                                            {
-                                                                                logoUrl: tournament.logo ?? "",
-                                                                                nameMap: combinedNameMap,
-                                                                                eventCodes: sanitizeEventCodes(evt.codes),
-                                                                            },
-                                                                            evt.type,
-                                                                        );
-                                                                        setLoading(false);
-                                                                    }}
-                                                                >
-                                                                    Team Time Sheet
-                                                                </Button>
-                                                            </div>
-                                                        );
-
-                                                        return (
-                                                            <div className="flex gap-2">
-                                                                <Dropdown.Button
-                                                                    type="primary"
-                                                                    size="default"
-                                                                    droplist={droplist}
-                                                                    trigger={["click"]}
-                                                                    buttonProps={{
-                                                                        onClick: () =>
-                                                                            window.open(
-                                                                                `/tournaments/${tournamentId}/registrations/${rec.registration_id}/edit${location.search}`,
-                                                                                "_blank",
-                                                                            ),
-                                                                    }}
-                                                                >
-                                                                    Edit
-                                                                </Dropdown.Button>
-                                                            </div>
-                                                        );
-                                                    },
-                                                },
-                                            ];
-                                            return (
-                                                <TabPane key={br.name} title={`${br.name} (${br.min_age}-${br.max_age})`}>
-                                                    <div className="participants-mobile-cards">
-                                                        {rowsForBracket
-                                                            .slice(
-                                                                (currentPage - 1) * PAGE_SIZE_TEAM,
-                                                                currentPage * PAGE_SIZE_TEAM,
-                                                            )
-                                                            .map((record) => (
-                                                                <Card
-                                                                    key={record.id}
-                                                                    className="participants-mobile-card"
-                                                                    bordered
-                                                                >
-                                                                    <div className="participants-mobile-card__header">
-                                                                        <div>
-                                                                            <span className="participants-mobile-card__label">
-                                                                                Team
-                                                                            </span>
-                                                                            <strong>{record.name}</strong>
-                                                                        </div>
-                                                                        <Tag color="arcoblue">{record.team_age ?? "—"}</Tag>
-                                                                    </div>
-                                                                    <p>
-                                                                        Leader: {formatTeamLeaderId(record.leader_id, evt.type)}
-                                                                    </p>
-                                                                    <p>
-                                                                        Members:{" "}
-                                                                        {record.members
-                                                                            .map(
-                                                                                (member) =>
-                                                                                    combinedNameMap[member.global_id] ??
-                                                                                    member.global_id,
-                                                                            )
-                                                                            .join(", ") || "—"}
-                                                                    </p>
-                                                                    <Button
-                                                                        type="primary"
-                                                                        className="mobile-full-width-button"
-                                                                        onClick={() =>
-                                                                            window.open(
-                                                                                `/tournaments/${tournamentId}/registrations/${record.registrationId}/edit${location.search}`,
-                                                                                "_blank",
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        Edit Team
-                                                                    </Button>
-                                                                </Card>
-                                                            ))}
-                                                    </div>
-                                                    {rowsForBracket.length > PAGE_SIZE_TEAM ? (
-                                                        <Pagination
-                                                            current={currentPage}
-                                                            pageSize={PAGE_SIZE_TEAM}
-                                                            total={rowsForBracket.length}
-                                                            onChange={setCurrentPage}
-                                                        />
-                                                    ) : null}
-                                                    <div className="mobile-table-scroll">
-                                                        <Table
-                                                            style={{width: "100%"}}
-                                                            columns={teamColumns}
-                                                            data={rowsForBracket}
-                                                            pagination={{
-                                                                pageSize: PAGE_SIZE_TEAM,
-                                                                current: currentPage,
-                                                                showTotal: true,
-                                                            }}
-                                                            loading={loading}
-                                                            rowKey={(rec) => `${rec.id}`}
-                                                            pagePosition="bottomCenter"
-                                                            onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
-                                                        />
-                                                    </div>
-                                                </TabPane>
-                                            );
-                                        }
-                                        const individualRows = regs.filter((r) => r.age >= br.min_age && r.age <= br.max_age);
-                                        return (
-                                            <TabPane key={br.name} title={`${br.name} (${br.min_age}-${br.max_age})`}>
-                                                <div className="participants-mobile-cards">
-                                                    {individualRows
-                                                        .slice(
-                                                            (currentPage - 1) * PAGE_SIZE_INDIVIDUAL,
-                                                            currentPage * PAGE_SIZE_INDIVIDUAL,
-                                                        )
-                                                        .map((record) => (
-                                                            <Card
-                                                                key={record.id ?? record.user_id}
-                                                                className="participants-mobile-card"
-                                                                bordered
-                                                            >
-                                                                <div className="participants-mobile-card__header">
-                                                                    <div>
-                                                                        <span className="participants-mobile-card__label">
-                                                                            Participant
-                                                                        </span>
-                                                                        <strong>{record.user_name}</strong>
-                                                                    </div>
-                                                                    <Tag color="arcoblue">Age {record.age}</Tag>
-                                                                </div>
-                                                                <p>{record.user_global_id}</p>
-                                                                <p>{record.phone_number || "No phone number"}</p>
-                                                                <Button
-                                                                    type="primary"
-                                                                    className="mobile-full-width-button"
-                                                                    onClick={() =>
-                                                                        window.open(
-                                                                            `/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`,
-                                                                            "_blank",
-                                                                        )
-                                                                    }
-                                                                >
-                                                                    Edit Participant
-                                                                </Button>
-                                                            </Card>
-                                                        ))}
-                                                </div>
-                                                {individualRows.length > PAGE_SIZE_INDIVIDUAL ? (
-                                                    <Pagination
-                                                        current={currentPage}
-                                                        pageSize={PAGE_SIZE_INDIVIDUAL}
-                                                        total={individualRows.length}
-                                                        onChange={setCurrentPage}
-                                                    />
-                                                ) : null}
-                                                <div className="mobile-table-scroll">
-                                                    <Table
-                                                        style={{width: "100%"}}
-                                                        columns={individualColumns}
-                                                        data={individualRows}
-                                                        pagination={{
-                                                            pageSize: PAGE_SIZE_INDIVIDUAL,
-                                                            current: currentPage,
-                                                            showTotal: true,
-                                                        }}
-                                                        loading={loading}
-                                                        rowKey={(r) => r.id ?? r.user_id ?? nanoid()}
-                                                        pagePosition="bottomCenter"
-                                                        onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
-                                                    />
-                                                </div>
-                                            </TabPane>
-                                        );
-                                    })}
-                                </ResponsiveTabs>
-                            </TabPane>
-                        );
-                    })}
-                </ResponsiveTabs>
-            </div>
+    const exportMenu = (
+        <div className="participant-list-action-menu participant-list-export-menu">
+            <Button type="text" loading={loading} className="participant-list-menu-item" onClick={handlePreviewAllBrackets}>
+                All Event Name List
+            </Button>
+            <Button type="text" loading={loading} className="participant-list-menu-item" onClick={handlePreviewCurrentEvent}>
+                Current Event Name List
+            </Button>
+            <Button type="text" loading={loading} className="participant-list-menu-item" onClick={handlePreviewMasterList}>
+                Master List
+            </Button>
+            <Button type="text" loading={loading} className="participant-list-menu-item" onClick={handleExportNameListSticker}>
+                Name List Sticker
+            </Button>
+            <Button type="text" loading={loading} className="participant-list-menu-item" onClick={handleLargeNameListSticker}>
+                Large Name List Sticker
+            </Button>
+            <Button type="text" loading={loading} className="participant-list-menu-item" onClick={handlePrintAllTimeSheets}>
+                Time Sheet
+            </Button>
+            <Button type="text" loading={loading} className="participant-list-menu-item" onClick={handlePrepareTeamNameUpdate}>
+                Update Team Name
+            </Button>
         </div>
+    );
+
+    return (
+        <>
+            <div className="participant-list-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+            <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                <div className="participant-list-header w-full">
+                    <div className="participant-list-back-row">
+                        <Button
+                            className="participant-list-back-button"
+                            type="outline"
+                            icon={<IconArrowLeft />}
+                            onClick={() => navigate("/tournaments")}
+                        >
+                            Go Back
+                        </Button>
+                    </div>
+                    <MobilePageHeader title={`${tournament.name} Participants`} className="participant-list-title-header" />
+                    <div className="participant-list-toolbar">
+                        <div className="participant-list-filter participant-list-search-field">
+                            <span className="participant-list-filter-label">Search</span>
+                            <Input.Search
+                                placeholder="Search by name or ID"
+                                allowClear
+                                className="participant-list-search"
+                                value={searchTerm}
+                                onChange={(val) => {
+                                    setSearchTerm(val);
+                                    setCurrentPage(1);
+                                }}
+                            />
+                        </div>
+                        <Dropdown droplist={exportMenu} trigger={["click"]}>
+                            <Button type="primary" loading={loading} className="participant-list-export-button">
+                                <span className="participant-list-button-content">
+                                    Export / Print
+                                    <IconDown />
+                                </span>
+                            </Button>
+                        </Dropdown>
+                    </div>
+                    <ResponsiveTabs
+                        type="line"
+                        destroyOnHide
+                        className="participant-list-event-tabs"
+                        activeTab={currentEventTab}
+                        onChange={handleEventSelect}
+                    >
+                        {sortedEvents.map((event) => {
+                            const eventKey = event.id ?? event.type;
+                            return <TabPane key={eventKey} title={getEventLabel(event)} />;
+                        })}
+                    </ResponsiveTabs>
+                    <ResponsiveTabs
+                        type="capsule"
+                        tabPosition="top"
+                        destroyOnHide
+                        className="participant-list-bracket-tabs"
+                        activeTab={currentBracketTab}
+                        onChange={handleBracketSelect}
+                    >
+                        {currentEvent?.age_brackets.map((bracket) => (
+                            <TabPane key={bracket.name} title={`${bracket.name} (${bracket.min_age}-${bracket.max_age})`} />
+                        ))}
+                    </ResponsiveTabs>
+                </div>
+
+                <div className="participant-list-content w-full">
+                    {currentEvent && currentBracket ? (
+                        currentEventIsTeam ? (
+                            <>
+                                <div className="participants-mobile-cards">
+                                    {rowsForBracket
+                                        .slice((currentPage - 1) * PAGE_SIZE_TEAM, currentPage * PAGE_SIZE_TEAM)
+                                        .map((record) => (
+                                            <Card key={record.id} className="participants-mobile-card" bordered>
+                                                <div className="participants-mobile-card__header">
+                                                    <div>
+                                                        <span className="participants-mobile-card__label">Team</span>
+                                                        <strong>{record.name}</strong>
+                                                    </div>
+                                                    <Tag color="arcoblue">{record.team_age ?? "—"}</Tag>
+                                                </div>
+                                                <p>Leader: {formatTeamLeaderId(record.leader_id, currentEvent.type)}</p>
+                                                <p>
+                                                    Members:{" "}
+                                                    {record.members
+                                                        .map((member) => combinedNameMap[member.global_id] ?? member.global_id)
+                                                        .join(", ") || "—"}
+                                                </p>
+                                                <div className="participant-list-mobile-actions">
+                                                    {renderActionsButton(
+                                                        <div className="participant-list-action-menu">
+                                                            <Button
+                                                                type="text"
+                                                                className="participant-list-menu-item"
+                                                                loading={loading}
+                                                                onClick={() =>
+                                                                    window.open(
+                                                                        `/tournaments/${tournamentId}/registrations/${getTeamRegistrationId(record)}/edit${location.search}`,
+                                                                        "_blank",
+                                                                    )
+                                                                }
+                                                            >
+                                                                Edit Team
+                                                            </Button>
+                                                            <Button
+                                                                type="text"
+                                                                className="participant-list-menu-item"
+                                                                loading={loading}
+                                                                onClick={() =>
+                                                                    handlePrintMemberList(record, currentEventKey, currentBracket)
+                                                                }
+                                                            >
+                                                                Print Member List
+                                                            </Button>
+                                                            <Button
+                                                                type="text"
+                                                                className="participant-list-menu-item"
+                                                                loading={loading}
+                                                                onClick={() =>
+                                                                    handlePrintTeamTimeSheet(record, currentEvent, currentBracket)
+                                                                }
+                                                            >
+                                                                Team Time Sheet
+                                                            </Button>
+                                                        </div>,
+                                                    )}
+                                                </div>
+                                            </Card>
+                                        ))}
+                                </div>
+                                <div className="participant-list-mobile-pagination">
+                                    {rowsForBracket.length > PAGE_SIZE_TEAM ? (
+                                        <Pagination
+                                            current={currentPage}
+                                            pageSize={PAGE_SIZE_TEAM}
+                                            total={rowsForBracket.length}
+                                            onChange={setCurrentPage}
+                                        />
+                                    ) : null}
+                                </div>
+                                <div className="mobile-table-scroll">
+                                    <Table
+                                        style={{width: "100%"}}
+                                        columns={teamColumns}
+                                        data={rowsForBracket}
+                                        pagination={{
+                                            pageSize: PAGE_SIZE_TEAM,
+                                            current: currentPage,
+                                            showTotal: true,
+                                        }}
+                                        loading={loading}
+                                        rowKey={(record) => `${record.id}`}
+                                        pagePosition="bottomCenter"
+                                        onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
+                                    />
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="participants-mobile-cards">
+                                    {individualRows
+                                        .slice((currentPage - 1) * PAGE_SIZE_INDIVIDUAL, currentPage * PAGE_SIZE_INDIVIDUAL)
+                                        .map((record) => (
+                                            <Card key={record.id ?? record.user_id} className="participants-mobile-card" bordered>
+                                                <div className="participants-mobile-card__header">
+                                                    <div>
+                                                        <span className="participants-mobile-card__label">Participant</span>
+                                                        <strong>{record.user_name}</strong>
+                                                    </div>
+                                                    <Tag color="arcoblue">Age {record.age}</Tag>
+                                                </div>
+                                                <p>{record.user_global_id}</p>
+                                                <p>{record.phone_number || "No phone number"}</p>
+                                                <div className="participant-list-mobile-actions">
+                                                    {renderActionsButton(
+                                                        <div className="participant-list-action-menu">
+                                                            <Button
+                                                                type="text"
+                                                                className="participant-list-menu-item"
+                                                                loading={loading}
+                                                                onClick={() =>
+                                                                    window.open(
+                                                                        `/tournaments/${tournamentId}/registrations/${record.id}/edit`,
+                                                                        "_blank",
+                                                                    )
+                                                                }
+                                                            >
+                                                                Edit Participant
+                                                            </Button>
+                                                            <Button
+                                                                type="text"
+                                                                className="participant-list-menu-item"
+                                                                loading={loading}
+                                                                disabled={isStackOutChampionEvent(currentEvent)}
+                                                                onClick={() =>
+                                                                    handlePrintParticipantTimeSheet(
+                                                                        record,
+                                                                        currentEvent,
+                                                                        currentBracket,
+                                                                    )
+                                                                }
+                                                            >
+                                                                {isStackOutChampionEvent(currentEvent)
+                                                                    ? "Time Sheet Not Required"
+                                                                    : "Print Time Sheet"}
+                                                            </Button>
+                                                        </div>,
+                                                    )}
+                                                </div>
+                                            </Card>
+                                        ))}
+                                </div>
+                                <div className="participant-list-mobile-pagination">
+                                    {individualRows.length > PAGE_SIZE_INDIVIDUAL ? (
+                                        <Pagination
+                                            current={currentPage}
+                                            pageSize={PAGE_SIZE_INDIVIDUAL}
+                                            total={individualRows.length}
+                                            onChange={setCurrentPage}
+                                        />
+                                    ) : null}
+                                </div>
+                                <div className="mobile-table-scroll">
+                                    <Table
+                                        style={{width: "100%"}}
+                                        columns={individualColumns}
+                                        data={individualRows}
+                                        pagination={{
+                                            pageSize: PAGE_SIZE_INDIVIDUAL,
+                                            current: currentPage,
+                                            showTotal: true,
+                                        }}
+                                        loading={loading}
+                                        rowKey={(record) => record.id ?? record.user_id ?? nanoid()}
+                                        pagePosition="bottomCenter"
+                                        onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
+                                    />
+                                </div>
+                            </>
+                        )
+                    ) : (
+                        <div className="participant-list-empty-state">No event or age group is available.</div>
+                    )}
+                </div>
+            </div>
+            </div>
+            <TeamNameUpdatePreviewModal
+                preview={teamNamePreview}
+                visible={teamNamePreviewVisible}
+                confirmLoading={teamNameConfirmLoading}
+                onCancel={() => {
+                    if (!teamNameConfirmLoading) {
+                        setTeamNamePreviewVisible(false);
+                        setTeamNamePreview(null);
+                    }
+                }}
+                onConfirm={handleConfirmTeamNameUpdate}
+            />
+        </>
     );
 }
