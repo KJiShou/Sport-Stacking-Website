@@ -1,10 +1,17 @@
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
-import {getCountryFlag} from "@/utils/countryFlags";
+import {
+    CountryFlag,
+    MobileFilterDrawer,
+    MobileFilterTrigger,
+    MobilePageHeader,
+    MobileRankingTable,
+    ResponsiveOverlay,
+    ResponsiveTabs,
+} from "@/components/responsive";
 import {formatGenderLabel} from "@/utils/genderLabel";
 import {
     Button,
-    Card,
     DatePicker,
     Divider,
     Dropdown,
@@ -15,6 +22,7 @@ import {
     Menu,
     Message,
     Modal,
+    Pagination,
     Select,
     Space,
     Spin,
@@ -24,9 +32,9 @@ import {
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import {IconDelete, IconEdit, IconEye, IconMore, IconVideoCamera} from "@arco-design/web-react/icon";
+import {IconDelete, IconEye, IconFilter, IconVideoCamera} from "@arco-design/web-react/icon";
 import type React from "react";
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useAuthContext} from "../../context/AuthContext";
 import type {GlobalResult, GlobalTeamResult, RecordDisplay} from "../../schema/RecordSchema";
 
@@ -56,6 +64,73 @@ type AgeGroup = string;
 // Match the service types
 type Category = "Individual" | "Double" | "Parent & Child" | "Team Relay" | "Special Need";
 type EventTypeKey = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
+
+const createRecordsMobileNameRenderer = (isTeamCategory: boolean) => (record: RecordDisplay) =>
+    !isTeamCategory && record.participantId ? (
+        <Link href={`/athletes/${record.participantId}`} hoverable={false} onClick={(event) => event.stopPropagation()}>
+            {record.athlete}
+        </Link>
+    ) : (
+        record.athlete
+    );
+
+interface RecordsMobileDetailsProps {
+    record: RecordDisplay;
+    isTeamCategory: boolean;
+    isAdmin: boolean;
+    onTimeClick: (record: RecordDisplay) => void;
+    onToggleVerification: (record: RecordDisplay) => void | Promise<void>;
+    onEditVideo: (record: RecordDisplay) => void;
+    onDeleteRecord: (record: RecordDisplay) => void | Promise<void>;
+}
+
+const RecordsMobileDetails = ({
+    record,
+    isTeamCategory,
+    isAdmin,
+    onTimeClick,
+    onToggleVerification,
+    onEditVideo,
+    onDeleteRecord,
+}: RecordsMobileDetailsProps) => (
+    <div className="records-mobile-card__details">
+        <span>
+            <CountryFlag country={record.country} size="md" /> {record.country || "Unknown"}
+        </span>
+        <span>{record.ageGroup}</span>
+        <span>{formatGenderLabel(record.gender)}</span>
+        <span>{record.date}</span>
+        <span>{record.tournament_name || "N/A"}</span>
+        <Tag color={record.status === "verified" ? "green" : "orange"}>
+            {record.status === "verified" ? "Verified" : "Submitted"}
+        </Tag>
+        {isTeamCategory && record.members && record.members.length > 0 ? (
+            <span className="records-mobile-card__members">Members: {record.members.join(", ")}</span>
+        ) : null}
+        {record.videoUrl && (record.status === "verified" || isAdmin) ? (
+            <Button type="text" onClick={() => onTimeClick(record)}>
+                View video <IconVideoCamera />
+            </Button>
+        ) : null}
+        {isAdmin ? (
+            <div className="records-mobile-card__actions">
+                <Button type="secondary" onClick={() => onToggleVerification(record)}>
+                    {record.status === "verified" ? "Unverify" : "Verify"}
+                </Button>
+                <Button type="secondary" onClick={() => onEditVideo(record)}>
+                    {record.videoUrl ? "Edit Video" : "Add Video"}
+                </Button>
+                <Button status="danger" onClick={() => onDeleteRecord(record)}>
+                    Delete
+                </Button>
+            </div>
+        ) : null}
+    </div>
+);
+
+const createRecordsMobileDetailsRenderer = (props: Omit<RecordsMobileDetailsProps, "record">) => (record: RecordDisplay) => (
+    <RecordsMobileDetails {...props} record={record} />
+);
 
 // Map UI tab keys -> display category labels
 const CATEGORY_MAP: Record<RecordCategory, Category> = {
@@ -108,6 +183,13 @@ const formatDate = (dateString: string): string => {
     if (!dateString) return "N/A";
     const date = new Date(dateString);
     return date.toLocaleDateString("en-GB");
+};
+
+const parseDisplayDate = (value: string): Date | null => {
+    const [day, month, year] = value.split("/").map(Number);
+    if (!day || !month || !year) return null;
+    const parsed = new Date(year, month - 1, day);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const INDIVIDUAL_AGE_GROUPS: AgeGroup[] = [
@@ -223,6 +305,11 @@ const RecordsIndex: React.FC = () => {
         current: 1,
         pageSize: 20,
     });
+    const [mobileFiltersVisible, setMobileFiltersVisible] = useState(false);
+    const mobileFilterTriggerRef = useRef<HTMLButtonElement>(null);
+    const [mobileCardPage, setMobileCardPage] = useState(1);
+    const [draftAgeGroup, setDraftAgeGroup] = useState<AgeGroup>("Overall");
+    const [draftDateRange, setDraftDateRange] = useState<[Date | undefined, Date | undefined]>([undefined, undefined]);
 
     // Admin modal states
     const [selectedRecord, setSelectedRecord] = useState<RecordDisplay | null>(null);
@@ -230,7 +317,7 @@ const RecordsIndex: React.FC = () => {
     const [videoForm] = Form.useForm();
 
     const deviceBreakpoint = useDeviceBreakpoint();
-    const isMobileView = deviceBreakpoint <= DeviceBreakpoint.sm;
+    const isMobileView = deviceBreakpoint < DeviceBreakpoint.md;
 
     // Check if user has admin permissions
     const isAdmin = user?.roles?.verify_record || user?.roles?.edit_tournament || false;
@@ -342,7 +429,35 @@ const RecordsIndex: React.FC = () => {
         }
     };
 
-    const getTableColumns = (isTeamCategory: boolean, deviceBreakpoint: number) => {
+    const getTableColumns = (isTeamCategory: boolean) => {
+        const memberColumn: TableColumnProps<RecordDisplay> = {
+            title: "Members",
+            dataIndex: "members",
+            key: "members",
+            width: 240,
+            render: (_: unknown, record: RecordDisplay) => {
+                const combined: string[] = [...(record.leaderId ? [record.leaderId] : []), ...(record.members ?? [])];
+                return (
+                    <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
+                        {combined.map((memberId) => (
+                            <Link
+                                key={memberId}
+                                href={`/athletes/${memberId}`}
+                                style={{
+                                    display: "inline-block",
+                                }}
+                            >
+                                <Tag color="arcoblue" style={{margin: 0}}>
+                                    {memberId}
+                                </Tag>
+                            </Link>
+                        ))}
+                        {combined.length === 0 ? <Text style={{color: "#999"}}>—</Text> : null}
+                    </div>
+                );
+            },
+        };
+
         const cols: TableColumnProps<RecordDisplay>[] = [
             {
                 title: "Rank",
@@ -358,7 +473,11 @@ const RecordsIndex: React.FC = () => {
                     const hasParticipantId = record.participantId ? record.participantId.length > 0 : false;
                     if (!isTeamCategory && hasParticipantId) {
                         return (
-                            <Link href={`/athletes/${record.participantId}`} hoverable={false}>
+                            <Link
+                                href={`/athletes/${record.participantId}`}
+                                hoverable={false}
+                                onClick={(event) => event.stopPropagation()}
+                            >
                                 {record.athlete}
                             </Link>
                         );
@@ -366,162 +485,117 @@ const RecordsIndex: React.FC = () => {
                     return <span>{record.athlete}</span>;
                 },
             },
-        ];
-
-        if (isTeamCategory) {
-            cols.push({
-                title: "Members",
-                dataIndex: "members",
-                key: "members",
-                width: 240,
-                render: (_: unknown, record: RecordDisplay & {members?: string[]; leaderId?: string}) => {
-                    const combined: string[] = [
-                        ...(record.leaderId ? [`${record.leaderId}`] : []),
-                        ...((record.members ?? []) as string[]),
-                    ];
-                    return (
-                        <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
-                            {combined.map((memberId) => (
-                                <Link
-                                    key={memberId}
-                                    href={`/athletes/${memberId}`}
-                                    style={{
-                                        display: "inline-block",
-                                    }}
-                                >
-                                    <Tag color={"arcoblue"} style={{margin: 0}}>
-                                        {memberId}
-                                    </Tag>
-                                </Link>
-                            ))}
-                            {combined.length === 0 ? <Text style={{color: "#999"}}>—</Text> : null}
-                        </div>
-                    );
-                },
-            });
-        }
-
-        cols.push({
-            title: "Time",
-            dataIndex: "time",
-            width: 120,
-            render: (_: unknown, record: RecordDisplay) => (
-                <Text
-                    style={{
-                        fontWeight: "bold",
-                        color: record.rank === 1 ? "#52c41a" : "#1890ff",
-                        cursor: record.videoUrl && (record.status === "verified" || isAdmin) ? "pointer" : "default",
-                        textDecoration: record.videoUrl && (record.status === "verified" || isAdmin) ? "underline" : "none",
-                    }}
-                    onClick={() => handleTimeClick(record)}
-                >
-                    {record.time}
-                    {record.videoUrl && <IconVideoCamera style={{marginLeft: "4px", fontSize: "12px"}} />}
-                </Text>
-            ),
-        });
-
-        // Status column - always visible
-        if (deviceBreakpoint > DeviceBreakpoint.md) {
-            cols.push({
+            ...(isTeamCategory ? [memberColumn] : []),
+            {
+                title: "Time",
+                dataIndex: "time",
+                width: 120,
+                render: (_: unknown, record: RecordDisplay) => (
+                    <Text
+                        style={{
+                            fontWeight: "bold",
+                            color: record.rank === 1 ? "#52c41a" : "#1890ff",
+                            cursor: record.videoUrl && (record.status === "verified" || isAdmin) ? "pointer" : "default",
+                            textDecoration: record.videoUrl && (record.status === "verified" || isAdmin) ? "underline" : "none",
+                        }}
+                        onClick={() => handleTimeClick(record)}
+                    >
+                        {record.time}
+                        {record.videoUrl && <IconVideoCamera style={{marginLeft: "4px", fontSize: "13px"}} />}
+                    </Text>
+                ),
+            },
+            {
                 title: "Status",
                 dataIndex: "status",
-                width: 100,
+                width: 110,
                 render: (_: unknown, record: RecordDisplay) => (
                     <Tag color={record.status === "verified" ? "green" : "orange"}>
                         {record.status === "verified" ? "Verified" : "Submitted"}
                     </Tag>
                 ),
-            });
-        }
+            },
+            {
+                title: "Country",
+                dataIndex: "country",
+                width: 160,
+                render: (country: string) => (
+                    <Space size={6} align="center">
+                        <CountryFlag country={country} size="sm" />
+                        <span>{country || "Unknown"}</span>
+                    </Space>
+                ),
+            },
+            {
+                title: "Tournament",
+                dataIndex: "tournament_name",
+                width: 180,
+                render: (_: unknown, record: RecordDisplay) => {
+                    if (!record.tournamentId) {
+                        return <Text style={{fontSize: "13px", color: "#666"}}>{record.tournament_name || "N/A"}</Text>;
+                    }
 
-        // less important columns – only show when screen > md
-        if (deviceBreakpoint > DeviceBreakpoint.md) {
-            cols.push(
-                {
-                    title: "Country",
-                    dataIndex: "country",
-                    width: 160,
-                    render: (country: string) => {
-                        const flagUrl = getCountryFlag(country);
-                        return (
-                            <Space size={6} align="center">
-                                {flagUrl && <img src={flagUrl} alt={`${country} flag`} style={{width: 20, height: 15}} />}
-                                <span>{country || "Unknown"}</span>
-                            </Space>
-                        );
-                    },
+                    return (
+                        <Link href={`/tournaments/${record.tournamentId}/view`} hoverable={false}>
+                            {record.tournament_name || record.tournamentId}
+                        </Link>
+                    );
                 },
-                {
-                    title: "Tournament",
-                    dataIndex: "tournament_name",
-                    width: 180,
-                    render: (_: unknown, record: RecordDisplay) => {
-                        if (!record.tournamentId) {
-                            return <Text style={{fontSize: "12px", color: "#666"}}>{record.tournament_name || "N/A"}</Text>;
-                        }
-
-                        return (
-                            <Link href={`/tournaments/${record.tournamentId}/view`} hoverable={false}>
-                                {record.tournament_name || record.tournamentId}
-                            </Link>
-                        );
-                    },
-                },
-                {
-                    title: "Age",
-                    dataIndex: "age",
-                    width: 120,
-                    render: (_: unknown, record: RecordDisplay) => (record.age ? record.age : "—"),
-                },
-                {
-                    title: "Gender",
-                    dataIndex: "gender",
-                    width: 100,
-                    render: (gender: string) => formatGenderLabel(gender),
-                },
-                {
-                    title: "Date",
-                    dataIndex: "date",
-                    width: 120,
-                    render: (_: unknown, record: RecordDisplay) => (
-                        <Text style={{fontSize: "12px", color: "#666"}}>{record.date}</Text>
-                    ),
-                },
-            );
-        }
-
-        // Admin column — keep it last
-        if (isAdmin && deviceBreakpoint > DeviceBreakpoint.md) {
-            cols.push({
-                title: "Actions",
-                key: "actions",
+            },
+            {
+                title: "Age",
+                dataIndex: "age",
+                width: 120,
+                render: (_: unknown, record: RecordDisplay) => (record.age ? record.age : "—"),
+            },
+            {
+                title: "Gender",
+                dataIndex: "gender",
+                width: 100,
+                render: (gender: string) => formatGenderLabel(gender),
+            },
+            {
+                title: "Date",
+                dataIndex: "date",
                 width: 120,
                 render: (_: unknown, record: RecordDisplay) => (
-                    <Dropdown.Button
-                        type="primary"
-                        size="mini"
-                        trigger={["click"]}
-                        onClick={() => handleToggleVerification(record)}
-                        droplist={
-                            <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg">
-                                <Button type="text" onClick={() => handleEditVideo(record)}>
-                                    <IconVideoCamera style={{marginRight: "8px"}} />
-                                    {record.videoUrl ? "Edit Video" : "Add Video"}
-                                </Button>
-                                <Button type="text" status="danger" onClick={() => handleDeleteRecord(record)}>
-                                    <IconDelete style={{marginRight: "8px"}} />
-                                    Delete
-                                </Button>
-                            </div>
-                        }
-                    >
-                        <IconEye style={{marginRight: "4px"}} />
-                        {record.status === "verified" ? "Unverify" : "Verify"}
-                    </Dropdown.Button>
+                    <Text style={{fontSize: "13px", color: "#666"}}>{record.date}</Text>
                 ),
-            });
-        }
+            },
+            ...(isAdmin
+                ? [
+                      {
+                          title: "Actions",
+                          key: "actions",
+                          width: 160,
+                          render: (_: unknown, record: RecordDisplay) => (
+                              <Dropdown.Button
+                                  className="records-action-button"
+                                  type="primary"
+                                  size="mini"
+                                  trigger={["click"]}
+                                  onClick={() => handleToggleVerification(record)}
+                                  droplist={
+                                      <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg">
+                                          <Button type="text" onClick={() => handleEditVideo(record)}>
+                                              <IconVideoCamera style={{marginRight: "8px"}} />
+                                              {record.videoUrl ? "Edit Video" : "Add Video"}
+                                          </Button>
+                                          <Button type="text" status="danger" onClick={() => handleDeleteRecord(record)}>
+                                              <IconDelete style={{marginRight: "8px"}} />
+                                              Delete
+                                          </Button>
+                                      </div>
+                                  }
+                              >
+                                  <IconEye style={{marginRight: "4px"}} />
+                                  {record.status === "verified" ? "Unverify" : "Verify"}
+                              </Dropdown.Button>
+                          ),
+                      } satisfies TableColumnProps<RecordDisplay>,
+                  ]
+                : []),
+        ];
 
         return cols;
     };
@@ -534,6 +608,7 @@ const RecordsIndex: React.FC = () => {
 
     useEffect(() => {
         setTablePagination((prev) => ({...prev, current: 1}));
+        setMobileCardPage(1);
     }, [
         activeCategory,
         selectedAgeGroup,
@@ -613,7 +688,6 @@ const RecordsIndex: React.FC = () => {
             const gender = isTeamResult ? "Team" : (record as GlobalResult).gender || "Overall";
 
             const recordDate = record.created_at || new Date().toISOString();
-            const recordDateObj = new Date(recordDate);
             if (formatTime(record.time) !== "DNF") {
                 recordsData.push({
                     key: `${backendCategory}-${selectedEvent}-${index}`,
@@ -646,7 +720,7 @@ const RecordsIndex: React.FC = () => {
         const [startDate, endDate] = dateRange;
         if (startDate || endDate) {
             filteredByDateRecords = recordsData.filter((record) => {
-                const recordDate = record.date ? new Date(record.date) : null;
+                const recordDate = record.date ? parseDisplayDate(record.date) : null;
                 if (!recordDate) return false;
 
                 // Check start date
@@ -684,11 +758,26 @@ const RecordsIndex: React.FC = () => {
         const isTeamCategory =
             backendCategory === "Team Relay" || backendCategory === "Double" || backendCategory === "Parent & Child";
 
+        const mobilePageSize = 20;
+        const mobileStart = (mobileCardPage - 1) * mobilePageSize;
+        const mobileRecords = filteredRecordsData.slice(mobileStart, mobileStart + mobilePageSize);
+        const recordActiveFilterCount = (selectedAgeGroup !== "Overall" ? 1 : 0) + (dateRange.some(Boolean) ? 1 : 0);
+        const recordFilterAriaLabel =
+            recordActiveFilterCount > 0 ? `Open record filters (${recordActiveFilterCount} active)` : "Open record filters";
+        const mobileNameRenderer = createRecordsMobileNameRenderer(isTeamCategory);
+        const mobileDetailsRenderer = createRecordsMobileDetailsRenderer({
+            isTeamCategory,
+            isAdmin,
+            onTimeClick: handleTimeClick,
+            onToggleVerification: handleToggleVerification,
+            onEditVideo: handleEditVideo,
+            onDeleteRecord: handleDeleteRecord,
+        });
         return (
             <div>
                 {/* Event Tabs - show for all categories */}
                 <div style={{marginBottom: "24px"}}>
-                    <Tabs
+                    <ResponsiveTabs
                         type="rounded"
                         activeTab={selectedEvent}
                         onChange={(key) => setSelectedEventForCategory(category, key as EventTypeKey)}
@@ -697,7 +786,7 @@ const RecordsIndex: React.FC = () => {
                         {availableEvents.map((event) => (
                             <TabPane key={event} title={event} />
                         ))}
-                    </Tabs>
+                    </ResponsiveTabs>
 
                     <div
                         style={{
@@ -719,6 +808,7 @@ const RecordsIndex: React.FC = () => {
                         </div>
 
                         <div
+                            className="records-filter-row mobile-search-filter-row"
                             style={{
                                 display: "flex",
                                 flexDirection: isMobileView ? "column" : "row",
@@ -728,6 +818,7 @@ const RecordsIndex: React.FC = () => {
                             }}
                         >
                             <Input.Search
+                                className="records-search"
                                 placeholder="Search athlete/team/tournament..."
                                 value={searchQuery}
                                 onChange={setSearchQuery}
@@ -735,6 +826,7 @@ const RecordsIndex: React.FC = () => {
                                 style={{width: isMobileView ? "100%" : 240}}
                             />
                             <div
+                                className="records-filter-inline-desktop"
                                 style={{
                                     display: "flex",
                                     flexDirection: isMobileView ? "column" : "row",
@@ -770,6 +862,7 @@ const RecordsIndex: React.FC = () => {
                                 />
                             </div>
                             <div
+                                className="records-filter-inline-desktop"
                                 style={{
                                     display: "flex",
                                     flexDirection: isMobileView ? "column" : "row",
@@ -792,6 +885,18 @@ const RecordsIndex: React.FC = () => {
                                     ))}
                                 </Select>
                             </div>
+                            <MobileFilterTrigger
+                                icon={<IconFilter />}
+                                ref={mobileFilterTriggerRef}
+                                ariaExpanded={mobileFiltersVisible}
+                                activeCount={recordActiveFilterCount}
+                                ariaLabel={recordFilterAriaLabel}
+                                onClick={() => {
+                                    setDraftAgeGroup(selectedAgeGroup);
+                                    setDraftDateRange(dateRange);
+                                    setMobileFiltersVisible(true);
+                                }}
+                            />
                         </div>
                     </div>
                 </div>
@@ -808,27 +913,50 @@ const RecordsIndex: React.FC = () => {
                         />
                     </div>
                 ) : (
-                    <Table
-                        columns={getTableColumns(isTeamCategory, deviceBreakpoint)}
-                        data={filteredRecordsData}
-                        pagination={{
-                            ...tablePagination,
-                            showTotal: true,
-                            showJumper: true,
-                            sizeCanChange: true,
-                        }}
-                        onChange={(pagination) =>
-                            setTablePagination((prev) => ({
-                                current: pagination.current ?? prev.current,
-                                pageSize: pagination.pageSize ?? prev.pageSize,
-                            }))
-                        }
-                        size="default"
-                        stripe
-                        hover
-                        style={{backgroundColor: "white"}}
-                        rowClassName={(_, index) => (index % 2 === 0 ? "even-row" : "odd-row")}
-                    />
+                    <>
+                        <div className="records-mobile-ranking-table">
+                            <MobileRankingTable
+                                data={mobileRecords}
+                                rowKey={(record) => record.recordId ?? `${record.athlete}-${record.rank}`}
+                                rank={(record) => record.rank}
+                                name={mobileNameRenderer}
+                                result={(record) => record.time}
+                                details={mobileDetailsRenderer}
+                                pagination={
+                                    <Pagination
+                                        current={mobileCardPage}
+                                        pageSize={mobilePageSize}
+                                        total={filteredRecordsData.length}
+                                        hideOnSinglePage
+                                        onChange={setMobileCardPage}
+                                    />
+                                }
+                            />
+                        </div>
+                        <div className="records-table-scroll mobile-table-scroll">
+                            <Table
+                                columns={getTableColumns(isTeamCategory)}
+                                data={filteredRecordsData}
+                                pagination={{
+                                    ...tablePagination,
+                                    showTotal: true,
+                                    showJumper: true,
+                                    sizeCanChange: true,
+                                }}
+                                onChange={(pagination) =>
+                                    setTablePagination((prev) => ({
+                                        current: pagination.current ?? prev.current,
+                                        pageSize: pagination.pageSize ?? prev.pageSize,
+                                    }))
+                                }
+                                size="default"
+                                stripe
+                                hover
+                                style={{backgroundColor: "white"}}
+                                rowClassName={(_, index) => (index % 2 === 0 ? "even-row" : "odd-row")}
+                            />
+                        </div>
+                    </>
                 )}
             </div>
         );
@@ -853,13 +981,13 @@ const RecordsIndex: React.FC = () => {
     }
 
     return (
-        <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
+        <div className={`records-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
                 <div className={`w-full`}>
                     {/* Records Table */}
-                    <Title style={{fontSize: "32px", marginBottom: "0", textAlign: "center"}}>🏆 Sport Stacking Records</Title>
+                    <MobilePageHeader title="🏆 Sport Stacking Records" />
                     <Divider style={{margin: "16px 0"}} />
-                    <Tabs
+                    <ResponsiveTabs
                         activeTab={activeCategory}
                         onChange={(key) => setActiveCategory(key as RecordCategory)}
                         type="line"
@@ -920,19 +1048,34 @@ const RecordsIndex: React.FC = () => {
                         >
                             {renderCategoryContent("special_need")}
                         </TabPane>
-                    </Tabs>
+                    </ResponsiveTabs>
                 </div>
 
                 {isAdmin && (
-                    <Modal
+                    <ResponsiveOverlay
                         title="Edit Video URL"
                         visible={editVideoModalVisible}
                         onCancel={() => {
                             setEditVideoModalVisible(false);
                             videoForm.resetFields();
                         }}
-                        onOk={handleSaveVideoUrl}
-                        okText="Save"
+                        className="records-edit-modal"
+                        desktopWidth="min(95vw, 560px)"
+                        mobileMode="fullscreen"
+                        footer={[
+                            <Button
+                                key="cancel"
+                                onClick={() => {
+                                    setEditVideoModalVisible(false);
+                                    videoForm.resetFields();
+                                }}
+                            >
+                                Cancel
+                            </Button>,
+                            <Button key="save" type="primary" onClick={() => void handleSaveVideoUrl()} loading={loading}>
+                                Save
+                            </Button>,
+                        ]}
                     >
                         {selectedRecord && (
                             <div>
@@ -950,9 +1093,63 @@ const RecordsIndex: React.FC = () => {
                                 </Form>
                             </div>
                         )}
-                    </Modal>
+                    </ResponsiveOverlay>
                 )}
             </div>
+            <MobileFilterDrawer
+                visible={mobileFiltersVisible}
+                title="Record filters"
+                activeCount={(draftAgeGroup !== "Overall" ? 1 : 0) + (draftDateRange.some(Boolean) ? 1 : 0)}
+                returnFocusRef={mobileFilterTriggerRef}
+                onCancel={() => setMobileFiltersVisible(false)}
+                onReset={() => {
+                    setDraftAgeGroup("Overall");
+                    setDraftDateRange([undefined, undefined]);
+                }}
+                onApply={() => {
+                    setSelectedAgeGroup(draftAgeGroup);
+                    setDateRange(draftDateRange);
+                    setMobileFiltersVisible(false);
+                }}
+            >
+                <div className="mobile-filter-field">
+                    <span>Age group</span>
+                    <Select
+                        aria-label="Age group"
+                        value={draftAgeGroup}
+                        onChange={(value) => setDraftAgeGroup(value as AgeGroup)}
+                        style={{width: "100%"}}
+                    >
+                        {getAgeGroupOptions(CATEGORY_MAP[activeCategory]).map((ageGroup) => (
+                            <Option key={ageGroup} value={ageGroup}>
+                                {ageGroup}
+                            </Option>
+                        ))}
+                    </Select>
+                </div>
+                <div className="mobile-filter-field">
+                    <span>Date range</span>
+                    <RangePicker
+                        aria-label="Date range"
+                        format="DD/MM/YYYY"
+                        value={draftDateRange as [Date, Date]}
+                        onChange={(dates) => {
+                            if (!dates) {
+                                setDraftDateRange([undefined, undefined]);
+                                return;
+                            }
+                            const start = dates[0] ? new Date(dates[0]) : undefined;
+                            const end = dates[1] ? new Date(dates[1]) : undefined;
+                            start?.setHours(0, 0, 0, 0);
+                            end?.setHours(0, 0, 0, 0);
+                            setDraftDateRange([start, end]);
+                        }}
+                        style={{width: "100%"}}
+                        placeholder={["Start Date", "End Date"]}
+                        allowClear
+                    />
+                </div>
+            </MobileFilterDrawer>
         </div>
     );
 };

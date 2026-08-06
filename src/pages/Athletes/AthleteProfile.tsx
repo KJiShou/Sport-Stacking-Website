@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from "react";
+import {type ReactNode, useEffect, useMemo, useState} from "react";
 import {useParams} from "react-router-dom";
 
 import {
@@ -23,6 +23,9 @@ import {fetchUserByID, getUserByGlobalId} from "@/services/firebase/authService"
 import {fetchTournamentById} from "@/services/firebase/tournamentsService";
 import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatDateSafe, formatStackingTime} from "@/utils/time";
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
+import {CountryFlag, MobilePageHeader} from "@/components/responsive";
 
 const {Title, Text} = Typography;
 
@@ -36,7 +39,7 @@ interface BestTimeRecord {
 
 interface TournamentRecord {
     tournamentId: string;
-    tournamentName?: string;
+    tournamentName: string | null;
     events: string[];
     registrationDate: Date | null;
     status: string;
@@ -47,6 +50,103 @@ interface TournamentRecord {
 }
 
 type RegistrationRecord = NonNullable<FirestoreUser["registration_records"]>[number];
+
+interface BestPerformancesSectionProps {
+    bestTimes: BestTimeRecord[];
+    isMobile: boolean;
+    columns: TableColumnProps<BestTimeRecord>[];
+}
+
+const BestPerformancesSection = ({bestTimes, isMobile, columns}: BestPerformancesSectionProps) => {
+    let content: ReactNode;
+    if (bestTimes.length === 0) {
+        content = <Empty description="No best times recorded yet." />;
+    } else if (isMobile) {
+        content = (
+            <div className="athlete-profile-cards">
+                {bestTimes.map((record) => (
+                    <div key={record.event} className="athlete-profile-card">
+                        <div className="flex items-center justify-between gap-2">
+                            <Text className="font-semibold">{record.event}</Text>
+                            <Tag color="green">{record.rank ? `#${record.rank}` : "Unranked"}</Tag>
+                        </div>
+                        <div className="mt-2 text-xl font-bold">{formatStackingTime(record.time)}</div>
+                        <Text type="secondary">
+                            {record.season ?? "No season"} · Updated {formatDateSafe(record.updatedAt)}
+                        </Text>
+                    </div>
+                ))}
+            </div>
+        );
+    } else {
+        content = (
+            <div className="mobile-table-scroll">
+                <Table rowKey="event" columns={columns} data={bestTimes} pagination={false} scroll={{x: true}} border={false} />
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full">
+            <Title heading={4} className="!mb-4">
+                Best Performances
+            </Title>
+            {content}
+        </div>
+    );
+};
+
+interface TournamentParticipationSectionProps {
+    tournaments: TournamentRecord[];
+    isMobile: boolean;
+    columns: TableColumnProps<TournamentRecord>[];
+}
+
+const TournamentParticipationSection = ({tournaments, isMobile, columns}: TournamentParticipationSectionProps) => {
+    let content: ReactNode;
+    if (tournaments.length === 0) {
+        content = <Empty description="No tournament participation records found." />;
+    } else if (isMobile) {
+        content = (
+            <div className="athlete-profile-cards">
+                {tournaments.map((record) => (
+                    <div key={record.tournamentId} className="athlete-profile-card">
+                        <div className="font-semibold break-words">{record.tournamentName ?? "Unknown tournament"}</div>
+                        <Text type="secondary">{formatDateSafe(record.registrationDate)}</Text>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                            <span>Prelim: {record.prelimRank ? `#${record.prelimRank}` : "—"}</span>
+                            <span>Final: {record.finalRank ? `#${record.finalRank}` : "—"}</span>
+                            <span>Prelim time: {record.prelimOverall ? formatStackingTime(record.prelimOverall) : "—"}</span>
+                            <span>Final time: {record.finalOverall ? formatStackingTime(record.finalOverall) : "—"}</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+    } else {
+        content = (
+            <div className="mobile-table-scroll">
+                <Table
+                    rowKey="tournamentId"
+                    columns={columns}
+                    data={tournaments}
+                    pagination={{pageSize: 10}}
+                    scroll={{x: true}}
+                    border={false}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full">
+            <Title heading={4} className="!mb-4">
+                Tournament Participation
+            </Title>
+            {content}
+        </div>
+    );
+};
 
 const STATUS_COLORS: Record<string, string> = {
     verified: "green",
@@ -78,12 +178,9 @@ const toNumber = (value: unknown): number | null => {
 };
 
 const hasTournamentResult = (record: RegistrationRecord): boolean =>
-    [
-        record.prelim_rank,
-        record.final_rank,
-        record.prelim_overall_result,
-        record.final_overall_result,
-    ].some((value) => toNumber(value) !== null);
+    [record.prelim_rank, record.final_rank, record.prelim_overall_result, record.final_overall_result].some(
+        (value) => toNumber(value) !== null,
+    );
 
 const getBestTimesCount = (user: FirestoreUser | null | undefined): number => {
     if (!user?.best_times) {
@@ -98,10 +195,13 @@ const getBestTimesCount = (user: FirestoreUser | null | undefined): number => {
 
 const AthleteProfilePage = () => {
     const {athleteId} = useParams<{athleteId: string}>();
+    const deviceBreakpoint = useDeviceBreakpoint();
+    const isMobile = deviceBreakpoint < DeviceBreakpoint.md;
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [user, setUser] = useState<FirestoreUser | null>(null);
     const [tournamentStartDates, setTournamentStartDates] = useState<Record<string, Date | null>>({});
+    const [tournamentNames, setTournamentNames] = useState<Record<string, string | null>>({});
     const [rankings, setRankings] = useState<Record<EventType, number | null>>({
         "3-3-3": null,
         "3-6-3": null,
@@ -209,6 +309,7 @@ const AthleteProfilePage = () => {
 
         if (tournamentIds.length === 0) {
             setTournamentStartDates({});
+            setTournamentNames({});
             return;
         }
 
@@ -218,15 +319,22 @@ const AthleteProfilePage = () => {
             tournamentIds.map(async (tournamentId) => {
                 try {
                     const tournament = await fetchTournamentById(tournamentId);
-                    return [tournamentId, toDate(tournament?.start_date)] as const;
+                    return {
+                        tournamentId,
+                        startDate: toDate(tournament?.start_date),
+                        name: tournament?.name?.trim() || null,
+                    };
                 } catch (error) {
                     console.warn(`Failed to fetch tournament ${tournamentId} for athlete profile`, error);
-                    return [tournamentId, null] as const;
+                    return {tournamentId, startDate: null, name: null};
                 }
             }),
         ).then((entries) => {
             if (!cancelled) {
-                setTournamentStartDates(Object.fromEntries(entries));
+                setTournamentStartDates(
+                    Object.fromEntries(entries.map(({tournamentId, startDate}) => [tournamentId, startDate])),
+                );
+                setTournamentNames(Object.fromEntries(entries.map(({tournamentId, name}) => [tournamentId, name])));
             }
         });
 
@@ -262,6 +370,7 @@ const AthleteProfilePage = () => {
             .filter((reg) => reg.status === "approved" && hasTournamentResult(reg))
             .map((reg) => ({
                 tournamentId: reg.tournament_id,
+                tournamentName: tournamentNames[reg.tournament_id] ?? null,
                 events: reg.events ?? [],
                 registrationDate:
                     tournamentStartDates[reg.tournament_id] !== undefined
@@ -273,7 +382,7 @@ const AthleteProfilePage = () => {
                 prelimOverall: toNumber(reg.prelim_overall_result),
                 finalOverall: toNumber(reg.final_overall_result),
             }));
-    }, [user, tournamentStartDates]);
+    }, [tournamentNames, tournamentStartDates, user]);
 
     const bestTimeColumns: TableColumnProps<BestTimeRecord>[] = useMemo(
         () => [
@@ -324,6 +433,12 @@ const AthleteProfilePage = () => {
                 dataIndex: "registrationDate",
                 width: 150,
                 render: (date: Date | null) => formatDateSafe(date),
+            },
+            {
+                title: "Tournament",
+                dataIndex: "tournamentName",
+                width: 260,
+                render: (name: string | null) => name ?? "Unknown tournament",
             },
             {
                 title: "Prelim Rank",
@@ -389,13 +504,12 @@ const AthleteProfilePage = () => {
           })()
         : null;
 
-    const country = Array.isArray(user.country) && user.country.length > 0 ? user.country[0] : (user.country ?? "—");
+    const countryValue = Array.isArray(user.country) ? user.country[0] : user.country;
+    const country = typeof countryValue === "string" && countryValue.trim() ? countryValue : "Unknown";
 
     return (
         <div className="flex flex-col bg-ghostwhite p-4 sm:p-6 xl:p-10 gap-6">
-            <Button type="outline" onClick={() => window.history.back()} className="w-full sm:w-fit pt-2 pb-2 justify-center">
-                <IconUndo /> Go Back
-            </Button>
+            <MobilePageHeader title="Athlete Profile" backTo="/athletes" backLabel="Go Back" />
 
             <div className="bg-white flex flex-col w-full h-fit gap-6 items-start p-4 sm:p-6 md:p-10 shadow-lg rounded-lg">
                 <div className="flex flex-col md:flex-row md:items-start gap-6 md:gap-8 w-full">
@@ -416,7 +530,10 @@ const AthleteProfilePage = () => {
                                 <Text type="secondary" className="text-sm">
                                     Country
                                 </Text>
-                                <Text className="font-semibold text-lg">{country}</Text>
+                                <span className="country-cell">
+                                    <CountryFlag country={country} size="md" />
+                                    <Text className="font-semibold text-lg">{country || "Unknown"}</Text>
+                                </span>
                             </div>
                             <div className="flex flex-col gap-1">
                                 <Text type="secondary" className="text-sm">
@@ -438,43 +555,11 @@ const AthleteProfilePage = () => {
 
                 <Divider style={{margin: 0}} />
 
-                <div className="w-full">
-                    <Title heading={4} className="!mb-4">
-                        Best Performances
-                    </Title>
-                    {bestTimes.length === 0 ? (
-                        <Empty description="No best times recorded yet." />
-                    ) : (
-                        <Table
-                            rowKey="event"
-                            columns={bestTimeColumns}
-                            data={bestTimes}
-                            pagination={false}
-                            scroll={{x: true}}
-                            border={false}
-                        />
-                    )}
-                </div>
+                <BestPerformancesSection bestTimes={bestTimes} isMobile={isMobile} columns={bestTimeColumns} />
 
                 <Divider style={{margin: 0}} />
 
-                <div className="w-full">
-                    <Title heading={4} className="!mb-4">
-                        Tournament Participation
-                    </Title>
-                    {tournaments.length === 0 ? (
-                        <Empty description="No tournament participation records found." />
-                    ) : (
-                        <Table
-                            rowKey="tournamentId"
-                            columns={tournamentColumns}
-                            data={tournaments}
-                            pagination={{pageSize: 10}}
-                            scroll={{x: true}}
-                            border={false}
-                        />
-                    )}
-                </div>
+                <TournamentParticipationSection tournaments={tournaments} isMobile={isMobile} columns={tournamentColumns} />
             </div>
         </div>
     );

@@ -1,8 +1,9 @@
 import type {AgeBracketModalProps} from "@/schema";
 // src/components/tournament/AgeBracketModal.tsx
-import {Button, Form, Input, InputNumber, Modal} from "@arco-design/web-react";
+import {Button, Form, Input, InputNumber} from "@arco-design/web-react";
 import {IconDelete, IconPlus} from "@arco-design/web-react/icon";
 import {useEffect, useState} from "react";
+import {ResponsiveOverlay} from "@/components/responsive";
 
 export default function AgeBracketModal({visible, brackets, onChange, onCancel, onSave, onDeleteBracket}: AgeBracketModalProps) {
     // Ensure each rendered bracket has a stable key across edits to prevent input focus jumps
@@ -25,9 +26,23 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
     };
 
     return (
-        <Modal title="Edit Age Brackets" visible={visible} onCancel={onCancel} onOk={onSave}>
+        <ResponsiveOverlay
+            title="Edit Age Brackets"
+            visible={visible}
+            onCancel={onCancel}
+            mobileMode="fullscreen"
+            desktopWidth="min(95vw, 760px)"
+            footer={[
+                <Button key="cancel" onClick={onCancel}>
+                    Cancel
+                </Button>,
+                <Button key="save" type="primary" onClick={onSave}>
+                    Save
+                </Button>,
+            ]}
+        >
             <Form.List field="age_brackets_modal">
-                {(fields, {add}) => (
+                {() => (
                     <>
                         {brackets.map((bracket, index) => {
                             const bracketKey = (bracket as {_id?: string})._id ?? tempKeys[index] ?? `${index}`;
@@ -35,7 +50,7 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
                             const isMaxError = bracket.max_age === null || bracket.max_age < bracket.min_age;
 
                             return (
-                                <div key={bracketKey} className="flex gap-4 mb-4 w-full">
+                                <div key={bracketKey} className="age-criteria-row flex gap-4 mb-4 w-full">
                                     <Form.Item
                                         label="Bracket Name"
                                         required
@@ -111,6 +126,6 @@ export default function AgeBracketModal({visible, brackets, onChange, onCancel, 
                     </>
                 )}
             </Form.List>
-        </Modal>
+        </ResponsiveOverlay>
     );
 }

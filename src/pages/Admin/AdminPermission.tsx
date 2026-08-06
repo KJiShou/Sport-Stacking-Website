@@ -1,9 +1,8 @@
-import {Button, Form, Input, Message, Modal, Spin, Switch, Table, type TableColumnProps, Tag} from "@arco-design/web-react";
+import {Button, Form, Input, Message, Pagination, Spin, Switch, Table, type TableColumnProps, Tag} from "@arco-design/web-react";
+import {MobilePageHeader, ResponsiveOverlay} from "../../components/responsive";
 import {useEffect, useState} from "react";
 import type {FirestoreUser} from "../../schema";
 import {fetchAllUsers, updateUserProfile, updateUserRoles} from "../../services/firebase/authService";
-import {useDeviceBreakpoint} from "../../utils/DeviceInspector";
-import {DeviceBreakpoint} from "../../utils/DeviceInspector/deviceStore";
 
 type RoleFields = {
     memberId: string;
@@ -21,12 +20,25 @@ export default function AdminPermissionsPage() {
     const [loading, setLoading] = useState(false);
     const [searchText, setSearchText] = useState("");
     const [filtered, setFiltered] = useState<FirestoreUser[]>([]);
+    const [mobilePage, setMobilePage] = useState(1);
+    const MOBILE_PAGE_SIZE = 10;
 
     const [modalVisible, setModalVisible] = useState(false);
     const [selected, setSelected] = useState<FirestoreUser | null>(null);
 
     const [form] = Form.useForm<RoleFields>();
-    const deviceBreakpoint = useDeviceBreakpoint();
+
+    const handleOpenPermissionEditor = (record: FirestoreUser) => {
+        setSelected(record);
+        form.setFieldsValue({
+            edit_tournament: record.roles?.edit_tournament ?? false,
+            record_tournament: record.roles?.record_tournament ?? false,
+            modify_admin: record.roles?.modify_admin ?? false,
+            verify_record: record.roles?.verify_record ?? false,
+            memberId: record.memberId ?? "",
+        });
+        setModalVisible(true);
+    };
 
     // 3) table columns
     const columns: (TableColumnProps<(typeof users)[number]> | false)[] = [
@@ -50,7 +62,7 @@ export default function AdminPermissionsPage() {
             render: (_: string, record: FirestoreUser) => record.memberId || "-",
             sorter: (a, b) => (a.memberId ?? "").localeCompare(b.memberId ?? ""),
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Email",
             dataIndex: "email",
             width: 300,
@@ -74,31 +86,7 @@ export default function AdminPermissionsPage() {
             dataIndex: "id",
             width: 120,
             render: (_: string, record: FirestoreUser) => (
-                <Button
-                    size="small"
-                    type="primary"
-                    onClick={() => {
-                        setSelected(record);
-                        form.setFieldsValue(
-                            record.roles
-                                ? {
-                                      edit_tournament: record.roles.edit_tournament ?? false,
-                                      record_tournament: record.roles.record_tournament ?? false,
-                                      modify_admin: record.roles.modify_admin ?? false,
-                                      verify_record: record.roles.verify_record ?? false,
-                                      memberId: record.memberId ?? "",
-                                  }
-                                : {
-                                      edit_tournament: false,
-                                      record_tournament: false,
-                                      modify_admin: false,
-                                      verify_record: false,
-                                      memberId: record.memberId ?? "",
-                                  },
-                        );
-                        setModalVisible(true);
-                    }}
-                >
+                <Button size="small" type="primary" onClick={() => handleOpenPermissionEditor(record)}>
                     Edit
                 </Button>
             ),
@@ -124,8 +112,12 @@ export default function AdminPermissionsPage() {
     // 2) filter when searchText changes
     useEffect(() => {
         const text = searchText.trim().toLowerCase();
-        if (!text) return setFiltered(users);
+        if (!text) {
+            setMobilePage(1);
+            return setFiltered(users);
+        }
         setFiltered(users.filter((u) => u.global_id?.toLowerCase().includes(text) || u.name.toLowerCase().includes(text)));
+        setMobilePage(1);
     }, [searchText, users]);
 
     // 4) handle save in modal
@@ -151,12 +143,13 @@ export default function AdminPermissionsPage() {
     };
 
     return (
-        <div className={`flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full`}>
+        <div className={`admin-page admin-permissions-page flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full`}>
             <Spin loading={loading} tip="Loading…" className={"w-full"}>
                 <div
                     className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}
                 >
                     <div className="p-6 space-y-4">
+                        <MobilePageHeader title="Admin Permissions" />
                         {/* Search bar */}
                         <Input.Search
                             placeholder="Search by ID or name"
@@ -167,21 +160,61 @@ export default function AdminPermissionsPage() {
                         />
 
                         {/* Users table */}
-                        <Table
-                            rowKey="id"
-                            data={filtered}
-                            columns={columns.filter((e): e is TableColumnProps<FirestoreUser> => !!e)}
-                            pagination={{pageSize: 10}}
-                            pagePosition="bottomCenter"
-                        />
+                        <div className="admin-table-scroll">
+                            <Table
+                                rowKey="id"
+                                data={filtered}
+                                columns={columns.filter((e): e is TableColumnProps<FirestoreUser> => !!e)}
+                                pagination={{pageSize: 10}}
+                                pagePosition="bottomCenter"
+                            />
+                        </div>
+                        <div className="permission-mobile-cards">
+                            {filtered.slice((mobilePage - 1) * MOBILE_PAGE_SIZE, mobilePage * MOBILE_PAGE_SIZE).map((record) => (
+                                <div key={record.id} className="admin-mobile-card">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="font-semibold break-words">{record.name}</div>
+                                            <div className="text-sm text-gray-500 break-words">{record.global_id || "—"}</div>
+                                        </div>
+                                        <Tag color={hasAnyRole(record.roles) ? "red" : "blue"}>
+                                            {hasAnyRole(record.roles) ? "Admin" : "User"}
+                                        </Tag>
+                                    </div>
+                                    <Button
+                                        type="primary"
+                                        className="mobile-full-width-button mt-3"
+                                        onClick={() => handleOpenPermissionEditor(record)}
+                                    >
+                                        Edit Permissions
+                                    </Button>
+                                </div>
+                            ))}
+                            {filtered.length > MOBILE_PAGE_SIZE ? (
+                                <Pagination
+                                    current={mobilePage}
+                                    pageSize={MOBILE_PAGE_SIZE}
+                                    total={filtered.length}
+                                    onChange={setMobilePage}
+                                />
+                            ) : null}
+                        </div>
 
                         {/* Edit Permissions Modal */}
-                        <Modal
-                            className={"md:w-[80%]"}
+                        <ResponsiveOverlay
+                            className={"admin-responsive-modal md:w-[80%]"}
                             title={`Edit Permissions for ${selected?.name}`}
                             visible={modalVisible}
                             onCancel={() => setModalVisible(false)}
-                            onOk={handleSave}
+                            mobileMode="fullscreen"
+                            footer={[
+                                <Button key="cancel" onClick={() => setModalVisible(false)}>
+                                    Cancel
+                                </Button>,
+                                <Button key="save" type="primary" onClick={handleSave}>
+                                    Save
+                                </Button>,
+                            ]}
                         >
                             <Form
                                 form={form}
@@ -211,6 +244,7 @@ export default function AdminPermissionsPage() {
                                 <Form.Item
                                     field="edit_tournament"
                                     label="Edit Tournament"
+                                    extra="Create, edit, and maintain tournament setup."
                                     trigger="onChange"
                                     triggerPropName="checked"
                                 >
@@ -220,26 +254,34 @@ export default function AdminPermissionsPage() {
                                 <Form.Item
                                     field="record_tournament"
                                     label="Record Tournament"
+                                    extra="Enter and update competition scores."
                                     trigger="onChange"
                                     triggerPropName="checked"
                                 >
                                     <Switch />
                                 </Form.Item>
 
-                                <Form.Item field="modify_admin" label="Modify Admin" trigger="onChange" triggerPropName="checked">
+                                <Form.Item
+                                    field="modify_admin"
+                                    label="Modify Admin"
+                                    extra="Manage users, permissions, and administrative data."
+                                    trigger="onChange"
+                                    triggerPropName="checked"
+                                >
                                     <Switch />
                                 </Form.Item>
 
                                 <Form.Item
                                     field="verify_record"
                                     label="Verify Record"
+                                    extra="Review and verify submitted records."
                                     trigger="onChange"
                                     triggerPropName="checked"
                                 >
                                     <Switch />
                                 </Form.Item>
                             </Form>
-                        </Modal>
+                        </ResponsiveOverlay>
                     </div>
                 </div>
             </Spin>

@@ -19,6 +19,7 @@ import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} fro
 import {EventSchema, TournamentFeeSchema, TournamentSchema} from "../../schema";
 import {type LegacyTeam, dedupeTeamsByEvent} from "../../utils/teamDeduplication";
 import {stripTeamLeaderPrefix} from "../../utils/teamLeaderId";
+import {isTeamRelayTeam, teamNamesEqual} from "../../utils/teamNameMaintenance";
 import {getTeamEvents, normalizeEventSelections, teamMatchesEventKey} from "../../utils/tournament/eventUtils";
 import {captureClientError} from "../observability";
 import {measureOperation} from "../performance";
@@ -149,6 +150,12 @@ const buildRegistrationLookup = (registrations: Registration[]): Map<string, Reg
     }
 
     return registrationMap;
+};
+
+const calculateUpdatedTeamName = (teamName: string, nameParts: string[], relayTeam: boolean): string => {
+    if (relayTeam) return teamName;
+    if (nameParts.length > 0) return nameParts.join(" & ");
+    return teamName;
 };
 
 const normalizeParticipantId = (value: string | null | undefined): string => value?.trim() ?? "";
@@ -996,7 +1003,9 @@ export async function updateTeamNamesForTournament(tournamentId: string): Promis
             .filter((name): name is string => Boolean(name));
 
         const nameParts = [leaderName, ...memberNames].filter((name): name is string => Boolean(name));
-        const nextName = nameParts.length > 0 ? nameParts.join(" & ") : team.name;
+        const relayTeam = isTeamRelayTeam(team, tournamentEvents);
+        const calculatedName = calculateUpdatedTeamName(team.name, nameParts, relayTeam);
+        const nextName = !relayTeam && teamNamesEqual(team.name, calculatedName) ? team.name : calculatedName;
         const teamMemberAges = [leaderId, ...(team.members ?? []).map((member) => member.global_id)]
             .map((id) => registrationMap.get(id ?? "")?.age)
             .filter((age): age is number => typeof age === "number" && Number.isFinite(age));
@@ -1005,11 +1014,9 @@ export async function updateTeamNamesForTournament(tournamentId: string): Promis
         });
 
         let teamDocumentUpdated = false;
-        if (nextName !== team.name || nextTeamAge !== team.team_age) {
-            await updateDoc(docSnap.ref, {
-                name: nextName,
-                team_age: nextTeamAge,
-            });
+        const nameChanged = !relayTeam && !teamNamesEqual(team.name, nextName);
+        if (nameChanged || nextTeamAge !== team.team_age) {
+            await upsertAdminTeam(tournamentId, {...team, name: nextName, team_age: nextTeamAge}, docSnap.id);
             teamDocumentUpdated = true;
         }
 
@@ -1024,24 +1031,18 @@ export async function updateTeamNamesForTournament(tournamentId: string): Promis
                     return registrationTeam;
                 }
 
-                const currentLeader = registrationTeam.leader?.global_id?.trim();
-                const currentMembers = Array.isArray(registrationTeam.member) ? registrationTeam.member : [];
-                const normalizedMemberIds = currentMembers
-                    .map((member) => member.global_id?.trim())
-                    .filter((memberId): memberId is string => Boolean(memberId));
-                const sameLeader = currentLeader === leaderId;
-                const sameMemberCount = normalizedMemberIds.length === (team.members ?? []).length;
-                const sameMembers =
-                    sameMemberCount &&
-                    normalizedMemberIds.every((memberId, index) => memberId === (team.members?.[index]?.global_id ?? "").trim());
+                const nextRegistrationTeam = relayTeam
+                    ? registrationTeam
+                    : {
+                          ...registrationTeam,
+                          ...(!teamNamesEqual(registrationTeam.name, nextName) ? {name: nextName} : {}),
+                          ...(!teamNamesEqual(registrationTeam.label, nextName) ? {label: nextName} : {}),
+                      };
 
-                const nextRegistrationTeam = {
-                    ...registrationTeam,
-                    name: nextName,
-                    label: nextName,
-                };
-
-                if (!sameLeader || !sameMembers || registrationTeam.name !== nextName || registrationTeam.label !== nextName) {
+                if (
+                    !relayTeam &&
+                    (!teamNamesEqual(registrationTeam.name, nextName) || !teamNamesEqual(registrationTeam.label, nextName))
+                ) {
                     registrationChanged = true;
                     registrationEntriesUpdated += 1;
                     return nextRegistrationTeam;

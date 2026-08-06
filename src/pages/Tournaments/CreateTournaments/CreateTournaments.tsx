@@ -4,31 +4,31 @@ import {useSmartDateHandlers} from "@/hooks/DateHandler/useSmartDateHandlers";
 import type {AgeBracket, FinalCriterion, PaymentMethod, Tournament, TournamentEvent} from "@/schema";
 import {getTournamentFeeValidationError} from "@/schema";
 import {countries} from "@/schema/Country";
+import {MobilePageHeader, MobileStickyActions, ResponsiveOverlay} from "@/components/responsive";
 import {uploadFile} from "@/services/firebase/storageService";
 import {createTournament, updateTournament} from "@/services/firebase/tournamentsService";
 import {
     Button,
     Cascader,
+    Collapse,
     DatePicker,
     Form,
     Input,
     InputNumber,
     Message,
-    Modal,
     Select,
     Switch,
     Tooltip,
     Typography,
     Upload,
 } from "@arco-design/web-react";
-import {IconCheck, IconDelete, IconExclamationCircle, IconFile, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import {IconDelete, IconPlus} from "@arco-design/web-react/icon";
 import MDEditor from "@uiw/react-md-editor";
 import dayjs from "dayjs";
 import type {Timestamp} from "firebase/firestore";
 import {random} from "nanoid";
 import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
-import AgeBracketModal from "../Component/AgeBracketModal";
 import EventFields from "../Component/EventField";
 
 import LocationPicker, {isValidCountryPath} from "../Component/LocationPicker";
@@ -131,6 +131,14 @@ export default function CreateTournamentPage() {
         }
     };
     const [loading, setLoading] = useState(false);
+    const [openSections, setOpenSections] = useState<string[]>(["basic", "schedule", "events", "details"]);
+
+    const handleSubmitFailed = () => {
+        setOpenSections(["basic", "schedule", "events", "details"]);
+        window.requestAnimationFrame(() => {
+            document.querySelector<HTMLElement>(".arco-form-item-error")?.scrollIntoView({behavior: "smooth", block: "center"});
+        });
+    };
 
     const validateAgeBrackets = (brackets: AgeBracket[]) => {
         const errors: string[] = [];
@@ -177,8 +185,17 @@ export default function CreateTournamentPage() {
 
             for (let i = 0; i < rawEvents.length; i++) {
                 const rawEvent = rawEvents[i];
-                const {age_brackets, id, type, codes, teamSize, gender, max_participants, additional_fee_enabled, additional_fee} =
-                    rawEvent;
+                const {
+                    age_brackets,
+                    id,
+                    type,
+                    codes,
+                    teamSize,
+                    gender,
+                    max_participants,
+                    additional_fee_enabled,
+                    additional_fee,
+                } = rawEvent;
 
                 if (!isTournamentEventType(type)) {
                     invalidEvents.push(`Event ${i + 1}: Invalid event type "${type}"`);
@@ -323,18 +340,15 @@ export default function CreateTournamentPage() {
 
     return (
         <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
-            <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
-                <IconUndo /> Go Back
-            </Button>
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
-                <Title heading={3} className="text-center mb-6">
-                    Create New Tournament
-                </Title>
+                <MobilePageHeader title="Create New Tournament" backTo="/tournaments" backLabel="Go Back" />
 
                 <Form
+                    className="create-tournament-form"
                     form={form}
                     layout="vertical"
                     onSubmit={handleSubmit}
+                    onSubmitFailed={handleSubmitFailed}
                     initialValues={{
                         events: DEFAULT_EVENTS.map(cloneEvent),
                         max_participants: 0,
@@ -342,523 +356,581 @@ export default function CreateTournamentPage() {
                     }}
                     requiredSymbol={false}
                 >
-                    {/* Tournament Name */}
-                    <Form.Item label="Tournament Name" field="name" rules={[{required: true, message: "Please input name"}]}>
-                        <Input placeholder="Enter tournament name" />
-                    </Form.Item>
-
-                    {/* Tournament Date Range */}
-                    <Form.Item
-                        label="Tournament Date Range"
-                        field="date_range"
-                        rules={[{required: true, message: "Please select date range"}]}
+                    <Collapse
+                        className="mobile-form-sections"
+                        activeKey={openSections}
+                        onChange={(keys) => setOpenSections(Array.isArray(keys) ? keys : [keys])}
                     >
-                        <RangePicker
-                            format="DD/MM/YYYY HH:mm"
-                            showTime={{
-                                defaultValue: ["08:00", "18:00"],
-                                format: "HH:mm",
-                            }}
-                            style={{width: "100%"}}
-                            disabledDate={(current) => {
-                                const today = dayjs();
-                                return current?.isBefore(today.add(7, "day"), "day");
-                            }}
-                            onChange={handleTournamentDateChange}
-                        />
-                    </Form.Item>
+                        <Collapse.Item name="basic" header="Basic tournament details">
+                            {/* Tournament Name */}
+                            <Form.Item
+                                label="Tournament Name"
+                                field="name"
+                                rules={[{required: true, message: "Please input name"}]}
+                            >
+                                <Input placeholder="Enter tournament name" />
+                            </Form.Item>
 
-                    <Form.Item
-                        label="Country / State"
-                        field="country"
-                        rules={[{required: true, message: "Please select a country/region"}]}
-                    >
-                        <Cascader
-                            showSearch
-                            changeOnSelect
-                            allowClear
-                            filterOption={(input, node) => {
-                                return node.label.toLowerCase().includes(input.toLowerCase());
-                            }}
-                            onChange={(val) => {
-                                form.setFieldValue("country", val);
-                            }}
-                            options={countries}
-                            placeholder="Please select location"
-                            expandTrigger="hover"
-                        />
-                    </Form.Item>
-                    {/* Venue */}
-                    <Form.Item label="Venue" field="venue" rules={[{required: true, message: "Please input venue"}]}>
-                        <Input placeholder="Enter venue name" />
-                    </Form.Item>
+                            {/* Tournament Date Range */}
+                            <Form.Item
+                                label="Tournament Date Range"
+                                field="date_range"
+                                rules={[{required: true, message: "Please select date range"}]}
+                            >
+                                <RangePicker
+                                    format="DD/MM/YYYY HH:mm"
+                                    showTime={{
+                                        defaultValue: ["08:00", "18:00"],
+                                        format: "HH:mm",
+                                    }}
+                                    style={{width: "100%"}}
+                                    disabledDate={(current) => {
+                                        const today = dayjs();
+                                        return current?.isBefore(today.add(7, "day"), "day");
+                                    }}
+                                    onChange={handleTournamentDateChange}
+                                />
+                            </Form.Item>
 
-                    {/* Address */}
-                    <Form.Item label="Address" field="address" rules={[{required: true, message: "Please input address"}]}>
-                        <LocationPicker
-                            value={form.getFieldValue("address")}
-                            onChange={(val) => form.setFieldValue("address", val)}
-                            onCountryChange={(countryPath) => {
-                                if (!isValidCountryPath(countryPath)) {
-                                    Message.warning("This location is not in the selectable list. Please choose manually.");
-                                    form.resetFields(["country"]);
-                                } else {
-                                    form.setFieldValue("country", countryPath);
-                                }
-                            }}
-                        />
-                    </Form.Item>
+                            <Form.Item
+                                label="Country / State"
+                                field="country"
+                                rules={[{required: true, message: "Please select a country/region"}]}
+                            >
+                                <Cascader
+                                    showSearch
+                                    changeOnSelect
+                                    allowClear
+                                    filterOption={(input, node) => {
+                                        return node.label.toLowerCase().includes(input.toLowerCase());
+                                    }}
+                                    onChange={(val) => {
+                                        form.setFieldValue("country", val);
+                                    }}
+                                    options={countries}
+                                    placeholder="Please select location"
+                                    expandTrigger="click"
+                                />
+                            </Form.Item>
+                            {/* Venue */}
+                            <Form.Item label="Venue" field="venue" rules={[{required: true, message: "Please input venue"}]}>
+                                <Input placeholder="Enter venue name" />
+                            </Form.Item>
 
-                    {/* Registration Date Range */}
-                    <Form.Item
-                        label="Registration Date Range"
-                        field="registration_date_range"
-                        rules={[{required: true, message: "Please input registration date"}]}
-                    >
-                        <RangePicker
-                            format="DD/MM/YYYY HH:mm"
-                            showTime={{
-                                defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
-                                format: "HH:mm",
-                            }}
-                            style={{width: "100%"}}
-                            disabledDate={(current) => current?.isBefore(dayjs(), "day")}
-                            onChange={handleRangeChangeSmart("registration_date_range")}
-                        />
-                    </Form.Item>
+                            {/* Address */}
+                            <Form.Item
+                                label="Address"
+                                field="address"
+                                rules={[{required: true, message: "Please input address"}]}
+                            >
+                                <LocationPicker
+                                    value={form.getFieldValue("address")}
+                                    onChange={(val) => form.setFieldValue("address", val)}
+                                    onCountryChange={(countryPath) => {
+                                        if (!isValidCountryPath(countryPath)) {
+                                            Message.warning(
+                                                "This location is not in the selectable list. Please choose manually.",
+                                            );
+                                            form.resetFields(["country"]);
+                                        } else {
+                                            form.setFieldValue("country", countryPath);
+                                        }
+                                    }}
+                                />
+                            </Form.Item>
+                        </Collapse.Item>
+                        <Collapse.Item name="schedule" header="Dates, fees and staff">
+                            {/* Registration Date Range */}
+                            <Form.Item
+                                label="Registration Date Range"
+                                field="registration_date_range"
+                                rules={[{required: true, message: "Please input registration date"}]}
+                            >
+                                <RangePicker
+                                    format="DD/MM/YYYY HH:mm"
+                                    showTime={{
+                                        defaultValue: [dayjs("08:00", "HH:mm"), dayjs("18:00", "HH:mm")],
+                                        format: "HH:mm",
+                                    }}
+                                    style={{width: "100%"}}
+                                    disabledDate={(current) => current?.isBefore(dayjs(), "day")}
+                                    onChange={handleRangeChangeSmart("registration_date_range")}
+                                />
+                            </Form.Item>
 
-                    {/* Registration fees */}
-                    <Form.Item
-                        label="Registration Fee"
-                        field="registration_fee"
-                        rules={[
-                            {required: true, message: "Please input registration fee"},
-                            {
-                                validator: (value, callback) => {
-                                    callback(getTournamentFeeValidationError(value, "Registration fee"));
-                                },
-                            },
-                        ]}
-                    >
-                        <InputNumber min={0} placeholder="please enter..." />
-                    </Form.Item>
-                    <Form.Item
-                        label="Member Registration Fee"
-                        field="member_registration_fee"
-                        rules={[
-                            {required: true, message: "Please input member registration fee"},
-                            {
-                                validator: (value, callback) => {
-                                    callback(getTournamentFeeValidationError(value, "Member registration fee"));
-                                },
-                            },
-                        ]}
-                    >
-                        <InputNumber min={0} placeholder="please enter..." />
-                    </Form.Item>
+                            {/* Registration fees */}
+                            <Form.Item
+                                label="Registration Fee"
+                                field="registration_fee"
+                                rules={[
+                                    {required: true, message: "Please input registration fee"},
+                                    {
+                                        validator: (value, callback) => {
+                                            callback(getTournamentFeeValidationError(value, "Registration fee"));
+                                        },
+                                    },
+                                ]}
+                            >
+                                <InputNumber min={0} placeholder="please enter..." />
+                            </Form.Item>
+                            <Form.Item
+                                label="Member Registration Fee"
+                                field="member_registration_fee"
+                                rules={[
+                                    {required: true, message: "Please input member registration fee"},
+                                    {
+                                        validator: (value, callback) => {
+                                            callback(getTournamentFeeValidationError(value, "Member registration fee"));
+                                        },
+                                    },
+                                ]}
+                            >
+                                <InputNumber min={0} placeholder="please enter..." />
+                            </Form.Item>
 
-                    <Form.Item label="Editor ID" field="editor">
-                        <Input placeholder="Enter editor global ID" />
-                    </Form.Item>
+                            <Form.Item label="Editor ID" field="editor">
+                                <Input placeholder="Enter editor global ID" />
+                            </Form.Item>
 
-                    <Form.Item label="Recorder ID" field="recorder">
-                        <Input placeholder="Enter recorder global ID" />
-                    </Form.Item>
+                            <Form.Item label="Recorder ID" field="recorder">
+                                <Input placeholder="Enter recorder global ID" />
+                            </Form.Item>
 
-                    <Form.Item label="Draft" field="isDraft" triggerPropName="checked">
-                        <Switch />
-                    </Form.Item>
+                            <Form.Item label="Draft" field="isDraft" triggerPropName="checked">
+                                <Switch />
+                            </Form.Item>
 
-                    <Form.Item label="Max Participants" field="max_participants">
-                        <InputNumber placeholder="Enter max participant" defaultValue={0} />
-                    </Form.Item>
+                            <Form.Item label="Max Participants" field="max_participants">
+                                <InputNumber placeholder="Enter max participant" defaultValue={0} />
+                            </Form.Item>
+                        </Collapse.Item>
+                        <Collapse.Item name="events" header="Events and age brackets">
+                            <Form.Item label="Events">
+                                <Form.List field="events">
+                                    {(fields, {add, remove}) => (
+                                        <>
+                                            {fields.map((field, index) => (
+                                                <EventFields
+                                                    key={field.key}
+                                                    index={index}
+                                                    onEditAgeBrackets={handleEditAgeBrackets}
+                                                    onRemove={remove}
+                                                />
+                                            ))}
+                                            <Button
+                                                type="text"
+                                                onClick={() => {
+                                                    add({
+                                                        id: crypto.randomUUID(),
+                                                        codes: [],
+                                                        type: "" as TournamentEvent["type"],
+                                                        gender: "Mixed",
+                                                        age_brackets: cloneAgeBrackets(DEFAULT_AGE_BRACKET),
+                                                    });
+                                                }}
+                                            >
+                                                <IconPlus /> Add Event
+                                            </Button>
+                                        </>
+                                    )}
+                                </Form.List>
+                            </Form.Item>
 
-                    <Form.Item label="Events">
-                        <Form.List field="events">
-                            {(fields, {add, remove}) => (
-                                <>
-                                    {fields.map((field, index) => (
-                                        <EventFields
-                                            key={field.key}
-                                            index={index}
-                                            onEditAgeBrackets={handleEditAgeBrackets}
-                                            onRemove={remove}
-                                        />
-                                    ))}
-                                    <Button
-                                        type="text"
-                                        onClick={() => {
-                                            add({
-                                                id: crypto.randomUUID(),
-                                                codes: [],
-                                                type: "" as TournamentEvent["type"],
-                                                gender: "Mixed",
-                                                age_brackets: cloneAgeBrackets(DEFAULT_AGE_BRACKET),
-                                            });
-                                        }}
-                                    >
-                                        <IconPlus /> Add Event
-                                    </Button>
-                                </>
-                            )}
-                        </Form.List>
-                    </Form.Item>
+                            {/* Age Bracket Modal */}
+                            <ResponsiveOverlay
+                                title="Edit Age Brackets"
+                                visible={ageBracketModalVisible}
+                                onCancel={() => setAgeBracketModalVisible(false)}
+                                mobileMode="fullscreen"
+                                desktopWidth="min(90vw, 960px)"
+                                footer={[
+                                    <Button key="cancel" onClick={() => setAgeBracketModalVisible(false)}>
+                                        Cancel
+                                    </Button>,
+                                    <Button key="save" type="primary" onClick={handleSaveAgeBrackets}>
+                                        Save
+                                    </Button>,
+                                ]}
+                            >
+                                <Form.List field="age_brackets_modal">
+                                    {(fields, {add, remove}) => {
+                                        return (
+                                            <>
+                                                {ageBrackets.map((bracket, id) => {
+                                                    const bracketKey = (bracket as {_id?: string})._id ?? `bracket-${id}`;
+                                                    const isMinError =
+                                                        bracket.min_age === null || bracket.min_age > bracket.max_age;
 
-                    {/* Age Bracket Modal */}
-                    <Modal
-                        title="Edit Age Brackets"
-                        visible={ageBracketModalVisible}
-                        onCancel={() => setAgeBracketModalVisible(false)}
-                        onOk={handleSaveAgeBrackets}
-                        className={`w-full md:max-w-[80vw] lg:max-w-[60vw]`}
-                    >
-                        <Form.List field="age_brackets_modal">
-                            {(fields, {add, remove}) => {
-                                return (
-                                    <>
-                                        {ageBrackets.map((bracket, id) => {
-                                            const bracketKey = (bracket as {_id?: string})._id ?? `bracket-${id}`;
-                                            const isMinError = bracket.min_age === null || bracket.min_age > bracket.max_age;
+                                                    let minAgeHelp: string | undefined;
+                                                    if (bracket.min_age === null) {
+                                                        minAgeHelp = "Enter min age";
+                                                    } else if (bracket.min_age > bracket.max_age) {
+                                                        minAgeHelp = "Min age > Max age";
+                                                    }
 
-                                            let minAgeHelp: string | undefined;
-                                            if (bracket.min_age === null) {
-                                                minAgeHelp = "Enter min age";
-                                            } else if (bracket.min_age > bracket.max_age) {
-                                                minAgeHelp = "Min age > Max age";
-                                            }
+                                                    const isMaxError =
+                                                        bracket.max_age === null || bracket.max_age < bracket.min_age;
 
-                                            const isMaxError = bracket.max_age === null || bracket.max_age < bracket.min_age;
+                                                    let maxAgeHelp: string | undefined;
+                                                    if (bracket.max_age === null) {
+                                                        maxAgeHelp = "Enter max age";
+                                                    } else if (bracket.max_age < bracket.min_age) {
+                                                        maxAgeHelp = "Max age < Min age";
+                                                    }
 
-                                            let maxAgeHelp: string | undefined;
-                                            if (bracket.max_age === null) {
-                                                maxAgeHelp = "Enter max age";
-                                            } else if (bracket.max_age < bracket.min_age) {
-                                                maxAgeHelp = "Max age < Min age";
-                                            }
-
-                                            return (
-                                                <div key={bracketKey} className="border p-4 mb-4 rounded">
-                                                    <div className="flex gap-4 mb-4 w-full">
-                                                        <Form.Item
-                                                            label="Bracket Name"
-                                                            required
-                                                            validateStatus={!bracket.name ? "error" : undefined}
-                                                            help={!bracket.name ? "Please enter bracket name" : undefined}
-                                                            className="w-1/3"
-                                                        >
-                                                            <Input
-                                                                value={bracket.name}
-                                                                onChange={(v) => {
-                                                                    const updated = [...ageBrackets];
-                                                                    updated[id].name = v;
-                                                                    setAgeBrackets(updated);
-                                                                }}
-                                                                placeholder="Bracket Name"
-                                                            />
-                                                        </Form.Item>
-                                                        <Form.Item
-                                                            label="Min Age"
-                                                            required
-                                                            validateStatus={isMinError ? "error" : undefined}
-                                                            help={minAgeHelp}
-                                                            className="w-1/4"
-                                                        >
-                                                            <InputNumber
-                                                                value={bracket.min_age}
-                                                                min={0}
-                                                                onChange={(v) => {
-                                                                    const updated = [...ageBrackets];
-                                                                    updated[id].min_age = v ?? 0;
-                                                                    setAgeBrackets(updated);
-                                                                }}
-                                                                placeholder="Min Age"
-                                                            />
-                                                        </Form.Item>
-                                                        <Form.Item
-                                                            label="Max Age"
-                                                            required
-                                                            validateStatus={isMaxError ? "error" : undefined}
-                                                            help={maxAgeHelp}
-                                                            className="w-1/4"
-                                                        >
-                                                            <InputNumber
-                                                                value={bracket.max_age}
-                                                                min={0}
-                                                                onChange={(v) => {
-                                                                    const updated = [...ageBrackets];
-                                                                    updated[id].max_age = v ?? 0;
-                                                                    setAgeBrackets(updated);
-                                                                }}
-                                                                placeholder="Max Age"
-                                                            />
-                                                        </Form.Item>
-                                                        <div className="flex items-end pb-8">
-                                                            <Button status="danger" onClick={makeHandleDeleteBracket(id)}>
-                                                                <IconDelete />
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Final Criteria for this age bracket */}
-                                                    <div className="mt-4">
-                                                        <h4 className="text-sm font-medium mb-2">
-                                                            Final Criteria for {bracket.name}
-                                                        </h4>
-                                                        {bracket.final_criteria?.map((criteria, criteriaIndex) => {
-                                                            const criteriaWithId = criteria as FinalCriterionWithId;
-                                                            const criteriaKey =
-                                                                criteriaWithId._tempId || `criteria-${id}-${criteriaIndex}`;
-
-                                                            return (
-                                                                <div key={criteriaKey} className="flex gap-2 mb-2">
-                                                                    <Select
-                                                                        value={criteria.classification}
-                                                                        placeholder="Classification"
-                                                                        onChange={(value) => {
+                                                    return (
+                                                        <div key={bracketKey} className="border p-4 mb-4 rounded">
+                                                            <div className="flex gap-4 mb-4 w-full mobile-stack">
+                                                                <Form.Item
+                                                                    label="Bracket Name"
+                                                                    required
+                                                                    validateStatus={!bracket.name ? "error" : undefined}
+                                                                    help={!bracket.name ? "Please enter bracket name" : undefined}
+                                                                    className="w-1/3"
+                                                                >
+                                                                    <Input
+                                                                        value={bracket.name}
+                                                                        onChange={(v) => {
                                                                             const updated = [...ageBrackets];
-                                                                            const targetBracket = updated[id];
-                                                                            if (!targetBracket) {
-                                                                                return;
-                                                                            }
-                                                                            if (!targetBracket.final_criteria) {
-                                                                                targetBracket.final_criteria = [];
-                                                                            }
-                                                                            const targetCriteria =
-                                                                                targetBracket.final_criteria[criteriaIndex];
-                                                                            if (targetCriteria) {
-                                                                                targetCriteria.classification = value;
-                                                                            }
+                                                                            updated[id].name = v;
                                                                             setAgeBrackets(updated);
                                                                         }}
-                                                                        style={{width: 150}}
-                                                                    >
-                                                                        <Select.Option value="advance">Advanced</Select.Option>
-                                                                        <Select.Option value="intermediate">
-                                                                            Intermediate
-                                                                        </Select.Option>
-                                                                        <Select.Option value="beginner">Beginner</Select.Option>
-                                                                    </Select>
-                                                                    <InputNumber
-                                                                        value={criteria.number}
-                                                                        placeholder="Number"
-                                                                        min={0}
-                                                                        onChange={(value) => {
-                                                                            const updated = [...ageBrackets];
-                                                                            const targetBracket = updated[id];
-                                                                            if (!targetBracket) {
-                                                                                return;
-                                                                            }
-                                                                            if (!targetBracket.final_criteria) {
-                                                                                targetBracket.final_criteria = [];
-                                                                            }
-                                                                            const targetCriteria =
-                                                                                targetBracket.final_criteria[criteriaIndex];
-                                                                            if (targetCriteria) {
-                                                                                targetCriteria.number = value ?? 0;
-                                                                            }
-                                                                            setAgeBrackets(updated);
-                                                                        }}
-                                                                        style={{width: 100}}
+                                                                        placeholder="Bracket Name"
                                                                     />
-                                                                    <Button
-                                                                        status="danger"
-                                                                        onClick={() => {
+                                                                </Form.Item>
+                                                                <Form.Item
+                                                                    label="Min Age"
+                                                                    required
+                                                                    validateStatus={isMinError ? "error" : undefined}
+                                                                    help={minAgeHelp}
+                                                                    className="w-1/4"
+                                                                >
+                                                                    <InputNumber
+                                                                        value={bracket.min_age}
+                                                                        min={0}
+                                                                        onChange={(v) => {
                                                                             const updated = [...ageBrackets];
-                                                                            const targetBracket = updated[id];
-                                                                            if (!targetBracket?.final_criteria) {
-                                                                                return;
-                                                                            }
-                                                                            targetBracket.final_criteria.splice(criteriaIndex, 1);
+                                                                            updated[id].min_age = v ?? 0;
                                                                             setAgeBrackets(updated);
                                                                         }}
-                                                                    >
+                                                                        placeholder="Min Age"
+                                                                    />
+                                                                </Form.Item>
+                                                                <Form.Item
+                                                                    label="Max Age"
+                                                                    required
+                                                                    validateStatus={isMaxError ? "error" : undefined}
+                                                                    help={maxAgeHelp}
+                                                                    className="w-1/4"
+                                                                >
+                                                                    <InputNumber
+                                                                        value={bracket.max_age}
+                                                                        min={0}
+                                                                        onChange={(v) => {
+                                                                            const updated = [...ageBrackets];
+                                                                            updated[id].max_age = v ?? 0;
+                                                                            setAgeBrackets(updated);
+                                                                        }}
+                                                                        placeholder="Max Age"
+                                                                    />
+                                                                </Form.Item>
+                                                                <div className="flex items-end pb-8">
+                                                                    <Button status="danger" onClick={makeHandleDeleteBracket(id)}>
                                                                         <IconDelete />
                                                                     </Button>
                                                                 </div>
-                                                            );
-                                                        })}
-                                                        <Button
-                                                            type="text"
-                                                            size="small"
-                                                            onClick={() => {
-                                                                const updated = [...ageBrackets];
-                                                                const targetBracket = updated[id];
-                                                                if (!targetBracket) {
-                                                                    return;
-                                                                }
-                                                                if (!targetBracket.final_criteria) {
-                                                                    targetBracket.final_criteria = [];
-                                                                }
-                                                                targetBracket.final_criteria.push({
-                                                                    classification: "intermediate",
-                                                                    number: 10,
-                                                                    _tempId: crypto.randomUUID(),
-                                                                } as FinalCriterionWithId);
-                                                                setAgeBrackets(updated);
-                                                            }}
-                                                            disabled={(bracket.final_criteria?.length ?? 0) >= 4}
-                                                        >
-                                                            <IconPlus /> Add Final Criteria
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                        <Button
-                                            type="text"
-                                            onClick={() =>
-                                                setAgeBrackets([
-                                                    ...ageBrackets,
-                                                    {
-                                                        name: "",
-                                                        min_age: 0,
-                                                        max_age: 0,
-                                                        number_of_participants: 0,
-                                                        final_criteria: getPredefinedFinalCriteria("Individual"),
-                                                    },
-                                                ])
-                                            }
-                                        >
-                                            <IconPlus /> Add Bracket
-                                        </Button>
-                                    </>
-                                );
-                            }}
-                        </Form.List>
-                    </Modal>
+                                                            </div>
 
-                    <Form.Item label="Description" field="description">
-                        <MDEditor
-                            value={form.getFieldValue("description")}
-                            onChange={(value) => {
-                                form.setFieldValue("description", value);
-                            }}
-                            height={300}
-                        />
-                    </Form.Item>
+                                                            {/* Final Criteria for this age bracket */}
+                                                            <div className="mt-4">
+                                                                <h4 className="text-sm font-medium mb-2">
+                                                                    Final Criteria for {bracket.name}
+                                                                </h4>
+                                                                {bracket.final_criteria?.map((criteria, criteriaIndex) => {
+                                                                    const criteriaWithId = criteria as FinalCriterionWithId;
+                                                                    const criteriaKey =
+                                                                        criteriaWithId._tempId ||
+                                                                        `criteria-${id}-${criteriaIndex}`;
 
-                    {/* Agenda Upload (PDF) */}
-                    <Form.Item label="Agenda (PDF)" field="agenda" extra="Only PDF file allowed" rules={[{required: false}]}>
-                        <Upload
-                            accept=".pdf"
-                            limit={1}
-                            onChange={(fileList) => {
-                                const rawFile = fileList?.[0]?.originFile || null;
-                                form.setFieldValue("agenda", rawFile);
-                            }}
-                            showUploadList={{}}
-                            autoUpload={false}
-                        />
-                    </Form.Item>
-
-                    {/* Logo Upload (Image) */}
-                    <Form.Item label="Tournament Logo" field="logo" extra="PNG or JPG file" rules={[{required: false}]}>
-                        <Upload
-                            accept="image/png,image/jpeg"
-                            limit={1}
-                            onChange={(fileList) => form.setFieldValue("logo", fileList[0]?.originFile || null)}
-                            showUploadList
-                            listType="picture-card"
-                            imagePreview
-                            autoUpload={false}
-                        />
-                    </Form.Item>
-
-                    {/* Payment Methods */}
-                    <Form.Item label="Payment Methods">
-                        <Form.List field="payment_methods">
-                            {(fields, {add, remove}) => (
-                                <>
-                                    {fields.map((field, index) => {
-                                        const paymentMethods = form.getFieldValue("payment_methods") || [];
-                                        const currentMethod = paymentMethods[index] || {};
-
-                                        return (
-                                            <div key={field.key} className="border p-4 mb-4 rounded">
-                                                <div className="flex justify-between items-center mb-3">
-                                                    <h4 className="text-sm font-medium">Payment Method {index + 1}</h4>
-                                                    <Button status="danger" size="small" onClick={() => remove(index)}>
-                                                        <IconDelete /> Remove
-                                                    </Button>
-                                                </div>
-
-                                                <Form.Item
-                                                    label="Account Name"
-                                                    field={`payment_methods[${index}].account_name`}
-                                                    rules={[{required: true, message: "Please enter account name"}]}
+                                                                    return (
+                                                                        <div
+                                                                            key={criteriaKey}
+                                                                            className="age-criteria-row flex gap-2 mb-2"
+                                                                        >
+                                                                            <Select
+                                                                                value={criteria.classification}
+                                                                                placeholder="Classification"
+                                                                                onChange={(value) => {
+                                                                                    const updated = [...ageBrackets];
+                                                                                    const targetBracket = updated[id];
+                                                                                    if (!targetBracket) {
+                                                                                        return;
+                                                                                    }
+                                                                                    if (!targetBracket.final_criteria) {
+                                                                                        targetBracket.final_criteria = [];
+                                                                                    }
+                                                                                    const targetCriteria =
+                                                                                        targetBracket.final_criteria[
+                                                                                            criteriaIndex
+                                                                                        ];
+                                                                                    if (targetCriteria) {
+                                                                                        targetCriteria.classification = value;
+                                                                                    }
+                                                                                    setAgeBrackets(updated);
+                                                                                }}
+                                                                                style={{width: 150}}
+                                                                            >
+                                                                                <Select.Option value="advance">
+                                                                                    Advanced
+                                                                                </Select.Option>
+                                                                                <Select.Option value="intermediate">
+                                                                                    Intermediate
+                                                                                </Select.Option>
+                                                                                <Select.Option value="beginner">
+                                                                                    Beginner
+                                                                                </Select.Option>
+                                                                            </Select>
+                                                                            <InputNumber
+                                                                                value={criteria.number}
+                                                                                placeholder="Number"
+                                                                                min={0}
+                                                                                onChange={(value) => {
+                                                                                    const updated = [...ageBrackets];
+                                                                                    const targetBracket = updated[id];
+                                                                                    if (!targetBracket) {
+                                                                                        return;
+                                                                                    }
+                                                                                    if (!targetBracket.final_criteria) {
+                                                                                        targetBracket.final_criteria = [];
+                                                                                    }
+                                                                                    const targetCriteria =
+                                                                                        targetBracket.final_criteria[
+                                                                                            criteriaIndex
+                                                                                        ];
+                                                                                    if (targetCriteria) {
+                                                                                        targetCriteria.number = value ?? 0;
+                                                                                    }
+                                                                                    setAgeBrackets(updated);
+                                                                                }}
+                                                                                style={{width: 100}}
+                                                                            />
+                                                                            <Button
+                                                                                status="danger"
+                                                                                onClick={() => {
+                                                                                    const updated = [...ageBrackets];
+                                                                                    const targetBracket = updated[id];
+                                                                                    if (!targetBracket?.final_criteria) {
+                                                                                        return;
+                                                                                    }
+                                                                                    targetBracket.final_criteria.splice(
+                                                                                        criteriaIndex,
+                                                                                        1,
+                                                                                    );
+                                                                                    setAgeBrackets(updated);
+                                                                                }}
+                                                                            >
+                                                                                <IconDelete />
+                                                                            </Button>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                                <Button
+                                                                    type="text"
+                                                                    size="small"
+                                                                    onClick={() => {
+                                                                        const updated = [...ageBrackets];
+                                                                        const targetBracket = updated[id];
+                                                                        if (!targetBracket) {
+                                                                            return;
+                                                                        }
+                                                                        if (!targetBracket.final_criteria) {
+                                                                            targetBracket.final_criteria = [];
+                                                                        }
+                                                                        targetBracket.final_criteria.push({
+                                                                            classification: "intermediate",
+                                                                            number: 10,
+                                                                            _tempId: crypto.randomUUID(),
+                                                                        } as FinalCriterionWithId);
+                                                                        setAgeBrackets(updated);
+                                                                    }}
+                                                                    disabled={(bracket.final_criteria?.length ?? 0) >= 4}
+                                                                >
+                                                                    <IconPlus /> Add Final Criteria
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                                <Button
+                                                    type="text"
+                                                    onClick={() =>
+                                                        setAgeBrackets([
+                                                            ...ageBrackets,
+                                                            {
+                                                                name: "",
+                                                                min_age: 0,
+                                                                max_age: 0,
+                                                                number_of_participants: 0,
+                                                                final_criteria: getPredefinedFinalCriteria("Individual"),
+                                                            },
+                                                        ])
+                                                    }
                                                 >
-                                                    <Input placeholder="Enter account holder name" />
-                                                </Form.Item>
-
-                                                <Form.Item
-                                                    label="Account Number"
-                                                    field={`payment_methods[${index}].account_number`}
-                                                    rules={[{required: true, message: "Please enter account number"}]}
-                                                >
-                                                    <Input placeholder="Enter account number" />
-                                                </Form.Item>
-
-                                                <Form.Item
-                                                    label="Description (Optional)"
-                                                    field={`payment_methods[${index}].description`}
-                                                >
-                                                    <Input.TextArea placeholder="e.g., Bank name, payment platform" rows={2} />
-                                                </Form.Item>
-
-                                                <Form.Item
-                                                    label="QR Code Image (Optional)"
-                                                    extra="PNG or JPG file for payment QR code"
-                                                >
-                                                    <Upload
-                                                        accept="image/png,image/jpeg"
-                                                        limit={1}
-                                                        onChange={(fileList) => {
-                                                            const currentMethods = form.getFieldValue("payment_methods") || [];
-                                                            if (!currentMethods[index]) {
-                                                                currentMethods[index] = {
-                                                                    id: crypto.randomUUID(),
-                                                                    account_name: "",
-                                                                    account_number: "",
-                                                                };
-                                                            }
-                                                            currentMethods[index].qr_code_file = fileList[0]?.originFile || null;
-                                                            form.setFieldValue("payment_methods", currentMethods);
-                                                        }}
-                                                        showUploadList
-                                                        listType="picture-card"
-                                                        imagePreview
-                                                        autoUpload={false}
-                                                    />
-                                                </Form.Item>
-                                            </div>
+                                                    <IconPlus /> Add Bracket
+                                                </Button>
+                                            </>
                                         );
-                                    })}
-                                    <Button
-                                        type="dashed"
-                                        long
-                                        onClick={() =>
-                                            add({
-                                                id: crypto.randomUUID(),
-                                                account_name: "",
-                                                account_number: "",
-                                                description: "",
-                                                qr_code_image: null,
-                                            })
-                                        }
-                                    >
-                                        <IconPlus /> Add Payment Method
-                                    </Button>
-                                </>
-                            )}
-                        </Form.List>
-                    </Form.Item>
+                                    }}
+                                </Form.List>
+                            </ResponsiveOverlay>
+                        </Collapse.Item>
+                        <Collapse.Item name="details" header="Description, uploads and payment">
+                            <Form.Item label="Description" field="description">
+                                <MDEditor
+                                    value={form.getFieldValue("description")}
+                                    onChange={(value) => {
+                                        form.setFieldValue("description", value);
+                                    }}
+                                    height={300}
+                                />
+                            </Form.Item>
+
+                            {/* Agenda Upload (PDF) */}
+                            <Form.Item
+                                label="Agenda (PDF)"
+                                field="agenda"
+                                extra="Only PDF file allowed"
+                                rules={[{required: false}]}
+                            >
+                                <Upload
+                                    accept=".pdf"
+                                    limit={1}
+                                    onChange={(fileList) => {
+                                        const rawFile = fileList?.[0]?.originFile || null;
+                                        form.setFieldValue("agenda", rawFile);
+                                    }}
+                                    showUploadList={{}}
+                                    autoUpload={false}
+                                />
+                            </Form.Item>
+
+                            {/* Logo Upload (Image) */}
+                            <Form.Item label="Tournament Logo" field="logo" extra="PNG or JPG file" rules={[{required: false}]}>
+                                <Upload
+                                    accept="image/png,image/jpeg"
+                                    limit={1}
+                                    onChange={(fileList) => form.setFieldValue("logo", fileList[0]?.originFile || null)}
+                                    showUploadList
+                                    listType="picture-card"
+                                    imagePreview
+                                    autoUpload={false}
+                                />
+                            </Form.Item>
+
+                            {/* Payment Methods */}
+                            <Form.Item label="Payment Methods">
+                                <Form.List field="payment_methods">
+                                    {(fields, {add, remove}) => (
+                                        <>
+                                            {fields.map((field, index) => {
+                                                const paymentMethods = form.getFieldValue("payment_methods") || [];
+                                                const currentMethod = paymentMethods[index] || {};
+
+                                                return (
+                                                    <div key={field.key} className="border p-4 mb-4 rounded">
+                                                        <div className="flex justify-between items-center mb-3">
+                                                            <h4 className="text-sm font-medium">Payment Method {index + 1}</h4>
+                                                            <Button status="danger" size="small" onClick={() => remove(index)}>
+                                                                <IconDelete /> Remove
+                                                            </Button>
+                                                        </div>
+
+                                                        <Form.Item
+                                                            label="Account Name"
+                                                            field={`payment_methods[${index}].account_name`}
+                                                            rules={[{required: true, message: "Please enter account name"}]}
+                                                        >
+                                                            <Input placeholder="Enter account holder name" />
+                                                        </Form.Item>
+
+                                                        <Form.Item
+                                                            label="Account Number"
+                                                            field={`payment_methods[${index}].account_number`}
+                                                            rules={[{required: true, message: "Please enter account number"}]}
+                                                        >
+                                                            <Input placeholder="Enter account number" />
+                                                        </Form.Item>
+
+                                                        <Form.Item
+                                                            label="Description (Optional)"
+                                                            field={`payment_methods[${index}].description`}
+                                                        >
+                                                            <Input.TextArea
+                                                                placeholder="e.g., Bank name, payment platform"
+                                                                rows={2}
+                                                            />
+                                                        </Form.Item>
+
+                                                        <Form.Item
+                                                            label="QR Code Image (Optional)"
+                                                            extra="PNG or JPG file for payment QR code"
+                                                        >
+                                                            <Upload
+                                                                accept="image/png,image/jpeg"
+                                                                limit={1}
+                                                                onChange={(fileList) => {
+                                                                    const currentMethods =
+                                                                        form.getFieldValue("payment_methods") || [];
+                                                                    if (!currentMethods[index]) {
+                                                                        currentMethods[index] = {
+                                                                            id: crypto.randomUUID(),
+                                                                            account_name: "",
+                                                                            account_number: "",
+                                                                        };
+                                                                    }
+                                                                    currentMethods[index].qr_code_file =
+                                                                        fileList[0]?.originFile || null;
+                                                                    form.setFieldValue("payment_methods", currentMethods);
+                                                                }}
+                                                                showUploadList
+                                                                listType="picture-card"
+                                                                imagePreview
+                                                                autoUpload={false}
+                                                            />
+                                                        </Form.Item>
+                                                    </div>
+                                                );
+                                            })}
+                                            <Button
+                                                type="dashed"
+                                                long
+                                                onClick={() =>
+                                                    add({
+                                                        id: crypto.randomUUID(),
+                                                        account_name: "",
+                                                        account_number: "",
+                                                        description: "",
+                                                        qr_code_image: null,
+                                                    })
+                                                }
+                                            >
+                                                <IconPlus /> Add Payment Method
+                                            </Button>
+                                        </>
+                                    )}
+                                </Form.List>
+                            </Form.Item>
+                        </Collapse.Item>
+                    </Collapse>
 
                     {/* Submit Button */}
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" loading={loading} long>
-                            Create Tournament
-                        </Button>
-                    </Form.Item>
+                    <MobileStickyActions>
+                        <Form.Item>
+                            <Button type="primary" htmlType="submit" loading={loading} long>
+                                Create Tournament
+                            </Button>
+                        </Form.Item>
+                    </MobileStickyActions>
                 </Form>
             </div>
         </div>

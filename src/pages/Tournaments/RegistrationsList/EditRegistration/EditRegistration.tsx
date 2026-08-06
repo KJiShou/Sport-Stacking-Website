@@ -1,24 +1,22 @@
 // src/pages/ViewTournamentRegistrationPage.tsx
 
+import {MobilePageHeader, MobileStickyActions, ResponsiveOverlay} from "@/components/responsive";
 import {useAuthContext} from "@/context/AuthContext";
 import type {DoubleRecruitment, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import type {TeamRecruitment} from "@/schema/TeamRecruitmentSchema";
+import {deleteAdminTeam, upsertAdminTeam} from "@/services/firebase/adminTeamService";
 import {fetchUsersByGlobalIds, getUserByGlobalId} from "@/services/firebase/authService";
+import {db} from "@/services/firebase/config";
 import {
     createDoubleRecruitment,
     deleteDoubleRecruitment,
     getDoubleRecruitmentsByParticipant,
 } from "@/services/firebase/doubleRecruitmentService";
-import {dedupeTeamsByEvent, resolveTeamEvent, teamMatchesEvent} from "@/utils/teamDeduplication";
-import type {LegacyTeam} from "@/utils/teamDeduplication";
-
-import {db} from "@/services/firebase/config";
 import {
     deleteIndividualRecruitment,
     getIndividualRecruitmentsByParticipant,
 } from "@/services/firebase/individualRecruitmentService";
 import {deleteRegistrationById, fetchRegistrationById, updateRegistration} from "@/services/firebase/registerService";
-import {deleteAdminTeam, upsertAdminTeam} from "@/services/firebase/adminTeamService";
 import {uploadFile} from "@/services/firebase/storageService";
 import {
     createTeamRecruitment,
@@ -37,6 +35,8 @@ import {
     deleteVerificationRequestByTournamentTeamMember,
     deleteVerificationRequestsByTeamId,
 } from "@/services/firebase/verificationRequestService";
+import type {LegacyTeam} from "@/utils/teamDeduplication";
+import {dedupeTeamsByEvent, resolveTeamEvent, teamMatchesEvent} from "@/utils/teamDeduplication";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {
     getEventKey,
@@ -64,7 +64,7 @@ import {
     Upload,
 } from "@arco-design/web-react";
 import type {UploadItem} from "@arco-design/web-react/es/Upload";
-import {IconClose, IconDelete, IconExclamationCircle, IconPlus, IconUndo} from "@arco-design/web-react/icon";
+import {IconClose, IconDelete, IconExclamationCircle, IconPlus} from "@arco-design/web-react/icon";
 import dayjs from "dayjs";
 import {Timestamp} from "firebase/firestore";
 import {nanoid} from "nanoid";
@@ -105,6 +105,18 @@ const getRequiredTeamSize = (event: TournamentEvent): number | null => {
         return 4;
     }
     return null;
+};
+
+const isTeamRelayEvent = (event: TournamentEvent): boolean => (event.type ?? "").toLowerCase().includes("team relay");
+
+const isValidTeamParticipantCount = (event: TournamentEvent, participantCount: number): boolean => {
+    const teamSize = getRequiredTeamSize(event);
+    if (teamSize === null) {
+        return true;
+    }
+    return isTeamRelayEvent(event)
+        ? participantCount === teamSize || participantCount === teamSize + 1
+        : participantCount === teamSize;
 };
 
 const getAdditionalFeeForEvent = (event: TournamentEvent): number => {
@@ -209,12 +221,10 @@ export default function EditTournamentRegistrationPage() {
                 const team = teams.find((candidate) => teamMatchesEvent(candidate, event, events));
                 const eventType = (event.type ?? "").toLowerCase();
                 const isDoubleEvent = eventType.includes("double");
-                const isTeamRelayEvent = eventType.includes("team relay");
+                const isTeamRelayEventSelection = eventType.includes("team relay");
                 const wasInitiallySelected = initialEventIdsRef.current.some((eventId) => matchesEventKey(eventId, event));
                 const initialTeam = initialTeams.find((candidate) => teamMatchesEvent(candidate, event, events));
-                const initialTeamSnapshot = initialTeam
-                    ? initialTeamValidationSnapshotsRef.current[initialTeam.id]
-                    : null;
+                const initialTeamSnapshot = initialTeam ? initialTeamValidationSnapshotsRef.current[initialTeam.id] : null;
                 const teamConfigurationChanged = getTeamValidationSnapshot(team) !== initialTeamSnapshot;
                 const currentTeamRecruitmentIds = team
                     ? teamRecruitments
@@ -222,16 +232,14 @@ export default function EditTournamentRegistrationPage() {
                           .map((recruitment) => recruitment.id)
                           .sort()
                     : [];
-                const initialTeamRecruitmentIds = initialTeam
-                    ? (initialTeamRecruitmentIdsRef.current[initialTeam.id] ?? [])
-                    : [];
+                const initialTeamRecruitmentIds = initialTeam ? (initialTeamRecruitmentIdsRef.current[initialTeam.id] ?? []) : [];
                 const recruitmentChanged =
                     JSON.stringify(currentTeamRecruitmentIds) !== JSON.stringify(initialTeamRecruitmentIds);
 
                 // Existing incomplete Team Relay records can remain pending while an admin edits
                 // another event. A newly selected or modified Team Relay must still be complete
                 // (or have an active recruitment) before it can be saved.
-                if (isTeamRelayEvent && wasInitiallySelected && !teamConfigurationChanged && !recruitmentChanged) {
+                if (isTeamRelayEventSelection && wasInitiallySelected && !teamConfigurationChanged && !recruitmentChanged) {
                     continue;
                 }
                 const hasActiveRecruitment = isDoubleEvent
@@ -269,9 +277,12 @@ export default function EditTournamentRegistrationPage() {
                 }
 
                 const requiredTeamSize = getRequiredTeamSize(event);
-                if (requiredTeamSize !== null && memberIds.length + 1 !== requiredTeamSize) {
+                if (requiredTeamSize !== null && !isValidTeamParticipantCount(event, memberIds.length + 1)) {
+                    const requiredText = isTeamRelayEvent(event)
+                        ? `${requiredTeamSize} or ${requiredTeamSize + 1}`
+                        : `${requiredTeamSize}`;
                     throw new Error(
-                        `${eventLabel}: requires ${requiredTeamSize} participants or an active recruitment before saving.`,
+                        `${eventLabel}: requires ${requiredText} participants or an active recruitment before saving.`,
                     );
                 }
             }
@@ -359,7 +370,9 @@ export default function EditTournamentRegistrationPage() {
                                 tournamentId ?? "",
                                 {
                                     ...removedTeam,
-                                    members: (removedTeam.members ?? []).filter((member) => member.global_id !== memberIdToRemove),
+                                    members: (removedTeam.members ?? []).filter(
+                                        (member) => member.global_id !== memberIdToRemove,
+                                    ),
                                 },
                                 removedTeam.id,
                             );
@@ -969,19 +982,15 @@ export default function EditTournamentRegistrationPage() {
     }
 
     return (
-        <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+        <div className="edit-registration-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <Spin loading={loading} tip="Loading…" className={"w-full"}>
-                <Button
-                    type="outline"
-                    onClick={() => navigate(`/tournaments/${tournamentId}/registrations${location.search}`)}
-                    className={`w-fit pt-2 pb-2 mb-4`}
-                >
-                    <IconUndo /> Go Back
-                </Button>
+                <MobilePageHeader
+                    title="Edit Registration"
+                    backTo={`/tournaments/${tournamentId}/registrations${location.search}`}
+                    backLabel="Back to Registrations"
+                />
                 <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                    <Title heading={4}>Edit Registration</Title>
-
-                    <Form form={form} layout="vertical" onSubmit={handleSave}>
+                    <Form form={form} layout="vertical" onSubmit={handleSave} className="edit-registration-form">
                         <Form.Item className="w-full">
                             {registration?.registration_status && (
                                 <div className="flex w-full justify-between gap-4">
@@ -1246,7 +1255,8 @@ export default function EditTournamentRegistrationPage() {
                                                                     }
                                                                 }}
                                                             >
-                                                                {getParticipantDisplay(m.global_id)} · {m.verified ? "Verified" : "Pending verification"}
+                                                                {getParticipantDisplay(m.global_id)} ·{" "}
+                                                                {m.verified ? "Verified" : "Pending verification"}
                                                             </Tag>
                                                             <Button
                                                                 icon={<IconClose />}
@@ -1462,7 +1472,7 @@ export default function EditTournamentRegistrationPage() {
                             />
                         </Form.Item>
 
-                        <Modal
+                        <ResponsiveOverlay
                             title="Add Team Recruitment"
                             visible={recruitmentModalVisible}
                             onCancel={() => {
@@ -1470,9 +1480,17 @@ export default function EditTournamentRegistrationPage() {
                                 setRecruitmentTeam(null);
                                 recruitmentForm.resetFields();
                             }}
-                            onOk={handleCreateRecruitment}
-                            okText="Create"
-                            className="w-full max-w-xl"
+                            className="admin-responsive-modal"
+                            desktopWidth="min(95vw, 640px)"
+                            mobileMode="fullscreen"
+                            footer={[
+                                <Button key="cancel" onClick={() => setRecruitmentModalVisible(false)}>
+                                    Cancel
+                                </Button>,
+                                <Button key="create" type="primary" onClick={() => void handleCreateRecruitment()}>
+                                    Create
+                                </Button>,
+                            ]}
                         >
                             {recruitmentTeam && (
                                 <Form form={recruitmentForm} layout="vertical">
@@ -1502,29 +1520,36 @@ export default function EditTournamentRegistrationPage() {
                                     </Form.Item>
                                 </Form>
                             )}
-                        </Modal>
+                        </ResponsiveOverlay>
 
                         {!edit ? (
-                            <Form.Item>
-                                <Button long type={`primary`} onClick={() => setEdit(true)}>
-                                    Edit
-                                </Button>
-                            </Form.Item>
+                            <MobileStickyActions>
+                                <Form.Item>
+                                    <Button long type={`primary`} onClick={() => setEdit(true)}>
+                                        Edit
+                                    </Button>
+                                </Form.Item>
+                            </MobileStickyActions>
                         ) : (
-                            <Form.Item>
-                                <Button
-                                    long
-                                    type={`primary`}
-                                    onClick={() => {
-                                        handleSave(form.getFieldsValue() as Registration, registration?.rejection_reason ?? "");
-                                    }}
-                                >
-                                    Save
-                                </Button>
-                            </Form.Item>
+                            <MobileStickyActions>
+                                <Form.Item>
+                                    <Button
+                                        long
+                                        type={`primary`}
+                                        onClick={() => {
+                                            handleSave(
+                                                form.getFieldsValue() as Registration,
+                                                registration?.rejection_reason ?? "",
+                                            );
+                                        }}
+                                    >
+                                        Save
+                                    </Button>
+                                </Form.Item>
+                            </MobileStickyActions>
                         )}
                         <Form.Item field={`registration_status`} className="w-full">
-                            <div className="flex w-full justify-between gap-4">
+                            <div className="registration-status-actions flex w-full justify-between gap-4">
                                 <Button
                                     className="w-1/3"
                                     status="success"

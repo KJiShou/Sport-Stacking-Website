@@ -313,6 +313,13 @@ const importGetExpectedTeamSize = (event: ImportEvent): number => {
     return 1;
 };
 
+const importIsTeamRelayEvent = (event: ImportEvent): boolean => importIsEventType(event, "Team Relay");
+
+const importGetAllowedTeamSizes = (event: ImportEvent): number[] => {
+    const expectedSize = importGetExpectedTeamSize(event);
+    return importIsTeamRelayEvent(event) ? [expectedSize, expectedSize + 1] : [expectedSize];
+};
+
 const importBuildIdentityKey = (
     identityType: ImportIdentityType,
     identityNumber: string | null,
@@ -887,17 +894,17 @@ const importParseWorkbook = (
         let currentBlockRow = 0;
         let currentBlockName = "";
         let currentBlockHasErrors = false;
-        const expectedSize = importGetExpectedTeamSize(event);
+        const allowedTeamSizes = importGetAllowedTeamSizes(event);
         const flushBlock = () => {
             if (currentBlock.length === 0) {
                 return;
             }
-            if (currentBlock.length !== expectedSize) {
+            if (!allowedTeamSizes.includes(currentBlock.length)) {
                 parsed.rows.push({
                     sheet: worksheet.name,
                     row: currentBlockRow,
                     level: "error",
-                    message: `${event.type} block has ${currentBlock.length} members; expected ${expectedSize}.`,
+                    message: `${event.type} block has ${currentBlock.length} members; expected ${allowedTeamSizes.join(" or ")}.`,
                 });
             } else if (!currentBlockHasErrors) {
                 parsed.teams.push({
@@ -918,13 +925,14 @@ const importParseWorkbook = (
             currentBlockHasErrors = false;
         };
 
+        let skippingExampleBlock = false;
         for (let rowNumber = headerRowNumber + 1; rowNumber <= lastRelevantRow; rowNumber += 1) {
             const row = worksheet.getRow(rowNumber);
             const noCell = row.getCell(columns.no);
             const noText = importCellToString(noCell.value);
             if (importIsExampleMarker(noText)) {
                 flushBlock();
-                rowNumber += expectedSize - 1;
+                skippingExampleBlock = true;
                 continue;
             }
             if (!importRowHasParticipantContent(row, columns)) {
@@ -932,6 +940,12 @@ const importParseWorkbook = (
             }
             const startsBlock =
                 noText.trim().length > 0 && noText.toLowerCase() !== "ex:" && !importIsMergedContinuationCell(noCell);
+            if (skippingExampleBlock) {
+                if (!startsBlock) {
+                    continue;
+                }
+                skippingExampleBlock = false;
+            }
             if (startsBlock) {
                 flushBlock();
                 currentBlockRow = rowNumber;
@@ -1043,6 +1057,45 @@ const profileSnapshotBelongsToUid = (
     }
 
     return profile.id === uid;
+};
+
+const getOwnedProfileSnapshots = async (uid: string): Promise<QueryDocumentSnapshot[]> => {
+    const [ownedProfilesSnapshot, legacyProfileSnapshot] = await Promise.all([
+        db.collection("users").where("owner_uids", "array-contains", uid).get(),
+        db.collection("users").doc(uid).get(),
+    ]);
+    const profileMap = new Map<string, QueryDocumentSnapshot>();
+
+    for (const profile of ownedProfilesSnapshot.docs) {
+        profileMap.set(profile.id, profile);
+    }
+    if (legacyProfileSnapshot.exists && profileSnapshotBelongsToUid(legacyProfileSnapshot, uid)) {
+        profileMap.set(legacyProfileSnapshot.id, legacyProfileSnapshot as QueryDocumentSnapshot);
+    }
+
+    return [...profileMap.values()];
+};
+
+const getProfileSortKey = (profile: {id: string; data: () => Record<string, unknown> | undefined}): string => {
+    const globalId = profile.data()?.global_id;
+    return typeof globalId === "string" && globalId.trim() ? globalId.trim() : profile.id;
+};
+
+const resolvePrimaryOwnedProfile = (profiles: QueryDocumentSnapshot[], uid: string): QueryDocumentSnapshot | null => {
+    const uidProfile = profiles.find((profile) => {
+        const data = profile.data() as {id?: unknown};
+        return profile.id === uid || data.id === uid;
+    });
+    if (uidProfile) {
+        return uidProfile;
+    }
+
+    return (
+        [...profiles].sort((left, right) => {
+            const keyComparison = getProfileSortKey(left).localeCompare(getProfileSortKey(right));
+            return keyComparison || left.id.localeCompare(right.id);
+        })[0] ?? null
+    );
 };
 
 type AuthorizedTournamentProfile = {
@@ -1639,6 +1692,8 @@ type FirestoreEventRecord = {
     type?: string;
     gender?: string;
     codes?: string[];
+    teamSize?: number;
+    team_size?: number;
 };
 
 type BestEventType = "3-3-3" | "3-6-3" | "Cycle";
@@ -1815,20 +1870,33 @@ const resolveTeamEvents = (
 
 type RegistrationTeamSnapshot = NonNullable<Registration["teams"]>[number];
 
-const buildRegistrationTeamSnapshot = (team: Team): RegistrationTeamSnapshot => ({
-    team_id: team.id,
-    label: team.name ?? "",
-    name: team.name ?? "",
-    member: (team.members ?? []).map((member) => ({
-        global_id: member.global_id,
-        verified: Boolean(member.verified),
-    })),
-    leader: {
-        global_id: team.leader_id ?? null,
-        verified: true,
-    },
-    looking_for_team_members: Boolean(team.looking_for_member),
-});
+const normalizeMaintenanceTeamName = (value: string | null | undefined): string =>
+    (value ?? "")
+        .normalize("NFC")
+        .replace(/(?:\u200B|\u200C|\u200D|\uFEFF)/gu, "")
+        .replace(/\s+/gu, " ")
+        .trim();
+
+const maintenanceTeamNamesEqual = (left: string | null | undefined, right: string | null | undefined): boolean =>
+    normalizeMaintenanceTeamName(left) === normalizeMaintenanceTeamName(right);
+
+const buildRegistrationTeamSnapshot = (team: Team, existing?: RegistrationTeamSnapshot): RegistrationTeamSnapshot => {
+    const teamName = team.name ?? "";
+    return {
+        team_id: team.id,
+        label: maintenanceTeamNamesEqual(existing?.label, teamName) ? existing?.label : teamName,
+        name: maintenanceTeamNamesEqual(existing?.name, teamName) ? existing?.name ?? teamName : teamName,
+        member: (team.members ?? []).map((member) => ({
+            global_id: member.global_id,
+            verified: Boolean(member.verified),
+        })),
+        leader: {
+            global_id: team.leader_id ?? null,
+            verified: true,
+        },
+        looking_for_team_members: Boolean(team.looking_for_member),
+    };
+};
 
 /**
  * Keeps the legacy registration team snapshot readable by every confirmed
@@ -1863,14 +1931,14 @@ const syncRegistrationTeamSnapshots = async (teamId: string, beforeTeam: Team | 
     for (const member of afterTeam?.members ?? []) {
         if (member.global_id && member.verified) activeParticipantIds.add(member.global_id);
     }
-    const snapshot = afterTeam ? buildRegistrationTeamSnapshot(afterTeam) : null;
-
     await Promise.all(
         registrationSnapshots.flatMap((result) =>
             result.docs.map((registrationDoc) => {
                 const registration = registrationDoc.data() as Registration;
                 const existingTeams = Array.isArray(registration.teams) ? registration.teams : [];
                 const withoutCurrentTeam = existingTeams.filter((entry) => entry.team_id !== teamId);
+                const existingTeam = existingTeams.find((entry) => entry.team_id === teamId);
+                const snapshot = afterTeam ? buildRegistrationTeamSnapshot(afterTeam, existingTeam) : null;
                 const nextTeams =
                     snapshot && activeParticipantIds.has(registration.user_global_id)
                         ? [...withoutCurrentTeam, snapshot]
@@ -3722,6 +3790,45 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
         if (eventKeys.length === 0) {
             throw new HttpsError("invalid-argument", "Team event is required.");
         }
+        const eventSnapshots = await transaction.get(db.collection("events").where("tournament_id", "==", tournamentId));
+        const resolvedTeamEvent = resolveTeamEvents(nextTeam, eventSnapshots.docs).events[0]?.data;
+        const eventType = String(resolvedTeamEvent?.type ?? getTeamEventNameReferences(nextTeam)[0] ?? "")
+            .trim()
+            .toLowerCase();
+        const isTeamRelay = eventType === "team relay" || eventType === "time relay";
+        const isTeamEvent =
+            isTeamRelay || eventType === "double" || (eventType.includes("parent") && eventType.includes("child"));
+        if (isTeamEvent) {
+            const configuredTeamSize = Number(
+                resolvedTeamEvent?.teamSize ??
+                    resolvedTeamEvent?.team_size ??
+                    (eventType === "double" || (eventType.includes("parent") && eventType.includes("child")) ? 2 : 4),
+            );
+            const participantCount = 1 + (nextTeam.members ?? []).length;
+            const minimumParticipantCount = configuredTeamSize;
+            const maximumParticipantCount = isTeamRelay ? configuredTeamSize + 1 : configuredTeamSize;
+            const hasValidConfiguredSize = Number.isFinite(configuredTeamSize) && configuredTeamSize >= 2;
+            const activeRecruitmentSnapshot =
+                participantCount < minimumParticipantCount
+                    ? await transaction.get(db.collection("team_recruitment").where("team_id", "==", teamRef.id))
+                    : null;
+            const hasActiveTeamRecruitment = Boolean(
+                activeRecruitmentSnapshot?.docs.some((snapshot) => snapshot.data()?.status === "active"),
+            );
+            const countWithinAllowedRange =
+                hasValidConfiguredSize &&
+                participantCount <= maximumParticipantCount &&
+                (nextTeam.looking_for_member === true || hasActiveTeamRecruitment || participantCount >= minimumParticipantCount);
+            if (!countWithinAllowedRange) {
+                const requiredText = isTeamRelay
+                    ? `${configuredTeamSize} or ${configuredTeamSize + 1}`
+                    : `exactly ${configuredTeamSize}`;
+                throw new HttpsError(
+                    "failed-precondition",
+                    `${resolvedTeamEvent?.type ?? "Team event"} requires ${requiredText} participants.`,
+                );
+            }
+        }
         const confirmedParticipantIds = teamParticipantIds(nextTeam);
         const previousConfirmedParticipantIds = existingTeam ? teamParticipantIds(existingTeam) : [];
         const allTeamsSnapshot = await transaction.get(db.collection("teams").where("tournament_id", "==", tournamentId));
@@ -4096,6 +4203,114 @@ export const transferProfileOwnership = onCall(callableFunctionOptions, async (r
         email: targetEmail,
         primary_owner_email: targetEmail,
         account_status: "claimed",
+    };
+});
+
+export const releaseOwnedProfile = onCall(callableFunctionOptions, async (request) => {
+    const requesterUid = request.auth?.uid;
+    if (!requesterUid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+    }
+
+    const payload = request.data as {profileId?: unknown; meta?: unknown};
+    const operation = normalizeOperationMeta(payload.meta);
+    const profileId = typeof payload.profileId === "string" ? payload.profileId.trim() : "";
+    if (!profileId) {
+        throw new HttpsError("invalid-argument", "Profile ID is required.");
+    }
+
+    const profileRef = db.collection("users").doc(profileId);
+    const profileSnapshot = await profileRef.get();
+    if (!profileSnapshot.exists) {
+        throw new HttpsError("not-found", "Profile not found.");
+    }
+    if (!profileSnapshotBelongsToUid(profileSnapshot, requesterUid)) {
+        throw new HttpsError("permission-denied", "You can only remove profiles linked to your account.");
+    }
+
+    const ownedProfiles = await getOwnedProfileSnapshots(requesterUid);
+    const primaryProfile = resolvePrimaryOwnedProfile(ownedProfiles, requesterUid);
+    if (primaryProfile?.id === profileId) {
+        throw new HttpsError("failed-precondition", "The primary profile cannot be removed from the account.");
+    }
+
+    const profileData = profileSnapshot.data() as {
+        global_id?: string | null;
+        owner_uids?: string[] | null;
+        account_status?: string | null;
+        email?: string | null;
+        primary_owner_email?: string | null;
+    };
+    const currentOwnerUids = Array.isArray(profileData.owner_uids) ? profileData.owner_uids : [requesterUid];
+    if (!currentOwnerUids.includes(requesterUid)) {
+        throw new HttpsError("permission-denied", "You can only remove profiles linked to your account.");
+    }
+    const nextOwnerUids = currentOwnerUids.filter((uid) => uid !== requesterUid);
+    let nextOwnerEmail: string | null = null;
+    if (nextOwnerUids.length > 0) {
+        try {
+            nextOwnerEmail = (await getAuth().getUser(nextOwnerUids[0])).email ?? null;
+        } catch (error) {
+            // Firestore emulator tests and older imported profiles may not have a
+            // corresponding Auth record. Preserve the profile's existing email in
+            // that case; production accounts resolve the current owner email above.
+            console.warn("Failed to resolve the remaining profile owner; preserving the profile email.", error);
+            nextOwnerEmail = profileData.email ?? null;
+        }
+    }
+
+    const actorContext = await resolveActorContext(db, requesterUid, operation.activeProfileGlobalId);
+    const now = FirestoreTimestamp.now();
+    await db.runTransaction(async (transaction) => {
+        const freshSnapshot = await transaction.get(profileRef);
+        if (!freshSnapshot.exists) {
+            throw new HttpsError("not-found", "Profile not found.");
+        }
+
+        const freshData = freshSnapshot.data() as {owner_uids?: string[] | null};
+        const freshOwnerUids = Array.isArray(freshData.owner_uids) ? freshData.owner_uids : [requesterUid];
+        if (!freshOwnerUids.includes(requesterUid)) {
+            throw new HttpsError("permission-denied", "You can only remove profiles linked to your account.");
+        }
+        if (freshOwnerUids.length !== currentOwnerUids.length || freshOwnerUids.some((uid) => !currentOwnerUids.includes(uid))) {
+            throw new HttpsError("failed-precondition", "The profile ownership changed. Please try again.");
+        }
+
+        transaction.update(profileRef, {
+            owner_uids: nextOwnerUids,
+            account_status: nextOwnerUids.length > 0 ? "claimed" : "unclaimed",
+            email: nextOwnerEmail,
+            primary_owner_email: nextOwnerEmail,
+            updated_at: now,
+        });
+        setAuditLogInTransaction(transaction, db, {
+            ...actorContext,
+            action: "profile.ownership-release",
+            status: "success",
+            entityType: "user-profile",
+            entityId: profileId,
+            changedFields: ["owner_uids", "account_status", "email", "primary_owner_email"],
+            before: {
+                global_id: profileData.global_id ?? null,
+                account_status: profileData.account_status ?? null,
+                owner_uids: currentOwnerUids,
+            },
+            after: {
+                global_id: profileData.global_id ?? null,
+                account_status: nextOwnerUids.length > 0 ? "claimed" : "unclaimed",
+                owner_uids: nextOwnerUids,
+            },
+            operationId: operation.operationId,
+            source: "callable",
+        });
+    });
+
+    return {
+        profileId,
+        owner_uids: nextOwnerUids,
+        email: nextOwnerEmail,
+        primary_owner_email: nextOwnerEmail,
+        account_status: nextOwnerUids.length > 0 ? "claimed" : "unclaimed",
     };
 });
 
@@ -5482,8 +5697,17 @@ export const adminCreateTournamentRegistration = onCall(lowCpuCallableFunctionOp
             const configuredTeamSize = Number(
                 event.teamSize ?? event.team_size ?? (event.type === "Double" || event.type === "Parent & Child" ? 2 : 4),
             );
-            if (!Number.isFinite(configuredTeamSize) || configuredTeamSize < 2 || memberIds.length + 1 !== configuredTeamSize) {
-                throw new HttpsError("failed-precondition", `${event.type} requires exactly ${configuredTeamSize} participants.`);
+            const participantCount = memberIds.length + 1;
+            const isTeamRelay = String(event.type ?? "").toLowerCase() === "team relay";
+            const hasValidParticipantCount =
+                Number.isFinite(configuredTeamSize) &&
+                configuredTeamSize >= 2 &&
+                (participantCount === configuredTeamSize || (isTeamRelay && participantCount === configuredTeamSize + 1));
+            if (!hasValidParticipantCount) {
+                const requiredText = isTeamRelay
+                    ? `${configuredTeamSize} or ${configuredTeamSize + 1}`
+                    : `exactly ${configuredTeamSize}`;
+                throw new HttpsError("failed-precondition", `${event.type} requires ${requiredText} participants.`);
             }
             if (event.type === "Parent & Child" && memberIds.length !== 1) {
                 throw new HttpsError("failed-precondition", "Parent & Child requires exactly one Parent member.");

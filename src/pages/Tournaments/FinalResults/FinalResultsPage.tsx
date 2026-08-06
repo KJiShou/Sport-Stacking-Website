@@ -20,13 +20,13 @@ import {
     isScoreTrackedEvent,
     isTeamEvent as isTournamentTeamEvent,
 } from "@/utils/tournament/eventUtils";
-import {Button, Dropdown, Message, Modal, Table, Tabs, Typography} from "@arco-design/web-react";
+import {Button, Dropdown, Message, Modal, Table, Tabs} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
-import {IconCopy, IconPrinter, IconUndo} from "@arco-design/web-react/icon";
-import {useCallback, useEffect, useMemo, useState} from "react";
+import {IconCopy, IconPrinter} from "@arco-design/web-react/icon";
+import {type ReactNode, useCallback, useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
+import {MobilePageHeader, MobileRankingTable, ResponsiveTabs} from "@/components/responsive";
 
-const {Title} = Typography;
 const {TabPane} = Tabs;
 type PrintScope = "all" | "event" | "age";
 
@@ -542,6 +542,48 @@ const buildExpandedRows = (
     );
 };
 
+const createFinalResultsMobileDetailsRenderer =
+    ({
+        isTeamEvent,
+        eventLabel,
+        bracketName,
+        classification,
+        event,
+        eventCodes,
+        allRecords,
+    }: {
+        isTeamEvent: boolean;
+        eventLabel: string;
+        bracketName: string;
+        classification: string;
+        event: TournamentEvent;
+        eventCodes: string[];
+        allRecords: TournamentRecord[];
+    }) =>
+    (record: AggregatedFinalResult) => {
+        let attemptDetails: ReactNode;
+        if (eventCodes.length > 1) {
+            attemptDetails = buildExpandedRows(record, event, eventCodes, isTeamEvent, allRecords);
+        } else {
+            attemptDetails = (
+                <span>
+                    Try 1: {record.try1?.toFixed?.(3) ?? "N/A"}; Try 2: {record.try2?.toFixed?.(3) ?? "N/A"}; Try 3:{" "}
+                    {record.try3?.toFixed?.(3) ?? "N/A"}
+                </span>
+            );
+        }
+
+        return (
+            <div className="results-mobile-card__details">
+                <span>{isTeamEvent ? "Team" : "Athlete"}</span>
+                <span>Event: {eventLabel}</span>
+                <span>Age: {bracketName}</span>
+                <span>Final: {classification}</span>
+                {attemptDetails}
+            </div>
+        );
+    };
+
 export default function FinalResultsPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
     const navigate = useNavigate();
@@ -733,26 +775,28 @@ export default function FinalResultsPage() {
 
     const buildFinalResultsData = useCallback(
         (scope: PrintScope): EventResults[] => {
-            const scopedEvents =
-                scope === "all"
-                    ? events ?? []
-                    : currentEvent
-                      ? [currentEvent]
-                      : [];
+            let scopedEvents: TournamentEvent[];
+            if (scope === "all") {
+                scopedEvents = events ?? [];
+            } else if (currentEvent) {
+                scopedEvents = [currentEvent];
+            } else {
+                scopedEvents = [];
+            }
 
             return scopedEvents
                 .map((event) => {
-                    const scopedBrackets =
-                        scope === "age" && event.id === currentEvent?.id && currentBracket ? [currentBracket] : event.age_brackets ?? [];
+                    let scopedBrackets = event.age_brackets ?? [];
+                    if (scope === "age" && event.id === currentEvent?.id && currentBracket) {
+                        scopedBrackets = [currentBracket];
+                    }
 
                     const brackets = scopedBrackets
                         .flatMap((bracket) => {
-                            const criteria =
-                                scope === "age" && event.id === currentEvent?.id && bracket.name === currentBracket?.name
-                                    ? (bracket.final_criteria ?? []).filter(
-                                          (fc) => fc.classification === currentClassificationTab,
-                                      )
-                                    : bracket.final_criteria ?? [];
+                            let criteria = bracket.final_criteria ?? [];
+                            if (scope === "age" && event.id === currentEvent?.id && bracket.name === currentBracket?.name) {
+                                criteria = criteria.filter((fc) => fc.classification === currentClassificationTab);
+                            }
 
                             return criteria.map((fc) => {
                                 const records = computeEventBracketResults(event, bracket, aggregationContext, fc.classification);
@@ -775,38 +819,41 @@ export default function FinalResultsPage() {
         [aggregationContext, currentBracket, currentClassificationTab, currentEvent, events],
     );
 
-    const handlePrint = useCallback(async (scope: PrintScope = "age") => {
-        if (!tournament) return;
+    const handlePrint = useCallback(
+        async (scope: PrintScope = "age") => {
+            if (!tournament) return;
 
-        setLoading(true);
-        try {
-            const resultsData = buildFinalResultsData(scope);
+            setLoading(true);
+            try {
+                const resultsData = buildFinalResultsData(scope);
 
-            if (resultsData.length === 0) {
-                const scopeLabel =
-                    scope === "all"
-                        ? "No final results found."
-                        : scope === "event"
-                          ? "No final results found for the current event."
-                          : "No final results found for the current age bracket and classification.";
-                Message.info(scopeLabel);
-                return;
+                if (resultsData.length === 0) {
+                    const scopeLabel =
+                        scope === "all"
+                            ? "No final results found."
+                            : scope === "event"
+                              ? "No final results found for the current event."
+                              : "No final results found for the current age bracket and classification.";
+                    Message.info(scopeLabel);
+                    return;
+                }
+
+                await exportAllPrelimResultsToPDF({
+                    tournament,
+                    resultsData,
+                    round: "Final",
+                    highlightFinalists: false,
+                });
+                Message.success("PDF preview opened in new tab!");
+            } catch (error) {
+                console.error(error);
+                Message.error("Failed to generate PDF");
+            } finally {
+                setLoading(false);
             }
-
-            await exportAllPrelimResultsToPDF({
-                tournament,
-                resultsData,
-                round: "Final",
-                highlightFinalists: false,
-            });
-            Message.success("PDF preview opened in new tab!");
-        } catch (error) {
-            console.error(error);
-            Message.error("Failed to generate PDF");
-        } finally {
-            setLoading(false);
-        }
-    }, [buildFinalResultsData, tournament]);
+        },
+        [buildFinalResultsData, tournament],
+    );
 
     const handlePrintCertificates = useCallback(async () => {
         if (!tournament) return;
@@ -914,23 +961,25 @@ export default function FinalResultsPage() {
     }, [tournamentId]);
 
     return (
-        <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-            <Button
-                type="outline"
-                onClick={() => navigate(`/tournaments/${tournamentId}/scoring/final`)}
-                className="w-fit pt-2 pb-2"
-            >
-                <IconUndo /> Go Back
-            </Button>
+        <div className="results-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+            <MobilePageHeader
+                title="Final Results"
+                backTo={`/tournaments/${tournamentId}/scoring/final`}
+                backLabel="Back to Scoring"
+            />
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <div className="w-full flex justify-between items-center">
-                    <Title heading={3}>Final Results</Title>
+                <div className="results-header w-full flex justify-between items-center mobile-stack">
                     <div className="flex flex-wrap items-center gap-2">
                         <Dropdown
                             trigger="click"
                             droplist={
                                 <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg min-w-[190px]">
-                                    <Button type="text" className="text-left" loading={loading} onClick={() => handlePrint("all")}>
+                                    <Button
+                                        type="text"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrint("all")}
+                                    >
                                         Print All
                                     </Button>
                                     <Button
@@ -941,7 +990,12 @@ export default function FinalResultsPage() {
                                     >
                                         Print Current Event
                                     </Button>
-                                    <Button type="text" className="text-left" loading={loading} onClick={() => handlePrint("age")}>
+                                    <Button
+                                        type="text"
+                                        className="text-left"
+                                        loading={loading}
+                                        onClick={() => handlePrint("age")}
+                                    >
                                         Print Current Age
                                     </Button>
                                 </div>
@@ -966,7 +1020,7 @@ export default function FinalResultsPage() {
                         )}
                     </div>
                 </div>
-                <Tabs
+                <ResponsiveTabs
                     type="line"
                     className="w-full"
                     activeTab={currentEventTab}
@@ -993,7 +1047,7 @@ export default function FinalResultsPage() {
                         return (
                             <TabPane key={tabKey} title={eventLabel}>
                                 {event.age_brackets && event.age_brackets.length > 0 ? (
-                                    <Tabs
+                                    <ResponsiveTabs
                                         type="capsule"
                                         className="w-full"
                                         activeTab={currentBracketTab}
@@ -1011,7 +1065,7 @@ export default function FinalResultsPage() {
                                                 <TabPane key={bracket.name} title={bracket.name}>
                                                     {/* Classification tabs */}
                                                     {bracket.final_criteria && bracket.final_criteria.length > 0 ? (
-                                                        <Tabs
+                                                        <ResponsiveTabs
                                                             type="rounded"
                                                             className="w-full"
                                                             activeTab={currentClassificationTab}
@@ -1043,7 +1097,27 @@ export default function FinalResultsPage() {
                                                                             fc.classification.slice(1)
                                                                         }
                                                                     >
+                                                                        <div className="results-mobile-ranking-table">
+                                                                            <MobileRankingTable
+                                                                                data={bracketResults}
+                                                                                loading={loading}
+                                                                                rowKey={(record) => record.id}
+                                                                                rank={(record) => record.rank}
+                                                                                name={(record) => record.name}
+                                                                                result={(record) => formatTime(record.bestTime)}
+                                                                                details={createFinalResultsMobileDetailsRenderer({
+                                                                                    isTeamEvent,
+                                                                                    eventLabel,
+                                                                                    bracketName: bracket.name,
+                                                                                    classification: fc.classification,
+                                                                                    event,
+                                                                                    eventCodes,
+                                                                                    allRecords,
+                                                                                })}
+                                                                            />
+                                                                        </div>
                                                                         <Table
+                                                                            className="results-desktop-table"
                                                                             style={{width: "100%"}}
                                                                             rowKey={(record) => record.id}
                                                                             columns={columns}
@@ -1055,9 +1129,10 @@ export default function FinalResultsPage() {
                                                                     </TabPane>
                                                                 );
                                                             })}
-                                                        </Tabs>
+                                                        </ResponsiveTabs>
                                                     ) : (
                                                         <Table
+                                                            className="results-desktop-table"
                                                             style={{width: "100%"}}
                                                             rowKey={(record) => record.id}
                                                             columns={columns}
@@ -1069,9 +1144,10 @@ export default function FinalResultsPage() {
                                                 </TabPane>
                                             );
                                         })}
-                                    </Tabs>
+                                    </ResponsiveTabs>
                                 ) : (
                                     <Table
+                                        className="results-desktop-table"
                                         style={{width: "100%"}}
                                         rowKey={(record) => record.id}
                                         columns={columns}
@@ -1083,7 +1159,7 @@ export default function FinalResultsPage() {
                             </TabPane>
                         );
                     })}
-                </Tabs>
+                </ResponsiveTabs>
             </div>
         </div>
     );

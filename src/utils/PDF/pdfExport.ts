@@ -184,6 +184,7 @@ const getPrimaryEventCode = (event: TournamentEvent): string => {
 };
 
 const isTeamEventType = (type: string): boolean => ["double", "team relay", "parent & child"].includes(type.toLowerCase());
+const isTeamRelayEventType = (type: string): boolean => type.trim().toLowerCase() === "team relay";
 const isIndividualSheetType = (type: string): boolean => {
     const normalized = type.trim().toLowerCase();
     return normalized === "individual" || normalized === "open age individual";
@@ -441,14 +442,17 @@ const generateTeamTableData = (
         const leaderPhone = leaderId ? phoneMap[leaderId] || "N/A" : "N/A";
         const maxAge = getTeamMaxAge(team, ageMap);
 
-        return [
+        const row = [
             (index + 1).toString(),
             formatTeamLeaderId(team.leader_id ?? "N/A", eventType),
+            ...(isTeamRelayEventType(eventType) ? [team.name?.trim() || "N/A"] : []),
             memberNames.join(", "),
             memberIds.join(", "),
             leaderPhone,
             maxAge === null ? "N/A" : maxAge.toString(),
         ];
+
+        return row;
     });
 };
 
@@ -468,7 +472,11 @@ const generateIndividualTableData = (
         ]);
 };
 
-const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string>, eventType: string): string[][] => {
+const generateSingleTeamTableData = (
+    team: Team,
+    phoneMap: Record<string, string>,
+    nameMap: Record<string, string>,
+): string[][] => {
     const teamData: string[][] = [];
     const leaderId = stripTeamLeaderPrefix(team.leader_id);
 
@@ -476,6 +484,7 @@ const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string
     teamData.push([
         "1",
         leaderId || "N/A",
+        nameMap[leaderId] || leaderId || "N/A",
         "Leader", // Role
         leaderId ? phoneMap[leaderId] || "N/A" : "N/A",
     ]);
@@ -485,6 +494,7 @@ const generateSingleTeamTableData = (team: Team, phoneMap: Record<string, string
         teamData.push([
             (index + 2).toString(),
             member.global_id,
+            nameMap[member.global_id] || member.global_id || "N/A",
             "Member", // Role
             phoneMap[member.global_id] || "N/A",
         ]);
@@ -525,6 +535,95 @@ const teamMatchesSearch = (team: Team, normalizedSearch: string, registrationLis
     });
 };
 
+type PdfColumnStyles = Record<number, {cellWidth: number}>;
+
+const getParticipantListTableLayout = (
+    team: Team | undefined,
+    isTeamEvent: boolean,
+    teamEventType: string,
+): {headers: string[][]; columnStyles: PdfColumnStyles} => {
+    if (team) {
+        return {
+            headers: [["No.", "Global ID", "Name", "Role", "Phone Number"]],
+            columnStyles: {
+                0: {cellWidth: 10},
+                1: {cellWidth: 32},
+                2: {cellWidth: 62},
+                3: {cellWidth: 25},
+                4: {cellWidth: 35},
+            },
+        };
+    }
+    if (!isTeamEvent) {
+        return {
+            headers: [["No.", "Global ID", "Name", "Age", "Phone Number"]],
+            columnStyles: {0: {cellWidth: 10}, 1: {cellWidth: 32}, 2: {cellWidth: 90}, 3: {cellWidth: 20}, 4: {cellWidth: 30}},
+        };
+    }
+    if (isTeamRelayEventType(teamEventType)) {
+        return {
+            headers: [["No.", "Team ID", "Team Name", "Members Name", "Members", "Leader Phone", "Team Age"]],
+            columnStyles: {
+                0: {cellWidth: 8},
+                1: {cellWidth: 22},
+                2: {cellWidth: 28},
+                3: {cellWidth: 42},
+                4: {cellWidth: 35},
+                5: {cellWidth: 25},
+                6: {cellWidth: 16},
+            },
+        };
+    }
+    return {
+        headers: [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]],
+        columnStyles: {
+            0: {cellWidth: 10},
+            1: {cellWidth: 25},
+            2: {cellWidth: 55},
+            3: {cellWidth: 45},
+            4: {cellWidth: 30},
+            5: {cellWidth: 20},
+        },
+    };
+};
+
+const getAllPrelimTableLayout = (
+    isTeamEvent: boolean,
+    eventType: string,
+): {headers: string[][]; columnStyles: PdfColumnStyles} => {
+    if (!isTeamEvent) {
+        return {
+            headers: [["No.", "Name", "Global ID", "Age", "Phone"]],
+            columnStyles: {0: {cellWidth: 10}, 1: {cellWidth: 60}, 2: {cellWidth: 40}, 3: {cellWidth: 20}, 4: {cellWidth: 30}},
+        };
+    }
+    if (isTeamRelayEventType(eventType)) {
+        return {
+            headers: [["No.", "Team ID", "Team Name", "Members Name", "Members", "Leader Phone", "Team Age"]],
+            columnStyles: {
+                0: {cellWidth: 8},
+                1: {cellWidth: 22},
+                2: {cellWidth: 28},
+                3: {cellWidth: 42},
+                4: {cellWidth: 35},
+                5: {cellWidth: 25},
+                6: {cellWidth: 16},
+            },
+        };
+    }
+    return {
+        headers: [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]],
+        columnStyles: {
+            0: {cellWidth: 10},
+            1: {cellWidth: 25},
+            2: {cellWidth: 55},
+            3: {cellWidth: 45},
+            4: {cellWidth: 30},
+            5: {cellWidth: 20},
+        },
+    };
+};
+
 // Main Export Functions
 export const exportParticipantListToPDF = async (options: ExportPDFOptions): Promise<void> => {
     const {
@@ -550,6 +649,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         if (!event || !bracket) throw new Error("Event or bracket not found");
 
         const doc = new jsPDF();
+        await initializePDFDoc(doc);
         const pageWidth = doc.internal.pageSize.getWidth();
         const marginX = 14;
         const titleMaxWidth = pageWidth - 2 * (marginX + HEADER_ICON_SIZE);
@@ -557,16 +657,27 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         await addHeaderIcons(doc, marginX, 30, tournament.logo);
 
         // Header
-        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
-        doc.setFontSize(25);
         const eventLabel = getEventLabel(event) || event.type;
         const title = team ? `${team.name} Member List` : `${eventLabel} ${bracket.name} Name List`;
+        doc.setFont(getPDFFontForText(title), "bold");
+        doc.setFontSize(25);
         const titleLines = doc.splitTextToSize(title, titleMaxWidth);
         const titleY = getHeaderTitleY();
         doc.text(titleLines, pageWidth / 2, titleY, {align: "center"});
 
         const titleHeight = titleLines.length * 10; // Approximate height of the title
         let currentY = titleY + 6 + titleHeight;
+
+        if (team) {
+            const teamId = formatTeamLeaderId(team.leader_id, event.type);
+            doc.setFont(getPDFFontForText(team.name), "normal");
+            doc.setFontSize(11);
+            doc.text(`Team Name: ${team.name || "N/A"}`, 14, currentY);
+            currentY += 6;
+            doc.setFont(getPDFFontForText(teamId), "normal");
+            doc.text(`Team ID: ${teamId}`, 14, currentY);
+            currentY += 6;
+        }
 
         if (searchTerm && !team) {
             doc.setFontSize(10);
@@ -593,7 +704,7 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         }
 
         // Generate table data
-        const teamEventType = events?.find((evt) => matchesEventKey(eventKey, evt) || getEventKey(evt) === eventKey)?.type ?? "";
+        const teamEventType = event.type;
         const registrationNameMap = registrations.reduce(
             (acc, registration) => {
                 if (registration.user_global_id) {
@@ -604,30 +715,16 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
             {} as Record<string, string>,
         );
         const resolvedNameMap = {...registrationNameMap, ...(providedNameMap ?? {})};
-        const tableData = team
-            ? generateSingleTeamTableData(team, phoneMap, teamEventType)
-            : isTeamEvent
-              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, resolvedNameMap, events ?? [])
-              : generateIndividualTableData(registrations, bracket, phoneMap);
+        let tableData: string[][];
+        if (team) {
+            tableData = generateSingleTeamTableData(team, phoneMap, resolvedNameMap);
+        } else if (isTeamEvent) {
+            tableData = generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, resolvedNameMap, events ?? []);
+        } else {
+            tableData = generateIndividualTableData(registrations, bracket, phoneMap);
+        }
 
-        const headers = team
-            ? [["No.", "Global ID", "Role", "Phone Number"]]
-            : isTeamEvent
-              ? [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]]
-              : [["No.", "Global ID", "Name", "Age", "Phone Number"]];
-
-        const columnStyles = team
-            ? {0: {cellWidth: 10}, 1: {cellWidth: 40}, 2: {cellWidth: 40}, 3: {cellWidth: 40}}
-            : isTeamEvent
-              ? {
-                    0: {cellWidth: 10},
-                    1: {cellWidth: 25},
-                    2: {cellWidth: 55},
-                    3: {cellWidth: 45},
-                    4: {cellWidth: 30},
-                    5: {cellWidth: 20},
-                }
-              : {0: {cellWidth: 10}, 1: {cellWidth: 32}, 2: {cellWidth: 90}, 3: {cellWidth: 20}, 4: {cellWidth: 30}};
+        const {headers, columnStyles} = getParticipantListTableLayout(team, isTeamEvent, teamEventType);
 
         autoTable(doc, {
             startY,
@@ -648,6 +745,10 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
                 lineWidth: 0.1,
                 font: PDF_DEFAULT_FONT_FAMILY,
                 fontStyle: "bold",
+            },
+            didParseCell: (data) => {
+                const cellText = Array.isArray(data.cell.text) ? data.cell.text.join(" ") : String(data.cell.text ?? "");
+                data.cell.styles.font = getPDFFontForText(cellText);
             },
             columnStyles,
         });
@@ -1208,18 +1309,36 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
     }
 };
 
-export const exportAllBracketsListToPDF = async (
-    tournament: Tournament,
-    events: TournamentEvent[],
-    registrations: Registration[],
-    teams: Team[],
-    ageMap: Record<string, number>,
-    phoneMap: Record<string, string>,
-    nameMap: Record<string, string> = {},
-): Promise<void> => {
+interface BracketsListPDFOptions {
+    title: string;
+    summary: string;
+    filename: string;
+}
+
+interface BracketsListPDFInput {
+    tournament: Tournament;
+    events: TournamentEvent[];
+    registrations: Registration[];
+    teams: Team[];
+    ageMap: Record<string, number>;
+    phoneMap: Record<string, string>;
+    nameMap: Record<string, string>;
+    options: BracketsListPDFOptions;
+}
+
+const exportBracketsListToPDF = async ({
+    tournament,
+    events,
+    registrations,
+    teams,
+    ageMap,
+    phoneMap,
+    nameMap,
+    options,
+}: BracketsListPDFInput): Promise<void> => {
     try {
         const doc = new jsPDF();
-        doc.setFont(PDF_DEFAULT_FONT_FAMILY);
+        await initializePDFDoc(doc);
         const pageWidth = doc.internal.pageSize.getWidth();
         const marginX = 14;
         const titleMaxWidth = pageWidth - marginX * 2 - HEADER_ICON_SIZE * 2;
@@ -1227,9 +1346,9 @@ export const exportAllBracketsListToPDF = async (
         await addHeaderIcons(doc, marginX, HEADER_ICON_SIZE, tournament.logo);
 
         // Header
-        doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
+        doc.setFont(getPDFFontForText(options.title), "bold");
         doc.setFontSize(25);
-        const title = `${tournament.name} - All Events & Brackets`;
+        const title = options.title;
         const titleLines = doc.splitTextToSize(title, titleMaxWidth);
         const titleY = getHeaderTitleY();
         doc.text(titleLines, pageWidth / 2, titleY, {align: "center"});
@@ -1239,8 +1358,9 @@ export const exportAllBracketsListToPDF = async (
 
         doc.line(14, currentY, doc.internal.pageSize.width - 14, currentY);
         currentY += 10;
+        doc.setFont(getPDFFontForText(options.summary), "normal");
         doc.setFontSize(12);
-        doc.text(`Total Events: ${events.length}`, 14, currentY);
+        doc.text(options.summary, 14, currentY);
         currentY += 7;
 
         let startY = currentY;
@@ -1293,20 +1413,7 @@ export const exportAllBracketsListToPDF = async (
                           ]);
 
                 if (tableData.length > 0) {
-                    const headers = isTeamEvent
-                        ? [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]]
-                        : [["No.", "Name", "Global ID", "Age", "Phone"]];
-
-                    const columnStyles = isTeamEvent
-                        ? {
-                              0: {cellWidth: 10},
-                              1: {cellWidth: 25},
-                              2: {cellWidth: 55},
-                              3: {cellWidth: 45},
-                              4: {cellWidth: 30},
-                              5: {cellWidth: 20},
-                          }
-                        : {0: {cellWidth: 10}, 1: {cellWidth: 60}, 2: {cellWidth: 40}, 3: {cellWidth: 20}, 4: {cellWidth: 30}};
+                    const {headers, columnStyles} = getAllPrelimTableLayout(isTeamEvent, event.type);
 
                     autoTable(doc, {
                         startY,
@@ -1328,6 +1435,12 @@ export const exportAllBracketsListToPDF = async (
                             font: PDF_DEFAULT_FONT_FAMILY,
                             fontStyle: "bold",
                         },
+                        didParseCell: (data) => {
+                            const cellText = Array.isArray(data.cell.text)
+                                ? data.cell.text.join(" ")
+                                : String(data.cell.text ?? "");
+                            data.cell.styles.font = getPDFFontForText(cellText);
+                        },
                         columnStyles,
                         margin: {left: 20},
                     });
@@ -1347,12 +1460,63 @@ export const exportAllBracketsListToPDF = async (
         }
 
         addPDFFooter(doc);
-        const filename = createPDFFilename([tournament.name, "all_brackets_list.pdf"]);
-        openPDFInNewTab(doc, filename);
+        openPDFInNewTab(doc, createPDFFilename([tournament.name, options.filename]));
     } catch (error) {
-        console.error("Error generating all brackets PDF:", error);
+        console.error("Error generating event brackets PDF:", error);
         throw error;
     }
+};
+
+export const exportAllBracketsListToPDF = async (
+    tournament: Tournament,
+    events: TournamentEvent[],
+    registrations: Registration[],
+    teams: Team[],
+    ageMap: Record<string, number>,
+    phoneMap: Record<string, string>,
+    nameMap: Record<string, string> = {},
+): Promise<void> => {
+    await exportBracketsListToPDF({
+        tournament,
+        events,
+        registrations,
+        teams,
+        ageMap,
+        phoneMap,
+        nameMap,
+        options: {
+            title: `${tournament.name} - All Events & Brackets`,
+            summary: `Total Events: ${events.length}`,
+            filename: "all_brackets_list.pdf",
+        },
+    });
+};
+
+export const exportCurrentEventNameListToPDF = async (
+    tournament: Tournament,
+    event: TournamentEvent,
+    registrations: Registration[],
+    teams: Team[],
+    ageMap: Record<string, number>,
+    phoneMap: Record<string, string>,
+    nameMap: Record<string, string> = {},
+): Promise<void> => {
+    const eventLabel = getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`;
+
+    await exportBracketsListToPDF({
+        tournament,
+        events: [event],
+        registrations,
+        teams,
+        ageMap,
+        phoneMap,
+        nameMap,
+        options: {
+            title: `${tournament.name} - ${eventLabel} Name List`,
+            summary: `Event: ${eventLabel}`,
+            filename: `${eventLabel}_name_list.pdf`,
+        },
+    });
 };
 
 export const exportNameListStickerPDF = async ({tournament, registrations}: NameListStickerOptions): Promise<void> => {
@@ -1973,8 +2137,12 @@ const generateSingleStackingSheet = (
                     return ", ";
             }
         })();
-        const memberNamesValue = memberNames.length > 0 ? memberNames.join(nameSeparator) : "________________________";
-        const memberNameLines = splitMixedTextToSize(doc, memberNamesValue, pageWidth - marginX * 2 - nameX, "bold", 14);
+        const nameValue = isTeamRelayEventType(sheetType)
+            ? team.name?.trim() || "________________________"
+            : memberNames.length > 0
+              ? memberNames.join(nameSeparator)
+              : "________________________";
+        const memberNameLines = splitMixedTextToSize(doc, nameValue, pageWidth - marginX * 2 - nameX, "bold", 14);
         memberNameLines.forEach((line, lineIndex) => {
             drawMixedText(doc, line, nameX, infoY + sectionSpacing * lineIndex, {fontSize: 14, fontStyle: "bold"});
         });

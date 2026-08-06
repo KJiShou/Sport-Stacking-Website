@@ -38,7 +38,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                     <input type="hidden" />
                 </Form.Item>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 mobile-stack">
                     <div className="flex-1">
                         <Title heading={6} className="mb-2">
                             Event Type
@@ -57,7 +57,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                         </Form.Item>
                     </div>
 
-                    <div className="w-64">
+                    <div className="w-full md:w-64 event-field-gender">
                         <Title heading={6} className="mb-2">
                             Gender
                         </Title>
@@ -70,7 +70,7 @@ export default function EventFields({index, onEditAgeBrackets, onRemove}: EventF
                         </Form.Item>
                     </div>
 
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2 event-field-actions">
                         <Button type="primary" onClick={() => onEditAgeBrackets(index)}>
                             <IconEdit /> Age Brackets
                         </Button>

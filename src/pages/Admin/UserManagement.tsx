@@ -10,13 +10,29 @@ import {
     updateUserProfile,
 } from "@/services/firebase/authService";
 import {deriveBirthdateFromMykad, formatBirthdateForDisplay, isBirthdateMatchingMykad, parseBirthdate} from "@/utils/birthdate";
-import {Button, DatePicker, Form, Input, Message, Modal, Select, Spin, Table, Tag, Typography} from "@arco-design/web-react";
+import {
+    Button,
+    DatePicker,
+    Form,
+    Input,
+    Message,
+    Modal,
+    Pagination,
+    Select,
+    Spin,
+    Table,
+    Tag,
+    Tabs,
+    Typography,
+} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch} from "@arco-design/web-react/icon";
+import {MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "../../components/responsive";
 import dayjs from "dayjs";
 import {useEffect, useMemo, useState} from "react";
 
 const {Title, Paragraph, Text} = Typography;
+const TabPane = Tabs.TabPane;
 
 const getAccountStatus = (entry?: FirestoreUser | null): string => entry?.account_status ?? "claimed";
 
@@ -72,6 +88,10 @@ export default function UserManagementPage() {
     const [editMode, setEditMode] = useState(false);
     const [claimRequests, setClaimRequests] = useState<ProfileClaimRequest[]>([]);
     const [selectedClaimRequest, setSelectedClaimRequest] = useState<ProfileClaimRequest | null>(null);
+    const [mobileUserPage, setMobileUserPage] = useState(1);
+    const [mobileClaimPage, setMobileClaimPage] = useState(1);
+    const MOBILE_USER_PAGE_SIZE = 10;
+    const MOBILE_CLAIM_PAGE_SIZE = 5;
     const [editForm] = Form.useForm();
     const [transferForm] = Form.useForm<{targetEmail: string}>();
     const [claimReviewForm] = Form.useForm<{profileId: string; rejectionReason: string}>();
@@ -107,6 +127,11 @@ export default function UserManagementPage() {
     }, [isAdmin]);
 
     const filteredUsers = useMemo(() => filterUsers(users, searchTerm), [users, searchTerm]);
+
+    useEffect(() => {
+        setMobileUserPage(1);
+        setMobileClaimPage(1);
+    }, [searchTerm]);
     const selectedClaimCandidate = useMemo(
         () => findClaimProfileCandidate(selectedClaimRequest, users),
         [selectedClaimRequest, users],
@@ -355,16 +380,18 @@ export default function UserManagementPage() {
     const selectedUserHasNoRoles = selectedUser ? shouldShowNoRoles(selectedUser) : false;
 
     return (
-        <div className="flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
+        <div className="admin-page user-management-page flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10 w-full">
             <Spin loading={loading} tip="Loading users..." className="w-full">
                 <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                     <div className="w-full">
-                        <div className="flex justify-between items-center mb-6">
-                            <Title heading={2}>User Management</Title>
-                            <Button type="primary" onClick={loadUsers} loading={loading}>
-                                Refresh
-                            </Button>
-                        </div>
+                        <MobilePageHeader
+                            title="User Management"
+                            actions={
+                                <Button type="primary" onClick={loadUsers} loading={loading}>
+                                    Refresh
+                                </Button>
+                            }
+                        />
 
                         <Input
                             prefix={<IconSearch />}
@@ -375,32 +402,107 @@ export default function UserManagementPage() {
                             className="mb-4"
                         />
 
-                        <Table
-                            rowKey={(record) => record.id ?? record.global_id ?? record.email ?? ""}
-                            columns={columns}
-                            data={filteredUsers}
-                            pagination={{pageSize: 10}}
-                            loading={loading}
-                        />
-
-                        <div className="mt-8">
-                            <div className="flex justify-between items-center mb-4">
-                                <Title heading={3}>Pending Profile Claims</Title>
-                                <Tag color="orange">{claimRequests.length}</Tag>
-                            </div>
-                            <Table
-                                rowKey={(record) => record.id ?? `${record.requester_uid}-${record.profile_name}`}
-                                columns={claimRequestColumns}
-                                data={claimRequests}
-                                pagination={{pageSize: 5}}
-                                loading={loading}
-                            />
-                        </div>
+                        <ResponsiveTabs defaultActiveTab="users" className="w-full">
+                            <TabPane key="users" title={`Users (${filteredUsers.length})`}>
+                                <div className="admin-table-scroll">
+                                    <Table
+                                        rowKey={(record) => record.id ?? record.global_id ?? record.email ?? ""}
+                                        columns={columns}
+                                        data={filteredUsers}
+                                        pagination={{pageSize: 10}}
+                                        loading={loading}
+                                    />
+                                </div>
+                                <div className="user-management-mobile-cards">
+                                    {filteredUsers
+                                        .slice((mobileUserPage - 1) * MOBILE_USER_PAGE_SIZE, mobileUserPage * MOBILE_USER_PAGE_SIZE)
+                                        .map((entry) => {
+                                            const status = entry.account_status ?? "claimed";
+                                            return (
+                                                <div key={entry.id ?? entry.global_id ?? entry.email} className="admin-mobile-card">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <div className="font-semibold break-words">
+                                                                {entry.name || "Unnamed profile"}
+                                                            </div>
+                                                            <div className="text-sm text-gray-500 break-words">
+                                                                {entry.global_id || entry.email || "—"}
+                                                            </div>
+                                                        </div>
+                                                        <Tag color={status === "unclaimed" ? "orange" : "green"}>{status}</Tag>
+                                                    </div>
+                                                    <Button
+                                                        type="primary"
+                                                        className="mobile-full-width-button mt-3"
+                                                        onClick={() => handleViewDetail(entry)}
+                                                    >
+                                                        View Detail
+                                                    </Button>
+                                                </div>
+                                            );
+                                        })}
+                                    {filteredUsers.length > MOBILE_USER_PAGE_SIZE ? (
+                                        <Pagination
+                                            current={mobileUserPage}
+                                            pageSize={MOBILE_USER_PAGE_SIZE}
+                                            total={filteredUsers.length}
+                                            onChange={setMobileUserPage}
+                                        />
+                                    ) : null}
+                                </div>
+                            </TabPane>
+                            <TabPane key="claims" title={`Claims (${claimRequests.length})`}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <Title heading={3}>Pending Profile Claims</Title>
+                                    <Tag color="orange">{claimRequests.length}</Tag>
+                                </div>
+                                <div className="admin-table-scroll">
+                                    <Table
+                                        rowKey={(record) => record.id ?? `${record.requester_uid}-${record.profile_name}`}
+                                        columns={claimRequestColumns}
+                                        data={claimRequests}
+                                        pagination={{pageSize: 5}}
+                                        loading={loading}
+                                    />
+                                </div>
+                                <div className="user-management-mobile-cards">
+                                    {claimRequests
+                                        .slice(
+                                            (mobileClaimPage - 1) * MOBILE_CLAIM_PAGE_SIZE,
+                                            mobileClaimPage * MOBILE_CLAIM_PAGE_SIZE,
+                                        )
+                                        .map((request) => (
+                                            <div
+                                                key={request.id ?? `${request.requester_uid}-${request.profile_name}`}
+                                                className="admin-mobile-card"
+                                            >
+                                                <div className="font-semibold break-words">{request.profile_name}</div>
+                                                <div className="text-sm text-gray-500 break-words">{request.requester_email}</div>
+                                                <Button
+                                                    type="primary"
+                                                    className="mobile-full-width-button mt-3"
+                                                    onClick={() => handleOpenClaimReview(request)}
+                                                >
+                                                    Review Claim
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    {claimRequests.length > MOBILE_CLAIM_PAGE_SIZE ? (
+                                        <Pagination
+                                            current={mobileClaimPage}
+                                            pageSize={MOBILE_CLAIM_PAGE_SIZE}
+                                            total={claimRequests.length}
+                                            onChange={setMobileClaimPage}
+                                        />
+                                    ) : null}
+                                </div>
+                            </TabPane>
+                        </ResponsiveTabs>
                     </div>
                 </div>
             </Spin>
 
-            <Modal
+            <ResponsiveOverlay
                 title="User Detail"
                 visible={detailModalVisible}
                 onCancel={() => {
@@ -410,9 +512,9 @@ export default function UserManagementPage() {
                     setTransferModalVisible(false);
                 }}
                 footer={
-                    <div className="flex justify-between items-center w-full">
+                    <div className="admin-modal-actions">
                         <Button onClick={() => setDetailModalVisible(false)}>Close</Button>
-                        <div className="flex gap-2">
+                        <div className="admin-modal-actions__group">
                             {editMode ? (
                                 <Button type="primary" onClick={handleSaveEdit} loading={loading}>
                                     Save
@@ -429,6 +531,8 @@ export default function UserManagementPage() {
                         </div>
                     </div>
                 }
+                desktopWidth="min(95vw, 760px)"
+                mobileMode="fullscreen"
             >
                 {selectedUser ? (
                     <div className="flex flex-col gap-3">
@@ -525,15 +629,22 @@ export default function UserManagementPage() {
                         </div>
                     </div>
                 ) : null}
-            </Modal>
+            </ResponsiveOverlay>
 
-            <Modal
+            <ResponsiveOverlay
                 title={transferActionLabel}
                 visible={transferModalVisible}
                 onCancel={() => setTransferModalVisible(false)}
-                onOk={handleTransferOwnership}
-                confirmLoading={loading}
-                okText="Confirm"
+                desktopWidth="min(95vw, 560px)"
+                mobileMode="fullscreen"
+                footer={[
+                    <Button key="cancel" onClick={() => setTransferModalVisible(false)}>
+                        Cancel
+                    </Button>,
+                    <Button key="confirm" type="primary" loading={loading} onClick={() => void handleTransferOwnership()}>
+                        Confirm
+                    </Button>,
+                ]}
             >
                 <Form form={transferForm} layout="vertical">
                     <Paragraph>
@@ -550,9 +661,9 @@ export default function UserManagementPage() {
                         <Input allowClear placeholder="name@gmail.com" />
                     </Form.Item>
                 </Form>
-            </Modal>
+            </ResponsiveOverlay>
 
-            <Modal
+            <ResponsiveOverlay
                 title="Review Profile Claim"
                 visible={claimReviewModalVisible}
                 onCancel={() => {
@@ -560,9 +671,9 @@ export default function UserManagementPage() {
                     setSelectedClaimRequest(null);
                 }}
                 footer={
-                    <div className="flex justify-between items-center w-full">
+                    <div className="admin-modal-actions">
                         <Button onClick={() => setClaimReviewModalVisible(false)}>Cancel</Button>
-                        <div className="flex gap-2">
+                        <div className="admin-modal-actions__group">
                             <Button status="danger" onClick={handleRejectClaimRequest} loading={loading}>
                                 Reject
                             </Button>
@@ -572,6 +683,8 @@ export default function UserManagementPage() {
                         </div>
                     </div>
                 }
+                desktopWidth="min(95vw, 760px)"
+                mobileMode="fullscreen"
             >
                 {selectedClaimRequest ? (
                     <div className="flex flex-col gap-3">
@@ -626,7 +739,7 @@ export default function UserManagementPage() {
                         </Form>
                     </div>
                 ) : null}
-            </Modal>
+            </ResponsiveOverlay>
         </div>
     );
 }

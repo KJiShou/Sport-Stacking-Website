@@ -1,4 +1,12 @@
 import LoginForm from "@/components/common/Login";
+import {
+    CountryFlag,
+    MobileFilterDrawer,
+    MobileFilterTrigger,
+    MobilePageHeader,
+    ResponsiveOverlay,
+    ResponsiveTabs,
+} from "@/components/responsive";
 import {useAuthContext} from "@/context/AuthContext";
 import type {FinalCriterion, FirestoreUser, PaymentMethod, Registration, Tournament, TournamentEvent} from "@/schema"; // 就是你那个 TournamentSchema infer出来的type
 import {countries} from "@/schema/Country";
@@ -11,7 +19,6 @@ import {
     updateTournament,
     updateTournamentStatus,
 } from "@/services/firebase/tournamentsService";
-import {getCountryFlag} from "@/utils/countryFlags";
 import {
     Button,
     Cascader,
@@ -207,6 +214,9 @@ export default function TournamentList() {
     // Search and filter states
     const [searchTerm, setSearchTerm] = useState("");
     const [dateFilter, setDateFilter] = useState<[dayjs.Dayjs, dayjs.Dayjs] | undefined>(undefined);
+    const [mobileDateFilterVisible, setMobileDateFilterVisible] = useState(false);
+    const mobileDateFilterTriggerRef = useRef<HTMLButtonElement>(null);
+    const [dateFilterDraft, setDateFilterDraft] = useState<[dayjs.Dayjs, dayjs.Dayjs] | undefined>(undefined);
     const isAdmin = user?.roles?.edit_tournament || user?.roles?.modify_admin;
 
     const getUserRegistration = (user: FirestoreUser, tournamentId: string): UserRegistrationRecord | undefined => {
@@ -259,7 +269,9 @@ export default function TournamentList() {
               },
               {
                   label: "Max Participants",
-                  value: <div>{selectedTournament.max_participants === 0 ? "No Limit" : selectedTournament.max_participants}</div>,
+                  value: (
+                      <div>{selectedTournament.max_participants === 0 ? "No Limit" : selectedTournament.max_participants}</div>
+                  ),
               },
           ]
         : [];
@@ -283,10 +295,7 @@ export default function TournamentList() {
         setAgeBrackets(updated);
     };
 
-    const updateBracketField = (
-        bracketIndex: number,
-        updater: (bracket: AgeBracketWithId) => void,
-    ) => {
+    const updateBracketField = (bracketIndex: number, updater: (bracket: AgeBracketWithId) => void) => {
         const updated = [...ageBrackets];
         const targetBracket = updated[bracketIndex] as AgeBracketWithId | undefined;
         if (!targetBracket) {
@@ -398,19 +407,16 @@ export default function TournamentList() {
             dataIndex: "name",
             width: 200,
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Country / State",
             dataIndex: "country",
             width: 300,
             render: (country: string[]) => {
                 const countryName = country[0];
                 const state = country[1];
-                const flagUrl = getCountryFlag(countryName);
                 return (
-                    <span style={{display: "flex", alignItems: "center", gap: 8}}>
-                        {flagUrl && (
-                            <img src={flagUrl} alt={`${countryName} flag`} style={{width: 20, height: 15, objectFit: "cover"}} />
-                        )}
+                    <span className="country-cell">
+                        <CountryFlag country={countryName} size="sm" />
                         <span>
                             {countryName} / {state}
                         </span>
@@ -419,13 +425,13 @@ export default function TournamentList() {
             },
         },
 
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Registration Start",
             dataIndex: "registration_start_date",
             width: 180,
             render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Registration End",
             dataIndex: "registration_end_date",
             width: 180,
@@ -437,7 +443,7 @@ export default function TournamentList() {
             width: 180,
             render: (value: Timestamp) => value?.toDate?.().toLocaleDateString("en-GB") ?? "-",
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Status",
             dataIndex: "status",
             width: 200,
@@ -473,7 +479,8 @@ export default function TournamentList() {
 
                 if (user) {
                     const authoritativeRegistration = registrationsByTournament[tournament.id ?? ""];
-                    userHasRegistered = Boolean(authoritativeRegistration) ||
+                    userHasRegistered =
+                        Boolean(authoritativeRegistration) ||
                         (registrationLookupState === "error" && hasRegistered(user, tournament.id ?? ""));
                     if (userHasRegistered) {
                         // Get the user's registration details
@@ -537,7 +544,7 @@ export default function TournamentList() {
                     return (
                         <Dropdown.Button
                             type="primary"
-                            trigger={["click", "hover"]}
+                            trigger={["click"]}
                             buttonProps={{
                                 loading: loading,
                                 onClick: () => handleRegister(tournament.id ?? ""),
@@ -571,7 +578,7 @@ export default function TournamentList() {
                         return (
                             <Dropdown.Button
                                 type="primary"
-                                trigger={["click", "hover"]}
+                                trigger={["click"]}
                                 onClick={() => navigate(`/tournaments/${tournament.id}/start/record`)}
                                 droplist={
                                     <div
@@ -647,7 +654,7 @@ export default function TournamentList() {
                         return (
                             <Dropdown.Button
                                 type="primary"
-                                trigger={["click", "hover"]}
+                                trigger={["click"]}
                                 disabled
                                 droplist={
                                     <div
@@ -721,7 +728,7 @@ export default function TournamentList() {
                         >
                             <Dropdown.Button
                                 type="primary"
-                                trigger={["click", "hover"]}
+                                trigger={["click"]}
                                 droplist={
                                     <div
                                         className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
@@ -789,14 +796,15 @@ export default function TournamentList() {
                 }
 
                 const authoritativeRegistration = registrationsByTournament[tournament.id ?? ""];
-                const alreadyRegistered = Boolean(authoritativeRegistration) ||
+                const alreadyRegistered =
+                    Boolean(authoritativeRegistration) ||
                     (registrationLookupState === "error" && hasRegistered(user, tournament.id ?? ""));
 
                 if (alreadyRegistered) {
                     return (
                         <Dropdown.Button
                             type="primary"
-                            trigger={["click", "hover"]}
+                            trigger={["click"]}
                             buttonProps={{
                                 loading: loading,
                                 onClick: () => navigate(`/tournaments/${tournament.id}/register/${user.global_id}/view`),
@@ -824,12 +832,18 @@ export default function TournamentList() {
                     return;
                 }
                 if (registrationLookupState === "loading" || registrationLookupState === "idle") {
-                    return <Button type="primary" loading disabled>Checking registration</Button>;
+                    return (
+                        <Button type="primary" loading disabled>
+                            Checking registration
+                        </Button>
+                    );
                 }
                 if (registrationLookupState === "error") {
                     return (
                         <Tooltip content="Unable to confirm your registration status. Please refresh and try again.">
-                            <Button type="primary" disabled>Registration unavailable</Button>
+                            <Button type="primary" disabled>
+                                Registration unavailable
+                            </Button>
                         </Tooltip>
                     );
                 }
@@ -840,7 +854,7 @@ export default function TournamentList() {
                     return (
                         <Dropdown.Button
                             type="primary"
-                            trigger={["click", "hover"]}
+                            trigger={["click"]}
                             buttonProps={{
                                 loading: loading,
                                 onClick: () => handleRegister(tournament.id ?? ""),
@@ -867,7 +881,7 @@ export default function TournamentList() {
                 return (
                     <Dropdown.Button
                         type="primary"
-                        trigger={["click", "hover"]}
+                        trigger={["click"]}
                         droplist={
                             <div
                                 className={`bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg`}
@@ -1316,30 +1330,66 @@ export default function TournamentList() {
         fetchTournaments();
     });
 
-    return (
-        <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
-            <div className="relative w-full flex items-center mb-6">
-                <h1 className="absolute left-1/2 transform -translate-x-1/2 text-4xl font-semibold">Tournament Management</h1>
-                <div className="ml-auto">
-                    {user?.roles?.edit_tournament && (
-                        <a href="/tournaments/create" target="_blank" rel="noopener noreferrer">
-                            <Button type="primary">Create Tournament</Button>
-                        </a>
-                    )}
+    const renderTournamentCard = (tournament: Tournament) => {
+        const startDate = tournament.start_date instanceof Timestamp ? tournament.start_date.toDate() : tournament.start_date;
+        const country = Array.isArray(tournament.country) ? tournament.country.filter(Boolean).join(" / ") : tournament.country;
+        return (
+            <div key={tournament.id} className="tournament-mobile-card">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="font-semibold text-base break-words">{tournament.name}</div>
+                        <div className="country-cell text-sm text-gray-500 break-words">
+                            <CountryFlag country={Array.isArray(tournament.country) ? tournament.country[0] : tournament.country} size="sm" />
+                            <span>{country || "Location TBC"}</span>
+                        </div>
+                    </div>
+                    <Tag color={tournament.status === "End" ? "gray" : "arcoblue"}>{tournament.status || "Draft"}</Tag>
+                </div>
+                <div className="mt-3 text-sm text-gray-600">
+                    Starts {startDate ? dayjs(startDate).format("DD MMM YYYY") : "TBC"}
+                </div>
+                <div className="mt-3 flex flex-col gap-2">
+                    <Button type="primary" className="mobile-full-width-button" onClick={() => handleView(tournament)}>
+                        <IconEye /> View Tournament
+                    </Button>
+                    {user?.roles?.edit_tournament ? (
+                        <Button type="outline" className="mobile-full-width-button" onClick={() => handleEdit(tournament)}>
+                            <IconEdit /> Edit
+                        </Button>
+                    ) : null}
                 </div>
             </div>
+        );
+    };
+
+    return (
+        <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
+            <MobilePageHeader
+                className="tournament-list-heading"
+                title="Tournament Management"
+                actions={
+                    user?.roles?.edit_tournament ? (
+                        <div className="tournament-list-create">
+                            <Button type="primary" onClick={() => navigate("/tournaments/create")}>
+                                Create Tournament
+                            </Button>
+                        </div>
+                    ) : null
+                }
+            />
 
             {/* Search and Filter Controls */}
-            <div className={`w-full flex flex-col md:flex-row gap-4 items-center`}>
+            <div className={`tournament-filter-row mobile-search-filter-row w-full flex flex-col md:flex-row gap-4 items-center`}>
                 <Input
+                    className="tournament-search flex-1"
                     prefix={<IconSearch />}
                     placeholder="Search by name, country, state, or venue..."
                     value={searchTerm}
                     onChange={(value) => setSearchTerm(value)}
                     allowClear
-                    className={`flex-1`}
                 />
                 <RangePicker
+                    className="tournament-date-filter-desktop w-full md:w-auto"
                     prefix={<IconCalendar />}
                     format="DD/MM/YYYY"
                     placeholder={["Start Date", "End Date"]}
@@ -1352,10 +1402,21 @@ export default function TournamentList() {
                         }
                     }}
                     allowClear
-                    className={`w-full md:w-auto`}
+                />
+                <MobileFilterTrigger
+                    ref={mobileDateFilterTriggerRef}
+                    ariaExpanded={mobileDateFilterVisible}
+                    activeCount={dateFilter ? 1 : 0}
+                    ariaLabel={`Open tournament date filter${dateFilter ? " (1 active)" : ""}`}
+                    icon={<IconCalendar />}
+                    onClick={() => {
+                        setDateFilterDraft(dateFilter);
+                        setMobileDateFilterVisible(true);
+                    }}
                 />
                 {(searchTerm || dateFilter) && (
                     <Button
+                        className="tournament-filter-clear"
                         onClick={() => {
                             setSearchTerm("");
                             setDateFilter(undefined);
@@ -1366,55 +1427,93 @@ export default function TournamentList() {
                 )}
             </div>
 
-            <Tabs activeTab={activeTab} onChange={setActiveTab} type="capsule" className={`w-full`}>
+            <ResponsiveTabs activeTab={activeTab} onChange={setActiveTab} type="capsule" className={`w-full`}>
                 <TabPane key="current" title="Current Tournaments">
-                    <Table
-                        rowKey="id"
-                        columns={columns.filter((e): e is TableColumnProps<Tournament> => !!e)}
-                        data={filteredCurrentTournaments}
-                        pagination={{pageSize: 10}}
-                        className="my-4"
-                        loading={loading}
-                    />
+                    <div className="tournament-list-table mobile-table-scroll">
+                        <Table
+                            rowKey="id"
+                            columns={columns.filter((e): e is TableColumnProps<Tournament> => !!e)}
+                            data={filteredCurrentTournaments}
+                            pagination={{pageSize: 10}}
+                            className="my-4"
+                            loading={loading}
+                        />
+                    </div>
+                    <div className="tournament-list-cards">{filteredCurrentTournaments.map(renderTournamentCard)}</div>
                 </TabPane>
                 <TabPane key="history" title="Tournament History">
-                    <Table
-                        rowKey="id"
-                        columns={columns.filter((e): e is TableColumnProps<Tournament> => !!e)}
-                        data={filteredHistoryTournaments}
-                        pagination={{pageSize: 10}}
-                        className="my-4"
-                        loading={loading}
-                    />
+                    <div className="tournament-list-table mobile-table-scroll">
+                        <Table
+                            rowKey="id"
+                            columns={columns.filter((e): e is TableColumnProps<Tournament> => !!e)}
+                            data={filteredHistoryTournaments}
+                            pagination={{pageSize: 10}}
+                            className="my-4"
+                            loading={loading}
+                        />
+                    </div>
+                    <div className="tournament-list-cards">{filteredHistoryTournaments.map(renderTournamentCard)}</div>
                 </TabPane>
-            </Tabs>
+            </ResponsiveTabs>
 
-            <Modal
+            <MobileFilterDrawer
+                visible={mobileDateFilterVisible}
+                title="Tournament filters"
+                activeCount={dateFilterDraft ? 1 : 0}
+                returnFocusRef={mobileDateFilterTriggerRef}
+                onCancel={() => setMobileDateFilterVisible(false)}
+                onReset={() => {
+                    setDateFilterDraft(undefined);
+                }}
+                onApply={() => {
+                    setDateFilter(dateFilterDraft);
+                    setMobileDateFilterVisible(false);
+                }}
+            >
+                <div className="mobile-filter-field">
+                    <span>Date range</span>
+                    <RangePicker
+                        aria-label="Tournament date range"
+                        format="DD/MM/YYYY"
+                        value={dateFilterDraft ?? undefined}
+                        onChange={(value) =>
+                            setDateFilterDraft(value?.[0] && value?.[1] ? [dayjs(value[0]), dayjs(value[1])] : undefined)
+                        }
+                        allowClear
+                        style={{width: "100%"}}
+                    />
+                </div>
+            </MobileFilterDrawer>
+
+            <ResponsiveOverlay
                 title="Login"
                 visible={loginModalVisible}
-                onCancel={() => {
-                    setLoginModalVisible(false);
-                }}
+                onCancel={() => setLoginModalVisible(false)}
                 footer={null}
-                autoFocus={false}
-                focusLock={true}
-                className={`max-w-[95vw] md:max-w-[80vw] lg:max-w-[60vw]`}
             >
                 <LoginForm onClose={() => setLoginModalVisible(false)} />
-            </Modal>
+            </ResponsiveOverlay>
 
-            <Modal
+            <ResponsiveOverlay
                 title="Edit Tournament"
                 visible={editModalVisible}
                 onCancel={() => setEditModalVisible(false)}
-                footer={null}
-                autoFocus={false}
-                focusLock={false}
-                className={`my-8 w-full md:max-w-[80vw] lg:max-w-[60vw]`}
+                className="tournament-edit-overlay"
+                desktopWidth="min(95vw, 1100px)"
+                mobileMode="fullscreen"
+                footer={[
+                    <Button key="cancel" onClick={() => setEditModalVisible(false)}>
+                        Cancel
+                    </Button>,
+                    <Button key="save" type="primary" loading={loading} onClick={() => form.submit()}>
+                        Save Changes
+                    </Button>,
+                ]}
             >
                 {selectedTournament && (
                     <Spin loading={eventsLoading} block>
                         <div
+                            className="tournament-edit-modal-content"
                             ref={editModalContentRef}
                             style={{maxHeight: "70vh", overflowY: "auto", paddingRight: 8}}
                             onScroll={() => {
@@ -1475,7 +1574,7 @@ export default function TournamentList() {
                                         }}
                                         options={countries}
                                         placeholder="Please select location"
-                                        expandTrigger="hover"
+                                        expandTrigger="click"
                                     />
                                 </Form.Item>
 
@@ -1741,13 +1840,19 @@ export default function TournamentList() {
                                                                         label="Bracket Name"
                                                                         required
                                                                         validateStatus={hasBracketName ? undefined : "error"}
-                                                                        help={hasBracketName ? undefined : "Please enter bracket name"}
+                                                                        help={
+                                                                            hasBracketName
+                                                                                ? undefined
+                                                                                : "Please enter bracket name"
+                                                                        }
                                                                         className="w-1/3"
                                                                         layout="vertical"
                                                                     >
                                                                         <Input
                                                                             value={bracket.name}
-                                                                            onChange={(value) => handleBracketNameChange(id, value)}
+                                                                            onChange={(value) =>
+                                                                                handleBracketNameChange(id, value)
+                                                                            }
                                                                             placeholder="Bracket Name"
                                                                         />
                                                                     </Form.Item>
@@ -1762,7 +1867,9 @@ export default function TournamentList() {
                                                                         <InputNumber
                                                                             value={bracket.min_age}
                                                                             min={0}
-                                                                            onChange={(value) => handleBracketMinAgeChange(id, value)}
+                                                                            onChange={(value) =>
+                                                                                handleBracketMinAgeChange(id, value)
+                                                                            }
                                                                             placeholder="Min Age"
                                                                         />
                                                                     </Form.Item>
@@ -1777,7 +1884,9 @@ export default function TournamentList() {
                                                                         <InputNumber
                                                                             value={bracket.max_age}
                                                                             min={0}
-                                                                            onChange={(value) => handleBracketMaxAgeChange(id, value)}
+                                                                            onChange={(value) =>
+                                                                                handleBracketMaxAgeChange(id, value)
+                                                                            }
                                                                             placeholder="Max Age"
                                                                         />
                                                                     </Form.Item>
@@ -1807,7 +1916,11 @@ export default function TournamentList() {
                                                                                     value={criteria.classification}
                                                                                     placeholder="Classification"
                                                                                     onChange={(value) =>
-                                                                                        handleCriteriaClassificationChange(id, criteriaIndex, value)
+                                                                                        handleCriteriaClassificationChange(
+                                                                                            id,
+                                                                                            criteriaIndex,
+                                                                                            value,
+                                                                                        )
                                                                                     }
                                                                                     style={{width: 150}}
                                                                                 >
@@ -1826,7 +1939,11 @@ export default function TournamentList() {
                                                                                     placeholder="Number"
                                                                                     min={0}
                                                                                     onChange={(value) =>
-                                                                                        handleCriteriaNumberChange(id, criteriaIndex, value)
+                                                                                        handleCriteriaNumberChange(
+                                                                                            id,
+                                                                                            criteriaIndex,
+                                                                                            value,
+                                                                                        )
                                                                                     }
                                                                                     style={{width: 100}}
                                                                                 />
@@ -2065,24 +2182,20 @@ export default function TournamentList() {
                                         )}
                                     </Form.List>
                                 </Form.Item>
-
-                                <Form.Item className={`w-full`} wrapperCol={{span: 24}}>
-                                    <Button type="primary" htmlType="submit" loading={loading} className={`w-full`}>
-                                        {loading ? <Spin /> : "Save Changes"}
-                                    </Button>
-                                </Form.Item>
                             </Form>
                         </div>
                     </Spin>
                 )}
-            </Modal>
+            </ResponsiveOverlay>
 
-            <Modal
+            <ResponsiveOverlay
                 title="View Tournament"
                 visible={viewModalVisible}
                 onCancel={() => setViewModalVisible(false)}
-                footer={null}
-                className={`my-8 w-full md:max-w-[80vw] lg:max-w-[60vw]`}
+                className="tournament-view-overlay"
+                desktopWidth="min(95vw, 900px)"
+                mobileMode="fullscreen"
+                footer={<Button onClick={() => setViewModalVisible(false)}>Close</Button>}
             >
                 <div className={`flex flex-col items-center`}>
                     <Image src={`${selectedTournament?.logo}`} alt="logo" width={200} />
@@ -2108,17 +2221,19 @@ export default function TournamentList() {
                             overflowWrap: "anywhere",
                         }}
                     />
-                    <Modal
+                    <ResponsiveOverlay
                         title="Tournament Description"
                         visible={descriptionModalVisible}
                         onCancel={() => setDescriptionModalVisible(false)}
                         footer={null}
-                        className={`m-10 w-1/2`}
+                        className="tournament-description-modal"
+                        desktopWidth="min(95vw, 900px)"
+                        mobileMode="fullscreen"
                     >
                         <MDEditor.Markdown remarkPlugins={[remarkBreaks]} source={selectedTournament?.description ?? ""} />
-                    </Modal>
+                    </ResponsiveOverlay>
                 </div>
-            </Modal>
+            </ResponsiveOverlay>
         </div>
     );
 }

@@ -263,6 +263,10 @@ type TransferProfileOwnershipResult = Pick<FirestoreUser, "email" | "owner_uids"
     profileId: string;
 };
 
+type ReleaseOwnedProfileResult = Pick<FirestoreUser, "email" | "owner_uids" | "primary_owner_email" | "account_status"> & {
+    profileId: string;
+};
+
 type CreateProfileClaimRequestInput = {
     profile_global_id?: string | null;
     profile_name: string;
@@ -292,8 +296,10 @@ const resolveCallableErrorMessage = (error: unknown): string => {
             return message || "You do not have permission to manage profile ownership.";
         case "functions/unauthenticated":
             return message || "Please log in again before managing profile ownership.";
+        case "functions/failed-precondition":
+            return message || "This profile cannot be removed from the account.";
         default:
-            return message || "Failed to transfer profile ownership.";
+            return message || "Failed to manage profile ownership.";
     }
 };
 
@@ -305,6 +311,17 @@ export const transferProfileOwnership = async (
         const callable = httpsCallable(functions, "transferProfileOwnership");
         const result = await callable({profileId, targetEmail, meta: {operationId: createOperationId(), release: getRelease()}});
         return result.data as TransferProfileOwnershipResult;
+    } catch (error) {
+        void captureClientError(error, {entityType: "profile-ownership", entityId: profileId});
+        throw new Error(resolveCallableErrorMessage(error));
+    }
+};
+
+export const releaseOwnedProfile = async (profileId: string): Promise<ReleaseOwnedProfileResult> => {
+    try {
+        const callable = httpsCallable(functions, "releaseOwnedProfile");
+        const result = await callable({profileId, meta: {operationId: createOperationId(), release: getRelease()}});
+        return result.data as ReleaseOwnedProfileResult;
     } catch (error) {
         void captureClientError(error, {entityType: "profile-ownership", entityId: profileId});
         throw new Error(resolveCallableErrorMessage(error));

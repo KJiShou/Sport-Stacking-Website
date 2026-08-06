@@ -36,14 +36,13 @@ import {
     InputNumber,
     Link,
     Message,
-    Modal,
     Popconfirm,
     Popover,
     Result,
     Spin,
     Table,
     type TableColumnProps,
-    Tabs,
+    Tabs as ArcoTabs,
     Tag,
     Typography,
 } from "@arco-design/web-react";
@@ -57,7 +56,6 @@ import {
     IconExclamationCircle,
     IconLaunch,
     IconPrinter,
-    IconUndo,
     IconVideoCamera,
 } from "@arco-design/web-react/icon";
 import MDEditor from "@uiw/react-md-editor";
@@ -65,6 +63,7 @@ import {Timestamp} from "firebase/firestore";
 import {type ReactNode, useEffect, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import remarkBreaks from "remark-breaks";
+import {CountryFlag, MobilePageHeader, MobileRankingTable, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 
 const {Title, Text} = Typography;
 
@@ -166,6 +165,134 @@ const getRankColor = (index: number): string => {
 
 const OVERALL_RANKING_EVENT_TYPES = new Set(["Individual", "Open Age Individual"]);
 
+const renderFinalistTag = (classification?: FinalClassification) => {
+    if (!classification) {
+        return <Text type="secondary">-</Text>;
+    }
+
+    const visualStyle = FINALIST_VISUAL_STYLES[classification];
+    return (
+        <Tag
+            style={{
+                backgroundColor: visualStyle.surface,
+                borderColor: visualStyle.border,
+                color: visualStyle.text,
+            }}
+        >
+            {visualStyle.label}
+        </Tag>
+    );
+};
+
+const getFinalistRowClassName = (recordId: string | undefined, classificationMap: FinalistClassificationMap): string => {
+    const classification = recordId ? classificationMap[recordId] : undefined;
+    return classification ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}` : "";
+};
+
+const createFinalistRowClassNameRenderer =
+    <T extends {id: string}>(classificationMap: FinalistClassificationMap) =>
+    (record: T) =>
+        getFinalistRowClassName(record.id, classificationMap);
+
+const createOverallMobileDetailsRenderer =
+    (finalistClassificationMap: FinalistClassificationMap) => (record: TournamentOverallRecord) => (
+        <div className="tournament-view-mobile-result-card__details">
+            <span className="country-cell">
+                <CountryFlag country={record.country} size="md" />
+                <span>{record.country?.trim() || "Unknown"}</span>
+            </span>
+            <span>Event: {record.code || "-"}</span>
+            <span>Status: {record.status === "verified" ? "Verified" : "Submitted"}</span>
+            <span>Age: {typeof record.age === "number" ? record.age : "-"}</span>
+            <div className="tournament-view-mobile-result-card__scores">
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">3-3-3</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">
+                        {formatAttemptTime(record.three_three_three)}
+                    </strong>
+                </div>
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">3-6-3</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">
+                        {formatAttemptTime(record.three_six_three)}
+                    </strong>
+                </div>
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">Cycle</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">{formatAttemptTime(record.cycle)}</strong>
+                </div>
+            </div>
+            {record.id && finalistClassificationMap[record.id] ? renderFinalistTag(finalistClassificationMap[record.id]) : null}
+        </div>
+    );
+
+const createTeamMobileDetailsRenderer =
+    (finalistClassificationMap: FinalistClassificationMap) => (record: TournamentTeamRecord) => (
+        <div className="tournament-view-mobile-result-card__details">
+            <span className="country-cell">
+                <CountryFlag country={record.country} size="md" />
+                <span>{record.country?.trim() || "Unknown"}</span>
+            </span>
+            <span>Event: {record.code || "-"}</span>
+            <span>Status: {record.status === "verified" ? "Verified" : "Submitted"}</span>
+            <span>Leader: {record.leader_id || "-"}</span>
+            <div className="tournament-view-mobile-result-card__scores">
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">Try 1</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">{formatAttemptTime(record.try1)}</strong>
+                </div>
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">Try 2</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">{formatAttemptTime(record.try2)}</strong>
+                </div>
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">Try 3</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">{formatAttemptTime(record.try3)}</strong>
+                </div>
+            </div>
+            {record.id && finalistClassificationMap[record.id] ? renderFinalistTag(finalistClassificationMap[record.id]) : null}
+            {record.member_global_ids.length > 0 ? (
+                <span className="tournament-view-mobile-result-card__members">
+                    Members: {record.member_global_ids.join(", ")}
+                </span>
+            ) : null}
+        </div>
+    );
+
+const renderOverallMobileTableExternal = (
+    records: TournamentOverallRecord[],
+    finalistClassificationMap: FinalistClassificationMap = {},
+) => (
+    <div className="tournament-view-mobile-ranking-table">
+        <MobileRankingTable
+            data={records}
+            rowKey={(record) => record.id}
+            rank={(_record, index) => index + 1}
+            name={(record) => record.participant_name || record.participant_global_id}
+            result={(record) => formatTime(record.overall_time)}
+            rowClassName={createFinalistRowClassNameRenderer(finalistClassificationMap)}
+            details={createOverallMobileDetailsRenderer(finalistClassificationMap)}
+        />
+    </div>
+);
+
+const renderTeamMobileTableExternal = (
+    records: TournamentTeamRecord[],
+    finalistClassificationMap: FinalistClassificationMap = {},
+) => (
+    <div className="tournament-view-mobile-ranking-table">
+        <MobileRankingTable
+            data={records}
+            rowKey={(record) => record.id}
+            rank={(_record, index) => index + 1}
+            name={(record) => record.team_name}
+            result={(record) => formatAttemptTime(record.best_time)}
+            rowClassName={createFinalistRowClassNameRenderer(finalistClassificationMap)}
+            details={createTeamMobileDetailsRenderer(finalistClassificationMap)}
+        />
+    </div>
+);
+
 const isOverallRankingEvent = (event: TournamentEvent | null | undefined): boolean => {
     if (!event) return false;
     return OVERALL_RANKING_EVENT_TYPES.has(event.type);
@@ -232,9 +359,7 @@ const getFinalClassificationTabs = (
         return true;
     });
 
-    return classifications.sort(
-        (a, b) => FINAL_CLASSIFICATION_ORDER.indexOf(a) - FINAL_CLASSIFICATION_ORDER.indexOf(b),
-    );
+    return classifications.sort((a, b) => FINAL_CLASSIFICATION_ORDER.indexOf(a) - FINAL_CLASSIFICATION_ORDER.indexOf(b));
 };
 
 export default function TournamentView() {
@@ -245,9 +370,9 @@ export default function TournamentView() {
     const [loading, setLoading] = useState(true);
     const [registrations, setRegistrations] = useState<Registration[]>([]);
     const [personalRegistration, setPersonalRegistration] = useState<Registration | null>(null);
-    const [personalRegistrationLookupState, setPersonalRegistrationLookupState] = useState<"idle" | "loading" | "ready" | "error">(
-        "idle",
-    );
+    const [personalRegistrationLookupState, setPersonalRegistrationLookupState] = useState<
+        "idle" | "loading" | "ready" | "error"
+    >("idle");
     const [events, setEvents] = useState<TournamentEvent[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
     const [prelimRecords, setPrelimRecords] = useState<(TournamentRecord | TournamentTeamRecord)[]>([]);
@@ -700,14 +825,31 @@ export default function TournamentView() {
         fetchTournament();
     }, [id]);
     if (loading) {
-        return <Spin style={{margin: 40}} />;
+        return (
+            <div className="tournament-view-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+                <MobilePageHeader
+                    title="Tournament View"
+                    backTo="/tournaments"
+                    backLabel="Go Back"
+                    className="tournament-view-header"
+                />
+                <div className="bg-white flex min-h-[320px] w-full items-center justify-center p-6 shadow-lg md:rounded-lg">
+                    <Spin size={40} tip="Loading tournament..." />
+                </div>
+            </div>
+        );
     }
     if (!tournament) {
         return (
-            <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
-                <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
-                    <IconUndo /> Go Back
-                </Button>
+            <div
+                className={`tournament-view-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}
+            >
+                <MobilePageHeader
+                    title="Tournament View"
+                    backTo="/tournaments"
+                    backLabel="Go Back"
+                    className="tournament-view-header"
+                />
                 <div
                     className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}
                 >
@@ -727,16 +869,16 @@ export default function TournamentView() {
         if (!event.age_brackets || event.age_brackets.length === 0) return null;
         const activeTab = getSelectedBracketName(bracketKey, event) ?? "";
         return (
-            <Tabs
+            <ResponsiveTabs
                 type="capsule"
                 activeTab={activeTab}
                 onChange={(key) => setEventBracketSelection((prev) => ({...prev, [bracketKey]: key}))}
                 style={{marginBottom: 12}}
             >
                 {event.age_brackets.map((bracket) => (
-                    <Tabs.TabPane key={bracket.name} title={bracket.name} />
+                    <ArcoTabs.TabPane key={bracket.name} title={bracket.name} />
                 ))}
-            </Tabs>
+            </ResponsiveTabs>
         );
     };
 
@@ -752,22 +894,30 @@ export default function TournamentView() {
         });
     };
 
-    const renderStatusTag = (status: string) => <Tag color={status === "verified" ? "green" : "orange"}>{status === "verified" ? "Verified" : "Submitted"}</Tag>;
+    const renderStatusTag = (status: string) => (
+        <Tag color={status === "verified" ? "green" : "orange"}>{status === "verified" ? "Verified" : "Submitted"}</Tag>
+    );
 
-    const createRankCellRenderer =
-        <T extends CombinedTournamentRecord>(records: T[], highlightRankings = false) => {
-            const rankById = new Map(records.map((rankedRecord, rankIndex) => [rankedRecord.id, rankIndex + 1]));
+    const renderCountryCell = (country?: string | null) => (
+        <span className="country-cell">
+            <CountryFlag country={country} size="sm" />
+            <span>{country?.trim() || "Unknown"}</span>
+        </span>
+    );
 
-            return (_: unknown, record: T, index: number) => {
-                const rank = rankById.get(record.id) ?? index + 1;
+    const createRankCellRenderer = <T extends CombinedTournamentRecord>(records: T[], highlightRankings = false) => {
+        const rankById = new Map(records.map((rankedRecord, rankIndex) => [rankedRecord.id, rankIndex + 1]));
 
-                return (
-                    <Text bold style={highlightRankings ? {color: getRankColor(rank - 1)} : undefined}>
-                        {rank}
-                    </Text>
-                );
-            };
+        return (_: unknown, record: T, index: number) => {
+            const rank = rankById.get(record.id) ?? index + 1;
+
+            return (
+                <Text bold style={highlightRankings ? {color: getRankColor(rank - 1)} : undefined}>
+                    {rank}
+                </Text>
+            );
         };
+    };
 
     const renderVideoTimeText = (
         displayValue: string,
@@ -797,19 +947,14 @@ export default function TournamentView() {
     const renderOverallPlainModalTimeCell = (time: number, record: TournamentOverallRecord) =>
         renderVideoTimeText(formatTime(time), record, "#1890ff");
 
-    const createOverallModalTimeCellRenderer =
-        (records: TournamentOverallRecord[], highlightRankings = false) => {
-            const rankById = new Map(records.map((rankedRecord, rankIndex) => [rankedRecord.id, rankIndex + 1]));
+    const createOverallModalTimeCellRenderer = (records: TournamentOverallRecord[], highlightRankings = false) => {
+        const rankById = new Map(records.map((rankedRecord, rankIndex) => [rankedRecord.id, rankIndex + 1]));
 
-            return (time: number, record: TournamentOverallRecord, index: number) => {
-                const rank = rankById.get(record.id) ?? index + 1;
-                return renderVideoTimeText(
-                    formatTime(time),
-                    record,
-                    highlightRankings && rank === 1 ? "#52c41a" : "#1890ff",
-                );
-            };
+        return (time: number, record: TournamentOverallRecord, index: number) => {
+            const rank = rankById.get(record.id) ?? index + 1;
+            return renderVideoTimeText(formatTime(time), record, highlightRankings && rank === 1 ? "#52c41a" : "#1890ff");
         };
+    };
 
     const renderTeamPreviewTimeCell = (time: number, record: TournamentTeamRecord) =>
         renderVideoTimeText(formatTime(time), record, "#1890ff");
@@ -817,40 +962,16 @@ export default function TournamentView() {
     const renderTeamPlainModalTimeCell = (time: number, record: TournamentTeamRecord) =>
         renderVideoTimeText(formatAttemptTime(time), record, "#1890ff");
 
-    const createTeamModalTimeCellRenderer =
-        (records: TournamentTeamRecord[], highlightRankings = false) => {
-            const rankById = new Map(records.map((rankedRecord, rankIndex) => [rankedRecord.id, rankIndex + 1]));
+    const createTeamModalTimeCellRenderer = (records: TournamentTeamRecord[], highlightRankings = false) => {
+        const rankById = new Map(records.map((rankedRecord, rankIndex) => [rankedRecord.id, rankIndex + 1]));
 
-            return (time: number, record: TournamentTeamRecord, index: number) => {
-                const rank = rankById.get(record.id) ?? index + 1;
-                return renderVideoTimeText(
-                    formatAttemptTime(time),
-                    record,
-                    highlightRankings && rank === 1 ? "#52c41a" : "#1890ff",
-                );
-            };
+        return (time: number, record: TournamentTeamRecord, index: number) => {
+            const rank = rankById.get(record.id) ?? index + 1;
+            return renderVideoTimeText(formatAttemptTime(time), record, highlightRankings && rank === 1 ? "#52c41a" : "#1890ff");
         };
+    };
 
     const renderFormattedAttemptTime = (time: number) => <Text>{formatAttemptTime(time)}</Text>;
-
-    const renderFinalistTag = (classification?: FinalClassification) => {
-        if (!classification) {
-            return <Text type="secondary">-</Text>;
-        }
-
-        const visualStyle = FINALIST_VISUAL_STYLES[classification];
-        return (
-            <Tag
-                style={{
-                    backgroundColor: visualStyle.surface,
-                    borderColor: visualStyle.border,
-                    color: visualStyle.text,
-                }}
-            >
-                {visualStyle.label}
-            </Tag>
-        );
-    };
 
     const renderOverallRecordActions = (record: TournamentOverallRecord) => (
         <div className="flex gap-2">
@@ -909,7 +1030,7 @@ export default function TournamentView() {
         records: TournamentOverallRecord[] = [],
         finalistClassificationMap?: FinalistClassificationMap,
     ): TableColumnProps<TournamentOverallRecord>[] => {
-        const columns: TableColumnProps<TournamentOverallRecord>[] = [
+        let columns: TableColumnProps<TournamentOverallRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
@@ -937,63 +1058,68 @@ export default function TournamentView() {
             },
         ];
 
-        if (deviceBreakpoint > DeviceBreakpoint.md) {
-            columns.push(
-                {
-                    title: "Event Code",
-                    dataIndex: "code",
-                    width: 100,
-                },
-                {
-                    title: "3-3-3",
-                    dataIndex: "three_three_three",
-                    width: 100,
-                    render: (time: number) => <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>,
-                },
-                {
-                    title: "3-6-3",
-                    dataIndex: "three_six_three",
-                    width: 100,
-                    render: (time: number) => <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>,
-                },
-                {
-                    title: "Cycle",
-                    dataIndex: "cycle",
-                    width: 100,
-                    render: (time: number) => <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>,
-                },
-            );
-        }
+        columns = [
+            ...columns,
+            {
+                title: "Event Code",
+                dataIndex: "code",
+                width: 100,
+            },
+            {
+                title: "3-3-3",
+                dataIndex: "three_three_three",
+                width: 100,
+                render: (time: number) => <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>,
+            },
+            {
+                title: "3-6-3",
+                dataIndex: "three_six_three",
+                width: 100,
+                render: (time: number) => <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>,
+            },
+            {
+                title: "Cycle",
+                dataIndex: "cycle",
+                width: 100,
+                render: (time: number) => <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>,
+            },
+        ];
 
-        columns.push({
-            title: "Overall Time",
-            dataIndex: "overall_time",
-            width: 120,
-            render: renderOverallPreviewTimeCell,
-        });
+        columns = [
+            ...columns,
+            {
+                title: "Overall Time",
+                dataIndex: "overall_time",
+                width: 120,
+                render: renderOverallPreviewTimeCell,
+            },
+        ];
 
-        if (deviceBreakpoint > DeviceBreakpoint.md) {
-            columns.push(
-                {
-                    title: "Country",
-                    dataIndex: "country",
-                    width: 120,
-                },
-                {
-                    title: "Status",
-                    dataIndex: "status",
-                    width: 100,
-                    render: renderStatusTag,
-                },
-            );
-        }
+        columns = [
+            ...columns,
+            {
+                title: "Country",
+                dataIndex: "country",
+                width: 120,
+                render: (country: string) => renderCountryCell(country),
+            },
+            {
+                title: "Status",
+                dataIndex: "status",
+                width: 100,
+                render: renderStatusTag,
+            },
+        ];
 
         if (isAdmin) {
-            columns.push({
-                title: "Actions",
-                width: 150,
-                render: (_: unknown, record: TournamentOverallRecord) => renderOverallRecordActions(record),
-            });
+            columns = [
+                ...columns,
+                {
+                    title: "Actions",
+                    width: 150,
+                    render: (_: unknown, record: TournamentOverallRecord) => renderOverallRecordActions(record),
+                },
+            ];
         }
 
         return columns;
@@ -1004,7 +1130,7 @@ export default function TournamentView() {
         records: TournamentOverallRecord[] = [],
         finalistClassificationMap?: FinalistClassificationMap,
     ): TableColumnProps<TournamentOverallRecord>[] => {
-        const columns: TableColumnProps<TournamentOverallRecord>[] = [
+        let columns: TableColumnProps<TournamentOverallRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
@@ -1065,15 +1191,19 @@ export default function TournamentView() {
                 title: "Country",
                 dataIndex: "country",
                 width: 120,
+                render: (country: string) => renderCountryCell(country),
             },
         ];
 
-        columns.push({
-            title: "Status",
-            dataIndex: "status",
-            width: 100,
-            render: renderStatusTag,
-        });
+        columns = [
+            ...columns,
+            {
+                title: "Status",
+                dataIndex: "status",
+                width: 100,
+                render: renderStatusTag,
+            },
+        ];
 
         return columns;
     };
@@ -1083,7 +1213,7 @@ export default function TournamentView() {
         records: TournamentTeamRecord[] = [],
         finalistClassificationMap?: FinalistClassificationMap,
     ): TableColumnProps<TournamentTeamRecord>[] => {
-        const columns: TableColumnProps<TournamentTeamRecord>[] = [
+        let columns: TableColumnProps<TournamentTeamRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
@@ -1112,43 +1242,50 @@ export default function TournamentView() {
             },
         ];
 
-        if (deviceBreakpoint > DeviceBreakpoint.md) {
-            columns.push({
+        columns = [
+            ...columns,
+            {
                 title: "Event Code",
                 dataIndex: "code",
                 width: 100,
-            });
-        }
+            },
+        ];
 
-        columns.push({
-            title: "Best Time",
-            dataIndex: "best_time",
-            width: 120,
-            render: renderTeamPreviewTimeCell,
-        });
+        columns = [
+            ...columns,
+            {
+                title: "Best Time",
+                dataIndex: "best_time",
+                width: 120,
+                render: renderTeamPreviewTimeCell,
+            },
+        ];
 
-        if (deviceBreakpoint > DeviceBreakpoint.md) {
-            columns.push(
-                {
-                    title: "Country",
-                    dataIndex: "country",
-                    width: 120,
-                },
-                {
-                    title: "Status",
-                    dataIndex: "status",
-                    width: 100,
-                    render: renderStatusTag,
-                },
-            );
-        }
+        columns = [
+            ...columns,
+            {
+                title: "Country",
+                dataIndex: "country",
+                width: 120,
+                render: (country: string) => renderCountryCell(country),
+            },
+            {
+                title: "Status",
+                dataIndex: "status",
+                width: 100,
+                render: renderStatusTag,
+            },
+        ];
 
         if (isAdmin) {
-            columns.push({
-                title: "Actions",
-                width: 150,
-                render: (_: unknown, record: TournamentTeamRecord) => renderTeamRecordActions(record),
-            });
+            columns = [
+                ...columns,
+                {
+                    title: "Actions",
+                    width: 150,
+                    render: (_: unknown, record: TournamentTeamRecord) => renderTeamRecordActions(record),
+                },
+            ];
         }
 
         return columns;
@@ -1159,7 +1296,7 @@ export default function TournamentView() {
         records: TournamentTeamRecord[] = [],
         finalistClassificationMap?: FinalistClassificationMap,
     ): TableColumnProps<TournamentTeamRecord>[] => {
-        const columns: TableColumnProps<TournamentTeamRecord>[] = [
+        let columns: TableColumnProps<TournamentTeamRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
@@ -1221,21 +1358,27 @@ export default function TournamentView() {
                 title: "Country",
                 dataIndex: "country",
                 width: 120,
+                render: (country: string) => renderCountryCell(country),
             },
         ];
 
-        columns.push({
-            title: "Status",
-            dataIndex: "status",
-            width: 100,
-            render: renderStatusTag,
-        });
+        columns = [
+            ...columns,
+            {
+                title: "Status",
+                dataIndex: "status",
+                width: 100,
+                render: renderStatusTag,
+            },
+        ];
 
         return columns;
     };
 
     return (
-        <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
+        <div
+            className={`tournament-view-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}
+        >
             <style>
                 {`
                     .finalist-row td {
@@ -1307,9 +1450,12 @@ export default function TournamentView() {
                     }
                 `}
             </style>
-            <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
-                <IconUndo /> Go Back
-            </Button>
+            <MobilePageHeader
+                title="Tournament View"
+                backTo="/tournaments"
+                backLabel="Go Back"
+                className="tournament-view-header"
+            />
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
                 <div className={`flex flex-col items-center`}>
                     {tournament?.logo && <Image src={tournament.logo} alt="logo" width={200} />}
@@ -1346,7 +1492,8 @@ export default function TournamentView() {
                             const cachedRegistration = Boolean(
                                 id && user?.registration_records?.some((record) => record.tournament_id === id),
                             );
-                            const alreadyRegistered = Boolean(personalRegistration) ||
+                            const alreadyRegistered =
+                                Boolean(personalRegistration) ||
                                 (personalRegistrationLookupState === "error" && cachedRegistration);
                             const registrationLookupUnavailable =
                                 Boolean(user) &&
@@ -1431,20 +1578,25 @@ export default function TournamentView() {
                             <Button type="outline" icon={<IconCopy />} onClick={() => handleCopyShareLink("final")}>
                                 Share Final Results
                             </Button>
-                            <Button type="primary" icon={<IconPrinter />} onClick={() => navigate(`/tournaments/${id}/print-results`)}>
+                            <Button
+                                type="primary"
+                                icon={<IconPrinter />}
+                                onClick={() => navigate(`/tournaments/${id}/print-results`)}
+                            >
                                 Print Results
                             </Button>
                         </div>
                     )}
-                    <Modal
+                    <ResponsiveOverlay
                         title="Tournament Description"
                         visible={descriptionModalVisible}
                         onCancel={() => setDescriptionModalVisible(false)}
                         footer={null}
-                        className={`m-10 w-1/2`}
+                        className={`tournament-description-modal m-10 w-1/2`}
+                        mobileMode="fullscreen"
                     >
                         <MDEditor.Markdown remarkPlugins={[remarkBreaks]} source={tournament?.description ?? ""} />
-                    </Modal>
+                    </ResponsiveOverlay>
                 </div>
 
                 {/* Event Participant Breakdown */}
@@ -1509,138 +1661,149 @@ export default function TournamentView() {
                                 <div className="space-y-6">
                                     {/* Overall Records Table for Individual Events */}
                                     {overallRankingEvents.map((overallEvent) => {
-                                        const overallEventRecords = filterOverallRecordsByEvent(prelimOverallRecords, overallEvent);
+                                        const overallEventRecords = filterOverallRecordsByEvent(
+                                            prelimOverallRecords,
+                                            overallEvent,
+                                        );
                                         if (overallEventRecords.length === 0) {
                                             return null;
                                         }
 
                                         return (
-                                        <Card
-                                            key={`prelim-overall-${overallEvent.id ?? overallEvent.type}`}
-                                            title={`Overall Rankings (${getEventLabel(overallEvent)})`}
-                                            bordered
-                                            className="score-card"
-                                        >
-                                            {(() => {
-                                                const eventKey = overallEvent.id ?? overallEvent.type;
-                                                const bracketKey = buildBracketKey("prelim", eventKey);
-                                                return renderBracketTabs(overallEvent, bracketKey);
-                                            })()}
-                                            {(() => {
-                                                const eventKey = overallEvent.id ?? overallEvent.type;
-                                                const bracketKey = buildBracketKey("prelim", eventKey);
-                                                const selectedBracketName = getSelectedBracketName(bracketKey, overallEvent);
-                                                const selectedBracket = overallEvent.age_brackets?.find((b) => b.name === selectedBracketName);
-                                                const filteredRecords = filterRecordsByBracket(
-                                                    sortOverallRankingRecords(overallEventRecords),
-                                                    selectedBracket,
-                                                );
-                                                const finalistClassificationMap = buildViewFinalistMap(
-                                                    filteredRecords.map((record) => ({
-                                                        id: record.id,
-                                                        bestTime: record.overall_time,
-                                                    })),
-                                                    overallEvent.codes ?? [],
-                                                    selectedBracket,
-                                                );
-                                                const finalistLegendItems = getFinalistLegendItems(
-                                                    selectedBracket?.final_criteria ?? [],
-                                                );
-                                                const columns = buildOverallPreviewColumns(
-                                                    false,
-                                                    filteredRecords,
-                                                    finalistClassificationMap,
-                                                );
-                                                const tableRowClassName = (record: TournamentOverallRecord) => {
-                                                    const classification = record.id && finalistClassificationMap[record.id];
-                                                    return classification
-                                                        ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}`
-                                                        : "";
-                                                };
-                                                return (
-                                                    <>
-                                                        <div className="mb-4 flex justify-end">
-                                                            <Button
-                                                                type="outline"
-                                                                size="small"
-                                                                onClick={() =>
-                                                                    openFullResultModal(
-                                                                        `Overall Rankings (${getEventLabel(overallEvent)})`,
-                                                                        <Table
-                                                                            columns={buildOverallModalColumns(
-                                                                                false,
-                                                                                filteredRecords,
-                                                                                finalistClassificationMap,
-                                                                            )}
-                                                                            data={filteredRecords}
-                                                                            pagination={{
-                                                                                pageSize: 20,
-                                                                                showTotal: true,
-                                                                                showJumper: true,
-                                                                            }}
-                                                                            rowKey="id"
-                                                                            size="small"
-                                                                            scroll={{x: true, y: 560}}
-                                                                            rowClassName={tableRowClassName}
-                                                                        />,
-                                                                    )
-                                                                }
-                                                            >
-                                                                View Full Result
-                                                            </Button>
-                                                        </div>
-                                                        {finalistLegendItems.length > 0 ? (
-                                                            <div
-                                                                className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-solid p-4"
-                                                                style={{
-                                                                    background: "#fbfcfe",
-                                                                    borderColor: "#e5eaf2",
-                                                                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
-                                                                }}
-                                                            >
-                                                                <span className="text-sm font-semibold text-slate-700">
-                                                                    Final Qualification
-                                                                </span>
-                                                                {finalistLegendItems.map((classification) => {
-                                                                    const visualStyle = FINALIST_VISUAL_STYLES[classification];
-                                                                    return (
-                                                                        <div
-                                                                            key={classification}
-                                                                            className="flex items-center gap-2 rounded-full border border-solid px-3 py-2 text-sm font-medium"
-                                                                            style={{
-                                                                                backgroundColor: visualStyle.surface,
-                                                                                borderColor: visualStyle.border,
-                                                                                color: visualStyle.text,
-                                                                            }}
-                                                                        >
-                                                                            <span
-                                                                                aria-hidden="true"
-                                                                                className="h-2.5 w-2.5 rounded-full"
-                                                                                style={{backgroundColor: visualStyle.tint}}
-                                                                            />
-                                                                            {visualStyle.label}
-                                                                        </div>
-                                                                    );
-                                                                })}
+                                            <Card
+                                                key={`prelim-overall-${overallEvent.id ?? overallEvent.type}`}
+                                                title={`Overall Rankings (${getEventLabel(overallEvent)})`}
+                                                bordered
+                                                className="score-card"
+                                            >
+                                                {(() => {
+                                                    const eventKey = overallEvent.id ?? overallEvent.type;
+                                                    const bracketKey = buildBracketKey("prelim", eventKey);
+                                                    return renderBracketTabs(overallEvent, bracketKey);
+                                                })()}
+                                                {(() => {
+                                                    const eventKey = overallEvent.id ?? overallEvent.type;
+                                                    const bracketKey = buildBracketKey("prelim", eventKey);
+                                                    const selectedBracketName = getSelectedBracketName(bracketKey, overallEvent);
+                                                    const selectedBracket = overallEvent.age_brackets?.find(
+                                                        (b) => b.name === selectedBracketName,
+                                                    );
+                                                    const filteredRecords = filterRecordsByBracket(
+                                                        sortOverallRankingRecords(overallEventRecords),
+                                                        selectedBracket,
+                                                    );
+                                                    const finalistClassificationMap = buildViewFinalistMap(
+                                                        filteredRecords.map((record) => ({
+                                                            id: record.id,
+                                                            bestTime: record.overall_time,
+                                                        })),
+                                                        overallEvent.codes ?? [],
+                                                        selectedBracket,
+                                                    );
+                                                    const finalistLegendItems = getFinalistLegendItems(
+                                                        selectedBracket?.final_criteria ?? [],
+                                                    );
+                                                    const columns = buildOverallPreviewColumns(
+                                                        false,
+                                                        filteredRecords,
+                                                        finalistClassificationMap,
+                                                    );
+                                                    const tableRowClassName = (record: TournamentOverallRecord) => {
+                                                        const classification = record.id && finalistClassificationMap[record.id];
+                                                        return classification
+                                                            ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}`
+                                                            : "";
+                                                    };
+                                                    return (
+                                                        <>
+                                                            <div className="tournament-view-full-result-action mb-4 flex justify-end">
+                                                                <Button
+                                                                    type="outline"
+                                                                    size="small"
+                                                                    onClick={() =>
+                                                                        openFullResultModal(
+                                                                            `Overall Rankings (${getEventLabel(overallEvent)})`,
+                                                                            <Table
+                                                                                columns={buildOverallModalColumns(
+                                                                                    false,
+                                                                                    filteredRecords,
+                                                                                    finalistClassificationMap,
+                                                                                )}
+                                                                                data={filteredRecords}
+                                                                                pagination={{
+                                                                                    pageSize: 20,
+                                                                                    showTotal: true,
+                                                                                    showJumper: true,
+                                                                                }}
+                                                                                rowKey="id"
+                                                                                size="small"
+                                                                                scroll={{x: true, y: 560}}
+                                                                                rowClassName={tableRowClassName}
+                                                                            />,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    View Full Result
+                                                                </Button>
                                                             </div>
-                                                        ) : null}
-                                                        <Table
-                                                            columns={columns}
-                                                            data={filteredRecords}
-                                                            pagination={{
-                                                                pageSize: 20,
-                                                                showTotal: true,
-                                                                showJumper: true,
-                                                            }}
-                                                            rowKey="id"
-                                                            size="small"
-                                                            scroll={{x: true}}
-                                                            rowClassName={tableRowClassName}
-                                                        />
-                                                    </>
-                                                );
-                                            })()}
-                                        </Card>
+                                                            {finalistLegendItems.length > 0 ? (
+                                                                <div
+                                                                    className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-solid p-4"
+                                                                    style={{
+                                                                        background: "#fbfcfe",
+                                                                        borderColor: "#e5eaf2",
+                                                                        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
+                                                                    }}
+                                                                >
+                                                                    <span className="text-sm font-semibold text-slate-700">
+                                                                        Final Qualification
+                                                                    </span>
+                                                                    {finalistLegendItems.map((classification) => {
+                                                                        const visualStyle =
+                                                                            FINALIST_VISUAL_STYLES[classification];
+                                                                        return (
+                                                                            <div
+                                                                                key={classification}
+                                                                                className="flex items-center gap-2 rounded-full border border-solid px-3 py-2 text-sm font-medium"
+                                                                                style={{
+                                                                                    backgroundColor: visualStyle.surface,
+                                                                                    borderColor: visualStyle.border,
+                                                                                    color: visualStyle.text,
+                                                                                }}
+                                                                            >
+                                                                                <span
+                                                                                    aria-hidden="true"
+                                                                                    className="h-2.5 w-2.5 rounded-full"
+                                                                                    style={{backgroundColor: visualStyle.tint}}
+                                                                                />
+                                                                                {visualStyle.label}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            ) : null}
+                                                            {renderOverallMobileTableExternal(
+                                                                filteredRecords,
+                                                                finalistClassificationMap,
+                                                            )}
+                                                            <Table
+                                                                className="tournament-view-preview-table"
+                                                                columns={columns}
+                                                                data={filteredRecords}
+                                                                pagination={{
+                                                                    pageSize: 20,
+                                                                    showTotal: true,
+                                                                    showJumper: true,
+                                                                }}
+                                                                rowKey="id"
+                                                                size="small"
+                                                                scroll={{x: true}}
+                                                                rowClassName={tableRowClassName}
+                                                            />
+                                                        </>
+                                                    );
+                                                })()}
+                                            </Card>
                                         );
                                     })}
 
@@ -1705,7 +1868,7 @@ export default function TournamentView() {
                                                     className="score-card"
                                                 >
                                                     {eventConfig && renderBracketTabs(eventConfig, bracketKey)}
-                                                    <div className="mb-4 flex justify-end">
+                                                    <div className="tournament-view-full-result-action mb-4 flex justify-end">
                                                         <Button
                                                             type="outline"
                                                             size="small"
@@ -1770,7 +1933,9 @@ export default function TournamentView() {
                                                             })}
                                                         </div>
                                                     ) : null}
+                                                    {renderTeamMobileTableExternal(filteredRecords, finalistClassificationMap)}
                                                     <Table
+                                                        className="tournament-view-preview-table"
                                                         columns={columns}
                                                         data={filteredRecords}
                                                         pagination={{
@@ -1799,7 +1964,10 @@ export default function TournamentView() {
                                 <div className="space-y-6">
                                     {/* Overall Records Table for Individual Events */}
                                     {overallRankingEvents.map((overallEvent) => {
-                                        const eventOverallRecords = filterOverallRecordsByEvent(finalOverallRecords, overallEvent);
+                                        const eventOverallRecords = filterOverallRecordsByEvent(
+                                            finalOverallRecords,
+                                            overallEvent,
+                                        );
                                         if (eventOverallRecords.length === 0) return null;
 
                                         const eventKey = overallEvent.id ?? overallEvent.type;
@@ -1821,7 +1989,7 @@ export default function TournamentView() {
                                                 className="score-card"
                                             >
                                                 {renderBracketTabs(overallEvent, bracketKey)}
-                                                <Tabs type="rounded" className="w-full">
+                                                <ResponsiveTabs type="rounded" className="w-full">
                                                     {classificationTabs.map((classification) => {
                                                         const classificationLabel = getFinalClassificationLabel(classification);
                                                         const filteredBracketRecords = filterRecordsByBracket(
@@ -1835,8 +2003,8 @@ export default function TournamentView() {
                                                         const tableRowClassName = () => "";
 
                                                         return (
-                                                            <Tabs.TabPane key={classification} title={classificationLabel}>
-                                                                <div className="mb-4 flex justify-end">
+                                                            <ArcoTabs.TabPane key={classification} title={classificationLabel}>
+                                                                <div className="tournament-view-full-result-action mb-4 flex justify-end">
                                                                     <Button
                                                                         type="outline"
                                                                         size="small"
@@ -1865,8 +2033,13 @@ export default function TournamentView() {
                                                                         View Full Result
                                                                     </Button>
                                                                 </div>
+                                                                {renderOverallMobileTableExternal(filteredBracketRecords)}
                                                                 <Table
-                                                                    columns={buildOverallPreviewColumns(true, filteredBracketRecords)}
+                                                                    className="tournament-view-preview-table"
+                                                                    columns={buildOverallPreviewColumns(
+                                                                        true,
+                                                                        filteredBracketRecords,
+                                                                    )}
                                                                     data={filteredBracketRecords}
                                                                     pagination={{
                                                                         pageSize: 20,
@@ -1877,10 +2050,10 @@ export default function TournamentView() {
                                                                     size="small"
                                                                     rowClassName={tableRowClassName}
                                                                 />
-                                                            </Tabs.TabPane>
+                                                            </ArcoTabs.TabPane>
                                                         );
                                                     })}
-                                                </Tabs>
+                                                </ResponsiveTabs>
                                             </Card>
                                         );
                                     })}
@@ -1914,9 +2087,10 @@ export default function TournamentView() {
                                                     className="score-card"
                                                 >
                                                     {eventConfig && renderBracketTabs(eventConfig, bracketKey)}
-                                                    <Tabs type="rounded" className="w-full">
+                                                    <ResponsiveTabs type="rounded" className="w-full">
                                                         {classificationTabs.map((classification) => {
-                                                            const classificationLabel = getFinalClassificationLabel(classification);
+                                                            const classificationLabel =
+                                                                getFinalClassificationLabel(classification);
                                                             const filteredRecords = filterRecordsByBracket(
                                                                 sortTeamRankingRecords(
                                                                     eventRecords.filter(
@@ -1928,8 +2102,11 @@ export default function TournamentView() {
                                                             const columns = buildTeamPreviewColumns(true, filteredRecords);
 
                                                             return (
-                                                                <Tabs.TabPane key={classification} title={classificationLabel}>
-                                                                    <div className="mb-4 flex justify-end">
+                                                                <ArcoTabs.TabPane
+                                                                    key={classification}
+                                                                    title={classificationLabel}
+                                                                >
+                                                                    <div className="tournament-view-full-result-action mb-4 flex justify-end">
                                                                         <Button
                                                                             type="outline"
                                                                             size="small"
@@ -1957,7 +2134,9 @@ export default function TournamentView() {
                                                                             View Full Result
                                                                         </Button>
                                                                     </div>
+                                                                    {renderTeamMobileTableExternal(filteredRecords)}
                                                                     <Table
+                                                                        className="tournament-view-preview-table"
                                                                         columns={columns}
                                                                         data={filteredRecords}
                                                                         pagination={{
@@ -1968,10 +2147,10 @@ export default function TournamentView() {
                                                                         rowKey="id"
                                                                         size="small"
                                                                     />
-                                                                </Tabs.TabPane>
+                                                                </ArcoTabs.TabPane>
                                                             );
                                                         })}
-                                                    </Tabs>
+                                                    </ResponsiveTabs>
                                                 </Card>
                                             );
                                         })}
@@ -1989,16 +2168,29 @@ export default function TournamentView() {
                 )}
 
                 {/* Edit Record Modal */}
-                <Modal
+                <ResponsiveOverlay
                     title="Edit Record"
                     visible={editModalVisible}
-                    onOk={handleSaveEdit}
                     onCancel={() => {
                         setEditModalVisible(false);
                         form.resetFields();
                     }}
-                    okText="Save"
-                    cancelText="Cancel"
+                    desktopWidth="min(95vw, 640px)"
+                    mobileMode="fullscreen"
+                    footer={[
+                        <Button
+                            key="cancel"
+                            onClick={() => {
+                                setEditModalVisible(false);
+                                form.resetFields();
+                            }}
+                        >
+                            Cancel
+                        </Button>,
+                        <Button key="save" type="primary" onClick={() => void handleSaveEdit()} loading={loading}>
+                            Save
+                        </Button>,
+                    ]}
                 >
                     <Form form={form} layout="vertical">
                         {editingRecordType === "overall" ? (
@@ -2092,12 +2284,10 @@ export default function TournamentView() {
                             <Input placeholder="https://example.com/video" />
                         </Form.Item>
                     </Form>
-                </Modal>
-                <Modal
+                </ResponsiveOverlay>
+                <ResponsiveOverlay
                     title={fullResultModal.title}
                     visible={fullResultModal.visible}
-                    footer={null}
-                    style={{width: "min(1200px, 95vw)"}}
                     onCancel={() =>
                         setFullResultModal({
                             visible: false,
@@ -2105,9 +2295,25 @@ export default function TournamentView() {
                             content: null,
                         })
                     }
+                    desktopWidth="min(96vw, 1200px)"
+                    mobileMode="fullscreen"
+                    footer={
+                        <Button
+                            type="primary"
+                            onClick={() =>
+                                setFullResultModal({
+                                    visible: false,
+                                    title: "",
+                                    content: null,
+                                })
+                            }
+                        >
+                            Close
+                        </Button>
+                    }
                 >
                     {fullResultModal.content}
-                </Modal>
+                </ResponsiveOverlay>
             </div>
         </div>
     );

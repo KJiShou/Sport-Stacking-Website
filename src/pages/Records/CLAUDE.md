@@ -135,7 +135,7 @@ A large (~780 lines) ranking table with multi-dimensional filtering.
 - **Event selection**: Individual 3-3-3, 3-6-3, Cycle, Overall (via `Select` dropdown)
 - **Filters**: Search by name/ID, Age group (17 options from "Age 5 & Under" to "Age 70++"), Gender (All/Male/Female), Country (from data), Season (auto-derived from data)
 - **Ranking computation**: Loads top 500 athletes per event from `getTopAthletesByEvent`, computes age at record time (not current date), sorts by time ascending
-- **Responsive columns**: Country, Age, Season columns hidden on mobile (`useDeviceBreakpoint`)
+- **Responsive columns**: desktop keeps the complete records table; mobile renders a full-data card and exposes the same columns through the Full Table overlay
 - **Links**: Each athlete name links to `/athletes/:participantId` (via `Link` component)
 
 ### Data Flow

@@ -1,42 +1,24 @@
 import type * as React from "react";
 
-import {useEffect, useMemo, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 
-import {
-    Button,
-    Card,
-    Empty,
-    Input,
-    Link,
-    Message,
-    Select,
-    Space,
-    Spin,
-    Table,
-    type TableColumnProps,
-    Tag,
-    Typography,
-} from "@arco-design/web-react";
-import {IconRefresh} from "@arco-design/web-react/icon";
+import {Button, Input, Link, Message, Pagination, Select, Spin, Table, type TableColumnProps, Tag} from "@arco-design/web-react";
+import {IconFilter, IconRefresh} from "@arco-design/web-react/icon";
 
 import type {FirestoreUser} from "@/schema/UserSchema";
 // import type {GlobalResult, GlobalTeamResult} from "@/schema/RecordSchema";
 import {type EventType as RankingEventType, getTopAthletesByEvent} from "@/services/firebase/athleteRankingsService";
-import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
-import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
-import {getCountryFlag as getCountryFlagUtil} from "@/utils/countryFlags";
+import {
+    CountryFlag,
+    MobileFilterDrawer,
+    MobileFilterTrigger,
+    MobilePageHeader,
+    MobileRankingTable,
+} from "@/components/responsive";
 import {formatGenderLabel} from "@/utils/genderLabel";
 import {formatStackingTime} from "@/utils/time";
 
-const {Title, Text} = Typography;
 const Option = Select.Option;
-
-// Wrapper to provide fallback for countries not in our map
-const getCountryFlag = (country?: string): string => {
-    if (!country) return "🌍";
-    const flag = getCountryFlagUtil(country);
-    return flag || "🌍";
-};
 
 type Category = "individual" | "double" | "parent_&_child" | "team_relay" | "special_need";
 type EventTypeUnion = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
@@ -67,6 +49,14 @@ type GenderFilter = "All" | GenderOption;
 
 type SeasonValue = `${number}-${number}`;
 type SeasonFilter = "All" | SeasonValue;
+
+interface RankingFilterValues {
+    selectedEventKey: string;
+    ageFilter: AgeFilter;
+    genderFilter: GenderFilter;
+    locationFilter: string;
+    seasonFilter: SeasonFilter;
+}
 
 interface EventOption {
     key: string;
@@ -115,6 +105,15 @@ interface AthleteTableRow extends AthleteRankingEntry {
     season: SeasonValue | null;
     source: "record" | "derived";
 }
+
+const renderAthleteRankingName = (row: AthleteTableRow) =>
+    row.participantId ? (
+        <Link href={`/athletes/${row.participantId}`} hoverable={false} onClick={(event) => event.stopPropagation()}>
+            {row.name}
+        </Link>
+    ) : (
+        row.name
+    );
 
 const GENDER_FILTER_OPTIONS: {value: GenderFilter; label: string}[] = [
     {value: "All", label: "All Genders"},
@@ -398,8 +397,10 @@ function toSafeDate(value: unknown): Date | null {
 }
 
 function extractCountry(value: unknown): string {
-    if (typeof value === "string") return value;
-    if (Array.isArray(value) && value.length > 0 && typeof value[0] === "string") return value[0] as string;
+    if (typeof value === "string") return value.trim() || "Unknown";
+    if (Array.isArray(value) && value.length > 0 && typeof value[0] === "string") {
+        return (value[0] as string).trim() || "Unknown";
+    }
     return "Unknown";
 }
 
@@ -491,6 +492,7 @@ async function loadRankingData(): Promise<AthleteRankingEntry[]> {
 }
 
 const Athletes: React.FC = () => {
+    const PAGE_SIZE = 25;
     const [rankings, setRankings] = useState<AthleteRankingEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedEventKey, setSelectedEventKey] = useState<string>(DEFAULT_EVENT.key);
@@ -501,8 +503,17 @@ const Athletes: React.FC = () => {
     const [seasonFilter, setSeasonFilter] = useState<SeasonFilter>("All");
     const [locationOptions, setLocationOptions] = useState<string[]>([]);
     const [seasonOptions, setSeasonOptions] = useState<SeasonValue[]>([]);
-
-    const deviceBreakpoint = useDeviceBreakpoint();
+    const [rankingPage, setRankingPage] = useState(1);
+    const [mobileFiltersVisible, setMobileFiltersVisible] = useState(false);
+    const mobileFilterTriggerRef = useRef<HTMLButtonElement>(null);
+    const [expandedTabletRows, setExpandedTabletRows] = useState<(string | number)[]>([]);
+    const [filterDraft, setFilterDraft] = useState<RankingFilterValues>({
+        selectedEventKey: DEFAULT_EVENT.key,
+        ageFilter: "All",
+        genderFilter: "All",
+        locationFilter: "All",
+        seasonFilter: "All",
+    });
 
     const selectedEvent = useMemo(() => {
         return EVENT_OPTIONS.find((option) => option.key === selectedEventKey) ?? DEFAULT_EVENT;
@@ -618,16 +629,27 @@ const Athletes: React.FC = () => {
         });
     }, [rankedRows, searchTerm]);
 
-    const columns: (TableColumnProps<(typeof filteredRows)[number]> | false)[] = [
+    useEffect(() => {
+        setRankingPage(1);
+        setExpandedTabletRows([]);
+    }, [selectedEventKey, searchTerm, ageFilter, genderFilter, locationFilter, seasonFilter]);
+
+    const paginatedRows = useMemo(() => {
+        const start = (rankingPage - 1) * PAGE_SIZE;
+        return filteredRows.slice(start, start + PAGE_SIZE);
+    }, [filteredRows, rankingPage]);
+
+    const columns: TableColumnProps<AthleteTableRow>[] = [
         {
             title: "Rank",
             dataIndex: "rank",
-            width: 60,
+            width: 64,
             render: (rank: number) => <span className="font-semibold text-sm md:text-base">{rank}</span>,
         },
         {
             title: selectedEvent.category === "team_relay" ? "Team" : "Athlete",
             dataIndex: "name",
+            width: 240,
             render: (name: string, row) => {
                 if (!row.isTeam && row.participantId) {
                     return (
@@ -639,24 +661,21 @@ const Athletes: React.FC = () => {
                 return <span>{name}</span>;
             },
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Country",
             dataIndex: "country",
             width: 160,
-            render: (country: string) => {
-                const flagUrl = getCountryFlagUtil(country);
-                return (
-                    <Space size={6} align="center">
-                        {flagUrl && <img src={flagUrl} alt={`${country} flag`} style={{width: 20, height: 15}} />}
-                        <span>{country || "Unknown"}</span>
-                    </Space>
-                );
-            },
+            render: (country: string) => (
+                <span className="country-cell">
+                    <CountryFlag country={country} size="sm" />
+                    <span>{country?.trim() || "Unknown"}</span>
+                </span>
+            ),
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Age",
             dataIndex: "age",
-            width: 120,
+            width: 100,
             render: (_: unknown, row) => (!row.isTeam && typeof row.age === "number" ? row.age : "—"),
         },
         {
@@ -668,15 +687,52 @@ const Athletes: React.FC = () => {
         {
             title: `${selectedEvent.label} Time`,
             dataIndex: "eventTime",
+            width: 160,
             render: (time: number) => <span className="font-semibold">{formatStackingTime(time)}</span>,
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Season",
             dataIndex: "season",
-            width: 160,
+            width: 140,
             render: (season: SeasonValue | null) => (season ? <Tag color="green">{season}</Tag> : <Tag color="gray">N/A</Tag>),
         },
     ];
+
+    const tabletColumns: TableColumnProps<AthleteTableRow>[] = [columns[0], columns[1], columns[5]];
+
+    const renderRankingDetails = (row: AthleteTableRow) => (
+        <div className="ranking-row-details">
+            <div className="ranking-detail-item">
+                <span className="ranking-detail-label">Country</span>
+                <span className="country-cell">
+                    <CountryFlag country={row.country} size="sm" />
+                    <span>{row.country?.trim() || "Unknown"}</span>
+                </span>
+            </div>
+            <div className="ranking-detail-item">
+                <span className="ranking-detail-label">Age</span>
+                <span>{!row.isTeam && typeof row.age === "number" ? row.age : "—"}</span>
+            </div>
+            <div className="ranking-detail-item">
+                <span className="ranking-detail-label">Gender</span>
+                <span>{formatGenderLabel(row.gender)}</span>
+            </div>
+            <div className="ranking-detail-item">
+                <span className="ranking-detail-label">Event</span>
+                <span>{selectedEvent.label}</span>
+            </div>
+            <div className="ranking-detail-item">
+                <span className="ranking-detail-label">Season</span>
+                <span>{row.season ?? "N/A"}</span>
+            </div>
+            {row.isTeam && row.memberNames.length > 0 ? (
+                <div className="ranking-detail-item ranking-detail-item--wide">
+                    <span className="ranking-detail-label">Team Members</span>
+                    <span>{row.memberNames.join(", ")}</span>
+                </div>
+            ) : null}
+        </div>
+    );
 
     const handleResetFilters = () => {
         setSearchTerm("");
@@ -685,93 +741,235 @@ const Athletes: React.FC = () => {
         setLocationFilter("All");
         setSeasonFilter("All");
         setSelectedEventKey(DEFAULT_EVENT.key);
+        setFilterDraft({
+            selectedEventKey: DEFAULT_EVENT.key,
+            ageFilter: "All",
+            genderFilter: "All",
+            locationFilter: "All",
+            seasonFilter: "All",
+        });
+    };
+
+    const activeFilterCount = [
+        selectedEventKey !== DEFAULT_EVENT.key,
+        ageFilter !== "All",
+        genderFilter !== "All",
+        locationFilter !== "All",
+        seasonFilter !== "All",
+    ].filter(Boolean).length;
+    const rankingFilterAriaLabel =
+        activeFilterCount > 0 ? `Open ranking filters (${activeFilterCount} active)` : "Open ranking filters";
+    const draftFilterCount = [
+        filterDraft.selectedEventKey !== DEFAULT_EVENT.key,
+        filterDraft.ageFilter !== "All",
+        filterDraft.genderFilter !== "All",
+        filterDraft.locationFilter !== "All",
+        filterDraft.seasonFilter !== "All",
+    ].filter(Boolean).length;
+
+    const renderFilterSelects = (
+        values: RankingFilterValues,
+        onChange: <K extends keyof RankingFilterValues>(key: K, value: RankingFilterValues[K]) => void,
+    ) => (
+        <>
+            <Select
+                value={values.selectedEventKey}
+                style={{width: 220}}
+                onChange={(value) => onChange("selectedEventKey", value)}
+            >
+                {EVENT_OPTIONS.map((option) => (
+                    <Option key={option.key} value={option.key}>
+                        {option.label}
+                    </Option>
+                ))}
+            </Select>
+            <Select value={values.ageFilter} style={{width: 180}} onChange={(value) => onChange("ageFilter", value as AgeFilter)}>
+                {AGE_FILTER_OPTIONS.map((option) => (
+                    <Option key={option.value} value={option.value}>
+                        {option.label}
+                    </Option>
+                ))}
+            </Select>
+            <Select
+                value={values.genderFilter}
+                style={{width: 150}}
+                onChange={(value) => onChange("genderFilter", value as GenderFilter)}
+            >
+                {GENDER_FILTER_OPTIONS.map((option) => (
+                    <Option key={option.value} value={option.value}>
+                        {option.label}
+                    </Option>
+                ))}
+            </Select>
+            <Select value={values.locationFilter} style={{width: 200}} onChange={(value) => onChange("locationFilter", value)}>
+                <Option key="All" value="All">
+                    All Locations
+                </Option>
+                {locationOptions.map((country) => (
+                    <Option key={country} value={country}>
+                        {country}
+                    </Option>
+                ))}
+            </Select>
+            <Select
+                value={values.seasonFilter}
+                style={{width: 180}}
+                onChange={(value) => onChange("seasonFilter", value as SeasonFilter)}
+            >
+                <Option key="All" value="All">
+                    All Seasons
+                </Option>
+                {seasonOptions.map((season) => (
+                    <Option key={season} value={season}>
+                        {formatSeasonLabel(season)}
+                    </Option>
+                ))}
+            </Select>
+        </>
+    );
+
+    const appliedFilterValues: RankingFilterValues = {
+        selectedEventKey,
+        ageFilter,
+        genderFilter,
+        locationFilter,
+        seasonFilter,
+    };
+
+    const setAppliedFilter = <K extends keyof RankingFilterValues>(key: K, value: RankingFilterValues[K]) => {
+        if (key === "selectedEventKey") setSelectedEventKey(value as string);
+        if (key === "ageFilter") setAgeFilter(value as AgeFilter);
+        if (key === "genderFilter") setGenderFilter(value as GenderFilter);
+        if (key === "locationFilter") setLocationFilter(value as string);
+        if (key === "seasonFilter") setSeasonFilter(value as SeasonFilter);
+    };
+
+    const applyMobileFilters = () => {
+        setAppliedFilter("selectedEventKey", filterDraft.selectedEventKey);
+        setAppliedFilter("ageFilter", filterDraft.ageFilter);
+        setAppliedFilter("genderFilter", filterDraft.genderFilter);
+        setAppliedFilter("locationFilter", filterDraft.locationFilter);
+        setAppliedFilter("seasonFilter", filterDraft.seasonFilter);
+        setMobileFiltersVisible(false);
+    };
+
+    const openMobileFilters = () => {
+        setFilterDraft(appliedFilterValues);
+        setMobileFiltersVisible(true);
+    };
+
+    const resetMobileFilterDraft = () => {
+        setFilterDraft({
+            selectedEventKey: DEFAULT_EVENT.key,
+            ageFilter: "All",
+            genderFilter: "All",
+            locationFilter: "All",
+            seasonFilter: "All",
+        });
     };
 
     return (
         <div className="flex flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-left p-6 shadow-lg rounded-lg">
                 <div className="flex flex-col gap-4">
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                        <div className="space-y-1">
-                            <Title heading={3} className="!mb-0">
-                                Athlete Rankings
-                            </Title>
-                        </div>
-                        <Button type="outline" icon={<IconRefresh />} onClick={handleResetFilters}>
-                            Reset filters
-                        </Button>
-                    </div>
-                    <Space wrap size="large">
+                    <MobilePageHeader
+                        title="Athlete Rankings"
+                        actions={
+                            <Button
+                                className="athlete-ranking-reset"
+                                type="outline"
+                                icon={<IconRefresh />}
+                                onClick={handleResetFilters}
+                            >
+                                Reset filters
+                            </Button>
+                        }
+                    />
+                    <div className="athlete-ranking-filter-layout mobile-search-filter-row">
                         <Input.Search
                             allowClear
                             placeholder="Search athlete"
-                            style={{width: 260}}
+                            className="athlete-ranking-search"
                             value={searchTerm}
                             onChange={(value) => setSearchTerm(value)}
                             onSearch={(value) => setSearchTerm(value)}
                         />
-                        <Select value={selectedEventKey} style={{width: 220}} onChange={(value) => setSelectedEventKey(value)}>
-                            {EVENT_OPTIONS.map((option) => (
-                                <Option key={option.key} value={option.key}>
-                                    {option.label}
-                                </Option>
-                            ))}
-                        </Select>
-                        <Select value={ageFilter} style={{width: 180}} onChange={(value) => setAgeFilter(value as AgeFilter)}>
-                            {AGE_FILTER_OPTIONS.map((option) => (
-                                <Option key={option.value} value={option.value}>
-                                    {option.label}
-                                </Option>
-                            ))}
-                        </Select>
-                        <Select
-                            value={genderFilter}
-                            style={{width: 150}}
-                            onChange={(value) => setGenderFilter(value as GenderFilter)}
-                        >
-                            {GENDER_FILTER_OPTIONS.map((option) => (
-                                <Option key={option.value} value={option.value}>
-                                    {option.label}
-                                </Option>
-                            ))}
-                        </Select>
-                        <Select value={locationFilter} style={{width: 200}} onChange={(value) => setLocationFilter(value)}>
-                            <Option key="All" value="All">
-                                All Locations
-                            </Option>
-                            {locationOptions.map((country) => (
-                                <Option key={country} value={country}>
-                                    {country}
-                                </Option>
-                            ))}
-                        </Select>
-                        <Select
-                            value={seasonFilter}
-                            style={{width: 180}}
-                            onChange={(value) => setSeasonFilter(value as SeasonFilter)}
-                        >
-                            <Option key="All" value="All">
-                                All Seasons
-                            </Option>
-                            {seasonOptions.map((season) => (
-                                <Option key={season} value={season}>
-                                    {formatSeasonLabel(season)}
-                                </Option>
-                            ))}
-                        </Select>
-                    </Space>
+                        <div className="athlete-filter-controls athlete-filter-controls--desktop">
+                            {renderFilterSelects(appliedFilterValues, setAppliedFilter)}
+                        </div>
+                        <MobileFilterTrigger
+                            icon={<IconFilter />}
+                            ref={mobileFilterTriggerRef}
+                            ariaExpanded={mobileFiltersVisible}
+                            activeCount={activeFilterCount}
+                            ariaLabel={rankingFilterAriaLabel}
+                            onClick={openMobileFilters}
+                        />
+                    </div>
                 </div>
 
-                <Spin loading={loading} tip="Loading rankings...">
+                <Spin loading={loading} className="w-full">
+                    <div className="athlete-ranking-table athlete-ranking-table--desktop mobile-table-scroll">
+                        <Table rowKey="key" data={paginatedRows} columns={columns} pagination={false} scroll={{x: 984}} />
+                    </div>
+                    <div className="athlete-ranking-table athlete-ranking-table--mobile">
+                        <MobileRankingTable
+                            data={paginatedRows}
+                            loading={loading}
+                            emptyDescription={
+                                searchTerm || activeFilterCount > 0 ? "No rankings match these filters" : "No rankings available"
+                            }
+                            rowKey={(row) => row.key}
+                            rank={(row) => row.rank}
+                            name={renderAthleteRankingName}
+                            result={(row) => formatStackingTime(row.eventTime)}
+                            details={(row) => renderRankingDetails(row)}
+                        />
+                    </div>
+                </Spin>
+                <div className="athlete-ranking-table athlete-ranking-table--tablet">
                     <Table
                         rowKey="key"
-                        data={filteredRows}
-                        columns={columns.filter((e): e is TableColumnProps<AthleteTableRow> => !!e)}
-                        pagination={{pageSize: 25, hideOnSinglePage: true}}
-                        scroll={{x: true}}
+                        data={paginatedRows}
+                        columns={tabletColumns}
+                        pagination={false}
+                        expandedRowKeys={expandedTabletRows}
+                        onExpandedRowsChange={setExpandedTabletRows}
+                        expandedRowRender={renderRankingDetails}
+                        expandProps={{width: 44}}
+                        scroll={{x: 520}}
                     />
-                </Spin>
+                </div>
+                {filteredRows.length > 0 ? (
+                    <div className="ranking-results-footer">
+                        <span className="ranking-results-count">
+                            Showing {Math.min((rankingPage - 1) * PAGE_SIZE + 1, filteredRows.length)}–
+                            {Math.min(rankingPage * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}
+                        </span>
+                        <Pagination
+                            current={rankingPage}
+                            pageSize={PAGE_SIZE}
+                            total={filteredRows.length}
+                            hideOnSinglePage
+                            onChange={setRankingPage}
+                        />
+                    </div>
+                ) : null}
             </div>
+
+            <MobileFilterDrawer
+                title="Ranking Filters"
+                visible={mobileFiltersVisible}
+                activeCount={draftFilterCount}
+                returnFocusRef={mobileFilterTriggerRef}
+                onCancel={() => setMobileFiltersVisible(false)}
+                onApply={applyMobileFilters}
+                onReset={resetMobileFilterDraft}
+            >
+                <div className="athlete-filter-drawer-fields">
+                    {renderFilterSelects(filterDraft, (key, value) => setFilterDraft((current) => ({...current, [key]: value})))}
+                </div>
+            </MobileFilterDrawer>
         </div>
     );
 };

@@ -1,3 +1,4 @@
+import {MobilePageHeader, MobileStickyActions} from "@/components/responsive";
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser, Tournament, TournamentEvent} from "@/schema";
 import {
@@ -41,6 +42,15 @@ const isEventEligible = (event: TournamentEvent, member: FirestoreUser, tourname
 
 const teamSizeForEvent = (event: TournamentEvent): number =>
     event.teamSize ?? (event.type === "Double" || event.type === "Parent & Child" ? 2 : 4);
+
+const isTeamRelayEvent = (event: TournamentEvent): boolean => event.type === "Team Relay";
+
+const isValidTeamParticipantCount = (event: TournamentEvent, participantCount: number): boolean => {
+    const teamSize = teamSizeForEvent(event);
+    return isTeamRelayEvent(event)
+        ? participantCount === teamSize || participantCount === teamSize + 1
+        : participantCount === teamSize;
+};
 
 const getAgeLabel = (event: TournamentEvent): string =>
     event.age_brackets.length > 0
@@ -101,7 +111,8 @@ export default function AdminRegisterMemberPage() {
     );
     const teamDetailsComplete = selectedTeamEvents.every((event) => {
         const draft = teamDrafts[event.id ?? ""];
-        return Boolean(draft?.teamName.trim()) && draft?.memberGlobalIds.length === teamSizeForEvent(event) - 1;
+        const participantCount = (draft?.memberGlobalIds.length ?? 0) + 1;
+        return Boolean(draft?.teamName.trim()) && isValidTeamParticipantCount(event, participantCount);
     });
     const canSubmit = Boolean(
         member && selectedEventIds.length > 0 && allRequiredIndividualEventsSelected && teamDetailsComplete,
@@ -288,7 +299,10 @@ export default function AdminRegisterMemberPage() {
                                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
                                             <span>Age: {getAgeLabel(event)}</span>
                                             <span>Gender: {getGenderLabel(event.gender)}</span>
-                                            <span>Team size: {teamSizeForEvent(event)} participants</span>
+                                            <span>
+                                                Team size: {teamSizeForEvent(event)}
+                                                {isTeamRelayEvent(event) ? ` or ${teamSizeForEvent(event) + 1}` : ""} participants
+                                            </span>
                                         </div>
                                     </div>
                                 </label>
@@ -365,9 +379,13 @@ export default function AdminRegisterMemberPage() {
         for (const event of selectedTeamEvents) {
             const eventId = event.id ?? "";
             const draft = teamDrafts[eventId];
-            const requiredMembers = teamSizeForEvent(event) - 1;
-            if (!draft?.teamName.trim() || draft.memberGlobalIds.length !== requiredMembers) {
-                Message.warning(`${event.type} requires a team name and exactly ${requiredMembers} member(s).`);
+            const baseTeamSize = teamSizeForEvent(event);
+            const minMembers = baseTeamSize - 1;
+            const maxMembers = minMembers + (isTeamRelayEvent(event) ? 1 : 0);
+            const participantCount = (draft?.memberGlobalIds.length ?? 0) + 1;
+            if (!draft?.teamName.trim() || !isValidTeamParticipantCount(event, participantCount)) {
+                const memberCountText = minMembers === maxMembers ? `exactly ${minMembers}` : `${minMembers} or ${maxMembers}`;
+                Message.warning(`${event.type} requires a team name and ${memberCountText} other member(s).`);
                 return;
             }
             teamAssignments.push({eventId, teamName: draft.teamName.trim(), memberGlobalIds: draft.memberGlobalIds});
@@ -414,9 +432,11 @@ export default function AdminRegisterMemberPage() {
     return (
         <div className="relative flex flex-auto bg-ghostwhite p-0 md:p-6 xl:p-10">
             <div className="flex h-fit w-full flex-col gap-4 bg-white p-4 shadow-lg md:rounded-lg md:p-8 xl:p-10">
-                <Typography.Title heading={3} className="mb-1 text-center">
-                    Register Member
-                </Typography.Title>
+                <MobilePageHeader
+                    title="Register Member"
+                    backTo={`/tournaments/${tournamentId}/registrations`}
+                    backLabel="Back to Registrations"
+                />
                 <Typography.Paragraph type="secondary" className="mx-auto mb-4 w-full max-w-3xl text-center">
                     An administrator can register an existing member for this tournament. Choose the member, select eligible
                     events, and send invitations for any additional team members.
@@ -536,8 +556,13 @@ export default function AdminRegisterMemberPage() {
                                 {selectedTeamEvents.map((event) => {
                                     const eventId = event.id ?? "";
                                     const draft = teamDrafts[eventId] ?? {teamName: "", memberGlobalIds: []};
-                                    const requiredMembers = teamSizeForEvent(event) - 1;
-                                    const memberCountComplete = draft.memberGlobalIds.length === requiredMembers;
+                                    const baseTeamSize = teamSizeForEvent(event);
+                                    const requiredMembers = baseTeamSize - 1;
+                                    const maxMembers = requiredMembers + (isTeamRelayEvent(event) ? 1 : 0);
+                                    const memberCountComplete = isValidTeamParticipantCount(
+                                        event,
+                                        draft.memberGlobalIds.length + 1,
+                                    );
                                     const searchTerm = teamSearchTerms[eventId] ?? "";
                                     const searchOptions = teamMemberOptions[eventId] ?? [];
                                     return (
@@ -546,7 +571,9 @@ export default function AdminRegisterMemberPage() {
                                                 {getEventLabel(event)}
                                             </Typography.Text>
                                             <Typography.Text type="secondary" className="mt-1 block text-sm">
-                                                {teamSizeForEvent(event)} participants total, including the selected member.
+                                                {teamSizeForEvent(event)}
+                                                {isTeamRelayEvent(event) ? ` or ${teamSizeForEvent(event) + 1}` : ""} participants
+                                                total, including the selected member.
                                             </Typography.Text>
                                             <Form.Item label="Team Name" required className="mt-4">
                                                 <Input
@@ -568,11 +595,11 @@ export default function AdminRegisterMemberPage() {
                                                     onChange={(value) => {
                                                         const nextValues = (Array.isArray(value) ? value : []).slice(
                                                             0,
-                                                            requiredMembers,
+                                                            maxMembers,
                                                         );
-                                                        if (Array.isArray(value) && value.length > requiredMembers) {
+                                                        if (Array.isArray(value) && value.length > maxMembers) {
                                                             Message.warning(
-                                                                `This team can include only ${requiredMembers} other member(s).`,
+                                                                `This team can include only ${maxMembers} other member(s).`,
                                                             );
                                                         }
                                                         updateTeamDraft(eventId, {memberGlobalIds: nextValues});
@@ -590,7 +617,8 @@ export default function AdminRegisterMemberPage() {
                                             </Form.Item>
                                             <div className="flex flex-col gap-1 text-sm">
                                                 <Typography.Text type={memberCountComplete ? "success" : "warning"}>
-                                                    Selected {draft.memberGlobalIds.length} of {requiredMembers} other member(s)
+                                                    Selected {draft.memberGlobalIds.length}; required {requiredMembers}
+                                                    {isTeamRelayEvent(event) ? ` or ${maxMembers}` : ""} other member(s)
                                                 </Typography.Text>
                                                 {searchTerm.length < 2 && (
                                                     <Typography.Text type="secondary">
@@ -623,23 +651,25 @@ export default function AdminRegisterMemberPage() {
                         </section>
                     )}
 
-                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                        <Button
-                            className="w-full sm:w-auto"
-                            onClick={() => navigate(`/tournaments/${tournamentId}/registrations`)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="primary"
-                            htmlType="submit"
-                            loading={saving}
-                            disabled={!canSubmit}
-                            className="w-full sm:w-auto"
-                        >
-                            Register Member &amp; Send Invitations
-                        </Button>
-                    </div>
+                    <MobileStickyActions>
+                        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                            <Button
+                                className="w-full sm:w-auto"
+                                onClick={() => navigate(`/tournaments/${tournamentId}/registrations`)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                loading={saving}
+                                disabled={!canSubmit}
+                                className="w-full sm:w-auto"
+                            >
+                                Register Member &amp; Send Invitations
+                            </Button>
+                        </div>
+                    </MobileStickyActions>
                 </Form>
             </div>
         </div>

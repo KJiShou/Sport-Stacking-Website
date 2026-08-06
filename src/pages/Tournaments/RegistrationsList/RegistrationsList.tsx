@@ -10,8 +10,6 @@ import {fetchUsersByIds} from "@/services/firebase/authService";
 import {type ImportWorkbookResult, importTournamentWorkbook} from "@/services/firebase/importService";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
-import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
-import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
 import {isTeamFullyVerified} from "@/utils/teamVerification";
 import {findDuplicateEventSelections, getTeamEvents, groupEventSelections} from "@/utils/tournament/eventUtils";
@@ -22,7 +20,7 @@ import {
     Form,
     Input,
     Message,
-    Modal,
+    Pagination,
     Popconfirm,
     Select,
     Spin,
@@ -35,11 +33,12 @@ import {
 import Table from "@arco-design/web-react/es/Table/table";
 import Title from "@arco-design/web-react/es/Typography/title";
 import type {UploadItem} from "@arco-design/web-react/es/Upload";
-import {IconDelete, IconDownload, IconImport, IconUndo} from "@arco-design/web-react/icon";
+import {IconDelete, IconDownload, IconImport} from "@arco-design/web-react/icon";
 import type {Timestamp} from "firebase/firestore";
 import {useEffect, useMemo, useRef, useState} from "react";
 import {Link, useLocation, useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
+import {MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 
 const PAGE_SIZE = 10;
 type ImportResultView = "errors" | "warnings" | "athletes" | "registrations" | "teams";
@@ -75,11 +74,19 @@ const getTeamVerificationLabel = (team: Team, events: TournamentEvent[], verifie
     return `${label} ${verified ? "Verified" : "Not Verified"}`;
 };
 
+const getRegistrationEventGroupLabel = (group: ReturnType<typeof groupEventSelections>[number]): string =>
+    group.canonicalKey.startsWith("event:") ? group.label : "Unknown event";
+
+const getImportLevelColor = (level: string): "red" | "orange" | "blue" => {
+    if (level === "error") return "red";
+    if (level === "warning") return "orange";
+    return "blue";
+};
+
 export default function RegistrationsListPage() {
     const {tournamentId} = useParams();
     const {user} = useAuthContext();
     const navigate = useNavigate();
-    const deviceBreakpoint = useDeviceBreakpoint();
     const location = useLocation();
     const [searchParams, setSearchParams] = useSearchParams();
 
@@ -368,12 +375,12 @@ export default function RegistrationsListPage() {
             dataIndex: "user_name",
             width: 300,
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "IC",
             width: 200,
             render: (_: string, record: Registration) => <span>{userMap[record.user_id]?.IC ?? "-"}</span>,
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Created At",
             dataIndex: "created_at",
             width: 200,
@@ -385,7 +392,7 @@ export default function RegistrationsListPage() {
                 return aTime - bTime;
             },
         },
-        deviceBreakpoint > DeviceBreakpoint.md && {
+        {
             title: "Status",
             dataIndex: "registration_status",
             width: 200,
@@ -456,14 +463,8 @@ export default function RegistrationsListPage() {
                     return duplicateCountB - duplicateCountA;
                 }
 
-                const labelA = (debugA?.groups ?? [])
-                    .map((group) => group.label)
-                    .join(", ")
-                    .toLowerCase();
-                const labelB = (debugB?.groups ?? [])
-                    .map((group) => group.label)
-                    .join(", ")
-                    .toLowerCase();
+                const labelA = (debugA?.groups ?? []).map(getRegistrationEventGroupLabel).join(", ").toLowerCase();
+                const labelB = (debugB?.groups ?? []).map(getRegistrationEventGroupLabel).join(", ").toLowerCase();
 
                 if (labelA !== labelB) {
                     return labelA.localeCompare(labelB);
@@ -479,13 +480,15 @@ export default function RegistrationsListPage() {
                 return (
                     <div className="flex flex-wrap gap-2">
                         {groups.length > 0 ? (
-                            groups.map((group) => <Tag key={`${record.id}-${group.canonicalKey}`}>{group.label}</Tag>)
+                            groups.map((group) => (
+                                <Tag key={`${record.id}-${group.canonicalKey}`}>{getRegistrationEventGroupLabel(group)}</Tag>
+                            ))
                         ) : (
-                            <span>-</span>
+                            <span>Unknown event</span>
                         )}
                         {duplicates.map((group) => (
                             <Tag key={`${record.id}-${group.canonicalKey}-duplicate`} color="red">
-                                Duplicate: {group.label} ({group.values.join(" / ")})
+                                Duplicate: {getRegistrationEventGroupLabel(group)}
                             </Tag>
                         ))}
                     </div>
@@ -576,13 +579,12 @@ export default function RegistrationsListPage() {
     }
 
     return (
-        <div className={`flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}>
-            <Button type="outline" onClick={() => navigate("/tournaments")} className={`w-fit pt-2 pb-2`}>
-                <IconUndo /> Go Back
-            </Button>
+        <div
+            className={`registrations-list-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch `}
+        >
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
-                <div className="w-full flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <Title heading={4}>{tournamentTitle}</Title>
+                <MobilePageHeader title={tournamentTitle} backTo="/tournaments" backLabel="Go Back" />
+                <div className="w-full flex flex-col md:flex-row md:items-center md:justify-end gap-4 registrations-list-header">
                     <div className="flex flex-col md:flex-row gap-2 md:items-center">
                         {canImportWorkbook && (
                             <>
@@ -611,31 +613,89 @@ export default function RegistrationsListPage() {
                         />
                     </div>
                 </div>
-                <Table
-                    columns={columns.filter((e): e is TableColumnProps<(typeof registrations)[number]> => !!e)}
-                    data={filteredRegistrations}
-                    pagination={{pageSize: PAGE_SIZE, current: currentPage}}
-                    className="my-4"
-                    rowKey={(record) => record.id ?? ""}
-                    rowClassName={() => "cursor-pointer hover:bg-gray-50"}
-                    onChange={(pagination, sorter) => {
-                        setCurrentPage(pagination.current ?? 1);
+                <div className="registrations-list-table mobile-table-scroll">
+                    <Table
+                        columns={columns.filter((e): e is TableColumnProps<(typeof registrations)[number]> => !!e)}
+                        data={filteredRegistrations}
+                        pagination={{pageSize: PAGE_SIZE, current: currentPage}}
+                        className="my-4"
+                        rowKey={(record) => record.id ?? ""}
+                        rowClassName={() => "cursor-pointer hover:bg-gray-50"}
+                        onChange={(pagination, sorter) => {
+                            setCurrentPage(pagination.current ?? 1);
 
-                        if (!Array.isArray(sorter) && sorter.field && sorter.direction) {
-                            setSortField(String(sorter.field));
-                            setSortDirection(sorter.direction);
-                            return;
-                        }
+                            if (!Array.isArray(sorter) && sorter.field && sorter.direction) {
+                                setSortField(String(sorter.field));
+                                setSortDirection(sorter.direction);
+                                return;
+                            }
 
-                        setSortField("");
-                        setSortDirection(undefined);
-                    }}
-                    onRow={(record) => ({
-                        onClick: () => {
-                            navigate(`/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`);
-                        },
-                    })}
-                />
+                            setSortField("");
+                            setSortDirection(undefined);
+                        }}
+                        onRow={(record) => ({
+                            onClick: () => {
+                                navigate(`/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`);
+                            },
+                        })}
+                    />
+                </div>
+                <div className="registrations-mobile-cards">
+                    {filteredRegistrations.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map((record) => (
+                        <Card
+                            key={record.id}
+                            className="mobile-card-content registration-mobile-card"
+                            title={record.user_name || record.user_global_id || "Registration"}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() =>
+                                navigate(`/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`)
+                            }
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    navigate(`/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`);
+                                }
+                            }}
+                        >
+                            <div className="flex flex-col gap-2 text-sm">
+                                <span>
+                                    <strong>Global ID:</strong> {record.user_global_id || "—"}
+                                </span>
+                                <div>
+                                    <strong>Events:</strong>
+                                    <div className="mt-1 flex flex-wrap gap-2">
+                                        {(registrationEventDebugMap[record.id ?? ""]?.groups ?? []).length > 0 ? (
+                                            (registrationEventDebugMap[record.id ?? ""]?.groups ?? []).map((group) => (
+                                                <Tag key={`${record.id}-${group.canonicalKey}`}>
+                                                    {getRegistrationEventGroupLabel(group)}
+                                                </Tag>
+                                            ))
+                                        ) : (
+                                            <Tag color="gray">Unknown event</Tag>
+                                        )}
+                                        {(registrationEventDebugMap[record.id ?? ""]?.duplicates ?? []).map((group) => (
+                                            <Tag key={`${record.id}-${group.canonicalKey}-duplicate`} color="red">
+                                                Duplicate: {getRegistrationEventGroupLabel(group)}
+                                            </Tag>
+                                        ))}
+                                    </div>
+                                </div>
+                                <Tag color={record.registration_status === "approved" ? "green" : "orange"}>
+                                    {record.registration_status || "pending"}
+                                </Tag>
+                            </div>
+                        </Card>
+                    ))}
+                    {filteredRegistrations.length > PAGE_SIZE ? (
+                        <Pagination
+                            current={currentPage}
+                            pageSize={PAGE_SIZE}
+                            total={filteredRegistrations.length}
+                            onChange={setCurrentPage}
+                        />
+                    ) : null}
+                </div>
             </div>
             {canImportWorkbook && (teamInvitationsLoading || teamInvitations.length > 0) && (
                 <div className="bg-white flex flex-col w-full h-fit gap-4 p-4 md:p-6 xl:p-8 shadow-lg md:rounded-lg">
@@ -703,7 +763,7 @@ export default function RegistrationsListPage() {
                     </Spin>
                 </div>
             )}
-            <Modal
+            <ResponsiveOverlay
                 title="Import Tournament Excel"
                 visible={importModalVisible}
                 onCancel={() => {
@@ -712,7 +772,7 @@ export default function RegistrationsListPage() {
                     setImportResultView("registrations");
                 }}
                 footer={
-                    <div className="flex justify-between w-full gap-2">
+                    <div className="registrations-import-footer flex justify-between w-full gap-2">
                         <Button onClick={() => setImportModalVisible(false)}>Close</Button>
                         <div className="flex gap-2">
                             <Button
@@ -733,9 +793,11 @@ export default function RegistrationsListPage() {
                         </div>
                     </div>
                 }
-                style={{width: "min(96vw, 1100px)", top: "4vh"}}
+                className="registrations-import-modal"
+                desktopWidth="min(96vw, 1100px)"
+                mobileMode="fullscreen"
             >
-                <div className="flex flex-col gap-6 py-4 md:px-3 max-h-[76vh] overflow-y-auto">
+                <div className="flex flex-col gap-6 py-4 md:px-3 max-h-[76vh] overflow-y-auto registrations-import-body">
                     <Form form={importForm} layout="vertical" initialValues={{defaultCountry: "Malaysia"}}>
                         <Form.Item label="Workbook" required>
                             <Upload
@@ -789,7 +851,7 @@ export default function RegistrationsListPage() {
                     {importResult && (
                         <div className="flex flex-col gap-3">
                             {importResult.committed && <Tag color="green">Committed</Tag>}
-                            <Tabs
+                            <ResponsiveTabs
                                 type="capsule"
                                 activeTab={importResultView}
                                 onChange={(key) => setImportResultView(key as ImportResultView)}
@@ -802,23 +864,41 @@ export default function RegistrationsListPage() {
                                 <Tabs.TabPane key="teams" title={`Teams (${importResult.summary.teams})`} />
                                 <Tabs.TabPane key="warnings" title={`Warnings (${importResult.summary.warnings})`} />
                                 <Tabs.TabPane key="errors" title={`Errors (${importResult.summary.errors})`} />
-                            </Tabs>
-                            <Table
-                                size="small"
-                                pagination={{pageSize: 6}}
-                                rowKey={(record) => `${record.sheet}-${record.row}-${record.level}-${record.message}`}
-                                columns={[
-                                    {title: "Level", dataIndex: "level", width: 100},
-                                    {title: "Sheet", dataIndex: "sheet", width: 180},
-                                    {title: "Row", dataIndex: "row", width: 80},
-                                    {title: "Message", dataIndex: "message"},
-                                ]}
-                                data={importResultRows}
-                            />
+                            </ResponsiveTabs>
+                            <div className="registrations-import-preview-cards">
+                                {importResultRows.map((row) => (
+                                    <Card key={`${row.sheet}-${row.row}-${row.level}-${row.message}`} bordered>
+                                        <div className="flex flex-col gap-2">
+                                            <Tag color={getImportLevelColor(row.level)}>{row.level}</Tag>
+                                            <span>
+                                                <strong>Sheet:</strong> {row.sheet}
+                                            </span>
+                                            <span>
+                                                <strong>Row:</strong> {row.row}
+                                            </span>
+                                            <span className="break-words">{row.message}</span>
+                                        </div>
+                                    </Card>
+                                ))}
+                            </div>
+                            <div className="mobile-table-scroll registrations-import-preview-table">
+                                <Table
+                                    size="small"
+                                    pagination={{pageSize: 6}}
+                                    rowKey={(record) => `${record.sheet}-${record.row}-${record.level}-${record.message}`}
+                                    columns={[
+                                        {title: "Level", dataIndex: "level", width: 100},
+                                        {title: "Sheet", dataIndex: "sheet", width: 180},
+                                        {title: "Row", dataIndex: "row", width: 80},
+                                        {title: "Message", dataIndex: "message"},
+                                    ]}
+                                    data={importResultRows}
+                                />
+                            </div>
                         </div>
                     )}
                 </div>
-            </Modal>
+            </ResponsiveOverlay>
         </div>
     );
 }

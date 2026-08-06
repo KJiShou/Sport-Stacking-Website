@@ -1,6 +1,7 @@
 // src/pages/RegisterTournamentPage.tsx
 
 import LoginForm from "@/components/common/Login";
+import {CountryFlag, MobilePageHeader, MobileStickyActions, ResponsiveOverlay} from "@/components/responsive";
 import {useAuthContext} from "@/context/AuthContext";
 import type {ExpandedEvent, Registration, Team, Tournament, TournamentEvent, VerificationRequest} from "@/schema";
 import type {RegistrationForm} from "@/schema/RegistrationSchema";
@@ -27,7 +28,6 @@ import {verifyTeamMembership} from "@/services/firebase/verificationService";
 import {formatDate} from "@/utils/Date/formatDate";
 import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
 import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
-import {getCountryFlag} from "@/utils/countryFlags";
 import {
     getEventKey,
     getEventLabel,
@@ -107,6 +107,38 @@ const getFallbackTeamSize = (event?: ExpandedEvent, eventId?: string): number | 
     }
     return undefined;
 };
+const getTeamRelayParticipantRange = (event?: ExpandedEvent, eventId?: string): {min: number; max: number} | undefined => {
+    const teamSize = getFallbackTeamSize(event, eventId);
+    if (teamSize === undefined) {
+        return undefined;
+    }
+    return isTeamRelayEvent(event) ? {min: teamSize, max: teamSize + 1} : {min: teamSize, max: teamSize};
+};
+
+const getTeamLeaderLabel = (isParentChild: boolean, isDouble: boolean): string => {
+    if (isParentChild) return "Child Global ID";
+    if (isDouble) return "Double Leader Global ID";
+    return "Team Leader Global ID";
+};
+
+const getTeamMemberTooltip = (
+    requiredMemberCount: number | undefined,
+    maxMemberCount: number | undefined,
+    isTeamRelay: boolean,
+    isParentChild: boolean,
+): string => {
+    if (requiredMemberCount !== undefined) {
+        if (isTeamRelay) {
+            return `Enter ${requiredMemberCount} or ${maxMemberCount} team members (excluding the leader); the extra member may be a substitute`;
+        }
+        const memberSuffix = requiredMemberCount === 1 ? "" : "s";
+        return `Enter ${requiredMemberCount} team member${memberSuffix} (excluding the leader)`;
+    }
+    if (isParentChild) {
+        return "Enter parent's Global ID. The system will auto-verify the parent.";
+    }
+    return "Must Enter Team Member Global ID. Not include Team Leader Global ID";
+};
 const isNonScoringEvent = (event?: ExpandedEvent) => {
     const normalized = (event?.type ?? "").toLowerCase();
     return (
@@ -141,7 +173,6 @@ export default function RegisterTournamentPage() {
     const location = useLocation();
     const deviceBreakpoint = useDeviceBreakpoint();
     const isSmallScreen = deviceBreakpoint <= DeviceBreakpoint.sm;
-    const eventSelectWidth = isSmallScreen ? 200 : 345;
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [pageLoading, setPageLoading] = useState(true);
     const [submitLoading, setSubmitLoading] = useState(false);
@@ -600,18 +631,20 @@ export default function RegisterTournamentPage() {
 
                 // Only check member count if NOT looking for members/teammates
                 if (!isLookingForMembers && !isLookingForTeammates) {
-                    const fallbackTeamSize = getFallbackTeamSize(relatedEvent, teamId);
+                    const participantRange = getTeamRelayParticipantRange(relatedEvent, teamId);
 
-                    if (fallbackTeamSize !== undefined) {
-                        const expectedMembers = Math.max(fallbackTeamSize - 1, 0);
+                    if (participantRange !== undefined) {
+                        const expectedMembers = Math.max(participantRange.min - 1, 0);
                         const actualMembers = (team.member?.filter(Boolean)?.length ?? 0) + (team.leader ? 1 : 0);
-                        if (actualMembers !== fallbackTeamSize) {
-                            const participantLabel = fallbackTeamSize === 1 ? "participant" : "participants";
+                        if (actualMembers < participantRange.min || actualMembers > participantRange.max) {
+                            const participantLabel = participantRange.min === 1 ? "participant" : "participants";
                             const additionalMessage = expectedMembers > 0 ? `` : "No additional members should be listed.";
+                            const requiredText =
+                                participantRange.min === participantRange.max
+                                    ? `${participantRange.min} ${participantLabel}`
+                                    : `${participantRange.min} or ${participantRange.max} ${participantLabel}`;
 
-                            throw new Error(
-                                `${eventLabel} requires ${fallbackTeamSize} ${participantLabel}. ${additionalMessage}`,
-                            );
+                            throw new Error(`${eventLabel} requires ${requiredText}. ${additionalMessage}`);
                         }
                     }
                 }
@@ -763,7 +796,7 @@ export default function RegisterTournamentPage() {
                     event_id: eventId,
                     registration_id: registrationId,
                     team_age,
-                    looking_for_member: false,
+                    looking_for_member: teamData.looking_for_team_members === true,
                 });
 
                 // Close any active DoubleRecruitment for team members (they're now in a team)
@@ -1004,13 +1037,7 @@ export default function RegisterTournamentPage() {
                                     }
                                     hoverable={false}
                                 >
-                                    {comp?.country?.[0] && getCountryFlag(comp.country[0]) && (
-                                        <img
-                                            src={getCountryFlag(comp.country[0])}
-                                            alt={`${comp.country[0]} flag`}
-                                            style={{width: 20, height: 15, marginRight: 8, verticalAlign: "middle"}}
-                                        />
-                                    )}
+                                    <CountryFlag country={comp?.country?.[0]} size="sm" />
                                     {comp?.address} ({comp?.country?.join(" / ")}) <IconLaunch />
                                 </Link>
                             ),
@@ -1115,14 +1142,15 @@ export default function RegisterTournamentPage() {
     if (!firebaseUser) {
         return (
             <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-                <Modal
+                <ResponsiveOverlay
                     title="Log In Required"
                     visible={loginModalVisible}
                     footer={null}
                     onCancel={() => setLoginModalVisible(false)}
+                    mobileMode="fullscreen"
                 >
                     <LoginForm redirectTo={location.pathname} onClose={() => setLoginModalVisible(false)} />
-                </Modal>
+                </ResponsiveOverlay>
                 <Result
                     status="403"
                     title="Please log in to register"
@@ -1147,6 +1175,7 @@ export default function RegisterTournamentPage() {
     if (error) return <Result status="error" title="Error" subTitle={error} />;
     return (
         <div className="flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
+            <MobilePageHeader title="Tournament Registration" backTo="/tournaments" backLabel="Go Back" />
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 {tournament?.logo && <Image src={tournament.logo} alt="logo" width={200} />}
                 <Descriptions
@@ -1171,21 +1200,28 @@ export default function RegisterTournamentPage() {
                         overflowWrap: "anywhere",
                     }}
                 />
-                <Modal
+                <ResponsiveOverlay
                     title="Tournament Description"
                     visible={descriptionModalVisible}
                     onCancel={() => setDescriptionModalVisible(false)}
                     footer={null}
-                    className={`m-10 w-1/2`}
+                    className={`tournament-description-modal m-10 w-1/2`}
+                    mobileMode="fullscreen"
                 >
                     <MDEditor.Markdown remarkPlugins={[remarkBreaks]} source={tournament?.description ?? ""} />
-                </Modal>
+                </ResponsiveOverlay>
             </div>
 
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <div className="w-full">
                     <Title heading={5}>Register for Event</Title>
-                    <Form requiredSymbol={false} form={form} layout="vertical" onSubmit={handleRegister}>
+                    <Form
+                        className="tournament-registration-form"
+                        requiredSymbol={false}
+                        form={form}
+                        layout="vertical"
+                        onSubmit={handleRegister}
+                    >
                         <Form.Item disabled label="ID" field="id" rules={[{required: true, message: "ID is required."}]}>
                             <Input disabled placeholder="Enter your ID" />
                         </Form.Item>
@@ -1421,25 +1457,20 @@ export default function RegisterTournamentPage() {
                                         const eventType = entry.event?.type ?? "";
                                         const lowerEventType = eventType.toLowerCase();
                                         const isParentChild = isParentChildEvent(entry.event, eventId, eventLabel);
-                                        const requiredTeamSize =
-                                            entry.event?.teamSize ??
-                                            (isParentChild
-                                                ? 2
-                                                : lowerEventType === "double"
-                                                  ? 2
-                                                  : lowerEventType === "team relay"
-                                                    ? 4
-                                                    : undefined);
+                                        const requiredTeamSize = getFallbackTeamSize(entry.event, eventId);
                                         const requiredMemberCount =
                                             requiredTeamSize !== undefined ? Math.max(requiredTeamSize - 1, 0) : undefined;
+                                        let maxMemberCount: number | undefined;
+                                        if (requiredTeamSize !== undefined) {
+                                            maxMemberCount = Math.max(requiredTeamSize - 1, 0);
+                                            if (isTeamRelayEvent(entry.event)) {
+                                                maxMemberCount += 1;
+                                            }
+                                        }
                                         const isDoubleEvent = lowerEventType === "double";
                                         const isPairEvent = isDoubleEvent || isParentChild;
                                         const teamNameLabel = isPairEvent ? "Name" : "Team Name";
-                                        const teamLeaderLabel = isParentChild
-                                            ? "Child Global ID"
-                                            : isDoubleEvent
-                                              ? "Double Leader Global ID"
-                                              : "Team Leader Global ID";
+                                        const teamLeaderLabel = getTeamLeaderLabel(isParentChild, isDoubleEvent);
                                         const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
@@ -1550,15 +1581,12 @@ export default function RegisterTournamentPage() {
                                                                     <div>
                                                                         {isParentChild ? "Parent Global ID" : teamMemberLabel}
                                                                         <Tooltip
-                                                                            content={
-                                                                                requiredMemberCount !== undefined
-                                                                                    ? `Enter ${requiredMemberCount} team member${
-                                                                                          requiredMemberCount === 1 ? "" : "s"
-                                                                                      } (excluding the leader)`
-                                                                                    : isParentChild
-                                                                                      ? "Enter parent's Global ID. The system will auto-verify the parent."
-                                                                                      : "Must Enter Team Member Global ID. Not include Team Leader Global ID"
-                                                                            }
+                                                                            content={getTeamMemberTooltip(
+                                                                                requiredMemberCount,
+                                                                                maxMemberCount,
+                                                                                isTeamRelayEvent(entry.event),
+                                                                                isParentChild,
+                                                                            )}
                                                                         >
                                                                             <IconExclamationCircle
                                                                                 style={{
@@ -1606,7 +1634,8 @@ export default function RegisterTournamentPage() {
                                                                             selectedMembers,
                                                                         );
                                                                     }}
-                                                                    style={{width: 345, flex: 1}}
+                                                                    className="registration-member-select flex-1 min-w-0"
+                                                                    style={{width: "100%"}}
                                                                 >
                                                                     {memberOptions.map((option) => (
                                                                         <Option
@@ -1824,17 +1853,23 @@ export default function RegisterTournamentPage() {
                             </>
                         )}
 
-                        <Form.Item>
-                            <Button
-                                type="primary"
-                                htmlType="submit"
-                                long
-                                loading={submitLoading}
-                                disabled={submitLoading || paymentUploadLoading || pageLoading}
-                            >
-                                Register
-                            </Button>
-                        </Form.Item>
+                        <MobileStickyActions>
+                            <div className="mobile-sticky-actions__summary" aria-live="polite">
+                                <span>Total payment</span>
+                                <strong>{requiresPaymentProof ? `RM${totalRegistrationFee}` : "No payment required"}</strong>
+                            </div>
+                            <Form.Item>
+                                <Button
+                                    type="primary"
+                                    htmlType="submit"
+                                    long
+                                    loading={submitLoading}
+                                    disabled={submitLoading || paymentUploadLoading || pageLoading}
+                                >
+                                    Register
+                                </Button>
+                            </Form.Item>
+                        </MobileStickyActions>
                     </Form>
                 </div>
             </div>

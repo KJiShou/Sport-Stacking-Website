@@ -5,12 +5,13 @@ import {
     subscribePendingVerificationRequestsForGlobalIds,
 } from "@/services/firebase/verificationRequestService";
 import {MEMBER_NOT_REGISTERED_CODE, VerificationError, verifyTeamMembership} from "@/services/firebase/verificationService";
-import {Button, Card, Message, Result, Spin, Typography} from "@arco-design/web-react";
+import {Button, Card, Message, Modal, Result, Spin, Typography} from "@arco-design/web-react";
 import dayjs from "dayjs";
 import {useEffect, useMemo, useState} from "react";
 import {useNavigate} from "react-router-dom";
+import {MobilePageHeader} from "@/components/responsive";
 
-const {Title, Paragraph, Text} = Typography;
+const {Paragraph, Text} = Typography;
 
 export default function VerificationRequestsPage() {
     const {firebaseUser, profiles} = useAuthContext();
@@ -99,14 +100,14 @@ export default function VerificationRequestsPage() {
     return (
         <div className="flex flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
             <div className="bg-white flex flex-col w-full h-fit gap-4 p-4 md:p-6 xl:p-8 shadow-lg md:rounded-lg">
-                <div className="flex items-center justify-between">
-                    <Title heading={4} style={{marginBottom: 0}}>
-                        Verification Requests
-                    </Title>
-                    <Button type="outline" onClick={() => navigate("/tournaments")}>
-                        Back to Tournaments
-                    </Button>
-                </div>
+                <MobilePageHeader
+                    title="Verification Requests"
+                    actions={
+                        <Button type="outline" onClick={() => navigate("/tournaments")}>
+                            Back to Tournaments
+                        </Button>
+                    }
+                />
 
                 <Spin loading={loading}>
                     {requests.length === 0 ? (
@@ -152,6 +153,7 @@ export default function VerificationRequestsPage() {
                                             <div className="mt-2">
                                                 <Button
                                                     type="primary"
+                                                    className="mobile-request-action"
                                                     disabled={!isRegisteredForTournament && !isParentChild}
                                                     loading={verifyingRequestId === request.id}
                                                     onClick={() => {
@@ -162,7 +164,7 @@ export default function VerificationRequestsPage() {
                                                 </Button>
                                                 {!isRegisteredForTournament && !isParentChild ? (
                                                     <Button
-                                                        className="ml-2"
+                                                        className="mobile-request-action"
                                                         type="outline"
                                                         onClick={() => navigate(`/tournaments/${request.tournament_id}/register`)}
                                                     >
@@ -170,12 +172,16 @@ export default function VerificationRequestsPage() {
                                                     </Button>
                                                 ) : null}
                                                 <Button
-                                                    className="ml-2"
+                                                    className="ml-2 mobile-request-action"
                                                     type="outline"
                                                     status="danger"
                                                     loading={rejectingRequestId === request.id}
                                                     onClick={() => {
-                                                        void handleRejectRequest(request);
+                                                        Modal.confirm({
+                                                            title: "Reject invitation?",
+                                                            content: "You can join another team after rejecting this invitation.",
+                                                            onOk: () => handleRejectRequest(request),
+                                                        });
                                                     }}
                                                 >
                                                     Reject Invitation

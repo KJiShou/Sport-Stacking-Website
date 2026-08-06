@@ -1,4 +1,5 @@
 import InAppBrowserNotice from "@/components/common/InAppBrowserNotice";
+import {MobilePageHeader, MobileStickyActions, ResponsiveTabs} from "@/components/responsive";
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser} from "@/schema";
 import {countries} from "@/schema/Country";
@@ -31,8 +32,6 @@ import type {User} from "firebase/auth";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
-
-const {Title} = Typography;
 
 type RegisterFormData = Omit<FirestoreUser, "id"> & {password: string; confirmPassword: string};
 type ClaimRequestFormData = {
@@ -258,14 +257,16 @@ const RegisterPage = () => {
     return (
         <div className={`flex flex-auto bg-ghostwhite relative p-0 md:p-6 xl:p-10`}>
             <div className={`bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg`}>
-                <Title heading={3} className="text-center mb-6">
-                    <div>
-                        Register Participant Account
-                        <Tooltip content="Create a participant profile under your Google login. Tournament registration is done from a tournament page.">
-                            <IconExclamationCircle style={{margin: "0 8px", color: "rgb(var(--arcoblue-6))"}} />
-                        </Tooltip>
-                    </div>
-                </Title>
+                <MobilePageHeader
+                    title={
+                        <span>
+                            Register Participant Account
+                            <Tooltip content="Create a participant profile under your Google login. Tournament registration is done from a tournament page.">
+                                <IconExclamationCircle style={{margin: "0 8px", color: "rgb(var(--arcoblue-6))"}} />
+                            </Tooltip>
+                        </span>
+                    }
+                />
 
                 {!firebaseUser ? (
                     <div className="flex flex-col items-center gap-4 w-full max-w-xl">
@@ -300,9 +301,15 @@ const RegisterPage = () => {
                         </Button>
                     </div>
                 ) : (
-                    <Tabs defaultActiveTab="register" className="w-full max-w-3xl">
+                    <ResponsiveTabs defaultActiveTab="register" className="register-tabs w-full max-w-3xl">
                         <Tabs.TabPane key="register" title="Register / Auto Claim">
-                            <Form form={form} layout="vertical" onSubmit={handleSubmit} requiredSymbol={false}>
+                            <Form
+                                className="register-profile-form"
+                                form={form}
+                                layout="vertical"
+                                onSubmit={handleSubmit}
+                                requiredSymbol={false}
+                            >
                                 <Form.Item noStyle field="image_url">
                                     <Input type="hidden" />
                                 </Form.Item>
@@ -490,7 +497,7 @@ const RegisterPage = () => {
                                         }}
                                         options={countries}
                                         placeholder="Please select location"
-                                        expandTrigger="hover"
+                                        expandTrigger="click"
                                         value={user?.country}
                                     />
                                 </Form.Item>
@@ -515,9 +522,11 @@ const RegisterPage = () => {
                                     <Input.Password prefix={<IconLock />} placeholder="Repeat password" />
                                 </Form.Item>
 
-                                <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
-                                    Register
-                                </Button>
+                                <MobileStickyActions>
+                                    <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
+                                        Register
+                                    </Button>
+                                </MobileStickyActions>
                             </Form>
                         </Tabs.TabPane>
                         <Tabs.TabPane key="claim" title="Claim Imported Profile">
@@ -532,7 +541,13 @@ const RegisterPage = () => {
                                     </Button>
                                 </div>
                             ) : (
-                                <Form form={claimForm} layout="vertical" onSubmit={handleClaimSubmit} requiredSymbol={false}>
+                                <Form
+                                    className="register-claim-form"
+                                    form={claimForm}
+                                    layout="vertical"
+                                    onSubmit={handleClaimSubmit}
+                                    requiredSymbol={false}
+                                >
                                     <Typography.Paragraph>
                                         Use this when your profile was imported but you do not have enough IC/passport details to
                                         auto-claim it.
@@ -573,13 +588,15 @@ const RegisterPage = () => {
                                             autoSize={{minRows: 3, maxRows: 6}}
                                         />
                                     </Form.Item>
-                                    <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
-                                        Submit Claim Request
-                                    </Button>
+                                    <MobileStickyActions>
+                                        <Button type="primary" htmlType="submit" long loading={loading} style={{marginTop: 16}}>
+                                            Submit Claim Request
+                                        </Button>
+                                    </MobileStickyActions>
                                 </Form>
                             )}
                         </Tabs.TabPane>
-                    </Tabs>
+                    </ResponsiveTabs>
                 )}
             </div>
         </div>

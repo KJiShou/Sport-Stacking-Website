@@ -49,6 +49,8 @@ export const compareDeviceBreakpoints = (a: DeviceBreakpoint, b: DeviceBreakpoin
     return -1;
 };
 
-export const deviceBreakpointAtom = atom<DeviceBreakpoint>(DeviceBreakpoint.xs);
+export const deviceBreakpointAtom = atom<DeviceBreakpoint>(
+    typeof window === "undefined" ? DeviceBreakpoint.xs : calculateDeviceBreakpoint(window.innerWidth),
+);
 
 export const deviceOrientationAtom = atom<DeviceOrientation>(DeviceOrientation.LANDSCAPE);

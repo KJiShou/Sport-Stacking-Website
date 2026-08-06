@@ -35,10 +35,6 @@ const routes: AppRoute[] = [
         path: "/tournaments/:id/view",
         component: TournamentView,
     },
-    {
-        path: "/tournaments/:id/view",
-        component: TournamentView,
-    },
     {path: "/", component: Home},
     {path: "/score-sheet/:tournamentId/:round", component: ScoreSheetPage},
     {path: "/athletes", component: Athletes},
