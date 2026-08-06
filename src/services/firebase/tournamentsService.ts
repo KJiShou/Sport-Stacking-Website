@@ -152,6 +152,12 @@ const buildRegistrationLookup = (registrations: Registration[]): Map<string, Reg
     return registrationMap;
 };
 
+const calculateUpdatedTeamName = (teamName: string, nameParts: string[], relayTeam: boolean): string => {
+    if (relayTeam) return teamName;
+    if (nameParts.length > 0) return nameParts.join(" & ");
+    return teamName;
+};
+
 const normalizeParticipantId = (value: string | null | undefined): string => value?.trim() ?? "";
 
 const buildTeamParticipantIds = (team: Team | LegacyTeam): string[] => {
@@ -998,7 +1004,7 @@ export async function updateTeamNamesForTournament(tournamentId: string): Promis
 
         const nameParts = [leaderName, ...memberNames].filter((name): name is string => Boolean(name));
         const relayTeam = isTeamRelayTeam(team, tournamentEvents);
-        const calculatedName = relayTeam ? team.name : nameParts.length > 0 ? nameParts.join(" & ") : team.name;
+        const calculatedName = calculateUpdatedTeamName(team.name, nameParts, relayTeam);
         const nextName = !relayTeam && teamNamesEqual(team.name, calculatedName) ? team.name : calculatedName;
         const teamMemberAges = [leaderId, ...(team.members ?? []).map((member) => member.global_id)]
             .map((id) => registrationMap.get(id ?? "")?.age)

@@ -136,6 +136,10 @@ type TeamDisplayInfo = {
 
 const normalizeId = (value: string | null | undefined): string => value?.trim() ?? "";
 
+const compareStrings = (left: string, right: string): number => left.localeCompare(right);
+
+const compareMapEntriesByKey = <T>([left]: [string, T], [right]: [string, T]): number => left.localeCompare(right);
+
 const buildTeamParticipantIds = (team: TeamRecord): string[] =>
     [
         stripTeamLeaderPrefix(team.leader_id ?? "").trim(),
@@ -247,27 +251,32 @@ const calculateTeamAge = (team: TeamRecord, events: TournamentEvent[], registrat
     return calculateTeamAgeForEvent(ages, getTeamEventType(team, events));
 };
 
-const buildDedupeProjection = (
-    teams: TeamSnapshot[],
-    registrations: RegistrationSnapshot[],
-    events: TournamentEvent[],
-): DedupeProjection => {
-    const registrationData = registrations.map((snapshot) => snapshot.data);
-    const participantLookup = buildRegistrationParticipantLookup(registrationData);
+const groupTeamsByRegistration = (teams: TeamSnapshot[], participantLookup: Map<string, string[]>): Map<string, TeamRecord[]> => {
     const teamsByRegistration = new Map<string, TeamRecord[]>();
-    const projectedTeams = new Map(teams.map(({id, data}) => [id, {...data, id}]));
-    const duplicateTeamIds = new Set<string>();
-    const duplicateToCanonical = new Map<string, string>();
-    const canonicalTeamsById = new Map<string, TeamRecord>();
-
     for (const {id, data} of teams) {
         const resolvedRegistrationId = resolveTeamRegistrationId(data, participantLookup);
         if (!resolvedRegistrationId) continue;
-        const normalized = {...data, id, registration_id: resolvedRegistrationId};
         const bucket = teamsByRegistration.get(resolvedRegistrationId) ?? [];
-        bucket.push(normalized);
+        bucket.push({...data, id, registration_id: resolvedRegistrationId});
         teamsByRegistration.set(resolvedRegistrationId, bucket);
     }
+    return teamsByRegistration;
+};
+
+type DedupeCandidates = {
+    canonicalTeamsById: Map<string, TeamRecord>;
+    duplicateTeamIds: Set<string>;
+    duplicateToCanonical: Map<string, string>;
+};
+
+const collectDedupeCandidates = (
+    teamsByRegistration: Map<string, TeamRecord[]>,
+    events: TournamentEvent[],
+    projectedTeams: Map<string, TeamRecord>,
+): DedupeCandidates => {
+    const canonicalTeamsById = new Map<string, TeamRecord>();
+    const duplicateTeamIds = new Set<string>();
+    const duplicateToCanonical = new Map<string, string>();
 
     for (const registrationTeams of teamsByRegistration.values()) {
         const deduped = dedupeTeamsByEvent(registrationTeams as LegacyTeam[], events, registrationTeams[0]?.registration_id);
@@ -285,21 +294,15 @@ const buildDedupeProjection = (
         }
     }
 
-    if (duplicateTeamIds.size === 0) {
-        return {
-            projectedTeams: new Map(teams.map(({id, data}) => [id, {...data, id}])),
-            duplicateTeamIds,
-            duplicateToCanonical,
-            projectedRegistrationTeams: new Map(
-                registrations.map((registration) => [registration.id, registrationTeamArray(registration.data)]),
-            ),
-        };
-    }
+    return {canonicalTeamsById, duplicateTeamIds, duplicateToCanonical};
+};
 
-    for (const [id, canonical] of canonicalTeamsById) {
-        projectedTeams.set(id, canonical);
-    }
-
+const buildProjectedRegistrationTeams = (
+    registrations: RegistrationSnapshot[],
+    teamsByRegistration: Map<string, TeamRecord[]>,
+    canonicalTeamsById: Map<string, TeamRecord>,
+    duplicateTeamIds: Set<string>,
+): Map<string, RegistrationTeamEntry[]> => {
     const projectedRegistrationTeams = new Map<string, RegistrationTeamEntry[]>();
     for (const registration of registrations) {
         const registrationId = normalizeId(registration.data.id);
@@ -308,18 +311,40 @@ const buildDedupeProjection = (
             .map((team) => canonicalTeamsById.get(team.id))
             .filter((team): team is TeamRecord => Boolean(team))
             .filter((team, index, source) => source.findIndex((candidate) => candidate.id === team.id) === index);
+        if (canonicalTeams.length === 0) {
+            projectedRegistrationTeams.set(registration.id, existing);
+            continue;
+        }
         const canonicalIds = new Set(canonicalTeams.map((team) => team.id));
-        const filtered = existing.filter(
-            (entry) => !duplicateTeamIds.has(entry.team_id) && (!canonicalIds.has(entry.team_id) || canonicalTeams.length === 0),
-        );
-        projectedRegistrationTeams.set(
-            registration.id,
-            canonicalTeams.length > 0
-                ? [...filtered, ...canonicalTeams.map((team) => buildRegistrationTeamPayload(team))]
-                : existing,
-        );
+        const filtered = existing.filter((entry) => !duplicateTeamIds.has(entry.team_id) && !canonicalIds.has(entry.team_id));
+        projectedRegistrationTeams.set(registration.id, [
+            ...filtered,
+            ...canonicalTeams.map((team) => buildRegistrationTeamPayload(team)),
+        ]);
     }
+    return projectedRegistrationTeams;
+};
 
+const buildDedupeProjection = (
+    teams: TeamSnapshot[],
+    registrations: RegistrationSnapshot[],
+    events: TournamentEvent[],
+): DedupeProjection => {
+    const participantLookup = buildRegistrationParticipantLookup(registrations.map((snapshot) => snapshot.data));
+    const teamsByRegistration = groupTeamsByRegistration(teams, participantLookup);
+    const projectedTeams = new Map<string, TeamRecord>(teams.map(({id, data}) => [id, {...data, id}]));
+    const {canonicalTeamsById, duplicateTeamIds, duplicateToCanonical} = collectDedupeCandidates(
+        teamsByRegistration,
+        events,
+        projectedTeams,
+    );
+    if (duplicateTeamIds.size > 0) {
+        for (const [id, canonical] of canonicalTeamsById) projectedTeams.set(id, canonical);
+    }
+    const projectedRegistrationTeams =
+        duplicateTeamIds.size === 0
+            ? new Map(registrations.map((registration) => [registration.id, registrationTeamArray(registration.data)]))
+            : buildProjectedRegistrationTeams(registrations, teamsByRegistration, canonicalTeamsById, duplicateTeamIds);
     return {projectedTeams, duplicateTeamIds, duplicateToCanonical, projectedRegistrationTeams};
 };
 
@@ -366,59 +391,73 @@ const preserveSemanticallyEqualRegistrationNames = (
     });
 };
 
-const mergeRegistrationMutationIntoLatest = (
-    mutation: RegistrationMutation,
-    latestTeams: RegistrationTeamEntry[],
-): RegistrationTeamEntry[] => {
-    const originalTeams = registrationTeamArray(mutation.current.data);
-    const originalById = new Map(originalTeams.map((entry) => [entry.team_id, entry]));
-    const plannedById = new Map(mutation.nextTeams.map((entry) => [entry.team_id, entry]));
-    const latestById = new Map(latestTeams.map((entry) => [entry.team_id, entry]));
-    const merged: RegistrationTeamEntry[] = [];
+const mergeChangedRegistrationEntry = (
+    latestEntry: RegistrationTeamEntry,
+    before: RegistrationTeamEntry,
+    after: RegistrationTeamEntry,
+): RegistrationTeamEntry => {
+    const changedFields = entryChangedFields(before, after);
+    if (changedFields.length === 0) return latestEntry;
 
-    for (const latestEntry of latestTeams) {
-        const before = originalById.get(latestEntry.team_id);
-        const after = plannedById.get(latestEntry.team_id);
-        if (!before && !after) {
-            merged.push(latestEntry);
-            continue;
-        }
-        if (before && !after) {
-            if (!entryChangedFields(before, after).includes("delete")) merged.push(latestEntry);
-            continue;
-        }
-        if (!before || !after) {
-            merged.push(latestEntry);
-            continue;
-        }
-
-        const changedFields = entryChangedFields(before, after);
-        if (changedFields.length === 0) {
-            merged.push(latestEntry);
-            continue;
-        }
-
-        const nextEntry = {...latestEntry};
-        if (changedFields.includes("name") && !teamNamesEqual(latestEntry.name, after.name)) {
-            nextEntry.name = after.name;
-        }
-        if (changedFields.includes("label") && !teamNamesEqual(latestEntry.label, after.label)) {
-            nextEntry.label = after.label;
-        }
-        if (changedFields.includes("member")) nextEntry.member = after.member;
-        if (changedFields.includes("leader")) nextEntry.leader = after.leader;
-        if (changedFields.includes("looking_for_team_members")) {
-            nextEntry.looking_for_team_members = after.looking_for_team_members;
-        }
-        merged.push(nextEntry);
+    const nextEntry = {...latestEntry};
+    if (changedFields.includes("name") && !teamNamesEqual(latestEntry.name, after.name)) nextEntry.name = after.name;
+    if (changedFields.includes("label") && !teamNamesEqual(latestEntry.label, after.label)) nextEntry.label = after.label;
+    if (changedFields.includes("member")) nextEntry.member = after.member;
+    if (changedFields.includes("leader")) nextEntry.leader = after.leader;
+    if (changedFields.includes("looking_for_team_members")) {
+        nextEntry.looking_for_team_members = after.looking_for_team_members;
     }
+    return nextEntry;
+};
 
+const mergeLatestRegistrationEntry = (
+    latestEntry: RegistrationTeamEntry,
+    before: RegistrationTeamEntry | undefined,
+    after: RegistrationTeamEntry | undefined,
+): RegistrationTeamEntry | null => {
+    if (!before && !after) return latestEntry;
+    if (before && !after) return entryChangedFields(before, after).includes("delete") ? null : latestEntry;
+    if (!before || !after) return latestEntry;
+    return mergeChangedRegistrationEntry(latestEntry, before, after);
+};
+
+const appendNewPlannedEntries = (
+    merged: RegistrationTeamEntry[],
+    plannedById: Map<string, RegistrationTeamEntry>,
+    latestById: Map<string, RegistrationTeamEntry>,
+    originalById: Map<string, RegistrationTeamEntry>,
+): void => {
     for (const [teamId, after] of plannedById) {
         if (latestById.has(teamId)) continue;
         const before = originalById.get(teamId);
         if (!before || entryChangedFields(before, after).length > 0) merged.push(after);
     }
+};
 
+const getRegistrationChangeAction = (changedFields: string[]): "update" | "create" | "delete" => {
+    if (changedFields[0] === "create") return "create";
+    if (changedFields[0] === "delete") return "delete";
+    return "update";
+};
+
+const mergeRegistrationMutationIntoLatest = (
+    mutation: RegistrationMutation,
+    latestTeams: RegistrationTeamEntry[],
+): RegistrationTeamEntry[] => {
+    const originalById = new Map(registrationTeamArray(mutation.current.data).map((entry) => [entry.team_id, entry]));
+    const plannedById = new Map(mutation.nextTeams.map((entry) => [entry.team_id, entry]));
+    const latestById = new Map(latestTeams.map((entry) => [entry.team_id, entry]));
+    const merged: RegistrationTeamEntry[] = [];
+
+    for (const latestEntry of latestTeams) {
+        const mergedEntry = mergeLatestRegistrationEntry(
+            latestEntry,
+            originalById.get(latestEntry.team_id),
+            plannedById.get(latestEntry.team_id),
+        );
+        if (mergedEntry) merged.push(mergedEntry);
+    }
+    appendNewPlannedEntries(merged, plannedById, latestById, originalById);
     return merged;
 };
 
@@ -446,7 +485,7 @@ const buildRegistrationChanges = (
                 userGlobalId: current.data.user_global_id,
                 userName: current.data.user_name,
                 teamId,
-                action: changedFields[0] === "create" ? "create" : changedFields[0] === "delete" ? "delete" : "update",
+                action: getRegistrationChangeAction(changedFields),
                 currentName: before?.name ?? null,
                 nextName: after?.name ?? null,
                 currentLabel: before?.label ?? null,
@@ -534,6 +573,12 @@ const buildRegistrationGroups = (
 const getKeptTeamName = (teamId: string, teamChanges: TeamNameUpdateTeamChange[]): string | undefined =>
     teamChanges.find((change) => change.teamId === teamId)?.keptTeamName;
 
+const getTeamChangeAction = (isDuplicate: boolean, structuralFields: string[]): TeamNameUpdateTeamChange["action"] => {
+    if (isDuplicate) return "delete";
+    if (structuralFields.some((field) => field !== "name_skipped_team_relay")) return "merge";
+    return "update";
+};
+
 const buildTeamChange = (
     current: TeamRecord,
     next: TeamRecord,
@@ -548,11 +593,7 @@ const buildTeamChange = (
     const ageChanged = getTeamAge(current) !== getTeamAge(next);
     if (!isDuplicate && !nameChanged && !ageChanged && structuralFields.length === 0) return null;
     if (relay && !teamNamesEqual(rawName, current.name)) structuralFields.push("name_skipped_team_relay");
-    const action = isDuplicate
-        ? "delete"
-        : structuralFields.some((field) => field !== "name_skipped_team_relay")
-          ? "merge"
-          : "update";
+    const action = getTeamChangeAction(isDuplicate, structuralFields);
     return {
         teamId: current.id,
         teamName: isDuplicate ? getTeamName(current) : getTeamName(next),
@@ -593,7 +634,7 @@ const fetchSource = async (tournamentId: string) => {
         verificationByTeam.set(teamId, ids);
     }
     for (const [teamId, ids] of verificationByTeam) {
-        verificationByTeam.set(teamId, Array.from(new Set(ids)).sort());
+        verificationByTeam.set(teamId, Array.from(new Set(ids)).sort(compareStrings));
     }
     return {events, teams, registrations, recruitments, verificationByTeam};
 };
@@ -621,9 +662,191 @@ const fetchVerificationRequestsByTeamIds = async (teamIds: string[]): Promise<Ma
         }
     }
     for (const [teamId, ids] of result) {
-        result.set(teamId, Array.from(new Set(ids)).sort());
+        result.set(teamId, Array.from(new Set(ids)).sort(compareStrings));
     }
     return result;
+};
+
+const mergeDuplicateVerificationRequests = (
+    verificationByTeam: Map<string, string[]>,
+    duplicateIds: Set<string>,
+    discoveredByTeam: Map<string, string[]>,
+): void => {
+    for (const duplicateId of duplicateIds) {
+        const existing = verificationByTeam.get(duplicateId) ?? [];
+        const discovered = discoveredByTeam.get(duplicateId) ?? [];
+        verificationByTeam.set(duplicateId, Array.from(new Set([...existing, ...discovered])).sort(compareStrings));
+    }
+};
+
+const initializeProjectedRegistrations = (
+    registrations: RegistrationSnapshot[],
+    projectedRegistrationTeams: Map<string, RegistrationTeamEntry[]>,
+): Map<string, RegistrationTeamEntry[]> => {
+    const nextRegistrations = new Map<string, RegistrationTeamEntry[]>();
+    for (const registration of registrations) {
+        const currentTeams = registrationTeamArray(registration.data);
+        const base = projectedRegistrationTeams.get(registration.id) ?? currentTeams;
+        const copiedBase = base.map((entry) => ({...entry}));
+        nextRegistrations.set(registration.id, preserveSemanticallyEqualRegistrationNames(currentTeams, copiedBase));
+    }
+    return nextRegistrations;
+};
+
+const getCanonicalProjectedTeam = (current: TeamRecord, dedupe: DedupeProjection): TeamRecord => {
+    const projected = dedupe.projectedTeams.get(current.id) ?? current;
+    const canonicalId = dedupe.duplicateToCanonical.get(current.id);
+    return canonicalId ? (dedupe.projectedTeams.get(canonicalId) ?? projected) : projected;
+};
+
+const getNextTeamName = (currentName: string, calculatedName: string, relay: boolean): string => {
+    if (relay) return calculatedName;
+    return teamNamesEqual(currentName, calculatedName) ? currentName : calculatedName;
+};
+
+const updateRegistrationTeamName = (
+    entry: RegistrationTeamEntry,
+    nextName: string,
+): {entry: RegistrationTeamEntry; changed: boolean} => {
+    const nextEntry = {...entry};
+    let changed = false;
+    if (!teamNamesEqual(entry.name, nextName)) {
+        nextEntry.name = nextName;
+        changed = true;
+    }
+    if (!teamNamesEqual(entry.label, nextName)) {
+        nextEntry.label = nextName;
+        changed = true;
+    }
+    return {entry: changed ? nextEntry : entry, changed};
+};
+
+const updateProjectedRegistrationTeamNames = (
+    nextRegistrations: Map<string, RegistrationTeamEntry[]>,
+    registrations: RegistrationSnapshot[],
+    teamId: string,
+    nextName: string,
+): void => {
+    for (const registration of registrations) {
+        const entries = nextRegistrations.get(registration.id) ?? [];
+        let changed = false;
+        const updated = entries.map((entry) => {
+            if (entry.team_id !== teamId) return entry;
+            const result = updateRegistrationTeamName(entry, nextName);
+            changed ||= result.changed;
+            return result.entry;
+        });
+        if (changed) nextRegistrations.set(registration.id, updated);
+    }
+};
+
+type TeamPlanningState = {
+    teamMutations: TeamMutation[];
+    teamChanges: TeamNameUpdateTeamChange[];
+    teamDisplayById: Map<string, TeamDisplayInfo>;
+    plannedTeamNameById: Map<string, string>;
+    teamNameUpdates: number;
+    teamAgeUpdates: number;
+    skippedTeamRelayNames: number;
+};
+
+const planTeamChanges = (
+    source: Awaited<ReturnType<typeof fetchSource>>,
+    dedupe: DedupeProjection,
+    duplicateIds: Set<string>,
+    registrationMap: Map<string, Registration>,
+    nameMap: Map<string, string>,
+    nextRegistrations: Map<string, RegistrationTeamEntry[]>,
+): TeamPlanningState => {
+    const state: TeamPlanningState = {
+        teamMutations: [],
+        teamChanges: [],
+        teamDisplayById: new Map(),
+        plannedTeamNameById: new Map(),
+        teamNameUpdates: 0,
+        teamAgeUpdates: 0,
+        skippedTeamRelayNames: 0,
+    };
+
+    for (const sourceTeam of source.teams) {
+        const current = sourceTeam.data;
+        const projected = getCanonicalProjectedTeam(current, dedupe);
+        const relay = isTeamRelayTeam(current, source.events);
+        const rawName = calculateTeamName(projected, registrationMap, nameMap);
+        const calculatedName = relay ? projected.name : rawName;
+        const nextName = getNextTeamName(current.name, calculatedName, relay);
+        if (relay && !teamNamesEqual(rawName, projected.name)) state.skippedTeamRelayNames += 1;
+        const nextAge = calculateTeamAge(projected, source.events, registrationMap);
+        const next = {...projected, name: nextName, team_age: nextAge};
+        const isDuplicate = duplicateIds.has(current.id);
+        const teamNameForDisplay = isDuplicate ? getTeamName(current) : getTeamName(next);
+        state.teamDisplayById.set(current.id, {
+            teamName: teamNameForDisplay,
+            event: getTeamEventDisplayLabel(current, source.events),
+        });
+        state.plannedTeamNameById.set(current.id, teamNameForDisplay);
+
+        const change = buildTeamChange(current, next, source.events, dedupe.duplicateToCanonical, isDuplicate, rawName);
+        if (change) {
+            state.teamChanges.push(change);
+            if (!isDuplicate && !relay && !teamNamesEqual(current.name, nextName)) state.teamNameUpdates += 1;
+            if (!isDuplicate && getTeamAge(current) !== nextAge) state.teamAgeUpdates += 1;
+            if (!isDuplicate) state.teamMutations.push({current, next, change});
+        }
+        if (!isDuplicate && !relay) {
+            updateProjectedRegistrationTeamNames(nextRegistrations, source.registrations, current.id, nextName);
+        }
+    }
+
+    return state;
+};
+
+const applyKeptTeamNames = (teamChanges: TeamNameUpdateTeamChange[], plannedTeamNameById: Map<string, string>): void => {
+    for (const change of teamChanges) {
+        if (change.keptTeamId) change.keptTeamName = plannedTeamNameById.get(change.keptTeamId) ?? "Unknown team";
+    }
+};
+
+type CleanupPlan = {
+    cleanupChanges: TeamNameUpdateCleanupChange[];
+    teamRecruitmentIds: Map<string, string>;
+};
+
+const buildCleanupPlan = (
+    duplicateIds: Set<string>,
+    verificationByTeam: Map<string, string[]>,
+    recruitments: Awaited<ReturnType<typeof fetchSource>>["recruitments"],
+    teamDisplayById: Map<string, TeamDisplayInfo>,
+    teamChanges: TeamNameUpdateTeamChange[],
+): CleanupPlan => {
+    const cleanupChanges: TeamNameUpdateCleanupChange[] = [];
+    const teamRecruitmentIds = new Map<string, string>();
+    for (const duplicateId of duplicateIds) {
+        const teamName = teamDisplayById.get(duplicateId)?.teamName ?? "Unknown team";
+        const keptTeamName = getKeptTeamName(duplicateId, teamChanges);
+        for (const requestId of verificationByTeam.get(duplicateId) ?? []) {
+            cleanupChanges.push({
+                collection: "verification_requests",
+                documentId: requestId,
+                teamId: duplicateId,
+                teamName,
+                keptTeamName,
+                action: "delete",
+            });
+        }
+        const recruitment = recruitments.find((item) => item.team_id === duplicateId);
+        if (!recruitment) continue;
+        teamRecruitmentIds.set(duplicateId, recruitment.id);
+        cleanupChanges.push({
+            collection: "team_recruitment",
+            documentId: recruitment.id,
+            teamId: duplicateId,
+            teamName,
+            keptTeamName,
+            action: "delete",
+        });
+    }
+    return {cleanupChanges, teamRecruitmentIds};
 };
 
 const buildPlan = async (tournamentId: string): Promise<InternalPlan> => {
@@ -636,130 +859,37 @@ const buildPlan = async (tournamentId: string): Promise<InternalPlan> => {
     const dedupe = buildDedupeProjection(source.teams, source.registrations, source.events);
     const duplicateIds = dedupe.duplicateTeamIds;
     const duplicateVerificationByTeam = await fetchVerificationRequestsByTeamIds(Array.from(duplicateIds));
-    for (const duplicateId of duplicateIds) {
-        const existing = source.verificationByTeam.get(duplicateId) ?? [];
-        const discovered = duplicateVerificationByTeam.get(duplicateId) ?? [];
-        source.verificationByTeam.set(duplicateId, Array.from(new Set([...existing, ...discovered])).sort());
-    }
-    const nextRegistrations = new Map<string, RegistrationTeamEntry[]>();
-    for (const registration of source.registrations) {
-        const currentTeams = registrationTeamArray(registration.data);
-        const base = dedupe.projectedRegistrationTeams.get(registration.id) ?? currentTeams;
-        nextRegistrations.set(
-            registration.id,
-            preserveSemanticallyEqualRegistrationNames(
-                currentTeams,
-                base.map((entry) => ({...entry})),
-            ),
-        );
-    }
-
-    const teamMutations: TeamMutation[] = [];
-    const teamChanges: TeamNameUpdateTeamChange[] = [];
-    const teamDisplayById = new Map<string, TeamDisplayInfo>();
-    const plannedTeamNameById = new Map<string, string>();
-    let teamNameUpdates = 0;
-    let teamAgeUpdates = 0;
-    let skippedTeamRelayNames = 0;
-    for (const sourceTeam of source.teams) {
-        const current = sourceTeam.data;
-        const projected = dedupe.projectedTeams.get(current.id) ?? current;
-        const relay = isTeamRelayTeam(current, source.events);
-        const canonicalProjected = dedupe.duplicateToCanonical.has(current.id)
-            ? (dedupe.projectedTeams.get(dedupe.duplicateToCanonical.get(current.id) ?? "") ?? projected)
-            : projected;
-        const rawName = calculateTeamName(canonicalProjected, registrationMap, nameMap);
-        const calculatedName = relay ? canonicalProjected.name : rawName;
-        const nextName = !relay && teamNamesEqual(current.name, calculatedName) ? current.name : calculatedName;
-        if (relay && !teamNamesEqual(rawName, canonicalProjected.name)) skippedTeamRelayNames += 1;
-        const nextAge = calculateTeamAge(canonicalProjected, source.events, registrationMap);
-        const next = {...canonicalProjected, name: nextName, team_age: nextAge};
-        const isDuplicate = duplicateIds.has(current.id);
-        const teamNameForDisplay = isDuplicate ? getTeamName(current) : getTeamName(next);
-        teamDisplayById.set(current.id, {
-            teamName: teamNameForDisplay,
-            event: getTeamEventDisplayLabel(current, source.events),
-        });
-        plannedTeamNameById.set(current.id, teamNameForDisplay);
-        const change = buildTeamChange(current, next, source.events, dedupe.duplicateToCanonical, isDuplicate, rawName);
-        if (change) {
-            teamChanges.push(change);
-            if (!isDuplicate && !relay && !teamNamesEqual(current.name, nextName)) teamNameUpdates += 1;
-            if (!isDuplicate && getTeamAge(current) !== nextAge) teamAgeUpdates += 1;
-            if (!isDuplicate) teamMutations.push({current, next, change});
-        }
-        if (!isDuplicate && !relay) {
-            for (const registration of source.registrations) {
-                const entries = nextRegistrations.get(registration.id) ?? [];
-                let changed = false;
-                const updated = entries.map((entry) => {
-                    if (entry.team_id !== current.id) return entry;
-                    const nextEntry = {
-                        ...entry,
-                        ...(!teamNamesEqual(entry.name, nextName) ? {name: nextName} : {}),
-                        ...(!teamNamesEqual(entry.label, nextName) ? {label: nextName} : {}),
-                    };
-                    if (stableSerialize(entry) === stableSerialize(nextEntry)) return entry;
-                    changed = true;
-                    return nextEntry;
-                });
-                if (changed) nextRegistrations.set(registration.id, updated);
-            }
-        }
-    }
-
-    for (const change of teamChanges) {
-        if (change.keptTeamId) {
-            change.keptTeamName = plannedTeamNameById.get(change.keptTeamId) ?? "Unknown team";
-        }
-    }
-
+    mergeDuplicateVerificationRequests(source.verificationByTeam, duplicateIds, duplicateVerificationByTeam);
+    const nextRegistrations = initializeProjectedRegistrations(source.registrations, dedupe.projectedRegistrationTeams);
+    const teamPlan = planTeamChanges(source, dedupe, duplicateIds, registrationMap, nameMap, nextRegistrations);
+    applyKeptTeamNames(teamPlan.teamChanges, teamPlan.plannedTeamNameById);
     const registrationPlan = buildRegistrationChanges(source.registrations, nextRegistrations);
-    const registrationGroups = buildRegistrationGroups(registrationPlan.changes, teamDisplayById);
-    const cleanupChanges: TeamNameUpdateCleanupChange[] = [];
-    const teamRecruitmentIds = new Map<string, string>();
-    for (const duplicateId of duplicateIds) {
-        for (const requestId of source.verificationByTeam.get(duplicateId) ?? []) {
-            cleanupChanges.push({
-                collection: "verification_requests",
-                documentId: requestId,
-                teamId: duplicateId,
-                teamName: teamDisplayById.get(duplicateId)?.teamName ?? "Unknown team",
-                keptTeamName: getKeptTeamName(duplicateId, teamChanges),
-                action: "delete",
-            });
-        }
-        const recruitment = source.recruitments.find((item) => item.team_id === duplicateId);
-        if (recruitment) {
-            teamRecruitmentIds.set(duplicateId, recruitment.id);
-            cleanupChanges.push({
-                collection: "team_recruitment",
-                documentId: recruitment.id,
-                teamId: duplicateId,
-                teamName: teamDisplayById.get(duplicateId)?.teamName ?? "Unknown team",
-                keptTeamName: getKeptTeamName(duplicateId, teamChanges),
-                action: "delete",
-            });
-        }
-    }
+    const registrationGroups = buildRegistrationGroups(registrationPlan.changes, teamPlan.teamDisplayById);
+    const cleanupPlan = buildCleanupPlan(
+        duplicateIds,
+        source.verificationByTeam,
+        source.recruitments,
+        teamPlan.teamDisplayById,
+        teamPlan.teamChanges,
+    );
 
     const fingerprint = createMaintenanceFingerprint({
         teams: source.teams,
         registrations: source.registrations,
         events: source.events,
         recruitments: source.recruitments,
-        verificationByTeam: Array.from(source.verificationByTeam.entries()).sort(),
-        participantNames: Array.from(nameMap.entries()).sort(([left], [right]) => left.localeCompare(right)),
+        verificationByTeam: Array.from(source.verificationByTeam.entries()).sort(compareMapEntriesByKey),
+        participantNames: Array.from(nameMap.entries()).sort(compareMapEntriesByKey),
     });
     const summary: TeamNameUpdateSummary = {
-        teamNameUpdates,
-        teamAgeUpdates,
-        teamDocuments: teamMutations.length + duplicateIds.size,
+        teamNameUpdates: teamPlan.teamNameUpdates,
+        teamAgeUpdates: teamPlan.teamAgeUpdates,
+        teamDocuments: teamPlan.teamMutations.length + duplicateIds.size,
         registrationDocuments: registrationPlan.mutations.length,
         registrationEntries: registrationPlan.changes.length,
         duplicateTeams: duplicateIds.size,
-        cleanupDocuments: cleanupChanges.length,
-        skippedTeamRelayNames,
+        cleanupDocuments: cleanupPlan.cleanupChanges.length,
+        skippedTeamRelayNames: teamPlan.skippedTeamRelayNames,
     };
     return {
         preview: {
@@ -767,15 +897,15 @@ const buildPlan = async (tournamentId: string): Promise<InternalPlan> => {
             fingerprint,
             generatedAt: Date.now(),
             summary,
-            teamChanges,
+            teamChanges: teamPlan.teamChanges,
             registrationChanges: registrationPlan.changes,
             registrationGroups,
-            cleanupChanges,
+            cleanupChanges: cleanupPlan.cleanupChanges,
         },
-        teamMutations,
+        teamMutations: teamPlan.teamMutations,
         registrationMutations: registrationPlan.mutations,
         duplicateTeamIds: Array.from(duplicateIds),
-        teamRecruitmentIds,
+        teamRecruitmentIds: cleanupPlan.teamRecruitmentIds,
     };
 };
 
@@ -783,19 +913,14 @@ export async function previewTeamNameUpdatesForTournament(tournamentId: string):
     return (await buildPlan(tournamentId)).preview;
 }
 
-export async function applyTeamNameUpdatesForTournament(
-    tournamentId: string,
-    fingerprint: string,
-): Promise<TeamNameUpdateResult> {
-    const plan = await buildPlan(tournamentId);
-    if (plan.preview.fingerprint !== fingerprint) {
-        throw new Error("TEAM_NAME_PREVIEW_STALE");
-    }
-
-    for (const mutation of plan.teamMutations) {
+const applyTeamMutations = async (tournamentId: string, mutations: TeamMutation[]): Promise<void> => {
+    for (const mutation of mutations) {
         await upsertAdminTeam(tournamentId, mutation.next, mutation.current.id);
     }
-    for (const mutation of plan.registrationMutations) {
+};
+
+const applyRegistrationMutations = async (mutations: RegistrationMutation[]): Promise<void> => {
+    for (const mutation of mutations) {
         const registrationRef = doc(db, "registrations", mutation.current.id);
         const latestSnapshot = await getDoc(registrationRef);
         if (!latestSnapshot.exists()) continue;
@@ -806,18 +931,40 @@ export async function applyTeamNameUpdatesForTournament(
             await updateDoc(registrationRef, {teams: nextTeams});
         }
     }
-    for (const teamId of plan.duplicateTeamIds) {
-        try {
-            await deleteTeam(tournamentId, teamId);
-        } catch (error) {
-            if (!(error instanceof Error && error.message.includes("Team not found"))) {
-                throw error;
-            }
-        }
-        await deleteVerificationRequestsByTeamId(teamId);
-        const recruitmentId = plan.teamRecruitmentIds.get(teamId);
-        if (recruitmentId) await deleteDoc(doc(db, "team_recruitment", recruitmentId));
+};
+
+const deleteDuplicateTeamAndCleanup = async (
+    tournamentId: string,
+    teamId: string,
+    recruitmentId: string | undefined,
+): Promise<void> => {
+    try {
+        await deleteTeam(tournamentId, teamId);
+    } catch (error) {
+        if (!(error instanceof Error && error.message.includes("Team not found"))) throw error;
     }
+    await deleteVerificationRequestsByTeamId(teamId);
+    if (recruitmentId) await deleteDoc(doc(db, "team_recruitment", recruitmentId));
+};
+
+const applyDuplicateTeamCleanup = async (plan: InternalPlan, tournamentId: string): Promise<void> => {
+    for (const teamId of plan.duplicateTeamIds) {
+        await deleteDuplicateTeamAndCleanup(tournamentId, teamId, plan.teamRecruitmentIds.get(teamId));
+    }
+};
+
+export async function applyTeamNameUpdatesForTournament(
+    tournamentId: string,
+    fingerprint: string,
+): Promise<TeamNameUpdateResult> {
+    const plan = await buildPlan(tournamentId);
+    if (plan.preview.fingerprint !== fingerprint) {
+        throw new Error("TEAM_NAME_PREVIEW_STALE");
+    }
+
+    await applyTeamMutations(tournamentId, plan.teamMutations);
+    await applyRegistrationMutations(plan.registrationMutations);
+    await applyDuplicateTeamCleanup(plan, tournamentId);
 
     return {...plan.preview.summary};
 }

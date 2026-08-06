@@ -74,7 +74,8 @@ export const calculateTeamAgeForEvent = (ages: number[], eventType: string): num
 export const normalizeTeamNameForComparison = (value: string | null | undefined): string =>
     (value ?? "")
         .normalize("NFC")
-        .replace(/(?:\u200B|\u200C|\u200D|\uFEFF)/gu, "")
+        .replace(/[\u200B\u200C\uFEFF]/gu, "")
+        .replace(/\u200D/gu, "")
         .replace(/\s+/gu, " ")
         .trim();
 
@@ -112,8 +113,8 @@ export const stableSerialize = (value: unknown): string => JSON.stringify(stable
 export const createMaintenanceFingerprint = (value: unknown): string => {
     const serialized = stableSerialize(value);
     let hash = 2_166_136_261;
-    for (let index = 0; index < serialized.length; index += 1) {
-        hash ^= serialized.charCodeAt(index);
+    for (const character of serialized) {
+        hash ^= character.codePointAt(0) ?? 0;
         hash = Math.imul(hash, 16_777_619);
     }
     return `fnv1a-${(hash >>> 0).toString(16)}`;

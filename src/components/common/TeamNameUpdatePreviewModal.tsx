@@ -9,20 +9,22 @@ import {Modal, Table, Tag, Typography} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import type {ReactNode} from "react";
 
-type TeamNameUpdatePreviewModalProps = {
+type TeamNameUpdatePreviewModalProps = Readonly<{
     preview: TeamNameUpdatePreview | null;
     visible: boolean;
     confirmLoading: boolean;
     onCancel: () => void;
     onConfirm: () => void;
-};
+}>;
+
+type DiffValue = string | number | null;
 
 const {Text, Title} = Typography;
 
 const valueOrDash = (value: string | number | null | undefined): string =>
     value === null || value === undefined || value === "" ? "—" : String(value);
 
-const renderDiff = (before: string | number | null, after: string | number | null): ReactNode => (
+const renderDiff = (before: DiffValue, after: DiffValue): ReactNode => (
     <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-1 whitespace-normal break-words align-middle">
         <span className="min-w-0 max-w-full rounded bg-red-50 px-1 text-red-700 line-through">{valueOrDash(before)}</span>
         <span aria-hidden="true">→</span>
@@ -30,12 +32,7 @@ const renderDiff = (before: string | number | null, after: string | number | nul
     </span>
 );
 
-const renderFieldDiff = (
-    key: string,
-    label: string,
-    before: string | number | null,
-    after: string | number | null,
-): ReactNode => (
+const renderFieldDiff = (key: string, label: string, before: DiffValue, after: DiffValue): ReactNode => (
     <div key={key} className="break-words">
         <span className="font-medium">{label}: </span>
         {renderDiff(before, after)}
@@ -53,6 +50,18 @@ const registrationActionLabel = (action: TeamNameUpdateRegistrationGroup["action
     if (action === "delete") return "Remove entry";
     if (action === "mixed") return "Update entries";
     return "Update entry";
+};
+
+const getTeamActionColor = (record: TeamNameUpdateTeamChange): "red" | "orange" | "arcoblue" => {
+    if (record.action === "delete") return "red";
+    if (record.isTeamRelay) return "orange";
+    return "arcoblue";
+};
+
+const getRegistrationActionColor = (action: TeamNameUpdateRegistrationGroup["action"]): "red" | "orange" | "arcoblue" => {
+    if (action === "delete") return "red";
+    if (action === "mixed") return "orange";
+    return "arcoblue";
 };
 
 const renderTeamChangeDetails = (record: TeamNameUpdateTeamChange): ReactNode => {
@@ -104,11 +113,7 @@ const teamColumns: TableColumnProps<TeamNameUpdateTeamChange>[] = [
     {
         title: "Action",
         width: 130,
-        render: (_, record) => (
-            <Tag color={record.action === "delete" ? "red" : record.isTeamRelay ? "orange" : "arcoblue"}>
-                {teamActionLabel(record)}
-            </Tag>
-        ),
+        render: (_, record) => <Tag color={getTeamActionColor(record)}>{teamActionLabel(record)}</Tag>,
     },
     {
         title: "Changes",
@@ -124,9 +129,7 @@ const registrationGroupColumns: TableColumnProps<TeamNameUpdateRegistrationGroup
         title: "Action",
         width: 120,
         render: (_, record) => (
-            <Tag color={record.action === "delete" ? "red" : record.action === "mixed" ? "orange" : "arcoblue"}>
-                {registrationActionLabel(record.action)}
-            </Tag>
+            <Tag color={getRegistrationActionColor(record.action)}>{registrationActionLabel(record.action)}</Tag>
         ),
     },
     {title: "Registration files", dataIndex: "registrationCount", width: 90},
@@ -173,6 +176,17 @@ const registrationDetailColumns: TableColumnProps<TeamNameUpdateRegistrationChan
         render: (_, record) => <Text>{renderRegistrationChangeDetails(record)}</Text>,
     },
 ];
+
+const renderRegistrationGroupDetails = (record: TeamNameUpdateRegistrationGroup): ReactNode => (
+    <Table
+        rowKey={(detail) => `${detail.registrationId}-${detail.action}`}
+        columns={registrationDetailColumns}
+        data={record.changes}
+        pagination={{pageSize: 10, showTotal: true}}
+        scroll={{x: 1_200}}
+        size="small"
+    />
+);
 
 const cleanupColumns: TableColumnProps<TeamNameUpdateCleanupChange>[] = [
     {title: "Collection", dataIndex: "collection", width: 220},
@@ -245,16 +259,7 @@ export default function TeamNameUpdatePreviewModal({
                             rowKey={(record) => `${record.teamId}-${record.action}`}
                             columns={registrationGroupColumns}
                             data={preview.registrationGroups}
-                            expandedRowRender={(record) => (
-                                <Table
-                                    rowKey={(detail) => `${detail.registrationId}-${detail.action}`}
-                                    columns={registrationDetailColumns}
-                                    data={record.changes}
-                                    pagination={{pageSize: 10, showTotal: true}}
-                                    scroll={{x: 1_200}}
-                                    size="small"
-                                />
-                            )}
+                            expandedRowRender={renderRegistrationGroupDetails}
                             pagination={{pageSize: 10, showTotal: true}}
                             scroll={{x: 1_075}}
                             size="small"

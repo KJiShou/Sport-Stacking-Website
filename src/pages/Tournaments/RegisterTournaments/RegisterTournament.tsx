@@ -1460,10 +1460,13 @@ export default function RegisterTournamentPage() {
                                         const requiredTeamSize = getFallbackTeamSize(entry.event, eventId);
                                         const requiredMemberCount =
                                             requiredTeamSize !== undefined ? Math.max(requiredTeamSize - 1, 0) : undefined;
-                                        const maxMemberCount =
-                                            requiredTeamSize !== undefined
-                                                ? Math.max(requiredTeamSize - 1, 0) + (isTeamRelayEvent(entry.event) ? 1 : 0)
-                                                : undefined;
+                                        let maxMemberCount: number | undefined;
+                                        if (requiredTeamSize !== undefined) {
+                                            maxMemberCount = Math.max(requiredTeamSize - 1, 0);
+                                            if (isTeamRelayEvent(entry.event)) {
+                                                maxMemberCount += 1;
+                                            }
+                                        }
                                         const isDoubleEvent = lowerEventType === "double";
                                         const isPairEvent = isDoubleEvent || isParentChild;
                                         const teamNameLabel = isPairEvent ? "Name" : "Team Name";

@@ -1,17 +1,14 @@
-import type {AgeBracket, Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/schema";
 import TeamNameUpdatePreviewModal from "@/components/common/TeamNameUpdatePreviewModal";
+import {MobilePageHeader, ResponsiveTabs} from "@/components/responsive";
+import type {AgeBracket, Registration, Team, TeamRow, Tournament, TournamentEvent} from "@/schema";
 import {fetchUsersByGlobalIds} from "@/services/firebase/authService";
 import {fetchApprovedRegistrations} from "@/services/firebase/registerService";
 import {
-    fetchTeamsByTournament,
-    fetchTournamentById,
-    fetchTournamentEvents,
-} from "@/services/firebase/tournamentsService";
-import {
+    type TeamNameUpdatePreview,
     applyTeamNameUpdatesForTournament,
     previewTeamNameUpdatesForTournament,
-    type TeamNameUpdatePreview,
 } from "@/services/firebase/teamNameMaintenanceService";
+import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {
     exportAllBracketsListToPDF,
     exportCombinedTimeSheetsPDF,
@@ -43,7 +40,6 @@ import type React from "react";
 import {useEffect, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
-import {MobilePageHeader, ResponsiveTabs} from "@/components/responsive";
 
 const {Text} = Typography;
 const {TabPane} = Tabs;
@@ -54,6 +50,323 @@ const parsePositivePage = (value: string | null): number => {
     const parsed = Number.parseInt(value ?? "", 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 };
+
+const isStackOutChampionEvent = (event: TournamentEvent): boolean => {
+    const eventType = event.type.toLowerCase();
+    return eventType === "stackout champion" || eventType === "stack up champion";
+};
+
+const normalizeSearchValue = (value: string | null | undefined): string => value?.trim().toLowerCase() ?? "";
+
+const valueMatchesSearch = (value: string | null | undefined, normalizedSearch: string): boolean =>
+    normalizeSearchValue(value).includes(normalizedSearch);
+
+const registrationMatchesSearch = (registration: Registration, normalizedSearch: string): boolean =>
+    valueMatchesSearch(registration.user_name, normalizedSearch) ||
+    valueMatchesSearch(registration.user_id, normalizedSearch) ||
+    valueMatchesSearch(registration.user_global_id, normalizedSearch);
+
+const getTeamParticipantIds = (team: Team): string[] => [
+    stripTeamLeaderPrefix(team.leader_id),
+    ...(team.members?.map((member) => member.global_id) ?? []),
+];
+
+const teamMatchesSearch = (team: Team, normalizedSearch: string, nameMap: Record<string, string>): boolean => {
+    if (normalizedSearch.length === 0) return true;
+    if (valueMatchesSearch(team.name, normalizedSearch)) return true;
+
+    return getTeamParticipantIds(team).some(
+        (participantId) =>
+            valueMatchesSearch(participantId, normalizedSearch) || valueMatchesSearch(nameMap[participantId], normalizedSearch),
+    );
+};
+
+const filterTeamRows = (
+    teamList: Team[],
+    eventKey: string,
+    events: TournamentEvent[],
+    searchTerm: string,
+    nameMap: Record<string, string>,
+): Team[] => {
+    const normalizedSearch = normalizeSearchValue(searchTerm);
+    return teamList.filter(
+        (team) => teamMatchesEventKey(team, eventKey, events) && teamMatchesSearch(team, normalizedSearch, nameMap),
+    );
+};
+
+const filterParticipantRegistrations = (
+    registrations: Registration[],
+    teamList: Team[],
+    eventKey: string,
+    isTeam: boolean,
+    event: TournamentEvent | undefined,
+    searchTerm: string,
+    events: TournamentEvent[],
+    nameMap: Record<string, string>,
+): Registration[] => {
+    const normalizedSearch = normalizeSearchValue(searchTerm);
+    if (isTeam) {
+        const teamUserIds = new Set(
+            filterTeamRows(teamList, eventKey, events, searchTerm, nameMap).flatMap(getTeamParticipantIds),
+        );
+        return registrations.filter(
+            (registration) => teamUserIds.has(registration.user_id) || teamUserIds.has(registration.user_global_id ?? ""),
+        );
+    }
+
+    return registrations.filter((registration) => {
+        const matchesEvent =
+            registration.events_registered.includes(eventKey) ||
+            (event ? matchesAnyEventKey(registration.events_registered, event) : false);
+        if (!matchesEvent) return false;
+        return normalizedSearch.length === 0 || registrationMatchesSearch(registration, normalizedSearch);
+    });
+};
+
+const hasTeamNameChanges = (summary: TeamNameUpdatePreview["summary"]): boolean =>
+    summary.teamDocuments > 0 || summary.registrationDocuments > 0 || summary.cleanupDocuments > 0;
+
+const buildTeamNameSuccessMessage = (result: Awaited<ReturnType<typeof applyTeamNameUpdatesForTournament>>): string => {
+    const parts: string[] = [];
+    if (result.teamNameUpdates > 0) parts.push(`Updated ${result.teamNameUpdates} team name(s).`);
+    if (result.teamAgeUpdates > 0) parts.push(`Updated ${result.teamAgeUpdates} team age(s).`);
+    if (result.registrationDocuments > 0) parts.push(`Updated ${result.registrationDocuments} registration document(s).`);
+    if (result.duplicateTeams > 0) parts.push(`Removed ${result.duplicateTeams} duplicate team(s).`);
+    return parts.join(" ") || "Team updates completed.";
+};
+
+const refreshStaleTeamNamePreview = async (
+    tournamentId: string,
+    onPreview: (preview: TeamNameUpdatePreview) => void,
+    onNoChanges: () => void,
+    onError: () => void,
+): Promise<void> => {
+    try {
+        const refreshedPreview = await previewTeamNameUpdatesForTournament(tournamentId);
+        if (hasTeamNameChanges(refreshedPreview.summary)) {
+            onPreview(refreshedPreview);
+            Message.warning("The data changed after the preview. The preview was refreshed; please confirm again.");
+        } else {
+            onNoChanges();
+            Message.success("No team updates remain after the data changed.");
+        }
+    } catch (error) {
+        console.error("Failed to refresh stale team name preview:", error);
+        onError();
+        Message.error("The data changed and the latest preview could not be loaded. Please try again.");
+    }
+};
+
+type ParticipantActionsButtonProps = Readonly<{
+    droplist: React.ReactNode;
+    label?: string;
+}>;
+
+const ParticipantActionsButton = ({droplist, label = "Actions"}: ParticipantActionsButtonProps) => (
+    <Dropdown droplist={droplist} trigger={["click"]}>
+        <Button type="primary" className="participant-list-actions-button">
+            <span className="participant-list-button-content">
+                {label}
+                <IconDown />
+            </span>
+        </Button>
+    </Dropdown>
+);
+
+type TeamParticipantContentProps = Readonly<{
+    rows: TeamRow[];
+    columns: TableColumnProps<Team>[];
+    currentPage: number;
+    loading: boolean;
+    currentEvent: TournamentEvent;
+    currentEventKey: string;
+    currentBracket: AgeBracket;
+    tournamentId: string | undefined;
+    locationSearch: string;
+    combinedNameMap: Record<string, string>;
+    getTeamRegistrationId: (team: TeamRow) => string;
+    onPrintMemberList: (team: Team, eventKey: string, bracket: AgeBracket) => void;
+    onPrintTeamTimeSheet: (team: Team, event: TournamentEvent, bracket: AgeBracket) => void;
+    onPageChange: (page: number) => void;
+}>;
+
+const TeamParticipantContent = ({
+    rows,
+    columns,
+    currentPage,
+    loading,
+    currentEvent,
+    currentEventKey,
+    currentBracket,
+    tournamentId,
+    locationSearch,
+    combinedNameMap,
+    getTeamRegistrationId,
+    onPrintMemberList,
+    onPrintTeamTimeSheet,
+    onPageChange,
+}: TeamParticipantContentProps) => (
+    <>
+        <div className="participants-mobile-cards">
+            {rows.slice((currentPage - 1) * PAGE_SIZE_TEAM, currentPage * PAGE_SIZE_TEAM).map((record) => (
+                <Card key={record.id} className="participants-mobile-card" bordered>
+                    <div className="participants-mobile-card__header">
+                        <div>
+                            <span className="participants-mobile-card__label">Team</span>
+                            <strong>{record.name}</strong>
+                        </div>
+                        <Tag color="arcoblue">{record.team_age ?? "—"}</Tag>
+                    </div>
+                    <p>Leader: {formatTeamLeaderId(record.leader_id, currentEvent.type)}</p>
+                    <p>
+                        Members:{" "}
+                        {record.members.map((member) => combinedNameMap[member.global_id] ?? member.global_id).join(", ") || "—"}
+                    </p>
+                    <div className="participant-list-mobile-actions">
+                        <ParticipantActionsButton
+                            droplist={
+                                <div className="participant-list-action-menu">
+                                    <Button
+                                        type="text"
+                                        className="participant-list-menu-item"
+                                        loading={loading}
+                                        onClick={() =>
+                                            window.open(
+                                                `/tournaments/${tournamentId}/registrations/${getTeamRegistrationId(record)}/edit${locationSearch}`,
+                                                "_blank",
+                                            )
+                                        }
+                                    >
+                                        Edit Team
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        className="participant-list-menu-item"
+                                        loading={loading}
+                                        onClick={() => onPrintMemberList(record, currentEventKey, currentBracket)}
+                                    >
+                                        Print Member List
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        className="participant-list-menu-item"
+                                        loading={loading}
+                                        onClick={() => onPrintTeamTimeSheet(record, currentEvent, currentBracket)}
+                                    >
+                                        Team Time Sheet
+                                    </Button>
+                                </div>
+                            }
+                        />
+                    </div>
+                </Card>
+            ))}
+        </div>
+        <div className="participant-list-mobile-pagination">
+            {rows.length > PAGE_SIZE_TEAM && (
+                <Pagination current={currentPage} pageSize={PAGE_SIZE_TEAM} total={rows.length} onChange={onPageChange} />
+            )}
+        </div>
+        <div className="mobile-table-scroll">
+            <Table
+                style={{width: "100%"}}
+                columns={columns}
+                data={rows}
+                pagination={{pageSize: PAGE_SIZE_TEAM, current: currentPage, showTotal: true}}
+                loading={loading}
+                rowKey={(record) => `${record.id}`}
+                pagePosition="bottomCenter"
+                onChange={(pagination) => onPageChange(pagination.current ?? 1)}
+            />
+        </div>
+    </>
+);
+
+type IndividualParticipantContentProps = Readonly<{
+    rows: Registration[];
+    columns: TableColumnProps<Registration>[];
+    currentPage: number;
+    loading: boolean;
+    currentEvent: TournamentEvent;
+    currentBracket: AgeBracket;
+    tournamentId: string | undefined;
+    onPrintTimeSheet: (record: Registration, event: TournamentEvent, bracket: AgeBracket) => void;
+    onPageChange: (page: number) => void;
+}>;
+
+const IndividualParticipantContent = ({
+    rows,
+    columns,
+    currentPage,
+    loading,
+    currentEvent,
+    currentBracket,
+    tournamentId,
+    onPrintTimeSheet,
+    onPageChange,
+}: IndividualParticipantContentProps) => (
+    <>
+        <div className="participants-mobile-cards">
+            {rows.slice((currentPage - 1) * PAGE_SIZE_INDIVIDUAL, currentPage * PAGE_SIZE_INDIVIDUAL).map((record) => (
+                <Card key={record.id ?? record.user_id} className="participants-mobile-card" bordered>
+                    <div className="participants-mobile-card__header">
+                        <div>
+                            <span className="participants-mobile-card__label">Participant</span>
+                            <strong>{record.user_name}</strong>
+                        </div>
+                        <Tag color="arcoblue">Age {record.age}</Tag>
+                    </div>
+                    <p>{record.user_global_id}</p>
+                    <p>{record.phone_number || "No phone number"}</p>
+                    <div className="participant-list-mobile-actions">
+                        <ParticipantActionsButton
+                            droplist={
+                                <div className="participant-list-action-menu">
+                                    <Button
+                                        type="text"
+                                        className="participant-list-menu-item"
+                                        loading={loading}
+                                        onClick={() =>
+                                            window.open(`/tournaments/${tournamentId}/registrations/${record.id}/edit`, "_blank")
+                                        }
+                                    >
+                                        Edit Participant
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        className="participant-list-menu-item"
+                                        loading={loading}
+                                        disabled={isStackOutChampionEvent(currentEvent)}
+                                        onClick={() => onPrintTimeSheet(record, currentEvent, currentBracket)}
+                                    >
+                                        {isStackOutChampionEvent(currentEvent) ? "Time Sheet Not Required" : "Print Time Sheet"}
+                                    </Button>
+                                </div>
+                            }
+                        />
+                    </div>
+                </Card>
+            ))}
+        </div>
+        <div className="participant-list-mobile-pagination">
+            {rows.length > PAGE_SIZE_INDIVIDUAL && (
+                <Pagination current={currentPage} pageSize={PAGE_SIZE_INDIVIDUAL} total={rows.length} onChange={onPageChange} />
+            )}
+        </div>
+        <div className="mobile-table-scroll">
+            <Table
+                style={{width: "100%"}}
+                columns={columns}
+                data={rows}
+                pagination={{pageSize: PAGE_SIZE_INDIVIDUAL, current: currentPage, showTotal: true}}
+                loading={loading}
+                rowKey={(record) => record.id ?? record.user_id ?? nanoid()}
+                pagePosition="bottomCenter"
+                onChange={(pagination) => onPageChange(pagination.current ?? 1)}
+            />
+        </div>
+    </>
+);
 
 export default function ParticipantListPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
@@ -104,44 +417,6 @@ export default function ParticipantListPage() {
         {} as Record<string, string>,
     );
     const combinedNameMap: Record<string, string> = {...nameMap, ...supplementalNameMap};
-    const isStackOutChampionEvent = (event: TournamentEvent): boolean =>
-        event.type.toLowerCase() === "stackout champion" || event.type.toLowerCase() === "stack up champion";
-    const registrationMatchesParticipantId = (registration: Registration, participantId: string): boolean =>
-        registration.user_id === participantId || registration.user_global_id === participantId;
-    const normalizeSearchValue = (value: string | null | undefined): string => value?.trim().toLowerCase() ?? "";
-    const valueMatchesSearch = (value: string | null | undefined, normalizedSearch: string): boolean =>
-        normalizeSearchValue(value).includes(normalizedSearch);
-    const registrationMatchesSearch = (registration: Registration, normalizedSearch: string): boolean =>
-        valueMatchesSearch(registration.user_name, normalizedSearch) ||
-        valueMatchesSearch(registration.user_id, normalizedSearch) ||
-        valueMatchesSearch(registration.user_global_id, normalizedSearch);
-    const getTeamParticipantIds = (team: Team): string[] => [
-        stripTeamLeaderPrefix(team.leader_id),
-        ...(team.members?.map((member) => member.global_id) ?? []),
-    ];
-    const teamMatchesSearch = (team: Team, normalizedSearch: string): boolean => {
-        if (normalizedSearch.length === 0) {
-            return true;
-        }
-
-        if (valueMatchesSearch(team.name, normalizedSearch)) {
-            return true;
-        }
-
-        return getTeamParticipantIds(team).some(
-            (participantId) =>
-                valueMatchesSearch(participantId, normalizedSearch) ||
-                valueMatchesSearch(combinedNameMap[participantId], normalizedSearch),
-        );
-    };
-    const filterTeams = (evtKey: string): Team[] => {
-        const normalizedSearch = normalizeSearchValue(searchTerm);
-
-        return teamList.filter(
-            (team) => teamMatchesEventKey(team, evtKey, events ?? []) && teamMatchesSearch(team, normalizedSearch),
-        );
-    };
-
     const refreshParticipantList = async () => {
         if (!tournamentId) return;
         setLoading(true);
@@ -273,32 +548,6 @@ export default function ParticipantListPage() {
             setSearchParams(nextParams, {replace: true});
         }
     }, [currentBracketTab, currentEventTab, currentPage, searchParams, searchTerm, setSearchParams]);
-
-    const filterRegistrations = (evtKey: string, isTeam: boolean, event?: TournamentEvent) => {
-        const normalizedSearch = normalizeSearchValue(searchTerm);
-
-        if (isTeam) {
-            const teamUserIds = new Set(filterTeams(evtKey).flatMap(getTeamParticipantIds));
-
-            return registrationList.filter(
-                (registration) => teamUserIds.has(registration.user_id) || teamUserIds.has(registration.user_global_id ?? ""),
-            );
-        }
-
-        return registrationList.filter((r) => {
-            const matchesEvent =
-                r.events_registered.includes(evtKey) || (event ? matchesAnyEventKey(r.events_registered, event) : false);
-            if (!matchesEvent) {
-                return false;
-            }
-
-            if (normalizedSearch.length === 0) {
-                return true;
-            }
-
-            return registrationMatchesSearch(r, normalizedSearch);
-        });
-    };
 
     const handleEventSelect = (key: string) => {
         setCurrentEventTab(key);
@@ -487,10 +736,7 @@ export default function ParticipantListPage() {
         setLoading(true);
         try {
             const preview = await previewTeamNameUpdatesForTournament(tournamentId);
-            const {summary} = preview;
-            const hasChanges =
-                summary.teamDocuments > 0 || summary.registrationDocuments > 0 || summary.cleanupDocuments > 0;
-            if (!hasChanges) {
+            if (!hasTeamNameChanges(preview.summary)) {
                 Message.success("All team names are already up to date.");
             } else {
                 setTeamNamePreview(preview);
@@ -510,39 +756,27 @@ export default function ParticipantListPage() {
         setTeamNameConfirmLoading(true);
         try {
             const result = await applyTeamNameUpdatesForTournament(tournamentId, teamNamePreview.fingerprint);
-            const parts: string[] = [];
-            if (result.teamNameUpdates > 0) parts.push(`Updated ${result.teamNameUpdates} team name(s).`);
-            if (result.teamAgeUpdates > 0) parts.push(`Updated ${result.teamAgeUpdates} team age(s).`);
-            if (result.registrationDocuments > 0) parts.push(`Updated ${result.registrationDocuments} registration document(s).`);
-            if (result.duplicateTeams > 0) parts.push(`Removed ${result.duplicateTeams} duplicate team(s).`);
             setTeamNamePreviewVisible(false);
             setTeamNamePreview(null);
-            Message.success(parts.join(" ") || "Team updates completed.");
+            Message.success(buildTeamNameSuccessMessage(result));
             await refreshParticipantList();
         } catch (error) {
             if (error instanceof Error && error.message === "TEAM_NAME_PREVIEW_STALE") {
-                try {
-                    const refreshedPreview = await previewTeamNameUpdatesForTournament(tournamentId);
-                    const refreshedSummary = refreshedPreview.summary;
-                    const hasChanges =
-                        refreshedSummary.teamDocuments > 0 ||
-                        refreshedSummary.registrationDocuments > 0 ||
-                        refreshedSummary.cleanupDocuments > 0;
-                    if (hasChanges) {
+                await refreshStaleTeamNamePreview(
+                    tournamentId,
+                    (refreshedPreview) => {
                         setTeamNamePreview(refreshedPreview);
                         setTeamNamePreviewVisible(true);
-                        Message.warning("The data changed after the preview. The preview was refreshed; please confirm again.");
-                    } else {
+                    },
+                    () => {
                         setTeamNamePreviewVisible(false);
                         setTeamNamePreview(null);
-                        Message.success("No team updates remain after the data changed.");
-                    }
-                } catch (previewError) {
-                    console.error("Failed to refresh stale team name preview:", previewError);
-                    setTeamNamePreviewVisible(false);
-                    setTeamNamePreview(null);
-                    Message.error("The data changed and the latest preview could not be loaded. Please try again.");
-                }
+                    },
+                    () => {
+                        setTeamNamePreviewVisible(false);
+                        setTeamNamePreview(null);
+                    },
+                );
             } else {
                 console.error("Failed to apply team name update:", error);
                 setTeamNamePreviewVisible(false);
@@ -648,9 +882,21 @@ export default function ParticipantListPage() {
     const currentEventIsTeam = currentEvent ? isTeamEvent(currentEvent) : false;
     const currentBracket =
         currentEvent?.age_brackets.find((bracket) => bracket.name === currentBracketTab) ?? currentEvent?.age_brackets[0];
-    const currentRegistrations = currentEvent ? filterRegistrations(currentEventKey, currentEventIsTeam, currentEvent) : [];
+    const currentRegistrations = currentEvent
+        ? filterParticipantRegistrations(
+              registrationList,
+              teamList,
+              currentEventKey,
+              currentEventIsTeam,
+              currentEvent,
+              searchTerm,
+              events,
+              combinedNameMap,
+          )
+        : [];
+    const filteredTeams = currentEvent ? filterTeamRows(teamList, currentEventKey, events, searchTerm, combinedNameMap) : [];
     const teamRows: TeamRow[] = currentEventIsTeam
-        ? filterTeams(currentEventKey).map((team) => ({
+        ? filteredTeams.map((team) => ({
               ...team,
               registrationId:
                   registrationList.find((registration) => {
@@ -675,17 +921,6 @@ export default function ParticipantListPage() {
                   (registration) => registration.age >= currentBracket.min_age && registration.age <= currentBracket.max_age,
               )
             : [];
-
-    const renderActionsButton = (droplist: React.ReactNode, label = "Actions") => (
-        <Dropdown droplist={droplist} trigger={["click"]}>
-            <Button type="primary" className="participant-list-actions-button">
-                <span className="participant-list-button-content">
-                    {label}
-                    <IconDown />
-                </span>
-            </Button>
-        </Dropdown>
-    );
 
     const individualColumns: TableColumnProps<Registration>[] = [
         {title: "Global ID", dataIndex: "user_global_id", width: 150},
@@ -724,7 +959,7 @@ export default function ParticipantListPage() {
                     </div>
                 );
 
-                return renderActionsButton(droplist);
+                return <ParticipantActionsButton droplist={droplist} />;
             },
         },
     ];
@@ -809,7 +1044,7 @@ export default function ParticipantListPage() {
                     </div>
                 );
 
-                return renderActionsButton(droplist);
+                return <ParticipantActionsButton droplist={droplist} />;
             },
         },
     ];
@@ -840,251 +1075,113 @@ export default function ParticipantListPage() {
         </div>
     );
 
+    let participantContent: React.ReactNode = (
+        <div className="participant-list-empty-state">No event or age group is available.</div>
+    );
+    if (currentEvent && currentBracket) {
+        if (currentEventIsTeam) {
+            participantContent = (
+                <TeamParticipantContent
+                    rows={rowsForBracket}
+                    columns={teamColumns}
+                    currentPage={currentPage}
+                    loading={loading}
+                    currentEvent={currentEvent}
+                    currentEventKey={currentEventKey}
+                    currentBracket={currentBracket}
+                    tournamentId={tournamentId}
+                    locationSearch={location.search}
+                    combinedNameMap={combinedNameMap}
+                    getTeamRegistrationId={getTeamRegistrationId}
+                    onPrintMemberList={handlePrintMemberList}
+                    onPrintTeamTimeSheet={handlePrintTeamTimeSheet}
+                    onPageChange={setCurrentPage}
+                />
+            );
+        } else {
+            participantContent = (
+                <IndividualParticipantContent
+                    rows={individualRows}
+                    columns={individualColumns}
+                    currentPage={currentPage}
+                    loading={loading}
+                    currentEvent={currentEvent}
+                    currentBracket={currentBracket}
+                    tournamentId={tournamentId}
+                    onPrintTimeSheet={handlePrintParticipantTimeSheet}
+                    onPageChange={setCurrentPage}
+                />
+            );
+        }
+    }
+
     return (
         <>
             <div className="participant-list-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-            <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
-                <div className="participant-list-header w-full">
-                    <div className="participant-list-back-row">
-                        <Button
-                            className="participant-list-back-button"
-                            type="outline"
-                            icon={<IconArrowLeft />}
-                            onClick={() => navigate("/tournaments")}
-                        >
-                            Go Back
-                        </Button>
-                    </div>
-                    <MobilePageHeader title={`${tournament.name} Participants`} className="participant-list-title-header" />
-                    <div className="participant-list-toolbar">
-                        <div className="participant-list-filter participant-list-search-field">
-                            <span className="participant-list-filter-label">Search</span>
-                            <Input.Search
-                                placeholder="Search by name or ID"
-                                allowClear
-                                className="participant-list-search"
-                                value={searchTerm}
-                                onChange={(val) => {
-                                    setSearchTerm(val);
-                                    setCurrentPage(1);
-                                }}
-                            />
-                        </div>
-                        <Dropdown droplist={exportMenu} trigger={["click"]}>
-                            <Button type="primary" loading={loading} className="participant-list-export-button">
-                                <span className="participant-list-button-content">
-                                    Export / Print
-                                    <IconDown />
-                                </span>
+                <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
+                    <div className="participant-list-header w-full">
+                        <div className="participant-list-back-row">
+                            <Button
+                                className="participant-list-back-button"
+                                type="outline"
+                                icon={<IconArrowLeft />}
+                                onClick={() => navigate("/tournaments")}
+                            >
+                                Go Back
                             </Button>
-                        </Dropdown>
+                        </div>
+                        <MobilePageHeader title={`${tournament.name} Participants`} className="participant-list-title-header" />
+                        <div className="participant-list-toolbar">
+                            <div className="participant-list-filter participant-list-search-field">
+                                <span className="participant-list-filter-label">Search</span>
+                                <Input.Search
+                                    placeholder="Search by name or ID"
+                                    allowClear
+                                    className="participant-list-search"
+                                    value={searchTerm}
+                                    onChange={(val) => {
+                                        setSearchTerm(val);
+                                        setCurrentPage(1);
+                                    }}
+                                />
+                            </div>
+                            <Dropdown droplist={exportMenu} trigger={["click"]}>
+                                <Button type="primary" loading={loading} className="participant-list-export-button">
+                                    <span className="participant-list-button-content">
+                                        Export / Print
+                                        <IconDown />
+                                    </span>
+                                </Button>
+                            </Dropdown>
+                        </div>
+                        <ResponsiveTabs
+                            type="line"
+                            destroyOnHide
+                            className="participant-list-event-tabs"
+                            activeTab={currentEventTab}
+                            onChange={handleEventSelect}
+                        >
+                            {sortedEvents.map((event) => {
+                                const eventKey = event.id ?? event.type;
+                                return <TabPane key={eventKey} title={getEventLabel(event)} />;
+                            })}
+                        </ResponsiveTabs>
+                        <ResponsiveTabs
+                            type="capsule"
+                            tabPosition="top"
+                            destroyOnHide
+                            className="participant-list-bracket-tabs"
+                            activeTab={currentBracketTab}
+                            onChange={handleBracketSelect}
+                        >
+                            {currentEvent?.age_brackets.map((bracket) => (
+                                <TabPane key={bracket.name} title={`${bracket.name} (${bracket.min_age}-${bracket.max_age})`} />
+                            ))}
+                        </ResponsiveTabs>
                     </div>
-                    <ResponsiveTabs
-                        type="line"
-                        destroyOnHide
-                        className="participant-list-event-tabs"
-                        activeTab={currentEventTab}
-                        onChange={handleEventSelect}
-                    >
-                        {sortedEvents.map((event) => {
-                            const eventKey = event.id ?? event.type;
-                            return <TabPane key={eventKey} title={getEventLabel(event)} />;
-                        })}
-                    </ResponsiveTabs>
-                    <ResponsiveTabs
-                        type="capsule"
-                        tabPosition="top"
-                        destroyOnHide
-                        className="participant-list-bracket-tabs"
-                        activeTab={currentBracketTab}
-                        onChange={handleBracketSelect}
-                    >
-                        {currentEvent?.age_brackets.map((bracket) => (
-                            <TabPane key={bracket.name} title={`${bracket.name} (${bracket.min_age}-${bracket.max_age})`} />
-                        ))}
-                    </ResponsiveTabs>
-                </div>
 
-                <div className="participant-list-content w-full">
-                    {currentEvent && currentBracket ? (
-                        currentEventIsTeam ? (
-                            <>
-                                <div className="participants-mobile-cards">
-                                    {rowsForBracket
-                                        .slice((currentPage - 1) * PAGE_SIZE_TEAM, currentPage * PAGE_SIZE_TEAM)
-                                        .map((record) => (
-                                            <Card key={record.id} className="participants-mobile-card" bordered>
-                                                <div className="participants-mobile-card__header">
-                                                    <div>
-                                                        <span className="participants-mobile-card__label">Team</span>
-                                                        <strong>{record.name}</strong>
-                                                    </div>
-                                                    <Tag color="arcoblue">{record.team_age ?? "—"}</Tag>
-                                                </div>
-                                                <p>Leader: {formatTeamLeaderId(record.leader_id, currentEvent.type)}</p>
-                                                <p>
-                                                    Members:{" "}
-                                                    {record.members
-                                                        .map((member) => combinedNameMap[member.global_id] ?? member.global_id)
-                                                        .join(", ") || "—"}
-                                                </p>
-                                                <div className="participant-list-mobile-actions">
-                                                    {renderActionsButton(
-                                                        <div className="participant-list-action-menu">
-                                                            <Button
-                                                                type="text"
-                                                                className="participant-list-menu-item"
-                                                                loading={loading}
-                                                                onClick={() =>
-                                                                    window.open(
-                                                                        `/tournaments/${tournamentId}/registrations/${getTeamRegistrationId(record)}/edit${location.search}`,
-                                                                        "_blank",
-                                                                    )
-                                                                }
-                                                            >
-                                                                Edit Team
-                                                            </Button>
-                                                            <Button
-                                                                type="text"
-                                                                className="participant-list-menu-item"
-                                                                loading={loading}
-                                                                onClick={() =>
-                                                                    handlePrintMemberList(record, currentEventKey, currentBracket)
-                                                                }
-                                                            >
-                                                                Print Member List
-                                                            </Button>
-                                                            <Button
-                                                                type="text"
-                                                                className="participant-list-menu-item"
-                                                                loading={loading}
-                                                                onClick={() =>
-                                                                    handlePrintTeamTimeSheet(record, currentEvent, currentBracket)
-                                                                }
-                                                            >
-                                                                Team Time Sheet
-                                                            </Button>
-                                                        </div>,
-                                                    )}
-                                                </div>
-                                            </Card>
-                                        ))}
-                                </div>
-                                <div className="participant-list-mobile-pagination">
-                                    {rowsForBracket.length > PAGE_SIZE_TEAM ? (
-                                        <Pagination
-                                            current={currentPage}
-                                            pageSize={PAGE_SIZE_TEAM}
-                                            total={rowsForBracket.length}
-                                            onChange={setCurrentPage}
-                                        />
-                                    ) : null}
-                                </div>
-                                <div className="mobile-table-scroll">
-                                    <Table
-                                        style={{width: "100%"}}
-                                        columns={teamColumns}
-                                        data={rowsForBracket}
-                                        pagination={{
-                                            pageSize: PAGE_SIZE_TEAM,
-                                            current: currentPage,
-                                            showTotal: true,
-                                        }}
-                                        loading={loading}
-                                        rowKey={(record) => `${record.id}`}
-                                        pagePosition="bottomCenter"
-                                        onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
-                                    />
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <div className="participants-mobile-cards">
-                                    {individualRows
-                                        .slice((currentPage - 1) * PAGE_SIZE_INDIVIDUAL, currentPage * PAGE_SIZE_INDIVIDUAL)
-                                        .map((record) => (
-                                            <Card key={record.id ?? record.user_id} className="participants-mobile-card" bordered>
-                                                <div className="participants-mobile-card__header">
-                                                    <div>
-                                                        <span className="participants-mobile-card__label">Participant</span>
-                                                        <strong>{record.user_name}</strong>
-                                                    </div>
-                                                    <Tag color="arcoblue">Age {record.age}</Tag>
-                                                </div>
-                                                <p>{record.user_global_id}</p>
-                                                <p>{record.phone_number || "No phone number"}</p>
-                                                <div className="participant-list-mobile-actions">
-                                                    {renderActionsButton(
-                                                        <div className="participant-list-action-menu">
-                                                            <Button
-                                                                type="text"
-                                                                className="participant-list-menu-item"
-                                                                loading={loading}
-                                                                onClick={() =>
-                                                                    window.open(
-                                                                        `/tournaments/${tournamentId}/registrations/${record.id}/edit`,
-                                                                        "_blank",
-                                                                    )
-                                                                }
-                                                            >
-                                                                Edit Participant
-                                                            </Button>
-                                                            <Button
-                                                                type="text"
-                                                                className="participant-list-menu-item"
-                                                                loading={loading}
-                                                                disabled={isStackOutChampionEvent(currentEvent)}
-                                                                onClick={() =>
-                                                                    handlePrintParticipantTimeSheet(
-                                                                        record,
-                                                                        currentEvent,
-                                                                        currentBracket,
-                                                                    )
-                                                                }
-                                                            >
-                                                                {isStackOutChampionEvent(currentEvent)
-                                                                    ? "Time Sheet Not Required"
-                                                                    : "Print Time Sheet"}
-                                                            </Button>
-                                                        </div>,
-                                                    )}
-                                                </div>
-                                            </Card>
-                                        ))}
-                                </div>
-                                <div className="participant-list-mobile-pagination">
-                                    {individualRows.length > PAGE_SIZE_INDIVIDUAL ? (
-                                        <Pagination
-                                            current={currentPage}
-                                            pageSize={PAGE_SIZE_INDIVIDUAL}
-                                            total={individualRows.length}
-                                            onChange={setCurrentPage}
-                                        />
-                                    ) : null}
-                                </div>
-                                <div className="mobile-table-scroll">
-                                    <Table
-                                        style={{width: "100%"}}
-                                        columns={individualColumns}
-                                        data={individualRows}
-                                        pagination={{
-                                            pageSize: PAGE_SIZE_INDIVIDUAL,
-                                            current: currentPage,
-                                            showTotal: true,
-                                        }}
-                                        loading={loading}
-                                        rowKey={(record) => record.id ?? record.user_id ?? nanoid()}
-                                        pagePosition="bottomCenter"
-                                        onChange={(pagination) => setCurrentPage(pagination.current ?? 1)}
-                                    />
-                                </div>
-                            </>
-                        )
-                    ) : (
-                        <div className="participant-list-empty-state">No event or age group is available.</div>
-                    )}
+                    <div className="participant-list-content w-full">{participantContent}</div>
                 </div>
-            </div>
             </div>
             <TeamNameUpdatePreviewModal
                 preview={teamNamePreview}

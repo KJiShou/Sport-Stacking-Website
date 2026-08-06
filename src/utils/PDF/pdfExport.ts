@@ -1315,16 +1315,27 @@ interface BracketsListPDFOptions {
     filename: string;
 }
 
-const exportBracketsListToPDF = async (
-    tournament: Tournament,
-    events: TournamentEvent[],
-    registrations: Registration[],
-    teams: Team[],
-    ageMap: Record<string, number>,
-    phoneMap: Record<string, string>,
-    nameMap: Record<string, string>,
-    options: BracketsListPDFOptions,
-): Promise<void> => {
+interface BracketsListPDFInput {
+    tournament: Tournament;
+    events: TournamentEvent[];
+    registrations: Registration[];
+    teams: Team[];
+    ageMap: Record<string, number>;
+    phoneMap: Record<string, string>;
+    nameMap: Record<string, string>;
+    options: BracketsListPDFOptions;
+}
+
+const exportBracketsListToPDF = async ({
+    tournament,
+    events,
+    registrations,
+    teams,
+    ageMap,
+    phoneMap,
+    nameMap,
+    options,
+}: BracketsListPDFInput): Promise<void> => {
     try {
         const doc = new jsPDF();
         await initializePDFDoc(doc);
@@ -1465,7 +1476,7 @@ export const exportAllBracketsListToPDF = async (
     phoneMap: Record<string, string>,
     nameMap: Record<string, string> = {},
 ): Promise<void> => {
-    await exportBracketsListToPDF(
+    await exportBracketsListToPDF({
         tournament,
         events,
         registrations,
@@ -1473,12 +1484,12 @@ export const exportAllBracketsListToPDF = async (
         ageMap,
         phoneMap,
         nameMap,
-        {
+        options: {
             title: `${tournament.name} - All Events & Brackets`,
             summary: `Total Events: ${events.length}`,
             filename: "all_brackets_list.pdf",
         },
-    );
+    });
 };
 
 export const exportCurrentEventNameListToPDF = async (
@@ -1492,20 +1503,20 @@ export const exportCurrentEventNameListToPDF = async (
 ): Promise<void> => {
     const eventLabel = getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`;
 
-    await exportBracketsListToPDF(
+    await exportBracketsListToPDF({
         tournament,
-        [event],
+        events: [event],
         registrations,
         teams,
         ageMap,
         phoneMap,
         nameMap,
-        {
+        options: {
             title: `${tournament.name} - ${eventLabel} Name List`,
             summary: `Event: ${eventLabel}`,
             filename: `${eventLabel}_name_list.pdf`,
         },
-    );
+    });
 };
 
 export const exportNameListStickerPDF = async ({tournament, registrations}: NameListStickerOptions): Promise<void> => {
