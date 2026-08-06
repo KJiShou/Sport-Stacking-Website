@@ -74,11 +74,49 @@ jobs:
 
             - name: 🚀 Deploy Firebase backend
               run: |
-                  functions/node_modules/.bin/firebase deploy \
-                    --project sport-stacking-website \
-                    --only functions,firestore \
-                    --non-interactive \
-                    --debug
+                  set -euo pipefail
+
+                  firebase_cli="functions/node_modules/.bin/firebase"
+                  mapfile -t function_names < <(
+                      node --input-type=module -e '
+                          import {readFileSync} from "node:fs";
+
+                          const source = readFileSync("functions/lib/functions/src/index.js", "utf8");
+                          const names = [...source.matchAll(/^export const ([A-Za-z0-9_]+)/gm)].map((match) => match[1]);
+
+                          if (names.length === 0) {
+                              throw new Error("No exported Firebase Functions found in the build output.");
+                          }
+
+                          process.stdout.write(`${names.join("\n")}\n`);
+                      '
+                  )
+
+                  # Firebase CLI deploys up to 40 functions concurrently. Keep each
+                  # batch small so Cloud Run's regional CPU allocation quota is not
+                  # exhausted while revisions are starting at the same time.
+                  batch_size=5
+                  for ((offset = 0; offset < ${#function_names[@]}; offset += batch_size)); do
+                      batch=("${function_names[@]:offset:batch_size}")
+                      selectors=()
+                      for function_name in "${batch[@]}"; do
+                          selectors+=("functions:${function_name}")
+                      done
+                      only=$(IFS=,; echo "${selectors[*]}")
+
+                      echo "Deploying Firebase Functions batch $((offset / batch_size + 1)): ${only}"
+                      "$firebase_cli" deploy \
+                          --project sport-stacking-website \
+                          --only "$only" \
+                          --non-interactive \
+                          --debug
+                  done
+
+                  "$firebase_cli" deploy \
+                      --project sport-stacking-website \
+                      --only firestore \
+                      --non-interactive \
+                      --debug
 
             - name: 📋 Upload Firebase debug log
               if: failure()
