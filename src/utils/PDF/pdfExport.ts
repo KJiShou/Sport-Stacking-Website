@@ -184,6 +184,7 @@ const getPrimaryEventCode = (event: TournamentEvent): string => {
 };
 
 const isTeamEventType = (type: string): boolean => ["double", "team relay", "parent & child"].includes(type.toLowerCase());
+const isTeamRelayEventType = (type: string): boolean => type.trim().toLowerCase() === "team relay";
 const isIndividualSheetType = (type: string): boolean => {
     const normalized = type.trim().toLowerCase();
     return normalized === "individual" || normalized === "open age individual";
@@ -441,14 +442,17 @@ const generateTeamTableData = (
         const leaderPhone = leaderId ? phoneMap[leaderId] || "N/A" : "N/A";
         const maxAge = getTeamMaxAge(team, ageMap);
 
-        return [
+        const row = [
             (index + 1).toString(),
             formatTeamLeaderId(team.leader_id ?? "N/A", eventType),
+            ...(isTeamRelayEventType(eventType) ? [team.name?.trim() || "N/A"] : []),
             memberNames.join(", "),
             memberIds.join(", "),
             leaderPhone,
             maxAge === null ? "N/A" : maxAge.toString(),
         ];
+
+        return row;
     });
 };
 
@@ -613,20 +617,34 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
         const headers = team
             ? [["No.", "Global ID", "Role", "Phone Number"]]
             : isTeamEvent
-              ? [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]]
+              ? [
+                    isTeamRelayEventType(teamEventType)
+                        ? ["No.", "Team ID", "Team Name", "Members Name", "Members", "Leader Phone", "Team Age"]
+                        : ["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"],
+                ]
               : [["No.", "Global ID", "Name", "Age", "Phone Number"]];
 
         const columnStyles = team
             ? {0: {cellWidth: 10}, 1: {cellWidth: 40}, 2: {cellWidth: 40}, 3: {cellWidth: 40}}
-            : isTeamEvent
-              ? {
-                    0: {cellWidth: 10},
-                    1: {cellWidth: 25},
-                    2: {cellWidth: 55},
-                    3: {cellWidth: 45},
-                    4: {cellWidth: 30},
-                    5: {cellWidth: 20},
-                }
+              : isTeamEvent
+              ? isTeamRelayEventType(teamEventType)
+                    ? {
+                          0: {cellWidth: 8},
+                          1: {cellWidth: 22},
+                          2: {cellWidth: 28},
+                          3: {cellWidth: 42},
+                          4: {cellWidth: 35},
+                          5: {cellWidth: 25},
+                          6: {cellWidth: 16},
+                      }
+                    : {
+                          0: {cellWidth: 10},
+                          1: {cellWidth: 25},
+                          2: {cellWidth: 55},
+                          3: {cellWidth: 45},
+                          4: {cellWidth: 30},
+                          5: {cellWidth: 20},
+                      }
               : {0: {cellWidth: 10}, 1: {cellWidth: 32}, 2: {cellWidth: 90}, 3: {cellWidth: 20}, 4: {cellWidth: 30}};
 
         autoTable(doc, {
@@ -1294,18 +1312,32 @@ export const exportAllBracketsListToPDF = async (
 
                 if (tableData.length > 0) {
                     const headers = isTeamEvent
-                        ? [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]]
+                        ? [
+                              isTeamRelayEventType(event.type)
+                                  ? ["No.", "Team ID", "Team Name", "Members Name", "Members", "Leader Phone", "Team Age"]
+                                  : ["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"],
+                          ]
                         : [["No.", "Name", "Global ID", "Age", "Phone"]];
 
                     const columnStyles = isTeamEvent
-                        ? {
-                              0: {cellWidth: 10},
-                              1: {cellWidth: 25},
-                              2: {cellWidth: 55},
-                              3: {cellWidth: 45},
-                              4: {cellWidth: 30},
-                              5: {cellWidth: 20},
-                          }
+                        ? isTeamRelayEventType(event.type)
+                            ? {
+                                  0: {cellWidth: 8},
+                                  1: {cellWidth: 22},
+                                  2: {cellWidth: 28},
+                                  3: {cellWidth: 42},
+                                  4: {cellWidth: 35},
+                                  5: {cellWidth: 25},
+                                  6: {cellWidth: 16},
+                              }
+                            : {
+                                  0: {cellWidth: 10},
+                                  1: {cellWidth: 25},
+                                  2: {cellWidth: 55},
+                                  3: {cellWidth: 45},
+                                  4: {cellWidth: 30},
+                                  5: {cellWidth: 20},
+                              }
                         : {0: {cellWidth: 10}, 1: {cellWidth: 60}, 2: {cellWidth: 40}, 3: {cellWidth: 20}, 4: {cellWidth: 30}};
 
                     autoTable(doc, {

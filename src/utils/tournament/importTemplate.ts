@@ -105,6 +105,9 @@ const getDefaultTeamSize = (event: TournamentEvent): number => {
     return 1;
 };
 
+const getTeamRelayBlockSize = (event: TournamentEvent, teamSize: number): number =>
+    event.type === "Team Relay" ? teamSize + 1 : teamSize;
+
 const buildTemplateSheets = (events: TournamentEvent[]): TemplateSheet[] => {
     const sortedEvents = [...events].sort((a, b) => {
         const orderDiff = getEventTypeOrderIndex(a.type) - getEventTypeOrderIndex(b.type);
@@ -697,9 +700,10 @@ const addTeamRelaySheet = (
     ];
     const headerRowNumber = 2;
     const teamSize = templateSheet.teamSize ?? 4;
+    const blockSize = getTeamRelayBlockSize(templateSheet.event, teamSize);
     const exampleStartRow = 3;
-    const firstDataRow = exampleStartRow + teamSize;
-    const lastDataRow = firstDataRow + TEAM_BLOCK_COUNT * teamSize - 1;
+    const firstDataRow = exampleStartRow + blockSize;
+    const lastDataRow = firstDataRow + TEAM_BLOCK_COUNT * blockSize - 1;
 
     styleTitleRow(worksheet, `${tournamentName} Registration (${templateSheet.sheetName})`, headers.length);
     worksheet.getRow(headerRowNumber).values = headers;
@@ -718,11 +722,11 @@ const addTeamRelaySheet = (
     ];
 
     const writeBlock = (blockIndex: number, blockStartRow: number, isExample: boolean): void => {
-        const blockEndRow = blockStartRow + teamSize - 1;
+        const blockEndRow = blockStartRow + blockSize - 1;
         const averageCell = `${columnLetter(9)}${blockStartRow}`;
         const ageRange = `${columnLetter(8)}${blockStartRow}:${columnLetter(8)}${blockEndRow}`;
 
-        for (let memberIndex = 0; memberIndex < teamSize; memberIndex += 1) {
+        for (let memberIndex = 0; memberIndex < blockSize; memberIndex += 1) {
             const rowNumber = blockStartRow + memberIndex;
             const row = worksheet.getRow(rowNumber);
             if (memberIndex === 0) {
@@ -730,7 +734,7 @@ const addTeamRelaySheet = (
                 row.getCell(9).value = {formula: buildAverageAgeFormula(ageRange)};
                 row.getCell(10).value = {formula: buildGroupFormula(averageCell, templateSheet.event)};
             }
-            row.getCell(2).value = memberIndex + 1;
+            row.getCell(2).value = memberIndex === teamSize ? `${memberIndex + 1} (Optional substitute)` : memberIndex + 1;
             row.getCell(5).numFmt = "@"; // Force text format to preserve leading zeros (e.g. IC numbers)
             row.getCell(6).numFmt = "@"; // Accept DD/MM/YYYY as typed, independent of Excel locale
             const dobCell = `${columnLetter(6)}${rowNumber}`;
@@ -752,7 +756,7 @@ const addTeamRelaySheet = (
     const exampleDobs = ["06/06/2017", "23/12/2014", "14/06/2018", "25/10/1997", "14/04/2006"];
     const exampleGenders = ["Male", "Male", "Female", "Female", "Female"];
     worksheet.getCell(exampleStartRow, 3).value = "MY ALL STAR";
-    for (let memberIndex = 0; memberIndex < Math.min(teamSize, exampleNames.length); memberIndex += 1) {
+    for (let memberIndex = 0; memberIndex < Math.min(blockSize, exampleNames.length); memberIndex += 1) {
         worksheet.getCell(exampleStartRow + memberIndex, 4).value = exampleNames[memberIndex];
         worksheet.getCell(exampleStartRow + memberIndex, 5).value = exampleIdentityNumbers[memberIndex];
         worksheet.getCell(exampleStartRow + memberIndex, 6).value = exampleDobs[memberIndex];
@@ -760,7 +764,7 @@ const addTeamRelaySheet = (
     }
 
     for (let blockIndex = 0; blockIndex < TEAM_BLOCK_COUNT; blockIndex += 1) {
-        writeBlock(blockIndex, firstDataRow + blockIndex * teamSize, false);
+        writeBlock(blockIndex, firstDataRow + blockIndex * blockSize, false);
     }
 
     addGenderValidation(worksheet, 7, exampleStartRow, lastDataRow);

@@ -313,6 +313,13 @@ const importGetExpectedTeamSize = (event: ImportEvent): number => {
     return 1;
 };
 
+const importIsTeamRelayEvent = (event: ImportEvent): boolean => importIsEventType(event, "Team Relay");
+
+const importGetAllowedTeamSizes = (event: ImportEvent): number[] => {
+    const expectedSize = importGetExpectedTeamSize(event);
+    return importIsTeamRelayEvent(event) ? [expectedSize, expectedSize + 1] : [expectedSize];
+};
+
 const importBuildIdentityKey = (
     identityType: ImportIdentityType,
     identityNumber: string | null,
@@ -887,17 +894,17 @@ const importParseWorkbook = (
         let currentBlockRow = 0;
         let currentBlockName = "";
         let currentBlockHasErrors = false;
-        const expectedSize = importGetExpectedTeamSize(event);
+        const allowedTeamSizes = importGetAllowedTeamSizes(event);
         const flushBlock = () => {
             if (currentBlock.length === 0) {
                 return;
             }
-            if (currentBlock.length !== expectedSize) {
+            if (!allowedTeamSizes.includes(currentBlock.length)) {
                 parsed.rows.push({
                     sheet: worksheet.name,
                     row: currentBlockRow,
                     level: "error",
-                    message: `${event.type} block has ${currentBlock.length} members; expected ${expectedSize}.`,
+                    message: `${event.type} block has ${currentBlock.length} members; expected ${allowedTeamSizes.join(" or ")}.`,
                 });
             } else if (!currentBlockHasErrors) {
                 parsed.teams.push({
@@ -918,13 +925,14 @@ const importParseWorkbook = (
             currentBlockHasErrors = false;
         };
 
+        let skippingExampleBlock = false;
         for (let rowNumber = headerRowNumber + 1; rowNumber <= lastRelevantRow; rowNumber += 1) {
             const row = worksheet.getRow(rowNumber);
             const noCell = row.getCell(columns.no);
             const noText = importCellToString(noCell.value);
             if (importIsExampleMarker(noText)) {
                 flushBlock();
-                rowNumber += expectedSize - 1;
+                skippingExampleBlock = true;
                 continue;
             }
             if (!importRowHasParticipantContent(row, columns)) {
@@ -932,6 +940,12 @@ const importParseWorkbook = (
             }
             const startsBlock =
                 noText.trim().length > 0 && noText.toLowerCase() !== "ex:" && !importIsMergedContinuationCell(noCell);
+            if (skippingExampleBlock) {
+                if (!startsBlock) {
+                    continue;
+                }
+                skippingExampleBlock = false;
+            }
             if (startsBlock) {
                 flushBlock();
                 currentBlockRow = rowNumber;
@@ -1639,6 +1653,8 @@ type FirestoreEventRecord = {
     type?: string;
     gender?: string;
     codes?: string[];
+    teamSize?: number;
+    team_size?: number;
 };
 
 type BestEventType = "3-3-3" | "3-6-3" | "Cycle";
@@ -3722,6 +3738,45 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
         if (eventKeys.length === 0) {
             throw new HttpsError("invalid-argument", "Team event is required.");
         }
+        const eventSnapshots = await transaction.get(db.collection("events").where("tournament_id", "==", tournamentId));
+        const resolvedTeamEvent = resolveTeamEvents(nextTeam, eventSnapshots.docs).events[0]?.data;
+        const eventType = String(resolvedTeamEvent?.type ?? getTeamEventNameReferences(nextTeam)[0] ?? "")
+            .trim()
+            .toLowerCase();
+        const isTeamRelay = eventType === "team relay" || eventType === "time relay";
+        const isTeamEvent =
+            isTeamRelay || eventType === "double" || (eventType.includes("parent") && eventType.includes("child"));
+        if (isTeamEvent) {
+            const configuredTeamSize = Number(
+                resolvedTeamEvent?.teamSize ??
+                    resolvedTeamEvent?.team_size ??
+                    (eventType === "double" || (eventType.includes("parent") && eventType.includes("child")) ? 2 : 4),
+            );
+            const participantCount = 1 + (nextTeam.members ?? []).length;
+            const minimumParticipantCount = configuredTeamSize;
+            const maximumParticipantCount = isTeamRelay ? configuredTeamSize + 1 : configuredTeamSize;
+            const hasValidConfiguredSize = Number.isFinite(configuredTeamSize) && configuredTeamSize >= 2;
+            const activeRecruitmentSnapshot =
+                participantCount < minimumParticipantCount
+                    ? await transaction.get(db.collection("team_recruitment").where("team_id", "==", teamRef.id))
+                    : null;
+            const hasActiveTeamRecruitment = Boolean(
+                activeRecruitmentSnapshot?.docs.some((snapshot) => snapshot.data()?.status === "active"),
+            );
+            const countWithinAllowedRange =
+                hasValidConfiguredSize &&
+                participantCount <= maximumParticipantCount &&
+                (nextTeam.looking_for_member === true || hasActiveTeamRecruitment || participantCount >= minimumParticipantCount);
+            if (!countWithinAllowedRange) {
+                const requiredText = isTeamRelay
+                    ? `${configuredTeamSize} or ${configuredTeamSize + 1}`
+                    : `exactly ${configuredTeamSize}`;
+                throw new HttpsError(
+                    "failed-precondition",
+                    `${resolvedTeamEvent?.type ?? "Team event"} requires ${requiredText} participants.`,
+                );
+            }
+        }
         const confirmedParticipantIds = teamParticipantIds(nextTeam);
         const previousConfirmedParticipantIds = existingTeam ? teamParticipantIds(existingTeam) : [];
         const allTeamsSnapshot = await transaction.get(db.collection("teams").where("tournament_id", "==", tournamentId));
@@ -5482,8 +5537,17 @@ export const adminCreateTournamentRegistration = onCall(lowCpuCallableFunctionOp
             const configuredTeamSize = Number(
                 event.teamSize ?? event.team_size ?? (event.type === "Double" || event.type === "Parent & Child" ? 2 : 4),
             );
-            if (!Number.isFinite(configuredTeamSize) || configuredTeamSize < 2 || memberIds.length + 1 !== configuredTeamSize) {
-                throw new HttpsError("failed-precondition", `${event.type} requires exactly ${configuredTeamSize} participants.`);
+            const participantCount = memberIds.length + 1;
+            const isTeamRelay = String(event.type ?? "").toLowerCase() === "team relay";
+            const hasValidParticipantCount =
+                Number.isFinite(configuredTeamSize) &&
+                configuredTeamSize >= 2 &&
+                (participantCount === configuredTeamSize || (isTeamRelay && participantCount === configuredTeamSize + 1));
+            if (!hasValidParticipantCount) {
+                const requiredText = isTeamRelay
+                    ? `${configuredTeamSize} or ${configuredTeamSize + 1}`
+                    : `exactly ${configuredTeamSize}`;
+                throw new HttpsError("failed-precondition", `${event.type} requires ${requiredText} participants.`);
             }
             if (event.type === "Parent & Child" && memberIds.length !== 1) {
                 throw new HttpsError("failed-precondition", "Parent & Child requires exactly one Parent member.");
