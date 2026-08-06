@@ -41,6 +41,62 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "tournaments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "start_date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "homeCarousel",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "active",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "order",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "records",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tournament_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "classification",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "overall_records",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tournament_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "classification",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [
