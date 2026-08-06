@@ -2,18 +2,7 @@ import type * as React from "react";
 
 import {useEffect, useMemo, useRef, useState} from "react";
 
-import {
-    Button,
-    Input,
-    Link,
-    Message,
-    Pagination,
-    Select,
-    Spin,
-    Table,
-    type TableColumnProps,
-    Tag,
-} from "@arco-design/web-react";
+import {Button, Input, Link, Message, Pagination, Select, Spin, Table, type TableColumnProps, Tag} from "@arco-design/web-react";
 import {IconFilter, IconRefresh} from "@arco-design/web-react/icon";
 
 import type {FirestoreUser} from "@/schema/UserSchema";
@@ -116,6 +105,15 @@ interface AthleteTableRow extends AthleteRankingEntry {
     season: SeasonValue | null;
     source: "record" | "derived";
 }
+
+const renderAthleteRankingName = (row: AthleteTableRow) =>
+    row.participantId ? (
+        <Link href={`/athletes/${row.participantId}`} hoverable={false} onClick={(event) => event.stopPropagation()}>
+            {row.name}
+        </Link>
+    ) : (
+        row.name
+    );
 
 const GENDER_FILTER_OPTIONS: {value: GenderFilter; label: string}[] = [
     {value: "All", label: "All Genders"},
@@ -759,6 +757,8 @@ const Athletes: React.FC = () => {
         locationFilter !== "All",
         seasonFilter !== "All",
     ].filter(Boolean).length;
+    const rankingFilterAriaLabel =
+        activeFilterCount > 0 ? `Open ranking filters (${activeFilterCount} active)` : "Open ranking filters";
     const draftFilterCount = [
         filterDraft.selectedEventKey !== DEFAULT_EVENT.key,
         filterDraft.ageFilter !== "All",
@@ -902,7 +902,7 @@ const Athletes: React.FC = () => {
                             ref={mobileFilterTriggerRef}
                             ariaExpanded={mobileFiltersVisible}
                             activeCount={activeFilterCount}
-                            ariaLabel={`Open ranking filters${activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ""}`}
+                            ariaLabel={rankingFilterAriaLabel}
                             onClick={openMobileFilters}
                         />
                     </div>
@@ -917,21 +917,11 @@ const Athletes: React.FC = () => {
                             data={paginatedRows}
                             loading={loading}
                             emptyDescription={
-                                searchTerm || activeFilterCount > 0
-                                    ? "No rankings match these filters"
-                                    : "No rankings available"
+                                searchTerm || activeFilterCount > 0 ? "No rankings match these filters" : "No rankings available"
                             }
                             rowKey={(row) => row.key}
                             rank={(row) => row.rank}
-                            name={(row) =>
-                                row.participantId ? (
-                                    <Link href={`/athletes/${row.participantId}`} hoverable={false}>
-                                        {row.name}
-                                    </Link>
-                                ) : (
-                                    row.name
-                                )
-                            }
+                            name={renderAthleteRankingName}
                             result={(row) => formatStackingTime(row.eventTime)}
                             details={(row) => renderRankingDetails(row)}
                         />
@@ -980,7 +970,6 @@ const Athletes: React.FC = () => {
                     {renderFilterSelects(filterDraft, (key, value) => setFilterDraft((current) => ({...current, [key]: value})))}
                 </div>
             </MobileFilterDrawer>
-
         </div>
     );
 };

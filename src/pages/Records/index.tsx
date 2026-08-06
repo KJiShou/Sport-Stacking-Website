@@ -32,7 +32,7 @@ import {
     Tag,
     Typography,
 } from "@arco-design/web-react";
-import {IconDelete, IconEdit, IconEye, IconFilter, IconMore, IconVideoCamera} from "@arco-design/web-react/icon";
+import {IconDelete, IconEye, IconFilter, IconVideoCamera} from "@arco-design/web-react/icon";
 import type React from "react";
 import {useEffect, useRef, useState} from "react";
 import {useAuthContext} from "../../context/AuthContext";
@@ -64,6 +64,73 @@ type AgeGroup = string;
 // Match the service types
 type Category = "Individual" | "Double" | "Parent & Child" | "Team Relay" | "Special Need";
 type EventTypeKey = "3-3-3" | "3-6-3" | "Cycle" | "Overall";
+
+const createRecordsMobileNameRenderer = (isTeamCategory: boolean) => (record: RecordDisplay) =>
+    !isTeamCategory && record.participantId ? (
+        <Link href={`/athletes/${record.participantId}`} hoverable={false} onClick={(event) => event.stopPropagation()}>
+            {record.athlete}
+        </Link>
+    ) : (
+        record.athlete
+    );
+
+interface RecordsMobileDetailsProps {
+    record: RecordDisplay;
+    isTeamCategory: boolean;
+    isAdmin: boolean;
+    onTimeClick: (record: RecordDisplay) => void;
+    onToggleVerification: (record: RecordDisplay) => void | Promise<void>;
+    onEditVideo: (record: RecordDisplay) => void;
+    onDeleteRecord: (record: RecordDisplay) => void | Promise<void>;
+}
+
+const RecordsMobileDetails = ({
+    record,
+    isTeamCategory,
+    isAdmin,
+    onTimeClick,
+    onToggleVerification,
+    onEditVideo,
+    onDeleteRecord,
+}: RecordsMobileDetailsProps) => (
+    <div className="records-mobile-card__details">
+        <span>
+            <CountryFlag country={record.country} size="md" /> {record.country || "Unknown"}
+        </span>
+        <span>{record.ageGroup}</span>
+        <span>{formatGenderLabel(record.gender)}</span>
+        <span>{record.date}</span>
+        <span>{record.tournament_name || "N/A"}</span>
+        <Tag color={record.status === "verified" ? "green" : "orange"}>
+            {record.status === "verified" ? "Verified" : "Submitted"}
+        </Tag>
+        {isTeamCategory && record.members && record.members.length > 0 ? (
+            <span className="records-mobile-card__members">Members: {record.members.join(", ")}</span>
+        ) : null}
+        {record.videoUrl && (record.status === "verified" || isAdmin) ? (
+            <Button type="text" onClick={() => onTimeClick(record)}>
+                View video <IconVideoCamera />
+            </Button>
+        ) : null}
+        {isAdmin ? (
+            <div className="records-mobile-card__actions">
+                <Button type="secondary" onClick={() => onToggleVerification(record)}>
+                    {record.status === "verified" ? "Unverify" : "Verify"}
+                </Button>
+                <Button type="secondary" onClick={() => onEditVideo(record)}>
+                    {record.videoUrl ? "Edit Video" : "Add Video"}
+                </Button>
+                <Button status="danger" onClick={() => onDeleteRecord(record)}>
+                    Delete
+                </Button>
+            </div>
+        ) : null}
+    </div>
+);
+
+const createRecordsMobileDetailsRenderer = (props: Omit<RecordsMobileDetailsProps, "record">) => (record: RecordDisplay) => (
+    <RecordsMobileDetails {...props} record={record} />
+);
 
 // Map UI tab keys -> display category labels
 const CATEGORY_MAP: Record<RecordCategory, Category> = {
@@ -363,6 +430,34 @@ const RecordsIndex: React.FC = () => {
     };
 
     const getTableColumns = (isTeamCategory: boolean) => {
+        const memberColumn: TableColumnProps<RecordDisplay> = {
+            title: "Members",
+            dataIndex: "members",
+            key: "members",
+            width: 240,
+            render: (_: unknown, record: RecordDisplay) => {
+                const combined: string[] = [...(record.leaderId ? [record.leaderId] : []), ...(record.members ?? [])];
+                return (
+                    <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
+                        {combined.map((memberId) => (
+                            <Link
+                                key={memberId}
+                                href={`/athletes/${memberId}`}
+                                style={{
+                                    display: "inline-block",
+                                }}
+                            >
+                                <Tag color="arcoblue" style={{margin: 0}}>
+                                    {memberId}
+                                </Tag>
+                            </Link>
+                        ))}
+                        {combined.length === 0 ? <Text style={{color: "#999"}}>—</Text> : null}
+                    </div>
+                );
+            },
+        };
+
         const cols: TableColumnProps<RecordDisplay>[] = [
             {
                 title: "Rank",
@@ -378,7 +473,11 @@ const RecordsIndex: React.FC = () => {
                     const hasParticipantId = record.participantId ? record.participantId.length > 0 : false;
                     if (!isTeamCategory && hasParticipantId) {
                         return (
-                            <Link href={`/athletes/${record.participantId}`} hoverable={false}>
+                            <Link
+                                href={`/athletes/${record.participantId}`}
+                                hoverable={false}
+                                onClick={(event) => event.stopPropagation()}
+                            >
                                 {record.athlete}
                             </Link>
                         );
@@ -386,62 +485,26 @@ const RecordsIndex: React.FC = () => {
                     return <span>{record.athlete}</span>;
                 },
             },
-        ];
-
-        if (isTeamCategory) {
-            cols.push({
-                title: "Members",
-                dataIndex: "members",
-                key: "members",
-                width: 240,
-                render: (_: unknown, record: RecordDisplay & {members?: string[]; leaderId?: string}) => {
-                    const combined: string[] = [
-                        ...(record.leaderId ? [`${record.leaderId}`] : []),
-                        ...((record.members ?? []) as string[]),
-                    ];
-                    return (
-                        <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
-                            {combined.map((memberId) => (
-                                <Link
-                                    key={memberId}
-                                    href={`/athletes/${memberId}`}
-                                    style={{
-                                        display: "inline-block",
-                                    }}
-                                >
-                                    <Tag color={"arcoblue"} style={{margin: 0}}>
-                                        {memberId}
-                                    </Tag>
-                                </Link>
-                            ))}
-                            {combined.length === 0 ? <Text style={{color: "#999"}}>—</Text> : null}
-                        </div>
-                    );
-                },
-            });
-        }
-
-        cols.push({
-            title: "Time",
-            dataIndex: "time",
-            width: 120,
-            render: (_: unknown, record: RecordDisplay) => (
-                <Text
-                    style={{
-                        fontWeight: "bold",
-                        color: record.rank === 1 ? "#52c41a" : "#1890ff",
-                        cursor: record.videoUrl && (record.status === "verified" || isAdmin) ? "pointer" : "default",
-                        textDecoration: record.videoUrl && (record.status === "verified" || isAdmin) ? "underline" : "none",
-                    }}
-                    onClick={() => handleTimeClick(record)}
-                >
-                    {record.time}
-                    {record.videoUrl && <IconVideoCamera style={{marginLeft: "4px", fontSize: "13px"}} />}
-                </Text>
-            ),
-        });
-
-        cols.push(
+            ...(isTeamCategory ? [memberColumn] : []),
+            {
+                title: "Time",
+                dataIndex: "time",
+                width: 120,
+                render: (_: unknown, record: RecordDisplay) => (
+                    <Text
+                        style={{
+                            fontWeight: "bold",
+                            color: record.rank === 1 ? "#52c41a" : "#1890ff",
+                            cursor: record.videoUrl && (record.status === "verified" || isAdmin) ? "pointer" : "default",
+                            textDecoration: record.videoUrl && (record.status === "verified" || isAdmin) ? "underline" : "none",
+                        }}
+                        onClick={() => handleTimeClick(record)}
+                    >
+                        {record.time}
+                        {record.videoUrl && <IconVideoCamera style={{marginLeft: "4px", fontSize: "13px"}} />}
+                    </Text>
+                ),
+            },
             {
                 title: "Status",
                 dataIndex: "status",
@@ -499,40 +562,40 @@ const RecordsIndex: React.FC = () => {
                     <Text style={{fontSize: "13px", color: "#666"}}>{record.date}</Text>
                 ),
             },
-        );
-
-        // Admin column — keep it last
-        if (isAdmin) {
-            cols.push({
-                title: "Actions",
-                key: "actions",
-                width: 160,
-                render: (_: unknown, record: RecordDisplay) => (
-                    <Dropdown.Button
-                        className="records-action-button"
-                        type="primary"
-                        size="mini"
-                        trigger={["click"]}
-                        onClick={() => handleToggleVerification(record)}
-                        droplist={
-                            <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg">
-                                <Button type="text" onClick={() => handleEditVideo(record)}>
-                                    <IconVideoCamera style={{marginRight: "8px"}} />
-                                    {record.videoUrl ? "Edit Video" : "Add Video"}
-                                </Button>
-                                <Button type="text" status="danger" onClick={() => handleDeleteRecord(record)}>
-                                    <IconDelete style={{marginRight: "8px"}} />
-                                    Delete
-                                </Button>
-                            </div>
-                        }
-                    >
-                        <IconEye style={{marginRight: "4px"}} />
-                        {record.status === "verified" ? "Unverify" : "Verify"}
-                    </Dropdown.Button>
-                ),
-            });
-        }
+            ...(isAdmin
+                ? [
+                      {
+                          title: "Actions",
+                          key: "actions",
+                          width: 160,
+                          render: (_: unknown, record: RecordDisplay) => (
+                              <Dropdown.Button
+                                  className="records-action-button"
+                                  type="primary"
+                                  size="mini"
+                                  trigger={["click"]}
+                                  onClick={() => handleToggleVerification(record)}
+                                  droplist={
+                                      <div className="bg-white flex flex-col py-2 border border-solid border-gray-200 rounded-lg shadow-lg">
+                                          <Button type="text" onClick={() => handleEditVideo(record)}>
+                                              <IconVideoCamera style={{marginRight: "8px"}} />
+                                              {record.videoUrl ? "Edit Video" : "Add Video"}
+                                          </Button>
+                                          <Button type="text" status="danger" onClick={() => handleDeleteRecord(record)}>
+                                              <IconDelete style={{marginRight: "8px"}} />
+                                              Delete
+                                          </Button>
+                                      </div>
+                                  }
+                              >
+                                  <IconEye style={{marginRight: "4px"}} />
+                                  {record.status === "verified" ? "Unverify" : "Verify"}
+                              </Dropdown.Button>
+                          ),
+                      } satisfies TableColumnProps<RecordDisplay>,
+                  ]
+                : []),
+        ];
 
         return cols;
     };
@@ -698,6 +761,18 @@ const RecordsIndex: React.FC = () => {
         const mobilePageSize = 20;
         const mobileStart = (mobileCardPage - 1) * mobilePageSize;
         const mobileRecords = filteredRecordsData.slice(mobileStart, mobileStart + mobilePageSize);
+        const recordActiveFilterCount = (selectedAgeGroup !== "Overall" ? 1 : 0) + (dateRange.some(Boolean) ? 1 : 0);
+        const recordFilterAriaLabel =
+            recordActiveFilterCount > 0 ? `Open record filters (${recordActiveFilterCount} active)` : "Open record filters";
+        const mobileNameRenderer = createRecordsMobileNameRenderer(isTeamCategory);
+        const mobileDetailsRenderer = createRecordsMobileDetailsRenderer({
+            isTeamCategory,
+            isAdmin,
+            onTimeClick: handleTimeClick,
+            onToggleVerification: handleToggleVerification,
+            onEditVideo: handleEditVideo,
+            onDeleteRecord: handleDeleteRecord,
+        });
         return (
             <div>
                 {/* Event Tabs - show for all categories */}
@@ -814,14 +889,8 @@ const RecordsIndex: React.FC = () => {
                                 icon={<IconFilter />}
                                 ref={mobileFilterTriggerRef}
                                 ariaExpanded={mobileFiltersVisible}
-                                activeCount={
-                                    (selectedAgeGroup !== "Overall" ? 1 : 0) + (dateRange.some(Boolean) ? 1 : 0)
-                                }
-                                ariaLabel={`Open record filters${
-                                    selectedAgeGroup !== "Overall" || dateRange.some(Boolean)
-                                        ? ` (${(selectedAgeGroup !== "Overall" ? 1 : 0) + (dateRange.some(Boolean) ? 1 : 0)} active)`
-                                        : ""
-                                }`}
+                                activeCount={recordActiveFilterCount}
+                                ariaLabel={recordFilterAriaLabel}
                                 onClick={() => {
                                     setDraftAgeGroup(selectedAgeGroup);
                                     setDraftDateRange(dateRange);
@@ -850,51 +919,9 @@ const RecordsIndex: React.FC = () => {
                                 data={mobileRecords}
                                 rowKey={(record) => record.recordId ?? `${record.athlete}-${record.rank}`}
                                 rank={(record) => record.rank}
-                                name={(record) =>
-                                    !isTeamCategory && record.participantId ? (
-                                        <Link href={`/athletes/${record.participantId}`} hoverable={false}>
-                                            {record.athlete}
-                                        </Link>
-                                    ) : (
-                                        record.athlete
-                                    )
-                                }
+                                name={mobileNameRenderer}
                                 result={(record) => record.time}
-                                details={(record) => (
-                                    <div className="records-mobile-card__details">
-                                        <span>
-                                            <CountryFlag country={record.country} size="md" /> {record.country || "Unknown"}
-                                        </span>
-                                        <span>{record.ageGroup}</span>
-                                        <span>{formatGenderLabel(record.gender)}</span>
-                                        <span>{record.date}</span>
-                                        <span>{record.tournament_name || "N/A"}</span>
-                                        <Tag color={record.status === "verified" ? "green" : "orange"}>
-                                            {record.status === "verified" ? "Verified" : "Submitted"}
-                                        </Tag>
-                                        {isTeamCategory && record.members && record.members.length > 0 ? (
-                                            <span className="records-mobile-card__members">Members: {record.members.join(", ")}</span>
-                                        ) : null}
-                                        {record.videoUrl && (record.status === "verified" || isAdmin) ? (
-                                            <Button type="text" onClick={() => handleTimeClick(record)}>
-                                                View video <IconVideoCamera />
-                                            </Button>
-                                        ) : null}
-                                        {isAdmin ? (
-                                            <div className="records-mobile-card__actions">
-                                                <Button type="secondary" onClick={() => handleToggleVerification(record)}>
-                                                    {record.status === "verified" ? "Unverify" : "Verify"}
-                                                </Button>
-                                                <Button type="secondary" onClick={() => handleEditVideo(record)}>
-                                                    {record.videoUrl ? "Edit Video" : "Add Video"}
-                                                </Button>
-                                                <Button status="danger" onClick={() => handleDeleteRecord(record)}>
-                                                    Delete
-                                                </Button>
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                )}
+                                details={mobileDetailsRenderer}
                                 pagination={
                                     <Pagination
                                         current={mobileCardPage}

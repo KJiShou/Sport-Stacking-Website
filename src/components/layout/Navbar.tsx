@@ -246,6 +246,43 @@ const Navbar: React.FC = () => {
         </>
     );
 
+    let accountControl: React.ReactNode;
+    if (!firebaseUser) {
+        accountControl = (
+            <Button ref={loginTriggerRef} onClick={() => setVisible(true)} type="primary">
+                Login
+            </Button>
+        );
+    } else if (isMobileView) {
+        accountControl = (
+            <button
+                type="button"
+                className="app-navbar__account-button"
+                ref={mobileAccountTriggerRef}
+                aria-label="Open account menu"
+                aria-haspopup="dialog"
+                aria-expanded={mobileAccountVisible}
+                aria-pressed={mobileAccountVisible}
+                onClick={() => setMobileAccountVisible(true)}
+            >
+                {renderAccountTriggerContent()}
+            </button>
+        );
+    } else {
+        accountControl = (
+            <Dropdown droplist={renderAccountMenu()} position="br" trigger="click">
+                <button
+                    type="button"
+                    className="app-navbar__account-trigger cursor-pointer rounded-md bg-transparent px-2 py-1 transition-colors hover:bg-[var(--color-fill-2)]"
+                    aria-label="Open account menu"
+                    aria-haspopup="menu"
+                >
+                    {renderAccountTriggerContent()}
+                </button>
+            </Dropdown>
+        );
+    }
+
     return (
         <div className="app-navbar fixed top-0 left-0 z-50 w-full flex items-center justify-between bg-[var(--color-bg-2)] border-b border-[var(--color-border)]">
             <Link to="/" className="app-navbar__brand no-underline" aria-label="Ranking Stack Malaysia">
@@ -321,41 +358,7 @@ const Navbar: React.FC = () => {
                     </SubMenu>
                 )}
             </Menu>
-            {!isRegisterPage && (
-                <div className="app-navbar__account flex items-center ml-4 cursor-pointer">
-                    {firebaseUser ? (
-                        isMobileView ? (
-                            <button
-                                type="button"
-                                className="app-navbar__account-button"
-                                ref={mobileAccountTriggerRef}
-                                aria-label="Open account menu"
-                                aria-haspopup="dialog"
-                                aria-expanded={mobileAccountVisible}
-                                aria-pressed={mobileAccountVisible}
-                                onClick={() => setMobileAccountVisible(true)}
-                            >
-                                {renderAccountTriggerContent()}
-                            </button>
-                        ) : (
-                            <Dropdown droplist={renderAccountMenu()} position="br" trigger="click">
-                                <button
-                                    type="button"
-                                    className="app-navbar__account-trigger cursor-pointer rounded-md bg-transparent px-2 py-1 transition-colors hover:bg-[var(--color-fill-2)]"
-                                    aria-label="Open account menu"
-                                    aria-haspopup="menu"
-                                >
-                                    {renderAccountTriggerContent()}
-                                </button>
-                            </Dropdown>
-                        )
-                    ) : (
-                        <Button ref={loginTriggerRef} onClick={() => setVisible(true)} type="primary">
-                            Login
-                        </Button>
-                    )}
-                </div>
-            )}
+            {!isRegisterPage && <div className="app-navbar__account flex items-center ml-4 cursor-pointer">{accountControl}</div>}
             <Drawer
                 title="Navigation"
                 placement="left"
@@ -378,63 +381,63 @@ const Navbar: React.FC = () => {
                         }}
                         mode="vertical"
                     >
-                    <MenuItem key="/">
-                        <IconHome />
-                        Home
-                    </MenuItem>
-                    <MenuItem key="/athletes">
-                        <IconCalendar />
-                        Athletes
-                    </MenuItem>
-                    <MenuItem key="/tournaments">
-                        <IconCalendar />
-                        Tournaments
-                    </MenuItem>
-                    <MenuItem key="/records">
-                        <IconCalendar />
-                        Records
-                    </MenuItem>
-                    {user && (
-                        <>
-                            <MenuItem key="/notifications">
-                                <IconNotification />
-                                Notifications ({unreadNotificationCount})
-                            </MenuItem>
-                            <MenuItem key="/verify-requests">
-                                <IconNotification />
-                                Verify Requests ({pendingVerificationCount})
-                            </MenuItem>
-                        </>
-                    )}
-                    {user?.roles?.modify_admin && (
-                        <SubMenu
-                            key="mobile-admin-menu"
-                            title={
-                                <>
-                                    <IconUser />
-                                    Admin
-                                </>
-                            }
-                        >
-                            <MenuItem key="/admins">
-                                <IconUser /> Permissions
-                            </MenuItem>
-                            <MenuItem key="/admin/team-recruitment">
-                                <IconUserGroup /> Team Recruitment
-                            </MenuItem>
-                            <MenuItem key="/admin/users">
-                                <IconUserGroup /> User Management
-                            </MenuItem>
-                            <MenuItem key="/admin/carousel">
-                                <IconUserGroup /> Carousel Management
-                            </MenuItem>
-                            {user?.global_id === "00001" && (
-                                <MenuItem key="/admin/developer-setting">
-                                    <IconUserGroup /> Developer Setting
+                        <MenuItem key="/">
+                            <IconHome />
+                            Home
+                        </MenuItem>
+                        <MenuItem key="/athletes">
+                            <IconCalendar />
+                            Athletes
+                        </MenuItem>
+                        <MenuItem key="/tournaments">
+                            <IconCalendar />
+                            Tournaments
+                        </MenuItem>
+                        <MenuItem key="/records">
+                            <IconCalendar />
+                            Records
+                        </MenuItem>
+                        {user && (
+                            <>
+                                <MenuItem key="/notifications">
+                                    <IconNotification />
+                                    Notifications ({unreadNotificationCount})
                                 </MenuItem>
-                            )}
-                        </SubMenu>
-                    )}
+                                <MenuItem key="/verify-requests">
+                                    <IconNotification />
+                                    Verify Requests ({pendingVerificationCount})
+                                </MenuItem>
+                            </>
+                        )}
+                        {user?.roles?.modify_admin && (
+                            <SubMenu
+                                key="mobile-admin-menu"
+                                title={
+                                    <>
+                                        <IconUser />
+                                        Admin
+                                    </>
+                                }
+                            >
+                                <MenuItem key="/admins">
+                                    <IconUser /> Permissions
+                                </MenuItem>
+                                <MenuItem key="/admin/team-recruitment">
+                                    <IconUserGroup /> Team Recruitment
+                                </MenuItem>
+                                <MenuItem key="/admin/users">
+                                    <IconUserGroup /> User Management
+                                </MenuItem>
+                                <MenuItem key="/admin/carousel">
+                                    <IconUserGroup /> Carousel Management
+                                </MenuItem>
+                                {user?.global_id === "00001" && (
+                                    <MenuItem key="/admin/developer-setting">
+                                        <IconUserGroup /> Developer Setting
+                                    </MenuItem>
+                                )}
+                            </SubMenu>
+                        )}
                     </Menu>
                 </div>
             </Drawer>

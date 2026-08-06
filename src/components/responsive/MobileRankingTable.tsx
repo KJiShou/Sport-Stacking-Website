@@ -19,6 +19,38 @@ export interface MobileRankingTableProps<T> {
     rowClassName?: (record: T, index: number) => string;
 }
 
+type MobileRankingRow<T> = {key: string; record: T; index: number};
+
+interface MobileRankingDetailsProps<T> {
+    row: MobileRankingRow<T>;
+    details: MobileRankingTableProps<T>["details"];
+}
+
+const MobileRankingDetails = <T,>({row, details}: MobileRankingDetailsProps<T>) => (
+    <div className="mobile-ranking-table__details">{details(row.record, row.index)}</div>
+);
+
+const createExpandedRowRenderer =
+    <T,>(details: MobileRankingTableProps<T>["details"]) =>
+    (row: MobileRankingRow<T>) => <MobileRankingDetails row={row} details={details} />;
+
+interface MobileRankingExpandIconProps {
+    expanded: boolean;
+    onClick?: MouseEventHandler<HTMLButtonElement>;
+}
+
+const MobileRankingExpandIcon = ({expanded, onClick}: MobileRankingExpandIconProps) => (
+    <button
+        type="button"
+        onClick={onClick}
+        aria-expanded={expanded}
+        aria-label={expanded ? "Collapse row details" : "Expand row details"}
+        className="mobile-ranking-table__expand-icon"
+    >
+        {expanded ? <IconDown /> : <IconRight />}
+    </button>
+);
+
 /** Compact touch table for ranking-style data. */
 export const MobileRankingTable = <T,>({
     data,
@@ -35,9 +67,7 @@ export const MobileRankingTable = <T,>({
     onExpandedRowKeysChange,
     rowClassName,
 }: MobileRankingTableProps<T>) => {
-    type MobileRankingRow = {key: string; record: T; index: number};
-
-    const rows = useMemo<MobileRankingRow[]>(
+    const rows = useMemo<MobileRankingRow<T>[]>(
         () => data.map((record, index) => ({key: String(rowKey(record, index)), record, index})),
         [data, rowKey],
     );
@@ -48,10 +78,7 @@ export const MobileRankingTable = <T,>({
         [controlledExpandedRowKeys],
     );
     const expandedRowKeys = normalizedControlledExpandedRowKeys ?? uncontrolledExpandedRowKeys;
-    const validExpandedRowKeys = useMemo(
-        () => expandedRowKeys.filter((key) => dataKeys.has(key)),
-        [dataKeys, expandedRowKeys],
-    );
+    const validExpandedRowKeys = useMemo(() => expandedRowKeys.filter((key) => dataKeys.has(key)), [dataKeys, expandedRowKeys]);
 
     useEffect(() => {
         if (validExpandedRowKeys.length !== expandedRowKeys.length) {
@@ -70,7 +97,7 @@ export const MobileRankingTable = <T,>({
         onExpandedRowKeysChange?.(normalizedKeys);
     };
 
-    const columns: TableColumnProps<MobileRankingRow>[] = [
+    const columns: TableColumnProps<MobileRankingRow<T>>[] = [
         {
             title: "Rank",
             width: 54,
@@ -78,19 +105,7 @@ export const MobileRankingTable = <T,>({
         },
         {
             title: "Athlete/Team",
-            render: (_value, row) => (
-                <span
-                    className="mobile-ranking-table__name"
-                    onClick={(event) => {
-                        const target = event.target as Element;
-                        if (target.closest("a,button,[role='button']")) {
-                            event.stopPropagation();
-                        }
-                    }}
-                >
-                    {name(row.record, row.index)}
-                </span>
-            ),
+            render: (_value, row) => <span className="mobile-ranking-table__name">{name(row.record, row.index)}</span>,
         },
         {
             title: "Result",
@@ -112,31 +127,14 @@ export const MobileRankingTable = <T,>({
                     pagination={false}
                     tableLayoutFixed
                     expandedRowKeys={validExpandedRowKeys}
-                    expandedRowRender={(row) => (
-                        <div className="mobile-ranking-table__details">{details(row.record, row.index)}</div>
-                    )}
+                    expandedRowRender={createExpandedRowRenderer(details)}
                     rowClassName={(row) => rowClassName?.(row.record, row.index) ?? ""}
                     onExpandedRowsChange={(keys) => updateExpandedRows(keys)}
                     expandProps={{
                         width: 44,
                         columnTitle: "",
                         expandRowByClick: true,
-                        icon: (props) => {
-                            const {expanded, onClick} = props as typeof props & {
-                                onClick?: MouseEventHandler<HTMLButtonElement>;
-                            };
-                            return (
-                                <button
-                                    type="button"
-                                    onClick={onClick}
-                                    aria-expanded={expanded}
-                                    aria-label={expanded ? "Collapse row details" : "Expand row details"}
-                                    className="mobile-ranking-table__expand-icon"
-                                >
-                                    {expanded ? <IconDown /> : <IconRight />}
-                                </button>
-                            );
-                        },
+                        icon: MobileRankingExpandIcon,
                     }}
                 />
             ) : null}

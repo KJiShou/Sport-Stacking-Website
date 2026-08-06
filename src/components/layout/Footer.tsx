@@ -1,7 +1,6 @@
 import {Grid, Typography} from "@arco-design/web-react";
-import type {ReactNode} from "react";
 import {IconEmail, IconFacebook, IconLocation, IconPhone} from "@arco-design/web-react/icon";
-import type * as React from "react";
+import type {FC, ReactNode} from "react";
 
 const {Title, Text} = Typography;
 const {Row, Col} = Grid;
@@ -28,7 +27,7 @@ const FooterSection = ({icon, title, children}: FooterSectionProps) => (
     </Col>
 );
 
-const WhatsAppIcon: React.FC = () => (
+const WhatsAppIcon: FC = () => (
     <svg
         width="24"
         height="24"
@@ -48,7 +47,7 @@ const WhatsAppIcon: React.FC = () => (
     </svg>
 );
 
-const Footer: React.FC = () => {
+const Footer: FC = () => {
     return (
         <footer className="app-footer bg-white">
             <div style={{maxWidth: "1400px", margin: "0 auto"}}>

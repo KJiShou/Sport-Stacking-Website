@@ -30,6 +30,7 @@ import {
     Statistic,
     Switch,
     Table,
+    type TableColumnProps,
     Typography,
 } from "@arco-design/web-react";
 import TabPane from "@arco-design/web-react/es/Tabs/tab-pane";
@@ -59,7 +60,7 @@ const AvatarWithLoading = ({src, size = 192}: {src: string; size?: number}) => {
 import dayjs from "dayjs";
 import {EmailAuthProvider, linkWithCredential} from "firebase/auth";
 import type {Timestamp} from "firebase/firestore";
-import {useEffect, useState} from "react";
+import {type ReactNode, useEffect, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import type {z} from "zod";
 
@@ -98,6 +99,208 @@ const resolvePrimaryProfile = (profiles: FirestoreUser[], firebaseUid?: string |
             return leftKey.localeCompare(rightKey) || left.id.localeCompare(right.id);
         })[0]
     );
+};
+
+type UserBestTimeRecord = {
+    event: "3-3-3" | "3-6-3" | "Cycle";
+    time: number;
+    season: string | null;
+    updatedAt: Date | null;
+};
+
+type UserTournamentRecord = {
+    tournamentId: string;
+    tournamentName: string | null;
+    events: string[];
+    registrationDate: Date | null;
+    prelimRank: number | null;
+    finalRank: number | null;
+    prelimOverall: number | null;
+    finalOverall: number | null;
+};
+
+const buildUserBestTimes = (user: FirestoreUser | null): UserBestTimeRecord[] => {
+    const events: UserBestTimeRecord["event"][] = ["3-3-3", "3-6-3", "Cycle"];
+    return events.flatMap((event) => {
+        const record = user?.best_times?.[event];
+        if (!record || !("time" in record) || !record.time) return [];
+
+        let updatedAt: Date | null = null;
+        if (record.updated_at) {
+            if (record.updated_at instanceof Date) {
+                updatedAt = record.updated_at;
+            } else if ("toDate" in record.updated_at && typeof record.updated_at.toDate === "function") {
+                updatedAt = record.updated_at.toDate();
+            }
+        }
+
+        return [
+            {
+                event,
+                time: record.time,
+                season: record.season ?? null,
+                updatedAt,
+            },
+        ];
+    });
+};
+
+const buildUserTournamentRecords = (
+    user: FirestoreUser | null,
+    tournamentNames: Record<string, string | null>,
+    tournamentStartDates: Record<string, Date | null>,
+): UserTournamentRecord[] =>
+    (user?.registration_records ?? [])
+        .filter((reg) => reg.status === "approved")
+        .map((reg) => {
+            const registrationDate = toDate(reg.registration_date);
+            return {
+                tournamentId: reg.tournament_id,
+                tournamentName: tournamentNames[reg.tournament_id] ?? null,
+                events: reg.events ?? [],
+                registrationDate: tournamentStartDates[reg.tournament_id] ?? registrationDate,
+                prelimRank: toNumber(reg.prelim_rank),
+                finalRank: toNumber(reg.final_rank),
+                prelimOverall: toNumber(reg.prelim_overall_result),
+                finalOverall: toNumber(reg.final_overall_result),
+            };
+        });
+
+const USER_BEST_TIME_COLUMNS: TableColumnProps<UserBestTimeRecord>[] = [
+    {title: "Event", dataIndex: "event", width: 120},
+    {
+        title: "Best Time",
+        dataIndex: "time",
+        width: 150,
+        render: (time: number) => (
+            <span className="font-semibold text-lg">{typeof time === "number" ? time.toFixed(3) : "-"}</span>
+        ),
+    },
+    {title: "Season", dataIndex: "season", width: 120, render: (season: string | null) => season ?? "—"},
+    {
+        title: "Last Updated",
+        dataIndex: "updatedAt",
+        width: 150,
+        render: (date: Date | null) => (date ? dayjs(date).format("DD/MM/YYYY") : "—"),
+    },
+];
+
+const USER_TOURNAMENT_COLUMNS: TableColumnProps<UserTournamentRecord>[] = [
+    {
+        title: "Date",
+        dataIndex: "registrationDate",
+        width: 150,
+        render: (date: Date | null) => (date ? dayjs(date).format("DD/MM/YYYY") : "—"),
+    },
+    {title: "Tournament", dataIndex: "tournamentName", width: 260, render: (name: string | null) => name ?? "Unknown tournament"},
+    {title: "Events", dataIndex: "events", width: 220, render: (events: string[]) => events.join(", ") || "—"},
+    {title: "Prelim Rank", dataIndex: "prelimRank", width: 120, render: (rank: number | null) => (rank ? `#${rank}` : "—")},
+    {
+        title: "Prelim Overall",
+        dataIndex: "prelimOverall",
+        width: 150,
+        render: (time: number | null) => (time ? time.toFixed(3) : "—"),
+    },
+    {title: "Final Rank", dataIndex: "finalRank", width: 120, render: (rank: number | null) => (rank ? `#${rank}` : "—")},
+    {
+        title: "Final Overall",
+        dataIndex: "finalOverall",
+        width: 150,
+        render: (time: number | null) => (time ? time.toFixed(3) : "—"),
+    },
+];
+
+const UserBestPerformances = ({records, isMobile}: {records: UserBestTimeRecord[]; isMobile: boolean}) => {
+    let content: ReactNode;
+    if (records.length === 0) {
+        content = <Empty description="No best times recorded yet." />;
+    } else if (isMobile) {
+        content = (
+            <div className="user-profile-mobile-cards">
+                {records.map((record) => (
+                    <div key={record.event} className="user-profile-mobile-card">
+                        <div className="user-profile-mobile-card__header">
+                            <strong>{record.event}</strong>
+                            <span className="user-profile-mobile-card__value">{record.time.toFixed(3)}</span>
+                        </div>
+                        <div className="user-profile-mobile-card__details">
+                            <span>
+                                <small>Season</small>
+                                {record.season ?? "—"}
+                            </span>
+                            <span>
+                                <small>Last updated</small>
+                                {record.updatedAt ? dayjs(record.updatedAt).format("DD/MM/YYYY") : "—"}
+                            </span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+    } else {
+        content = (
+            <div className="mobile-table-scroll">
+                <Table
+                    rowKey="event"
+                    columns={USER_BEST_TIME_COLUMNS}
+                    data={records}
+                    pagination={false}
+                    scroll={{x: true}}
+                    border={false}
+                />
+            </div>
+        );
+    }
+
+    return <>{content}</>;
+};
+
+const UserTournamentParticipation = ({records, isMobile}: {records: UserTournamentRecord[]; isMobile: boolean}) => {
+    let content: ReactNode;
+    if (records.length === 0) {
+        content = <Empty description="No tournament participation records found." />;
+    } else if (isMobile) {
+        content = (
+            <div className="user-profile-mobile-cards">
+                {records.map((record) => (
+                    <div key={record.tournamentId} className="user-profile-mobile-card">
+                        <div className="user-profile-mobile-card__header">
+                            <strong className="break-words">{record.tournamentName ?? "Unknown tournament"}</strong>
+                            <span>{record.registrationDate ? dayjs(record.registrationDate).format("DD/MM/YYYY") : "—"}</span>
+                        </div>
+                        <div className="user-profile-mobile-card__details">
+                            <span>
+                                <small>Prelim rank / time</small>
+                                {record.prelimRank ? `#${record.prelimRank}` : "—"} /{" "}
+                                {record.prelimOverall ? record.prelimOverall.toFixed(3) : "—"}
+                            </span>
+                            <span>
+                                <small>Final rank / time</small>
+                                {record.finalRank ? `#${record.finalRank}` : "—"} /{" "}
+                                {record.finalOverall ? record.finalOverall.toFixed(3) : "—"}
+                            </span>
+                        </div>
+                        <div className="user-profile-mobile-card__events">{record.events.join(", ") || "No events"}</div>
+                    </div>
+                ))}
+            </div>
+        );
+    } else {
+        content = (
+            <div className="w-full overflow-x-auto">
+                <Table
+                    rowKey="tournamentId"
+                    columns={USER_TOURNAMENT_COLUMNS}
+                    data={records}
+                    pagination={{pageSize: 10}}
+                    scroll={{x: "max-content"}}
+                    border={false}
+                />
+            </div>
+        );
+    }
+
+    return <>{content}</>;
 };
 
 export default function RegisterPage() {
@@ -213,7 +416,8 @@ export default function RegisterPage() {
 
         Modal.confirm({
             title: "Remove Profile",
-            content: "This will unlink the profile from your account while keeping its Global ID, personal bests, and tournament history.",
+            content:
+                "This will unlink the profile from your account while keeping its Global ID, personal bests, and tournament history.",
             okText: "Remove Profile",
             cancelText: "Keep Profile",
             okButtonProps: {status: "danger"},
@@ -222,7 +426,7 @@ export default function RegisterPage() {
                 setRemoveLoading(true);
                 try {
                     const fallbackProfile = primaryProfile ?? profiles.find((profile) => profile.id !== id) ?? null;
-                    const preferredProfileId = activeId === id ? fallbackProfile?.id : activeId ?? undefined;
+                    const preferredProfileId = activeId === id ? fallbackProfile?.id : (activeId ?? undefined);
                     await releaseOwnedProfile(id);
                     await refreshProfiles(preferredProfileId);
                     Message.success("Profile removed from your account");
@@ -480,6 +684,34 @@ export default function RegisterPage() {
         }
     };
 
+    const userBestTimes = buildUserBestTimes(user);
+    const userTournamentRecords = buildUserTournamentRecords(user, tournamentNames, tournamentStartDates);
+    let accountAction: ReactNode;
+    if (isPrimaryProfile && profiles.length > 1) {
+        accountAction = (
+            <div className="w-full">
+                <Button className="w-full" type="outline" status="danger" disabled>
+                    Delete Account
+                </Button>
+                <Text type="secondary" className="mt-2 block text-center text-xs">
+                    Multi-profile accounts must contact an administrator to delete the account.
+                </Text>
+            </div>
+        );
+    } else if (isPrimaryProfile) {
+        accountAction = (
+            <Button className="w-full" type="outline" status="danger" onClick={confirm}>
+                Delete Account
+            </Button>
+        );
+    } else {
+        accountAction = (
+            <Button className="w-full" type="outline" status="danger" onClick={confirmRemoveProfile} loading={removeLoading}>
+                Remove Profile
+            </Button>
+        );
+    }
+
     return (
         <div className="w-full">
             <MobilePageHeader title="User Profile" actions={profileSelector} className="p-0 md:p-6 xl:p-10" />
@@ -632,73 +864,78 @@ export default function RegisterPage() {
 
                                     {isPrimaryProfile &&
                                         (hasPasswordProvider ? (
-                                        <TabPane title="Security Settings" key="security">
-                                            <Form
-                                                form={secForm}
-                                                layout="vertical"
-                                                onSubmit={handleSecuritySubmit}
-                                                autoComplete="off"
-                                                requiredSymbol={false}
-                                            >
-                                                <Form.Item
-                                                    label="Current Password"
-                                                    field="currentPassword"
-                                                    rules={[{required: true, message: "Enter current password"}]}
+                                            <TabPane title="Security Settings" key="security">
+                                                <Form
+                                                    form={secForm}
+                                                    layout="vertical"
+                                                    onSubmit={handleSecuritySubmit}
+                                                    autoComplete="off"
+                                                    requiredSymbol={false}
                                                 >
-                                                    <Input.Password placeholder="Current Password" />
-                                                </Form.Item>
-                                                <Form.Item
-                                                    label="New Password"
-                                                    field="newPassword"
-                                                    rules={[{required: true, message: "Enter new password"}]}
+                                                    <Form.Item
+                                                        label="Current Password"
+                                                        field="currentPassword"
+                                                        rules={[{required: true, message: "Enter current password"}]}
+                                                    >
+                                                        <Input.Password placeholder="Current Password" />
+                                                    </Form.Item>
+                                                    <Form.Item
+                                                        label="New Password"
+                                                        field="newPassword"
+                                                        rules={[{required: true, message: "Enter new password"}]}
+                                                    >
+                                                        <Input.Password placeholder="New Password" />
+                                                    </Form.Item>
+                                                    <Form.Item
+                                                        label="Confirm Password"
+                                                        field="confirmPassword"
+                                                        rules={[{required: true, message: "Confirm new password"}]}
+                                                    >
+                                                        <Input.Password placeholder="Confirm Password" />
+                                                    </Form.Item>
+                                                    <div className="w-full mx-auto flex flex-col items-center">
+                                                        <Button type="primary" long htmlType="submit" loading={secLoading}>
+                                                            Change Password
+                                                        </Button>
+                                                    </div>
+                                                </Form>
+                                            </TabPane>
+                                        ) : (
+                                            <TabPane title="Add Password" key="add-password">
+                                                <Form
+                                                    form={addPasswordForm}
+                                                    layout="vertical"
+                                                    onSubmit={handleAddPasswordSubmit}
+                                                    autoComplete="off"
+                                                    requiredSymbol={false}
                                                 >
-                                                    <Input.Password placeholder="New Password" />
-                                                </Form.Item>
-                                                <Form.Item
-                                                    label="Confirm Password"
-                                                    field="confirmPassword"
-                                                    rules={[{required: true, message: "Confirm new password"}]}
-                                                >
-                                                    <Input.Password placeholder="Confirm Password" />
-                                                </Form.Item>
-                                                <div className="w-full mx-auto flex flex-col items-center">
-                                                    <Button type="primary" long htmlType="submit" loading={secLoading}>
-                                                        Change Password
-                                                    </Button>
-                                                </div>
-                                            </Form>
-                                        </TabPane>
-                                    ) : (
-                                        <TabPane title="Add Password" key="add-password">
-                                            <Form
-                                                form={addPasswordForm}
-                                                layout="vertical"
-                                                onSubmit={handleAddPasswordSubmit}
-                                                autoComplete="off"
-                                                requiredSymbol={false}
-                                            >
-                                                <Form.Item
-                                                    label="New Password"
-                                                    field="newPassword"
-                                                    rules={[{required: true, message: "Enter a password"}]}
-                                                >
-                                                    <Input.Password placeholder="Create a password" />
-                                                </Form.Item>
-                                                <Form.Item
-                                                    label="Confirm Password"
-                                                    field="confirmPassword"
-                                                    rules={[{required: true, message: "Confirm your password"}]}
-                                                >
-                                                    <Input.Password placeholder="Repeat password" />
-                                                </Form.Item>
-                                                <div className="w-full mx-auto flex flex-col items-center">
-                                                    <Button type="primary" long htmlType="submit" loading={addPasswordLoading}>
-                                                        Add Password
-                                                    </Button>
-                                                </div>
-                                            </Form>
-                                        </TabPane>
-                                    ))}
+                                                    <Form.Item
+                                                        label="New Password"
+                                                        field="newPassword"
+                                                        rules={[{required: true, message: "Enter a password"}]}
+                                                    >
+                                                        <Input.Password placeholder="Create a password" />
+                                                    </Form.Item>
+                                                    <Form.Item
+                                                        label="Confirm Password"
+                                                        field="confirmPassword"
+                                                        rules={[{required: true, message: "Confirm your password"}]}
+                                                    >
+                                                        <Input.Password placeholder="Repeat password" />
+                                                    </Form.Item>
+                                                    <div className="w-full mx-auto flex flex-col items-center">
+                                                        <Button
+                                                            type="primary"
+                                                            long
+                                                            htmlType="submit"
+                                                            loading={addPasswordLoading}
+                                                        >
+                                                            Add Password
+                                                        </Button>
+                                                    </div>
+                                                </Form>
+                                            </TabPane>
+                                        ))}
                                 </ResponsiveTabs>
                             </div>
                         </div>
@@ -752,26 +989,7 @@ export default function RegisterPage() {
                             >
                                 Edit Profile
                             </Button>
-                            {isPrimaryProfile ? (
-                                profiles.length > 1 ? (
-                                    <div className="w-full">
-                                        <Button className="w-full" type="outline" status="danger" disabled>
-                                            Delete Account
-                                        </Button>
-                                        <Text type="secondary" className="mt-2 block text-center text-xs">
-                                            Multi-profile accounts must contact an administrator to delete the account.
-                                        </Text>
-                                    </div>
-                                ) : (
-                                    <Button className="w-full" type="outline" status="danger" onClick={confirm}>
-                                        Delete Account
-                                    </Button>
-                                )
-                            ) : (
-                                <Button className="w-full" type="outline" status="danger" onClick={confirmRemoveProfile} loading={removeLoading}>
-                                    Remove Profile
-                                </Button>
-                            )}
+                            {accountAction}
                         </div>
 
                         {/* 右边：包一层，让它整体高度统一 */}
@@ -782,196 +1000,14 @@ export default function RegisterPage() {
                                     <Title heading={4} className="!mb-4">
                                         Best Performances
                                     </Title>
-                                    {(() => {
-                                        type EventType = "3-3-3" | "3-6-3" | "Cycle";
-                                        const events: EventType[] = ["3-3-3", "3-6-3", "Cycle"];
-                                        const bestTimes = events
-                                            .map((event) => {
-                                                const record = user?.best_times?.[event];
-                                                if (!record || !("time" in record) || !record.time) return null;
-                                                return {
-                                                    event,
-                                                    time: record.time,
-                                                    season: record.season ?? null,
-                                                    updatedAt: record.updated_at
-                                                        ? record.updated_at instanceof Date
-                                                            ? record.updated_at
-                                                            : "toDate" in record.updated_at
-                                                              ? record.updated_at.toDate()
-                                                              : null
-                                                        : null,
-                                                };
-                                            })
-                                            .filter(Boolean);
-                                        return bestTimes.length === 0 ? (
-                                            <Empty description="No best times recorded yet." />
-                                        ) : isMobile ? (
-                                            <div className="user-profile-mobile-cards">
-                                                {bestTimes.map((record) =>
-                                                    record ? (
-                                                        <div key={record.event} className="user-profile-mobile-card">
-                                                            <div className="user-profile-mobile-card__header">
-                                                                <strong>{record.event}</strong>
-                                                                <span className="user-profile-mobile-card__value">
-                                                                    {typeof record.time === "number" ? record.time.toFixed(3) : "—"}
-                                                                </span>
-                                                            </div>
-                                                            <div className="user-profile-mobile-card__details">
-                                                                <span>
-                                                                    <small>Season</small>
-                                                                    {record.season ?? "—"}
-                                                                </span>
-                                                                <span>
-                                                                    <small>Last updated</small>
-                                                                    {record.updatedAt ? dayjs(record.updatedAt).format("DD/MM/YYYY") : "—"}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    ) : null,
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="mobile-table-scroll">
-                                                <Table
-                                                    rowKey="event"
-                                                    columns={[
-                                                        {title: "Event", dataIndex: "event", width: 120},
-                                                        {
-                                                            title: "Best Time",
-                                                            dataIndex: "time",
-                                                            width: 150,
-                                                            render: (time) => (
-                                                                <span className="font-semibold text-lg">
-                                                                    {typeof time === "number" ? time.toFixed(3) : "-"}
-                                                                </span>
-                                                            ),
-                                                        },
-                                                        {
-                                                            title: "Season",
-                                                            dataIndex: "season",
-                                                            width: 120,
-                                                            render: (season: string | null) => season ?? "—",
-                                                        },
-                                                        {
-                                                            title: "Last Updated",
-                                                            dataIndex: "updatedAt",
-                                                            width: 150,
-                                                            render: (date: Date | null) => (date ? dayjs(date).format("DD/MM/YYYY") : "—"),
-                                                        },
-                                                    ]}
-                                                    data={bestTimes}
-                                                    pagination={false}
-                                                    scroll={{x: true}}
-                                                    border={false}
-                                                />
-                                            </div>
-                                        );
-                                    })()}
+                                    <UserBestPerformances records={userBestTimes} isMobile={isMobile} />
                                 </div>
                                 {/* Tournament Participation Section (like AthleteProfile) */}
                                 <div className="bg-white flex flex-col w-full gap-6 items-start p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                                     <Title heading={4} className="!mb-4">
                                         Tournament Participation
                                     </Title>
-                                    {(() => {
-                                        const tournaments = (user?.registration_records ?? [])
-                                            .filter((reg) => reg.status === "approved")
-                                            .map((reg) => {
-                                                const registrationDate = toDate(reg.registration_date);
-                                                return {
-                                                    tournamentId: reg.tournament_id,
-                                                    tournamentName: tournamentNames[reg.tournament_id] ?? null,
-                                                    events: reg.events ?? [],
-                                                    registrationDate: tournamentStartDates[reg.tournament_id] ?? registrationDate,
-                                                    status: reg.status ?? "pending",
-                                                    prelimRank: toNumber(reg.prelim_rank),
-                                                    finalRank: toNumber(reg.final_rank),
-                                                    prelimOverall: toNumber(reg.prelim_overall_result),
-                                                    finalOverall: toNumber(reg.final_overall_result),
-                                                };
-                                            });
-                                        return tournaments.length === 0 ? (
-                                            <Empty description="No tournament participation records found." />
-                                        ) : isMobile ? (
-                                            <div className="user-profile-mobile-cards">
-                                                {tournaments.map((record) => (
-                                                    <div key={record.tournamentId} className="user-profile-mobile-card">
-                                                        <div className="user-profile-mobile-card__header">
-                                                            <strong className="break-words">
-                                                                {record.tournamentName ?? "Unknown tournament"}
-                                                            </strong>
-                                                            <span>{record.registrationDate ? dayjs(record.registrationDate).format("DD/MM/YYYY") : "—"}</span>
-                                                        </div>
-                                                        <div className="user-profile-mobile-card__details">
-                                                            <span>
-                                                                <small>Prelim rank / time</small>
-                                                                {record.prelimRank ? `#${record.prelimRank}` : "—"} / {record.prelimOverall ? record.prelimOverall.toFixed(3) : "—"}
-                                                            </span>
-                                                            <span>
-                                                                <small>Final rank / time</small>
-                                                                {record.finalRank ? `#${record.finalRank}` : "—"} / {record.finalOverall ? record.finalOverall.toFixed(3) : "—"}
-                                                            </span>
-                                                        </div>
-                                                        <div className="user-profile-mobile-card__events">{record.events.join(", ") || "No events"}</div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="w-full overflow-x-auto">
-                                                <Table
-                                                    rowKey="tournamentId"
-                                                    columns={[
-                                                        {
-                                                            title: "Date",
-                                                            dataIndex: "registrationDate",
-                                                            width: 150,
-                                                            render: (date) => (date ? dayjs(date).format("DD/MM/YYYY") : "—"),
-                                                        },
-                                                        {
-                                                            title: "Tournament",
-                                                            dataIndex: "tournamentName",
-                                                            width: 260,
-                                                            render: (name: string | null) => name ?? "Unknown tournament",
-                                                        },
-                                                        {
-                                                            title: "Events",
-                                                            dataIndex: "events",
-                                                            width: 220,
-                                                            render: (events: string[]) => events.join(", ") || "—",
-                                                        },
-                                                        {
-                                                            title: "Prelim Rank",
-                                                            dataIndex: "prelimRank",
-                                                            width: 120,
-                                                            render: (rank) => (rank ? `#${rank}` : "—"),
-                                                        },
-                                                        {
-                                                            title: "Prelim Overall",
-                                                            dataIndex: "prelimOverall",
-                                                            width: 150,
-                                                            render: (time: number | null) => (time ? time.toFixed(3) : "—"),
-                                                        },
-                                                        {
-                                                            title: "Final Rank",
-                                                            dataIndex: "finalRank",
-                                                            width: 120,
-                                                            render: (rank) => (rank ? `#${rank}` : "—"),
-                                                        },
-                                                        {
-                                                            title: "Final Overall",
-                                                            dataIndex: "finalOverall",
-                                                            width: 150,
-                                                            render: (time: number | null) => (time ? time.toFixed(3) : "—"),
-                                                        },
-                                                    ]}
-                                                    data={tournaments}
-                                                    pagination={{pageSize: 10}}
-                                                    scroll={{x: "max-content"}}
-                                                    border={false}
-                                                />
-                                            </div>
-                                        );
-                                    })()}
+                                    <UserTournamentParticipation records={userTournamentRecords} isMobile={isMobile} />
                                 </div>
                                 {user?.roles && (
                                     <div className="bg-white flex flex-col w-full gap-4 items-start p-4 md:p-6 xl:p-10 shadow-lg md:rounded-lg">

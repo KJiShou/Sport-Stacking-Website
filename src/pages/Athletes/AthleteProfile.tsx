@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from "react";
+import {type ReactNode, useEffect, useMemo, useState} from "react";
 import {useParams} from "react-router-dom";
 
 import {
@@ -50,6 +50,103 @@ interface TournamentRecord {
 }
 
 type RegistrationRecord = NonNullable<FirestoreUser["registration_records"]>[number];
+
+interface BestPerformancesSectionProps {
+    bestTimes: BestTimeRecord[];
+    isMobile: boolean;
+    columns: TableColumnProps<BestTimeRecord>[];
+}
+
+const BestPerformancesSection = ({bestTimes, isMobile, columns}: BestPerformancesSectionProps) => {
+    let content: ReactNode;
+    if (bestTimes.length === 0) {
+        content = <Empty description="No best times recorded yet." />;
+    } else if (isMobile) {
+        content = (
+            <div className="athlete-profile-cards">
+                {bestTimes.map((record) => (
+                    <div key={record.event} className="athlete-profile-card">
+                        <div className="flex items-center justify-between gap-2">
+                            <Text className="font-semibold">{record.event}</Text>
+                            <Tag color="green">{record.rank ? `#${record.rank}` : "Unranked"}</Tag>
+                        </div>
+                        <div className="mt-2 text-xl font-bold">{formatStackingTime(record.time)}</div>
+                        <Text type="secondary">
+                            {record.season ?? "No season"} · Updated {formatDateSafe(record.updatedAt)}
+                        </Text>
+                    </div>
+                ))}
+            </div>
+        );
+    } else {
+        content = (
+            <div className="mobile-table-scroll">
+                <Table rowKey="event" columns={columns} data={bestTimes} pagination={false} scroll={{x: true}} border={false} />
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full">
+            <Title heading={4} className="!mb-4">
+                Best Performances
+            </Title>
+            {content}
+        </div>
+    );
+};
+
+interface TournamentParticipationSectionProps {
+    tournaments: TournamentRecord[];
+    isMobile: boolean;
+    columns: TableColumnProps<TournamentRecord>[];
+}
+
+const TournamentParticipationSection = ({tournaments, isMobile, columns}: TournamentParticipationSectionProps) => {
+    let content: ReactNode;
+    if (tournaments.length === 0) {
+        content = <Empty description="No tournament participation records found." />;
+    } else if (isMobile) {
+        content = (
+            <div className="athlete-profile-cards">
+                {tournaments.map((record) => (
+                    <div key={record.tournamentId} className="athlete-profile-card">
+                        <div className="font-semibold break-words">{record.tournamentName ?? "Unknown tournament"}</div>
+                        <Text type="secondary">{formatDateSafe(record.registrationDate)}</Text>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                            <span>Prelim: {record.prelimRank ? `#${record.prelimRank}` : "—"}</span>
+                            <span>Final: {record.finalRank ? `#${record.finalRank}` : "—"}</span>
+                            <span>Prelim time: {record.prelimOverall ? formatStackingTime(record.prelimOverall) : "—"}</span>
+                            <span>Final time: {record.finalOverall ? formatStackingTime(record.finalOverall) : "—"}</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+    } else {
+        content = (
+            <div className="mobile-table-scroll">
+                <Table
+                    rowKey="tournamentId"
+                    columns={columns}
+                    data={tournaments}
+                    pagination={{pageSize: 10}}
+                    scroll={{x: true}}
+                    border={false}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full">
+            <Title heading={4} className="!mb-4">
+                Tournament Participation
+            </Title>
+            {content}
+        </div>
+    );
+};
 
 const STATUS_COLORS: Record<string, string> = {
     verified: "green",
@@ -234,7 +331,9 @@ const AthleteProfilePage = () => {
             }),
         ).then((entries) => {
             if (!cancelled) {
-                setTournamentStartDates(Object.fromEntries(entries.map(({tournamentId, startDate}) => [tournamentId, startDate])));
+                setTournamentStartDates(
+                    Object.fromEntries(entries.map(({tournamentId, startDate}) => [tournamentId, startDate])),
+                );
                 setTournamentNames(Object.fromEntries(entries.map(({tournamentId, name}) => [tournamentId, name])));
             }
         });
@@ -456,83 +555,11 @@ const AthleteProfilePage = () => {
 
                 <Divider style={{margin: 0}} />
 
-                <div className="w-full">
-                    <Title heading={4} className="!mb-4">
-                        Best Performances
-                    </Title>
-                    {bestTimes.length === 0 ? (
-                        <Empty description="No best times recorded yet." />
-                    ) : isMobile ? (
-                        <div className="athlete-profile-cards">
-                            {bestTimes.map((record) => (
-                                <div key={record.event} className="athlete-profile-card">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <Text className="font-semibold">{record.event}</Text>
-                                        <Tag color="green">{record.rank ? `#${record.rank}` : "Unranked"}</Tag>
-                                    </div>
-                                    <div className="mt-2 text-xl font-bold">{formatStackingTime(record.time)}</div>
-                                    <Text type="secondary">
-                                        {record.season ?? "No season"} · Updated {formatDateSafe(record.updatedAt)}
-                                    </Text>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="mobile-table-scroll">
-                            <Table
-                                rowKey="event"
-                                columns={bestTimeColumns}
-                                data={bestTimes}
-                                pagination={false}
-                                scroll={{x: true}}
-                                border={false}
-                            />
-                        </div>
-                    )}
-                </div>
+                <BestPerformancesSection bestTimes={bestTimes} isMobile={isMobile} columns={bestTimeColumns} />
 
                 <Divider style={{margin: 0}} />
 
-                <div className="w-full">
-                    <Title heading={4} className="!mb-4">
-                        Tournament Participation
-                    </Title>
-                    {tournaments.length === 0 ? (
-                        <Empty description="No tournament participation records found." />
-                    ) : isMobile ? (
-                        <div className="athlete-profile-cards">
-                            {tournaments.map((record) => (
-                                <div key={record.tournamentId} className="athlete-profile-card">
-                                    <div className="font-semibold break-words">
-                                        {record.tournamentName ?? "Unknown tournament"}
-                                    </div>
-                                    <Text type="secondary">{formatDateSafe(record.registrationDate)}</Text>
-                                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                                        <span>Prelim: {record.prelimRank ? `#${record.prelimRank}` : "—"}</span>
-                                        <span>Final: {record.finalRank ? `#${record.finalRank}` : "—"}</span>
-                                        <span>
-                                            Prelim time: {record.prelimOverall ? formatStackingTime(record.prelimOverall) : "—"}
-                                        </span>
-                                        <span>
-                                            Final time: {record.finalOverall ? formatStackingTime(record.finalOverall) : "—"}
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="mobile-table-scroll">
-                            <Table
-                                rowKey="tournamentId"
-                                columns={tournamentColumns}
-                                data={tournaments}
-                                pagination={{pageSize: 10}}
-                                scroll={{x: true}}
-                                border={false}
-                            />
-                        </div>
-                    )}
-                </div>
+                <TournamentParticipationSection tournaments={tournaments} isMobile={isMobile} columns={tournamentColumns} />
             </div>
         </div>
     );

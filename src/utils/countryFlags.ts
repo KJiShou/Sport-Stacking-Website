@@ -225,6 +225,16 @@ const countryToCode: Record<string, string> = {
 };
 
 const knownCountryCodes = new Set(Object.values(countryToCode));
+const countryNameToCode = new Map(Object.entries(countryToCode).map(([name, code]) => [name.toLowerCase(), code]));
+
+const resolveCountryCode = (countryName: string | null | undefined): string | undefined => {
+    const normalizedName = countryName?.trim() ?? "";
+    if (normalizedName.length === 2) {
+        const normalizedCode = normalizedName.toUpperCase();
+        return knownCountryCodes.has(normalizedCode) ? normalizedCode : undefined;
+    }
+    return countryNameToCode.get(normalizedName.toLowerCase());
+};
 
 /**
  * Get flag icon URL from country code
@@ -244,13 +254,7 @@ export function getFlagIconUrl(countryCode: string, style: "1x1" | "4x3" = "4x3"
  * @returns Flag icon URL or empty string if not found
  */
 export function getCountryFlag(countryName: string | null | undefined, style: "1x1" | "4x3" = "4x3"): string {
-    const normalizedName = countryName?.trim() ?? "";
-    const code =
-        normalizedName.length === 2
-            ? knownCountryCodes.has(normalizedName.toUpperCase())
-                ? normalizedName.toUpperCase()
-                : undefined
-            : Object.entries(countryToCode).find(([name]) => name.toLowerCase() === normalizedName.toLowerCase())?.[1];
+    const code = resolveCountryCode(countryName);
     return code ? getFlagIconUrl(code, style) : "";
 }
 
@@ -260,12 +264,7 @@ export function getCountryFlag(countryName: string | null | undefined, style: "1
  * @returns ISO 3166-1 alpha-2 country code or undefined if not found
  */
 export function getCountryCode(countryName: string | null | undefined): string | undefined {
-    const normalizedName = countryName?.trim() ?? "";
-    if (normalizedName.length === 2) {
-        const normalizedCode = normalizedName.toUpperCase();
-        return knownCountryCodes.has(normalizedCode) ? normalizedCode : undefined;
-    }
-    return Object.entries(countryToCode).find(([name]) => name.toLowerCase() === normalizedName.toLowerCase())?.[1];
+    return resolveCountryCode(countryName);
 }
 
 /**

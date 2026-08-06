@@ -114,6 +114,31 @@ const getTeamRelayParticipantRange = (event?: ExpandedEvent, eventId?: string): 
     }
     return isTeamRelayEvent(event) ? {min: teamSize, max: teamSize + 1} : {min: teamSize, max: teamSize};
 };
+
+const getTeamLeaderLabel = (isParentChild: boolean, isDouble: boolean): string => {
+    if (isParentChild) return "Child Global ID";
+    if (isDouble) return "Double Leader Global ID";
+    return "Team Leader Global ID";
+};
+
+const getTeamMemberTooltip = (
+    requiredMemberCount: number | undefined,
+    maxMemberCount: number | undefined,
+    isTeamRelay: boolean,
+    isParentChild: boolean,
+): string => {
+    if (requiredMemberCount !== undefined) {
+        if (isTeamRelay) {
+            return `Enter ${requiredMemberCount} or ${maxMemberCount} team members (excluding the leader); the extra member may be a substitute`;
+        }
+        const memberSuffix = requiredMemberCount === 1 ? "" : "s";
+        return `Enter ${requiredMemberCount} team member${memberSuffix} (excluding the leader)`;
+    }
+    if (isParentChild) {
+        return "Enter parent's Global ID. The system will auto-verify the parent.";
+    }
+    return "Must Enter Team Member Global ID. Not include Team Leader Global ID";
+};
 const isNonScoringEvent = (event?: ExpandedEvent) => {
     const normalized = (event?.type ?? "").toLowerCase();
     return (
@@ -1432,29 +1457,17 @@ export default function RegisterTournamentPage() {
                                         const eventType = entry.event?.type ?? "";
                                         const lowerEventType = eventType.toLowerCase();
                                         const isParentChild = isParentChildEvent(entry.event, eventId, eventLabel);
-                                        const requiredTeamSize =
-                                            entry.event?.teamSize ??
-                                            (isParentChild
-                                                ? 2
-                                                : lowerEventType === "double"
-                                                  ? 2
-                                                  : lowerEventType === "team relay"
-                                                    ? 4
-                                                    : undefined);
+                                        const requiredTeamSize = getFallbackTeamSize(entry.event, eventId);
                                         const requiredMemberCount =
                                             requiredTeamSize !== undefined ? Math.max(requiredTeamSize - 1, 0) : undefined;
                                         const maxMemberCount =
                                             requiredTeamSize !== undefined
-                                                ? Math.max(requiredTeamSize - 1, 0) + (lowerEventType === "team relay" ? 1 : 0)
+                                                ? Math.max(requiredTeamSize - 1, 0) + (isTeamRelayEvent(entry.event) ? 1 : 0)
                                                 : undefined;
                                         const isDoubleEvent = lowerEventType === "double";
                                         const isPairEvent = isDoubleEvent || isParentChild;
                                         const teamNameLabel = isPairEvent ? "Name" : "Team Name";
-                                        const teamLeaderLabel = isParentChild
-                                            ? "Child Global ID"
-                                            : isDoubleEvent
-                                              ? "Double Leader Global ID"
-                                              : "Team Leader Global ID";
+                                        const teamLeaderLabel = getTeamLeaderLabel(isParentChild, isDoubleEvent);
                                         const teamMemberLabel = isDoubleEvent ? "Double Partner Member" : "Team Member";
 
                                         return (
@@ -1565,17 +1578,12 @@ export default function RegisterTournamentPage() {
                                                                     <div>
                                                                         {isParentChild ? "Parent Global ID" : teamMemberLabel}
                                                                         <Tooltip
-                                                                            content={
-                                                                                requiredMemberCount !== undefined
-                                                                                    ? lowerEventType === "team relay"
-                                                                                        ? `Enter ${requiredMemberCount} or ${maxMemberCount} team members (excluding the leader); the extra member may be a substitute`
-                                                                                        : `Enter ${requiredMemberCount} team member${
-                                                                                              requiredMemberCount === 1 ? "" : "s"
-                                                                                          } (excluding the leader)`
-                                                                                    : isParentChild
-                                                                                      ? "Enter parent's Global ID. The system will auto-verify the parent."
-                                                                                      : "Must Enter Team Member Global ID. Not include Team Leader Global ID"
-                                                                            }
+                                                                            content={getTeamMemberTooltip(
+                                                                                requiredMemberCount,
+                                                                                maxMemberCount,
+                                                                                isTeamRelayEvent(entry.event),
+                                                                                isParentChild,
+                                                                            )}
                                                                         >
                                                                             <IconExclamationCircle
                                                                                 style={{

@@ -22,7 +22,7 @@ import {
     Typography,
     Upload,
 } from "@arco-design/web-react";
-import {IconCheck, IconDelete, IconExclamationCircle, IconFile, IconPlus} from "@arco-design/web-react/icon";
+import {IconDelete, IconPlus} from "@arco-design/web-react/icon";
 import MDEditor from "@uiw/react-md-editor";
 import dayjs from "dayjs";
 import type {Timestamp} from "firebase/firestore";

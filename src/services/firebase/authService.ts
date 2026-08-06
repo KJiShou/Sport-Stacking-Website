@@ -299,7 +299,7 @@ const resolveCallableErrorMessage = (error: unknown): string => {
         case "functions/failed-precondition":
             return message || "This profile cannot be removed from the account.";
         default:
-            return message || "Failed to transfer profile ownership.";
+            return message || "Failed to manage profile ownership.";
     }
 };
 

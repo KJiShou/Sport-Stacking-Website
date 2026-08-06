@@ -36,7 +36,6 @@ import {
     InputNumber,
     Link,
     Message,
-    Modal,
     Popconfirm,
     Popover,
     Result,
@@ -165,6 +164,134 @@ const getRankColor = (index: number): string => {
 };
 
 const OVERALL_RANKING_EVENT_TYPES = new Set(["Individual", "Open Age Individual"]);
+
+const renderFinalistTag = (classification?: FinalClassification) => {
+    if (!classification) {
+        return <Text type="secondary">-</Text>;
+    }
+
+    const visualStyle = FINALIST_VISUAL_STYLES[classification];
+    return (
+        <Tag
+            style={{
+                backgroundColor: visualStyle.surface,
+                borderColor: visualStyle.border,
+                color: visualStyle.text,
+            }}
+        >
+            {visualStyle.label}
+        </Tag>
+    );
+};
+
+const getFinalistRowClassName = (recordId: string | undefined, classificationMap: FinalistClassificationMap): string => {
+    const classification = recordId ? classificationMap[recordId] : undefined;
+    return classification ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}` : "";
+};
+
+const createFinalistRowClassNameRenderer =
+    <T extends {id: string}>(classificationMap: FinalistClassificationMap) =>
+    (record: T) =>
+        getFinalistRowClassName(record.id, classificationMap);
+
+const createOverallMobileDetailsRenderer =
+    (finalistClassificationMap: FinalistClassificationMap) => (record: TournamentOverallRecord) => (
+        <div className="tournament-view-mobile-result-card__details">
+            <span className="country-cell">
+                <CountryFlag country={record.country} size="md" />
+                <span>{record.country?.trim() || "Unknown"}</span>
+            </span>
+            <span>Event: {record.code || "-"}</span>
+            <span>Status: {record.status === "verified" ? "Verified" : "Submitted"}</span>
+            <span>Age: {typeof record.age === "number" ? record.age : "-"}</span>
+            <div className="tournament-view-mobile-result-card__scores">
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">3-3-3</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">
+                        {formatAttemptTime(record.three_three_three)}
+                    </strong>
+                </div>
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">3-6-3</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">
+                        {formatAttemptTime(record.three_six_three)}
+                    </strong>
+                </div>
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">Cycle</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">{formatAttemptTime(record.cycle)}</strong>
+                </div>
+            </div>
+            {record.id && finalistClassificationMap[record.id] ? renderFinalistTag(finalistClassificationMap[record.id]) : null}
+        </div>
+    );
+
+const createTeamMobileDetailsRenderer =
+    (finalistClassificationMap: FinalistClassificationMap) => (record: TournamentTeamRecord) => (
+        <div className="tournament-view-mobile-result-card__details">
+            <span className="country-cell">
+                <CountryFlag country={record.country} size="md" />
+                <span>{record.country?.trim() || "Unknown"}</span>
+            </span>
+            <span>Event: {record.code || "-"}</span>
+            <span>Status: {record.status === "verified" ? "Verified" : "Submitted"}</span>
+            <span>Leader: {record.leader_id || "-"}</span>
+            <div className="tournament-view-mobile-result-card__scores">
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">Try 1</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">{formatAttemptTime(record.try1)}</strong>
+                </div>
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">Try 2</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">{formatAttemptTime(record.try2)}</strong>
+                </div>
+                <div className="tournament-view-mobile-result-card__score">
+                    <span className="tournament-view-mobile-result-card__score-label">Try 3</span>
+                    <strong className="tournament-view-mobile-result-card__score-value">{formatAttemptTime(record.try3)}</strong>
+                </div>
+            </div>
+            {record.id && finalistClassificationMap[record.id] ? renderFinalistTag(finalistClassificationMap[record.id]) : null}
+            {record.member_global_ids.length > 0 ? (
+                <span className="tournament-view-mobile-result-card__members">
+                    Members: {record.member_global_ids.join(", ")}
+                </span>
+            ) : null}
+        </div>
+    );
+
+const renderOverallMobileTableExternal = (
+    records: TournamentOverallRecord[],
+    finalistClassificationMap: FinalistClassificationMap = {},
+) => (
+    <div className="tournament-view-mobile-ranking-table">
+        <MobileRankingTable
+            data={records}
+            rowKey={(record) => record.id}
+            rank={(_record, index) => index + 1}
+            name={(record) => record.participant_name || record.participant_global_id}
+            result={(record) => formatTime(record.overall_time)}
+            rowClassName={createFinalistRowClassNameRenderer(finalistClassificationMap)}
+            details={createOverallMobileDetailsRenderer(finalistClassificationMap)}
+        />
+    </div>
+);
+
+const renderTeamMobileTableExternal = (
+    records: TournamentTeamRecord[],
+    finalistClassificationMap: FinalistClassificationMap = {},
+) => (
+    <div className="tournament-view-mobile-ranking-table">
+        <MobileRankingTable
+            data={records}
+            rowKey={(record) => record.id}
+            rank={(_record, index) => index + 1}
+            name={(record) => record.team_name}
+            result={(record) => formatAttemptTime(record.best_time)}
+            rowClassName={createFinalistRowClassNameRenderer(finalistClassificationMap)}
+            details={createTeamMobileDetailsRenderer(finalistClassificationMap)}
+        />
+    </div>
+);
 
 const isOverallRankingEvent = (event: TournamentEvent | null | undefined): boolean => {
     if (!event) return false;
@@ -846,135 +973,6 @@ export default function TournamentView() {
 
     const renderFormattedAttemptTime = (time: number) => <Text>{formatAttemptTime(time)}</Text>;
 
-    const renderFinalistTag = (classification?: FinalClassification) => {
-        if (!classification) {
-            return <Text type="secondary">-</Text>;
-        }
-
-        const visualStyle = FINALIST_VISUAL_STYLES[classification];
-        return (
-            <Tag
-                style={{
-                    backgroundColor: visualStyle.surface,
-                    borderColor: visualStyle.border,
-                    color: visualStyle.text,
-                }}
-            >
-                {visualStyle.label}
-            </Tag>
-        );
-    };
-
-    const getFinalistRowClassName = (recordId: string | undefined, classificationMap: FinalistClassificationMap) => {
-        const classification = recordId ? classificationMap[recordId] : undefined;
-        return classification ? `finalist-row ${FINALIST_VISUAL_STYLES[classification].rowClassName}` : "";
-    };
-
-    const renderOverallMobileTable = (
-        records: TournamentOverallRecord[],
-        finalistClassificationMap: FinalistClassificationMap = {},
-    ) => (
-        <div className="tournament-view-mobile-ranking-table">
-            <MobileRankingTable
-                data={records}
-                rowKey={(record) => record.id}
-                rank={(_record, index) => index + 1}
-                name={(record) => record.participant_name || record.participant_global_id}
-                result={(record) => formatTime(record.overall_time)}
-                rowClassName={(record) => getFinalistRowClassName(record.id, finalistClassificationMap)}
-                details={(record) => (
-                    <div className="tournament-view-mobile-result-card__details">
-                        <span className="country-cell">
-                            <CountryFlag country={record.country} size="md" />
-                            <span>{record.country?.trim() || "Unknown"}</span>
-                        </span>
-                        <span>Event: {record.code || "-"}</span>
-                        <span>Status: {record.status === "verified" ? "Verified" : "Submitted"}</span>
-                        <span>Age: {typeof record.age === "number" ? record.age : "-"}</span>
-                        <div className="tournament-view-mobile-result-card__scores">
-                            <div className="tournament-view-mobile-result-card__score">
-                                <span className="tournament-view-mobile-result-card__score-label">3-3-3</span>
-                                <strong className="tournament-view-mobile-result-card__score-value">
-                                    {formatAttemptTime(record.three_three_three)}
-                                </strong>
-                            </div>
-                            <div className="tournament-view-mobile-result-card__score">
-                                <span className="tournament-view-mobile-result-card__score-label">3-6-3</span>
-                                <strong className="tournament-view-mobile-result-card__score-value">
-                                    {formatAttemptTime(record.three_six_three)}
-                                </strong>
-                            </div>
-                            <div className="tournament-view-mobile-result-card__score">
-                                <span className="tournament-view-mobile-result-card__score-label">Cycle</span>
-                                <strong className="tournament-view-mobile-result-card__score-value">
-                                    {formatAttemptTime(record.cycle)}
-                                </strong>
-                            </div>
-                        </div>
-                        {record.id && finalistClassificationMap[record.id]
-                            ? renderFinalistTag(finalistClassificationMap[record.id])
-                            : null}
-                    </div>
-                )}
-            />
-        </div>
-    );
-
-    const renderTeamMobileTable = (
-        records: TournamentTeamRecord[],
-        finalistClassificationMap: FinalistClassificationMap = {},
-    ) => (
-        <div className="tournament-view-mobile-ranking-table">
-            <MobileRankingTable
-                data={records}
-                rowKey={(record) => record.id}
-                rank={(_record, index) => index + 1}
-                name={(record) => record.team_name}
-                result={(record) => formatAttemptTime(record.best_time)}
-                rowClassName={(record) => getFinalistRowClassName(record.id, finalistClassificationMap)}
-                details={(record) => (
-                    <div className="tournament-view-mobile-result-card__details">
-                        <span className="country-cell">
-                            <CountryFlag country={record.country} size="md" />
-                            <span>{record.country?.trim() || "Unknown"}</span>
-                        </span>
-                        <span>Event: {record.code || "-"}</span>
-                        <span>Status: {record.status === "verified" ? "Verified" : "Submitted"}</span>
-                        <span>Leader: {record.leader_id || "-"}</span>
-                        <div className="tournament-view-mobile-result-card__scores">
-                            <div className="tournament-view-mobile-result-card__score">
-                                <span className="tournament-view-mobile-result-card__score-label">Try 1</span>
-                                <strong className="tournament-view-mobile-result-card__score-value">
-                                    {formatAttemptTime(record.try1)}
-                                </strong>
-                            </div>
-                            <div className="tournament-view-mobile-result-card__score">
-                                <span className="tournament-view-mobile-result-card__score-label">Try 2</span>
-                                <strong className="tournament-view-mobile-result-card__score-value">
-                                    {formatAttemptTime(record.try2)}
-                                </strong>
-                            </div>
-                            <div className="tournament-view-mobile-result-card__score">
-                                <span className="tournament-view-mobile-result-card__score-label">Try 3</span>
-                                <strong className="tournament-view-mobile-result-card__score-value">
-                                    {formatAttemptTime(record.try3)}
-                                </strong>
-                            </div>
-                        </div>
-                        {record.id && finalistClassificationMap[record.id]
-                            ? renderFinalistTag(finalistClassificationMap[record.id])
-                            : null}
-                        {record.member_global_ids.length > 0 ? (
-                            <span className="tournament-view-mobile-result-card__members">
-                                Members: {record.member_global_ids.join(", ")}
-                            </span>
-                        ) : null}
-                    </div>
-                )}
-            />
-        </div>
-    );
-
     const renderOverallRecordActions = (record: TournamentOverallRecord) => (
         <div className="flex gap-2">
             <Popover content="Edit record times">
@@ -1032,7 +1030,7 @@ export default function TournamentView() {
         records: TournamentOverallRecord[] = [],
         finalistClassificationMap?: FinalistClassificationMap,
     ): TableColumnProps<TournamentOverallRecord>[] => {
-        const columns: TableColumnProps<TournamentOverallRecord>[] = [
+        let columns: TableColumnProps<TournamentOverallRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
@@ -1060,7 +1058,8 @@ export default function TournamentView() {
             },
         ];
 
-        columns.push(
+        columns = [
+            ...columns,
             {
                 title: "Event Code",
                 dataIndex: "code",
@@ -1084,16 +1083,20 @@ export default function TournamentView() {
                 width: 100,
                 render: (time: number) => <Text>{time > 0 ? formatTime(time) : "DNF"}</Text>,
             },
-        );
+        ];
 
-        columns.push({
-            title: "Overall Time",
-            dataIndex: "overall_time",
-            width: 120,
-            render: renderOverallPreviewTimeCell,
-        });
+        columns = [
+            ...columns,
+            {
+                title: "Overall Time",
+                dataIndex: "overall_time",
+                width: 120,
+                render: renderOverallPreviewTimeCell,
+            },
+        ];
 
-        columns.push(
+        columns = [
+            ...columns,
             {
                 title: "Country",
                 dataIndex: "country",
@@ -1106,14 +1109,17 @@ export default function TournamentView() {
                 width: 100,
                 render: renderStatusTag,
             },
-        );
+        ];
 
         if (isAdmin) {
-            columns.push({
-                title: "Actions",
-                width: 150,
-                render: (_: unknown, record: TournamentOverallRecord) => renderOverallRecordActions(record),
-            });
+            columns = [
+                ...columns,
+                {
+                    title: "Actions",
+                    width: 150,
+                    render: (_: unknown, record: TournamentOverallRecord) => renderOverallRecordActions(record),
+                },
+            ];
         }
 
         return columns;
@@ -1124,7 +1130,7 @@ export default function TournamentView() {
         records: TournamentOverallRecord[] = [],
         finalistClassificationMap?: FinalistClassificationMap,
     ): TableColumnProps<TournamentOverallRecord>[] => {
-        const columns: TableColumnProps<TournamentOverallRecord>[] = [
+        let columns: TableColumnProps<TournamentOverallRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
@@ -1189,12 +1195,15 @@ export default function TournamentView() {
             },
         ];
 
-        columns.push({
-            title: "Status",
-            dataIndex: "status",
-            width: 100,
-            render: renderStatusTag,
-        });
+        columns = [
+            ...columns,
+            {
+                title: "Status",
+                dataIndex: "status",
+                width: 100,
+                render: renderStatusTag,
+            },
+        ];
 
         return columns;
     };
@@ -1204,7 +1213,7 @@ export default function TournamentView() {
         records: TournamentTeamRecord[] = [],
         finalistClassificationMap?: FinalistClassificationMap,
     ): TableColumnProps<TournamentTeamRecord>[] => {
-        const columns: TableColumnProps<TournamentTeamRecord>[] = [
+        let columns: TableColumnProps<TournamentTeamRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
@@ -1233,20 +1242,27 @@ export default function TournamentView() {
             },
         ];
 
-        columns.push({
-            title: "Event Code",
-            dataIndex: "code",
-            width: 100,
-        });
+        columns = [
+            ...columns,
+            {
+                title: "Event Code",
+                dataIndex: "code",
+                width: 100,
+            },
+        ];
 
-        columns.push({
-            title: "Best Time",
-            dataIndex: "best_time",
-            width: 120,
-            render: renderTeamPreviewTimeCell,
-        });
+        columns = [
+            ...columns,
+            {
+                title: "Best Time",
+                dataIndex: "best_time",
+                width: 120,
+                render: renderTeamPreviewTimeCell,
+            },
+        ];
 
-        columns.push(
+        columns = [
+            ...columns,
             {
                 title: "Country",
                 dataIndex: "country",
@@ -1259,14 +1275,17 @@ export default function TournamentView() {
                 width: 100,
                 render: renderStatusTag,
             },
-        );
+        ];
 
         if (isAdmin) {
-            columns.push({
-                title: "Actions",
-                width: 150,
-                render: (_: unknown, record: TournamentTeamRecord) => renderTeamRecordActions(record),
-            });
+            columns = [
+                ...columns,
+                {
+                    title: "Actions",
+                    width: 150,
+                    render: (_: unknown, record: TournamentTeamRecord) => renderTeamRecordActions(record),
+                },
+            ];
         }
 
         return columns;
@@ -1277,7 +1296,7 @@ export default function TournamentView() {
         records: TournamentTeamRecord[] = [],
         finalistClassificationMap?: FinalistClassificationMap,
     ): TableColumnProps<TournamentTeamRecord>[] => {
-        const columns: TableColumnProps<TournamentTeamRecord>[] = [
+        let columns: TableColumnProps<TournamentTeamRecord>[] = [
             {
                 title: "Rank",
                 width: 60,
@@ -1343,12 +1362,15 @@ export default function TournamentView() {
             },
         ];
 
-        columns.push({
-            title: "Status",
-            dataIndex: "status",
-            width: 100,
-            render: renderStatusTag,
-        });
+        columns = [
+            ...columns,
+            {
+                title: "Status",
+                dataIndex: "status",
+                width: 100,
+                render: renderStatusTag,
+            },
+        ];
 
         return columns;
     };
@@ -1760,7 +1782,10 @@ export default function TournamentView() {
                                                                     })}
                                                                 </div>
                                                             ) : null}
-                                                            {renderOverallMobileTable(filteredRecords, finalistClassificationMap)}
+                                                            {renderOverallMobileTableExternal(
+                                                                filteredRecords,
+                                                                finalistClassificationMap,
+                                                            )}
                                                             <Table
                                                                 className="tournament-view-preview-table"
                                                                 columns={columns}
@@ -1908,7 +1933,7 @@ export default function TournamentView() {
                                                             })}
                                                         </div>
                                                     ) : null}
-                                                    {renderTeamMobileTable(filteredRecords, finalistClassificationMap)}
+                                                    {renderTeamMobileTableExternal(filteredRecords, finalistClassificationMap)}
                                                     <Table
                                                         className="tournament-view-preview-table"
                                                         columns={columns}
@@ -2008,7 +2033,7 @@ export default function TournamentView() {
                                                                         View Full Result
                                                                     </Button>
                                                                 </div>
-                                                                {renderOverallMobileTable(filteredBracketRecords)}
+                                                                {renderOverallMobileTableExternal(filteredBracketRecords)}
                                                                 <Table
                                                                     className="tournament-view-preview-table"
                                                                     columns={buildOverallPreviewColumns(
@@ -2109,7 +2134,7 @@ export default function TournamentView() {
                                                                             View Full Result
                                                                         </Button>
                                                                     </div>
-                                                                    {renderTeamMobileTable(filteredRecords)}
+                                                                    {renderTeamMobileTableExternal(filteredRecords)}
                                                                     <Table
                                                                         className="tournament-view-preview-table"
                                                                         columns={columns}

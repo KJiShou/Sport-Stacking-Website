@@ -77,6 +77,12 @@ const getTeamVerificationLabel = (team: Team, events: TournamentEvent[], verifie
 const getRegistrationEventGroupLabel = (group: ReturnType<typeof groupEventSelections>[number]): string =>
     group.canonicalKey.startsWith("event:") ? group.label : "Unknown event";
 
+const getImportLevelColor = (level: string): "red" | "orange" | "blue" => {
+    if (level === "error") return "red";
+    if (level === "warning") return "orange";
+    return "blue";
+};
+
 export default function RegistrationsListPage() {
     const {tournamentId} = useParams();
     const {user} = useAuthContext();
@@ -457,14 +463,8 @@ export default function RegistrationsListPage() {
                     return duplicateCountB - duplicateCountA;
                 }
 
-                const labelA = (debugA?.groups ?? [])
-                    .map(getRegistrationEventGroupLabel)
-                    .join(", ")
-                    .toLowerCase();
-                const labelB = (debugB?.groups ?? [])
-                    .map(getRegistrationEventGroupLabel)
-                    .join(", ")
-                    .toLowerCase();
+                const labelA = (debugA?.groups ?? []).map(getRegistrationEventGroupLabel).join(", ").toLowerCase();
+                const labelB = (debugB?.groups ?? []).map(getRegistrationEventGroupLabel).join(", ").toLowerCase();
 
                 if (labelA !== labelB) {
                     return labelA.localeCompare(labelB);
@@ -869,13 +869,7 @@ export default function RegistrationsListPage() {
                                 {importResultRows.map((row) => (
                                     <Card key={`${row.sheet}-${row.row}-${row.level}-${row.message}`} bordered>
                                         <div className="flex flex-col gap-2">
-                                            <Tag
-                                                color={
-                                                    row.level === "error" ? "red" : row.level === "warning" ? "orange" : "blue"
-                                                }
-                                            >
-                                                {row.level}
-                                            </Tag>
+                                            <Tag color={getImportLevelColor(row.level)}>{row.level}</Tag>
                                             <span>
                                                 <strong>Sheet:</strong> {row.sheet}
                                             </span>

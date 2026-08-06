@@ -529,6 +529,89 @@ const teamMatchesSearch = (team: Team, normalizedSearch: string, registrationLis
     });
 };
 
+type PdfColumnStyles = Record<number, {cellWidth: number}>;
+
+const getParticipantListTableLayout = (
+    team: Team | undefined,
+    isTeamEvent: boolean,
+    teamEventType: string,
+): {headers: string[][]; columnStyles: PdfColumnStyles} => {
+    if (team) {
+        return {
+            headers: [["No.", "Global ID", "Role", "Phone Number"]],
+            columnStyles: {0: {cellWidth: 10}, 1: {cellWidth: 40}, 2: {cellWidth: 40}, 3: {cellWidth: 40}},
+        };
+    }
+    if (!isTeamEvent) {
+        return {
+            headers: [["No.", "Global ID", "Name", "Age", "Phone Number"]],
+            columnStyles: {0: {cellWidth: 10}, 1: {cellWidth: 32}, 2: {cellWidth: 90}, 3: {cellWidth: 20}, 4: {cellWidth: 30}},
+        };
+    }
+    if (isTeamRelayEventType(teamEventType)) {
+        return {
+            headers: [["No.", "Team ID", "Team Name", "Members Name", "Members", "Leader Phone", "Team Age"]],
+            columnStyles: {
+                0: {cellWidth: 8},
+                1: {cellWidth: 22},
+                2: {cellWidth: 28},
+                3: {cellWidth: 42},
+                4: {cellWidth: 35},
+                5: {cellWidth: 25},
+                6: {cellWidth: 16},
+            },
+        };
+    }
+    return {
+        headers: [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]],
+        columnStyles: {
+            0: {cellWidth: 10},
+            1: {cellWidth: 25},
+            2: {cellWidth: 55},
+            3: {cellWidth: 45},
+            4: {cellWidth: 30},
+            5: {cellWidth: 20},
+        },
+    };
+};
+
+const getAllPrelimTableLayout = (
+    isTeamEvent: boolean,
+    eventType: string,
+): {headers: string[][]; columnStyles: PdfColumnStyles} => {
+    if (!isTeamEvent) {
+        return {
+            headers: [["No.", "Name", "Global ID", "Age", "Phone"]],
+            columnStyles: {0: {cellWidth: 10}, 1: {cellWidth: 60}, 2: {cellWidth: 40}, 3: {cellWidth: 20}, 4: {cellWidth: 30}},
+        };
+    }
+    if (isTeamRelayEventType(eventType)) {
+        return {
+            headers: [["No.", "Team ID", "Team Name", "Members Name", "Members", "Leader Phone", "Team Age"]],
+            columnStyles: {
+                0: {cellWidth: 8},
+                1: {cellWidth: 22},
+                2: {cellWidth: 28},
+                3: {cellWidth: 42},
+                4: {cellWidth: 35},
+                5: {cellWidth: 25},
+                6: {cellWidth: 16},
+            },
+        };
+    }
+    return {
+        headers: [["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"]],
+        columnStyles: {
+            0: {cellWidth: 10},
+            1: {cellWidth: 25},
+            2: {cellWidth: 55},
+            3: {cellWidth: 45},
+            4: {cellWidth: 30},
+            5: {cellWidth: 20},
+        },
+    };
+};
+
 // Main Export Functions
 export const exportParticipantListToPDF = async (options: ExportPDFOptions): Promise<void> => {
     const {
@@ -608,44 +691,16 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
             {} as Record<string, string>,
         );
         const resolvedNameMap = {...registrationNameMap, ...(providedNameMap ?? {})};
-        const tableData = team
-            ? generateSingleTeamTableData(team, phoneMap, teamEventType)
-            : isTeamEvent
-              ? generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, resolvedNameMap, events ?? [])
-              : generateIndividualTableData(registrations, bracket, phoneMap);
+        let tableData: string[][];
+        if (team) {
+            tableData = generateSingleTeamTableData(team, phoneMap, teamEventType);
+        } else if (isTeamEvent) {
+            tableData = generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, resolvedNameMap, events ?? []);
+        } else {
+            tableData = generateIndividualTableData(registrations, bracket, phoneMap);
+        }
 
-        const headers = team
-            ? [["No.", "Global ID", "Role", "Phone Number"]]
-            : isTeamEvent
-              ? [
-                    isTeamRelayEventType(teamEventType)
-                        ? ["No.", "Team ID", "Team Name", "Members Name", "Members", "Leader Phone", "Team Age"]
-                        : ["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"],
-                ]
-              : [["No.", "Global ID", "Name", "Age", "Phone Number"]];
-
-        const columnStyles = team
-            ? {0: {cellWidth: 10}, 1: {cellWidth: 40}, 2: {cellWidth: 40}, 3: {cellWidth: 40}}
-              : isTeamEvent
-              ? isTeamRelayEventType(teamEventType)
-                    ? {
-                          0: {cellWidth: 8},
-                          1: {cellWidth: 22},
-                          2: {cellWidth: 28},
-                          3: {cellWidth: 42},
-                          4: {cellWidth: 35},
-                          5: {cellWidth: 25},
-                          6: {cellWidth: 16},
-                      }
-                    : {
-                          0: {cellWidth: 10},
-                          1: {cellWidth: 25},
-                          2: {cellWidth: 55},
-                          3: {cellWidth: 45},
-                          4: {cellWidth: 30},
-                          5: {cellWidth: 20},
-                      }
-              : {0: {cellWidth: 10}, 1: {cellWidth: 32}, 2: {cellWidth: 90}, 3: {cellWidth: 20}, 4: {cellWidth: 30}};
+        const {headers, columnStyles} = getParticipantListTableLayout(team, isTeamEvent, teamEventType);
 
         autoTable(doc, {
             startY,
@@ -1311,34 +1366,7 @@ export const exportAllBracketsListToPDF = async (
                           ]);
 
                 if (tableData.length > 0) {
-                    const headers = isTeamEvent
-                        ? [
-                              isTeamRelayEventType(event.type)
-                                  ? ["No.", "Team ID", "Team Name", "Members Name", "Members", "Leader Phone", "Team Age"]
-                                  : ["No.", "Team ID", "Members Name", "Members", "Leader Phone", "Team Age"],
-                          ]
-                        : [["No.", "Name", "Global ID", "Age", "Phone"]];
-
-                    const columnStyles = isTeamEvent
-                        ? isTeamRelayEventType(event.type)
-                            ? {
-                                  0: {cellWidth: 8},
-                                  1: {cellWidth: 22},
-                                  2: {cellWidth: 28},
-                                  3: {cellWidth: 42},
-                                  4: {cellWidth: 35},
-                                  5: {cellWidth: 25},
-                                  6: {cellWidth: 16},
-                              }
-                            : {
-                                  0: {cellWidth: 10},
-                                  1: {cellWidth: 25},
-                                  2: {cellWidth: 55},
-                                  3: {cellWidth: 45},
-                                  4: {cellWidth: 30},
-                                  5: {cellWidth: 20},
-                              }
-                        : {0: {cellWidth: 10}, 1: {cellWidth: 60}, 2: {cellWidth: 40}, 3: {cellWidth: 20}, 4: {cellWidth: 30}};
+                    const {headers, columnStyles} = getAllPrelimTableLayout(isTeamEvent, event.type);
 
                     autoTable(doc, {
                         startY,

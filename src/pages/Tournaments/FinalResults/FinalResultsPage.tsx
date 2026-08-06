@@ -23,7 +23,7 @@ import {
 import {Button, Dropdown, Message, Modal, Table, Tabs} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCopy, IconPrinter} from "@arco-design/web-react/icon";
-import {useCallback, useEffect, useMemo, useState} from "react";
+import {type ReactNode, useCallback, useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {MobilePageHeader, MobileRankingTable, ResponsiveTabs} from "@/components/responsive";
 
@@ -542,6 +542,48 @@ const buildExpandedRows = (
     );
 };
 
+const createFinalResultsMobileDetailsRenderer =
+    ({
+        isTeamEvent,
+        eventLabel,
+        bracketName,
+        classification,
+        event,
+        eventCodes,
+        allRecords,
+    }: {
+        isTeamEvent: boolean;
+        eventLabel: string;
+        bracketName: string;
+        classification: string;
+        event: TournamentEvent;
+        eventCodes: string[];
+        allRecords: TournamentRecord[];
+    }) =>
+    (record: AggregatedFinalResult) => {
+        let attemptDetails: ReactNode;
+        if (eventCodes.length > 1) {
+            attemptDetails = buildExpandedRows(record, event, eventCodes, isTeamEvent, allRecords);
+        } else {
+            attemptDetails = (
+                <span>
+                    Try 1: {record.try1?.toFixed?.(3) ?? "N/A"}; Try 2: {record.try2?.toFixed?.(3) ?? "N/A"}; Try 3:{" "}
+                    {record.try3?.toFixed?.(3) ?? "N/A"}
+                </span>
+            );
+        }
+
+        return (
+            <div className="results-mobile-card__details">
+                <span>{isTeamEvent ? "Team" : "Athlete"}</span>
+                <span>Event: {eventLabel}</span>
+                <span>Age: {bracketName}</span>
+                <span>Final: {classification}</span>
+                {attemptDetails}
+            </div>
+        );
+    };
+
 export default function FinalResultsPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
     const navigate = useNavigate();
@@ -733,23 +775,28 @@ export default function FinalResultsPage() {
 
     const buildFinalResultsData = useCallback(
         (scope: PrintScope): EventResults[] => {
-            const scopedEvents = scope === "all" ? (events ?? []) : currentEvent ? [currentEvent] : [];
+            let scopedEvents: TournamentEvent[];
+            if (scope === "all") {
+                scopedEvents = events ?? [];
+            } else if (currentEvent) {
+                scopedEvents = [currentEvent];
+            } else {
+                scopedEvents = [];
+            }
 
             return scopedEvents
                 .map((event) => {
-                    const scopedBrackets =
-                        scope === "age" && event.id === currentEvent?.id && currentBracket
-                            ? [currentBracket]
-                            : (event.age_brackets ?? []);
+                    let scopedBrackets = event.age_brackets ?? [];
+                    if (scope === "age" && event.id === currentEvent?.id && currentBracket) {
+                        scopedBrackets = [currentBracket];
+                    }
 
                     const brackets = scopedBrackets
                         .flatMap((bracket) => {
-                            const criteria =
-                                scope === "age" && event.id === currentEvent?.id && bracket.name === currentBracket?.name
-                                    ? (bracket.final_criteria ?? []).filter(
-                                          (fc) => fc.classification === currentClassificationTab,
-                                      )
-                                    : (bracket.final_criteria ?? []);
+                            let criteria = bracket.final_criteria ?? [];
+                            if (scope === "age" && event.id === currentEvent?.id && bracket.name === currentBracket?.name) {
+                                criteria = criteria.filter((fc) => fc.classification === currentClassificationTab);
+                            }
 
                             return criteria.map((fc) => {
                                 const records = computeEventBracketResults(event, bracket, aggregationContext, fc.classification);
@@ -915,7 +962,11 @@ export default function FinalResultsPage() {
 
     return (
         <div className="results-page flex flex-col md:flex-col bg-ghostwhite relative p-0 md:p-6 xl:p-10 gap-6 items-stretch">
-            <MobilePageHeader title="Final Results" backTo={`/tournaments/${tournamentId}/scoring/final`} backLabel="Back to Scoring" />
+            <MobilePageHeader
+                title="Final Results"
+                backTo={`/tournaments/${tournamentId}/scoring/final`}
+                backLabel="Back to Scoring"
+            />
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-2 md:p-6 xl:p-10 shadow-lg md:rounded-lg">
                 <div className="results-header w-full flex justify-between items-center mobile-stack">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1054,27 +1105,15 @@ export default function FinalResultsPage() {
                                                                                 rank={(record) => record.rank}
                                                                                 name={(record) => record.name}
                                                                                 result={(record) => formatTime(record.bestTime)}
-                                                                                details={(record) => (
-                                                                                    <div className="results-mobile-card__details">
-                                                                                        <span>{isTeamEvent ? "Team" : "Athlete"}</span>
-                                                                                        <span>Event: {eventLabel}</span>
-                                                                                        <span>Age: {bracket.name}</span>
-                                                                                        <span>Final: {fc.classification}</span>
-                                                                                        {eventCodes.length > 1
-                                                                                            ? buildExpandedRows(
-                                                                                                  record,
-                                                                                                  event,
-                                                                                                  eventCodes,
-                                                                                                  isTeamEvent,
-                                                                                                  allRecords,
-                                                                                              )
-                                                                                            : (
-                                                                                                <span>
-                                                                                                    Try 1: {record.try1?.toFixed?.(3) ?? "N/A"}; Try 2: {record.try2?.toFixed?.(3) ?? "N/A"}; Try 3: {record.try3?.toFixed?.(3) ?? "N/A"}
-                                                                                                </span>
-                                                                                            )}
-                                                                                    </div>
-                                                                                )}
+                                                                                details={createFinalResultsMobileDetailsRenderer({
+                                                                                    isTeamEvent,
+                                                                                    eventLabel,
+                                                                                    bracketName: bracket.name,
+                                                                                    classification: fc.classification,
+                                                                                    event,
+                                                                                    eventCodes,
+                                                                                    allRecords,
+                                                                                })}
                                                                             />
                                                                         </div>
                                                                         <Table

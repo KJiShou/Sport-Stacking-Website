@@ -133,6 +133,145 @@ const checkAndNotifyNewRecord = async (bestTime: number, participantAge: number,
     }
 };
 
+const hasCompleteTeamScores = (
+    team: Team,
+    codes: string[],
+    records: (TournamentRecord | TournamentTeamRecord)[],
+    eventType: string,
+    eventId?: string,
+): boolean =>
+    codes.every((code) =>
+        records.some(
+            (record) =>
+                record.event === eventType &&
+                "team_id" in record &&
+                record.team_id === team.id &&
+                record.code === code &&
+                (!eventId || record.event_id === eventId),
+        ),
+    );
+
+const hasCompleteParticipantScores = (
+    participant: Registration,
+    codes: string[],
+    records: (TournamentRecord | TournamentTeamRecord)[],
+    eventType: string,
+    eventId?: string,
+): boolean =>
+    codes.every((code) =>
+        records.some(
+            (record) =>
+                record.event === eventType &&
+                "participant_id" in record &&
+                record.participant_id === participant.user_id &&
+                record.code === code &&
+                (!eventId || record.event_id === eventId),
+        ),
+    );
+
+interface FinalTeamMobileCardProps {
+    team: Team;
+    eventTypeKey: string;
+    complete: boolean;
+    onEdit: () => void;
+}
+
+const FinalTeamMobileCard = ({team, eventTypeKey, complete, onEdit}: FinalTeamMobileCardProps) => (
+    <div className="scoring-mobile-card" key={team.id}>
+        <div className="scoring-mobile-card__header">
+            <div>
+                <span className="scoring-mobile-card__label">Team</span>
+                <strong>{team.name}</strong>
+            </div>
+            <span className={`scoring-status ${complete ? "is-complete" : "is-incomplete"}`}>
+                {complete ? "Complete" : "Incomplete"}
+            </span>
+        </div>
+        <p>Leader: {formatTeamLeaderId(team.leader_id, eventTypeKey)}</p>
+        <p>Members: {team.members.map((member) => member.global_id).join(", ") || "—"}</p>
+        <Button type="primary" onClick={onEdit}>
+            Edit Score
+        </Button>
+    </div>
+);
+
+interface FinalParticipantMobileCardProps {
+    participant: Registration;
+    complete: boolean;
+    onEdit: () => void;
+}
+
+const FinalParticipantMobileCard = ({participant, complete, onEdit}: FinalParticipantMobileCardProps) => (
+    <div className="scoring-mobile-card" key={participant.user_id}>
+        <div className="scoring-mobile-card__header">
+            <div>
+                <span className="scoring-mobile-card__label">Participant</span>
+                <strong>{participant.user_name}</strong>
+            </div>
+            <span className={`scoring-status ${complete ? "is-complete" : "is-incomplete"}`}>
+                {complete ? "Complete" : "Incomplete"}
+            </span>
+        </div>
+        <p>{participant.user_global_id}</p>
+        <p className="country-cell">
+            <CountryFlag country={participant.country} size="md" />
+            {participant.country || "Unknown"}
+        </p>
+        <Button type="primary" onClick={onEdit}>
+            Edit Score
+        </Button>
+    </div>
+);
+
+const createFinalTeamCardRenderer =
+    ({
+        codes,
+        records,
+        eventTypeKey,
+        eventId,
+        event,
+        onEdit,
+    }: {
+        codes: string[];
+        records: (TournamentRecord | TournamentTeamRecord)[];
+        eventTypeKey: string;
+        eventId?: string;
+        event: TournamentEvent;
+        onEdit: (team: Team, event: TournamentEvent) => void;
+    }) =>
+    (team: Team) => (
+        <FinalTeamMobileCard
+            team={team}
+            eventTypeKey={eventTypeKey}
+            complete={hasCompleteTeamScores(team, codes, records, eventTypeKey, eventId)}
+            onEdit={() => onEdit(team, event)}
+        />
+    );
+
+const createFinalParticipantCardRenderer =
+    ({
+        codes,
+        records,
+        eventTypeKey,
+        eventId,
+        event,
+        onEdit,
+    }: {
+        codes: string[];
+        records: (TournamentRecord | TournamentTeamRecord)[];
+        eventTypeKey: string;
+        eventId?: string;
+        event: TournamentEvent;
+        onEdit: (participant: Registration, event: TournamentEvent) => void;
+    }) =>
+    (participant: Registration) => (
+        <FinalParticipantMobileCard
+            participant={participant}
+            complete={hasCompleteParticipantScores(participant, codes, records, eventTypeKey, eventId)}
+            onEdit={() => onEdit(participant, event)}
+        />
+    );
+
 export default function FinalScoringPage() {
     const navigate = useNavigate();
     const {tournamentId} = useParams<{tournamentId: string}>();
@@ -826,6 +965,22 @@ export default function FinalScoringPage() {
         }
     };
 
+    const openTeamScoreEditor = (team: Team, event: TournamentEvent) => {
+        setSelectedTeam(team);
+        setSelectedParticipant(null);
+        setIsIndividual(false);
+        setCurrentEvent(event);
+        setModalState(true);
+    };
+
+    const openParticipantScoreEditor = (participant: Registration, event: TournamentEvent) => {
+        setSelectedParticipant(participant);
+        setSelectedTeam(null);
+        setIsIndividual(true);
+        setCurrentEvent(event);
+        setModalState(true);
+    };
+
     return (
         <div className="scoring-page flex flex-col h-full bg-ghostwhite p-6 gap-6">
             <div className="bg-white flex flex-col w-full h-fit gap-4 items-center p-6 shadow-lg rounded-lg">
@@ -911,121 +1066,29 @@ export default function FinalScoringPage() {
                                                                 participantIdsInClassification.has(registration.user_id),
                                                         ),
                                                     );
+                                                    const renderTeamCard = createFinalTeamCardRenderer({
+                                                        codes: evt.codes,
+                                                        records,
+                                                        eventTypeKey,
+                                                        eventId: eventIdForModal,
+                                                        event: evt,
+                                                        onEdit: openTeamScoreEditor,
+                                                    });
+                                                    const renderParticipantCard = createFinalParticipantCardRenderer({
+                                                        codes: evt.codes,
+                                                        records,
+                                                        eventTypeKey,
+                                                        eventId: eventIdForModal,
+                                                        event: evt,
+                                                        onEdit: openParticipantScoreEditor,
+                                                    });
+                                                    const mobileCards = isTeamEvent
+                                                        ? finalTeams.map(renderTeamCard)
+                                                        : finalParticipants.map(renderParticipantCard);
 
                                                     return (
                                                         <TabPane key={fc.classification} title={`${fc.classification}`}>
-                                                            <div className="scoring-mobile-cards">
-                                                                {isTeamEvent
-                                                                    ? finalTeams.map((team) => {
-                                                                          const complete = evt.codes.every((code) =>
-                                                                              records.some(
-                                                                                  (record) =>
-                                                                                      record.event === eventTypeKey &&
-                                                                                      "team_id" in record &&
-                                                                                      record.team_id === team.id &&
-                                                                                      record.code === code &&
-                                                                                      (!eventIdForModal ||
-                                                                                          record.event_id === eventIdForModal),
-                                                                              ),
-                                                                          );
-                                                                          return (
-                                                                              <div className="scoring-mobile-card" key={team.id}>
-                                                                                  <div className="scoring-mobile-card__header">
-                                                                                      <div>
-                                                                                          <span className="scoring-mobile-card__label">
-                                                                                              Team
-                                                                                          </span>
-                                                                                          <strong>{team.name}</strong>
-                                                                                      </div>
-                                                                                      <span
-                                                                                          className={`scoring-status ${complete ? "is-complete" : "is-incomplete"}`}
-                                                                                      >
-                                                                                          {complete ? "Complete" : "Incomplete"}
-                                                                                      </span>
-                                                                                  </div>
-                                                                                  <p>
-                                                                                      Leader:{" "}
-                                                                                      {formatTeamLeaderId(
-                                                                                          team.leader_id,
-                                                                                          eventTypeKey,
-                                                                                      )}
-                                                                                  </p>
-                                                                                  <p>
-                                                                                      Members:{" "}
-                                                                                      {team.members
-                                                                                          .map((member) => member.global_id)
-                                                                                          .join(", ") || "—"}
-                                                                                  </p>
-                                                                                  <Button
-                                                                                      type="primary"
-                                                                                      onClick={() => {
-                                                                                          setSelectedTeam(team);
-                                                                                          setSelectedParticipant(null);
-                                                                                          setIsIndividual(false);
-                                                                                          setCurrentEvent(evt);
-                                                                                          setModalState(true);
-                                                                                      }}
-                                                                                  >
-                                                                                      Edit Score
-                                                                                  </Button>
-                                                                              </div>
-                                                                          );
-                                                                      })
-                                                                    : finalParticipants.map((participant) => {
-                                                                          const complete = evt.codes.every((code) =>
-                                                                              records.some(
-                                                                                  (record) =>
-                                                                                      record.event === eventTypeKey &&
-                                                                                      "participant_id" in record &&
-                                                                                      record.participant_id ===
-                                                                                          participant.user_id &&
-                                                                                      record.code === code &&
-                                                                                      (!eventIdForModal ||
-                                                                                          record.event_id === eventIdForModal),
-                                                                              ),
-                                                                          );
-                                                                          return (
-                                                                              <div
-                                                                                  className="scoring-mobile-card"
-                                                                                  key={participant.user_id}
-                                                                              >
-                                                                                  <div className="scoring-mobile-card__header">
-                                                                                      <div>
-                                                                                          <span className="scoring-mobile-card__label">
-                                                                                              Participant
-                                                                                          </span>
-                                                                                          <strong>{participant.user_name}</strong>
-                                                                                      </div>
-                                                                                      <span
-                                                                                          className={`scoring-status ${complete ? "is-complete" : "is-incomplete"}`}
-                                                                                      >
-                                                                                          {complete ? "Complete" : "Incomplete"}
-                                                                                      </span>
-                                                                                  </div>
-                                                                                  <p>{participant.user_global_id}</p>
-                                                                                  <p className="country-cell">
-                                                                                      <CountryFlag
-                                                                                          country={participant.country}
-                                                                                          size="md"
-                                                                                      />
-                                                                                      {participant.country || "Unknown"}
-                                                                                  </p>
-                                                                                  <Button
-                                                                                      type="primary"
-                                                                                      onClick={() => {
-                                                                                          setSelectedParticipant(participant);
-                                                                                          setSelectedTeam(null);
-                                                                                          setIsIndividual(true);
-                                                                                          setCurrentEvent(evt);
-                                                                                          setModalState(true);
-                                                                                      }}
-                                                                                  >
-                                                                                      Edit Score
-                                                                                  </Button>
-                                                                              </div>
-                                                                          );
-                                                                      })}
-                                                            </div>
+                                                            <div className="scoring-mobile-cards">{mobileCards}</div>
                                                             {isTeamEvent ? (
                                                                 <Table
                                                                     style={{width: "100%"}}

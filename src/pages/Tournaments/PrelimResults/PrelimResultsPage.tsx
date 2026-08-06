@@ -39,7 +39,7 @@ import {
 import {Button, Dropdown, Message, Modal, Table, Tabs} from "@arco-design/web-react";
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconCaretRight, IconCopy, IconPrinter} from "@arco-design/web-react/icon";
-import {useCallback, useEffect, useMemo, useState} from "react";
+import {type ReactNode, useCallback, useEffect, useMemo, useState} from "react";
 import {useNavigate, useParams} from "react-router-dom";
 import {MobilePageHeader, MobileRankingTable, ResponsiveTabs} from "@/components/responsive";
 
@@ -545,11 +545,12 @@ const buildExpandedRows = (
         const targetEventId = record.event_id ?? event.id;
 
         const baseMatch = allRecords.find((candidate) => {
-            const candidateParticipantId = isTeamEvent
-                ? isTeamRecord(candidate)
-                    ? candidate.team_id
-                    : getParticipantId(candidate)
-                : getParticipantId(candidate);
+            let candidateParticipantId: string | undefined;
+            if (isTeamEvent && isTeamRecord(candidate)) {
+                candidateParticipantId = candidate.team_id;
+            } else {
+                candidateParticipantId = getParticipantId(candidate);
+            }
 
             if (!candidateParticipantId || candidateParticipantId !== targetParticipantId) {
                 return false;
@@ -589,6 +590,46 @@ const buildExpandedRows = (
         </div>
     );
 };
+
+const createPrelimResultsMobileDetailsRenderer =
+    ({
+        isTeamEvent,
+        eventLabel,
+        bracketName,
+        event,
+        eventCodes,
+        allRecords,
+    }: {
+        isTeamEvent: boolean;
+        eventLabel: string;
+        bracketName: string;
+        event: TournamentEvent;
+        eventCodes: string[];
+        allRecords: Array<TournamentRecord | TournamentTeamRecord>;
+    }) =>
+    (record: AggregatedPrelimResult) => {
+        let attemptDetails: ReactNode;
+        if (eventCodes.length > 1) {
+            attemptDetails = buildExpandedRows(record, event, eventCodes, isTeamEvent, allRecords);
+        } else {
+            attemptDetails = (
+                <span>
+                    Try 1: {record.try1?.toFixed?.(3) ?? "N/A"}; Try 2: {record.try2?.toFixed?.(3) ?? "N/A"}; Try 3:{" "}
+                    {record.try3?.toFixed?.(3) ?? "N/A"}
+                </span>
+            );
+        }
+
+        return (
+            <div className="results-mobile-card__details">
+                <span>{isTeamEvent ? "Team" : "Athlete"}</span>
+                <span>Event: {eventLabel}</span>
+                <span>Age: {bracketName}</span>
+                {record.classification ? <span>{record.classification}</span> : null}
+                {attemptDetails}
+            </div>
+        );
+    };
 
 export default function PrelimResultsPage() {
     const {tournamentId} = useParams<{tournamentId: string}>();
@@ -1522,23 +1563,18 @@ export default function PrelimResultsPage() {
                                                             rank={(record) => record.rank}
                                                             name={(record) => record.name}
                                                             result={(record) =>
-                                                                Number.isFinite(record.bestTime) ? record.bestTime.toFixed(3) : "N/A"
+                                                                Number.isFinite(record.bestTime)
+                                                                    ? record.bestTime.toFixed(3)
+                                                                    : "N/A"
                                                             }
-                                                            details={(record) => (
-                                                                <div className="results-mobile-card__details">
-                                                                    <span>{isTeamEvent ? "Team" : "Athlete"}</span>
-                                                                    <span>Event: {eventLabel}</span>
-                                                                    <span>Age: {bracket.name}</span>
-                                                                    {record.classification ? <span>{record.classification}</span> : null}
-                                                                    {eventCodes.length > 1
-                                                                        ? buildExpandedRows(record, event, eventCodes, isTeamEvent, allRecords)
-                                                                        : (
-                                                                            <span>
-                                                                                Try 1: {record.try1?.toFixed?.(3) ?? "N/A"}; Try 2: {record.try2?.toFixed?.(3) ?? "N/A"}; Try 3: {record.try3?.toFixed?.(3) ?? "N/A"}
-                                                                            </span>
-                                                                        )}
-                                                                </div>
-                                                            )}
+                                                            details={createPrelimResultsMobileDetailsRenderer({
+                                                                isTeamEvent,
+                                                                eventLabel,
+                                                                bracketName: bracket.name,
+                                                                event,
+                                                                eventCodes,
+                                                                allRecords,
+                                                            })}
                                                         />
                                                     </div>
                                                     <Table
