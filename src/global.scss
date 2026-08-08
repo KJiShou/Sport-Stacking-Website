@@ -843,11 +843,6 @@ body,
     background: var(--color-fill-1);
 }
 
-.records-search input:focus-visible {
-    outline: none;
-    outline-offset: 0;
-}
-
 .records-action-button {
     white-space: nowrap;
 }
@@ -1093,11 +1088,6 @@ body,
     width: 100%;
 }
 
-.participant-list-search .arco-input:focus-visible {
-    outline: none;
-    outline-offset: 0;
-}
-
 .participant-list-event-tabs,
 .participant-list-bracket-tabs {
     width: 100%;
@@ -1325,6 +1315,14 @@ body,
     border-radius: 0.8rem;
     outline: 3px solid rgba(var(--primary-6), 0.35);
     outline-offset: 3px;
+}
+
+/* Arco renders focus on its component wrapper. Keep inner native controls
+   from adding a second focus outline while preserving the wrapper border. */
+.arco-input:focus-visible,
+.arco-picker input:focus-visible {
+    outline: none;
+    outline-offset: 0;
 }
 
 :where(a, button, [role="button"], input, select, textarea):focus-visible {
@@ -2507,7 +2505,7 @@ body,
         margin: 0.4rem 0;
     }
 
-    :where(.arco-btn, .arco-input, .arco-input-number, .arco-select-view, .arco-picker):focus-visible,
+    :where(.arco-btn, .arco-input-number, .arco-select-view, .arco-picker):focus-visible,
     :where(a, button, [role="button"]):focus-visible {
         outline: 3px solid rgba(var(--primary-6), 0.35);
         outline-offset: 2px;
