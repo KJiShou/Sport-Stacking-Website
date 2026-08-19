@@ -174,20 +174,39 @@ body,
     -webkit-overflow-scrolling: touch;
 }
 
-/* Keep headers and footers visible while a single body container owns vertical scrolling. */
-.arco-modal.responsive-overlay {
+/* Keep every modal inside the viewport while its content owns vertical scrolling. */
+.arco-modal {
     display: flex;
     max-height: calc(100dvh - 4rem);
     flex-direction: column;
     overflow: hidden;
-    top: 2rem;
 }
 
-.arco-modal.responsive-overlay .arco-modal-header,
-.arco-modal.responsive-overlay .arco-modal-footer {
+.arco-modal-wrapper.arco-modal-wrapper-align-center .arco-modal {
+    display: inline-flex;
+}
+
+/* FocusLock adds one wrapper between the modal and its header/content/footer. */
+.arco-modal > div[tabindex="-1"] {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+}
+
+.arco-modal .arco-modal-header,
+.arco-modal .arco-modal-footer {
     flex-shrink: 0;
 }
 
+.arco-modal .arco-modal-content {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* ResponsiveOverlay uses one nested body scroller for its full workflow layout. */
 .arco-modal.responsive-overlay .arco-modal-content {
     display: flex;
     min-height: 0;
