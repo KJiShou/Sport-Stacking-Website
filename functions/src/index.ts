@@ -28,6 +28,7 @@ import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
 import {appendImportPlanRows, buildImportPlan, commitIdempotentImport, sha256, stableChecksum} from "./importIdempotency.js";
+import {assertWritesEnabled, maintenanceAllowsOperation, readMaintenanceState} from "./maintenance.js";
 import {
     buildAuditDiff,
     logClientError,
@@ -2339,6 +2340,7 @@ const getClientErrorText = (value: unknown, maxLength: number): string => {
 export const reportClientError = onCall(observabilityCallableOptions, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Authentication required.");
+    await assertWritesEnabled(db);
 
     const payload = (request.data && typeof request.data === "object" ? request.data : {}) as ClientErrorPayload;
     const message = sanitizeClientError(payload.message) || "Unknown client error";
@@ -2581,6 +2583,7 @@ export const sendPasswordResetEmailWithCustomEmail = onCall(
         secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
     },
     async (request) => {
+        await assertWritesEnabled(db);
         const email = normalizeEmail(request.data?.email);
         if (!email) {
             throw new HttpsError("invalid-argument", "Email is required.");
@@ -2663,6 +2666,13 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
             return;
         }
 
+        try {
+            await assertWritesEnabled(db);
+        } catch (error) {
+            res.status(503).json({error: error instanceof Error ? error.message : "Maintenance in progress."});
+            return;
+        }
+
         const {to, tournamentId, teamId, memberId, registrationId} = req.body;
         if (!tournamentId || !teamId || !memberId || !registrationId) {
             res.status(400).json({error: "Missing required fields"});
@@ -2720,6 +2730,8 @@ export const syncTeamVerificationRequests = onDocumentWritten(
         const beforeMembers = new Map((beforeTeam?.members ?? []).map((member) => [member.global_id, member]));
         const afterMembers = new Map((afterTeam?.members ?? []).map((member) => [member.global_id, member]));
         const tournamentId = afterTeam?.tournament_id ?? beforeTeam?.tournament_id ?? "";
+        const maintenance = await readMaintenanceState(db);
+        if (!maintenanceAllowsOperation(maintenance, `tournament.import:${tournamentId}`)) return;
 
         await syncRegistrationTeamSnapshots(teamId, beforeTeam, afterTeam);
 
@@ -2806,6 +2818,8 @@ export const deliverVerificationRequestEmails = onDocumentWritten(
             return;
         }
         const after = event.data.after.data() as VerificationRequestData;
+        const maintenance = await readMaintenanceState(db);
+        if (!maintenanceAllowsOperation(maintenance, `tournament.import:${after.tournament_id}`)) return;
         const before = event.data.before.exists ? (event.data.before.data() as VerificationRequestData) : null;
         const becamePending = before?.status !== "pending" && after.status === "pending";
         const emailBecamePending = before?.email_status !== "pending" && after.email_status === "pending";
@@ -2829,6 +2843,7 @@ export const deliverUserNotificationEmails = onDocumentWritten(
             return;
         }
         const after = event.data.after.data() as UserNotificationData;
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const before = event.data.before.exists ? (event.data.before.data() as UserNotificationData) : null;
         const becameUnread = before?.status !== "unread" && after.status === "unread";
         const emailBecamePending = before?.email_status !== "pending" && after.email_status === "pending";
@@ -2843,6 +2858,7 @@ export const rejectTeamInvitation = onCall(callableFunctionOptions, async (reque
     if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "Sign in to reject an invitation.");
     }
+    await assertWritesEnabled(db);
     const operation = normalizeOperationMeta(request.data?.meta);
     const requestId = typeof request.data?.requestId === "string" ? request.data.requestId.trim() : "";
     if (!requestId) {
@@ -3111,6 +3127,7 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
     if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
     const requesterUid = request.auth.uid;
 
     const input = request.data as AdminTeamMutationInput;
@@ -3579,6 +3596,7 @@ export const cacheGoogleAvatarCallable = onCall(callableFunctionOptions, async (
     if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "Unauthorized");
     }
+    await assertWritesEnabled(db);
 
     const photoURL = request.data?.photoURL;
     if (!photoURL || typeof photoURL !== "string") {
@@ -3652,6 +3670,7 @@ export const transferProfileOwnership = onCall(callableFunctionOptions, async (r
     if (!requesterUid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
 
     const payload = request.data as {profileId?: unknown; targetEmail?: unknown; meta?: unknown};
     const operation = normalizeOperationMeta(payload.meta);
@@ -3739,6 +3758,7 @@ export const releaseOwnedProfile = onCall(callableFunctionOptions, async (reques
     if (!requesterUid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
 
     const payload = request.data as {profileId?: unknown; meta?: unknown};
     const operation = normalizeOperationMeta(payload.meta);
@@ -3880,6 +3900,7 @@ export const createProfileClaimRequest = onCall(callableFunctionOptions, async (
     if (!requesterUid || !requesterEmail) {
         throw new HttpsError("unauthenticated", "Please sign in with Google before requesting a profile claim.");
     }
+    await assertWritesEnabled(db);
 
     const payload = request.data as {
         profile_global_id?: unknown;
@@ -3978,6 +3999,7 @@ export const approveProfileClaimRequest = onCall(callableFunctionOptions, async 
     if (!requesterUid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
     const authorized = await requesterHasModifyAdmin(requesterUid);
     if (!authorized) {
         throw new HttpsError("permission-denied", "You do not have permission to approve profile claims.");
@@ -4073,6 +4095,7 @@ export const rejectProfileClaimRequest = onCall(callableFunctionOptions, async (
     if (!requesterUid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
     const authorized = await requesterHasModifyAdmin(requesterUid);
     if (!authorized) {
         throw new HttpsError("permission-denied", "You do not have permission to reject profile claims.");
@@ -4177,6 +4200,7 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
         logImportStage("authorization failed");
         throw new HttpsError("permission-denied", "You do not have permission to import registrations for this tournament.");
     }
+    if (mode === "commit") await assertWritesEnabled(db, `tournament.import:${tournamentId}`);
     logImportStage("authorization complete");
 
     const [tournamentSnap, eventsSnap] = await Promise.all([
@@ -4413,6 +4437,13 @@ export const updateVerification = onRequest(async (req, res) => {
 
         if (!tournamentId || !teamId || !memberId || !registrationId) {
             res.status(400).json({error: "Missing fields"});
+            return;
+        }
+
+        try {
+            await assertWritesEnabled(db);
+        } catch (error) {
+            res.status(503).json({error: error instanceof Error ? error.message : "Maintenance in progress."});
             return;
         }
 
@@ -4708,6 +4739,7 @@ export const updateVerification = onRequest(async (req, res) => {
 /** Allows an authorized tournament manager to confirm a registered team invitee. */
 export const adminApproveTeamInvitation = onCall(callableFunctionOptions, async (request) => {
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Authentication required.");
+    await assertWritesEnabled(db);
     const operation = normalizeOperationMeta(request.data?.meta);
     const requestId = typeof request.data?.requestId === "string" ? request.data.requestId.trim() : "";
     if (!requestId) throw new HttpsError("invalid-argument", "Verification request ID is required.");
@@ -4965,6 +4997,7 @@ export const updateUserBestTimes = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const beforeData = event.data?.before?.data() as Record<string, unknown> | undefined;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         const affectedGlobalIds = collectParticipantGlobalIds(beforeData, afterData);
@@ -4988,6 +5021,7 @@ export const syncUserTournamentHistoryFromRecords = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         if (!afterData) {
             return;
@@ -5010,6 +5044,7 @@ export const syncUserTournamentHistoryFromPrelimRecords = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         if (!afterData) {
             return;
@@ -5032,6 +5067,7 @@ export const syncUserTournamentHistoryFromOverallRecords = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         if (!afterData) {
             return;
@@ -5054,6 +5090,7 @@ export const updateUserBestTimesFromOverall = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const beforeData = event.data?.before?.data() as Record<string, unknown> | undefined;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         const affectedGlobalIds = collectParticipantGlobalIds(beforeData, afterData);
@@ -5074,6 +5111,7 @@ export const adminCreateTournamentRegistration = onCall(lowCpuCallableFunctionOp
     if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
     const input = request.data && typeof request.data === "object" ? (request.data as AdminTournamentRegistrationPayload) : {};
     const operation = normalizeOperationMeta(input.meta);
     const tournamentId = typeof input.tournamentId === "string" ? input.tournamentId.trim() : "";
