@@ -1,6 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
     match /databases/{database}/documents {
+        function writesEnabled() {
+            return !exists(/databases/$(database)/documents/system_config/write_control) ||
+                get(/databases/$(database)/documents/system_config/write_control).data.get('writes_enabled', true) != false;
+        }
+
+        function isServerOnlyCollection(collection) {
+            return collection == "teams" ||
+                collection == "audit_logs" ||
+                collection == "client_error_rate_limits" ||
+                collection == "profile_identity_keys" ||
+                collection == "registration_unique_keys" ||
+                collection == "team_import_keys" ||
+                collection == "retired_global_ids" ||
+                collection == "repair_manifests" ||
+                collection == "system_config";
+        }
+
         // Team membership is validated atomically by mutateAdminTeam. Client
         // writes would bypass the one-team-per-event invariant.
         match /teams/{document=**} {
@@ -17,11 +34,31 @@ service cloud.firestore {
         match /client_error_rate_limits/{document=**} {
             allow read, write: if false;
         }
+        match /profile_identity_keys/{document=**} {
+            allow read, write: if false;
+        }
+        match /registration_unique_keys/{document=**} {
+            allow read, write: if false;
+        }
+        match /team_import_keys/{document=**} {
+            allow read, write: if false;
+        }
+        match /retired_global_ids/{document=**} {
+            allow read, write: if false;
+        }
+        match /repair_manifests/{document=**} {
+            allow read, write: if false;
+        }
+        match /system_config/write_control {
+            allow read: if true;
+            allow write: if false;
+        }
 
         // Preserve the application's current permissions for every other root
         // collection while making teams and observability resources server-authoritative.
         match /{collection}/{document=**} {
-            allow read, write: if collection != "teams" && collection != "audit_logs" && collection != "client_error_rate_limits";
+            allow read: if !isServerOnlyCollection(collection);
+            allow write: if writesEnabled() && !isServerOnlyCollection(collection);
         }
     }
 }

@@ -1,3 +1,4 @@
+import {MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 import {useAuthContext} from "@/context/AuthContext";
 import type {FirestoreUser, Registration, Team, Tournament, TournamentEvent} from "@/schema";
 import {countries} from "@/schema/Country";
@@ -38,7 +39,6 @@ import type {Timestamp} from "firebase/firestore";
 import {useEffect, useMemo, useRef, useState} from "react";
 import {Link, useLocation, useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
-import {MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 
 const PAGE_SIZE = 10;
 type ImportResultView = "errors" | "warnings" | "athletes" | "registrations" | "teams";
@@ -253,6 +253,10 @@ export default function RegistrationsListPage() {
             Message.warning("Please choose an Excel workbook first.");
             return;
         }
+        if (mode === "commit" && !importResult?.summary.planChecksum) {
+            Message.warning("Preview this workbook before committing the import.");
+            return;
+        }
         try {
             const values = await importForm.validate();
             setImportLoading(true);
@@ -263,11 +267,16 @@ export default function RegistrationsListPage() {
                 mode,
                 defaultCountry: values.defaultCountry || "Malaysia",
                 defaultState: "-",
+                expectedPlanChecksum: mode === "commit" ? importResult?.summary.planChecksum : undefined,
             });
             setImportResult(result);
             setImportResultView("registrations");
             if (mode === "commit" && result.committed) {
-                Message.success("Workbook imported.");
+                Message.success(
+                    result.idempotentReplay
+                        ? "This workbook was already imported; no duplicates were created."
+                        : "Workbook imported.",
+                );
                 await refreshRegistrationsList();
             } else if (result.summary.errors > 0) {
                 Message.error("Import has errors. Fix the workbook before committing.");
@@ -785,7 +794,13 @@ export default function RegistrationsListPage() {
                             <Button
                                 type="primary"
                                 loading={importLoading}
-                                disabled={!importFile || (importResult?.summary.errors ?? 0) > 0}
+                                disabled={
+                                    !importFile ||
+                                    !importResult ||
+                                    importResult.summary.mode !== "preview" ||
+                                    importResult.summary.errors > 0 ||
+                                    importResult.summary.conflicts > 0
+                                }
                                 onClick={() => handleWorkbookImport("commit")}
                             >
                                 Commit Import
@@ -797,7 +812,7 @@ export default function RegistrationsListPage() {
                 desktopWidth="min(96vw, 1100px)"
                 mobileMode="fullscreen"
             >
-                <div className="flex flex-col gap-6 py-4 md:px-3 max-h-[76vh] overflow-y-auto registrations-import-body">
+                <div className="flex flex-col gap-6 py-4 md:px-3 registrations-import-body">
                     <Form form={importForm} layout="vertical" initialValues={{defaultCountry: "Malaysia"}}>
                         <Form.Item label="Workbook" required>
                             <Upload
@@ -841,6 +856,7 @@ export default function RegistrationsListPage() {
                             <Select
                                 showSearch
                                 options={countries.map((country) => ({label: country.label, value: country.value}))}
+                                onChange={() => setImportResult(null)}
                                 filterOption={(inputValue, option) =>
                                     String(option.props.children).toLowerCase().includes(inputValue.toLowerCase())
                                 }
@@ -851,6 +867,23 @@ export default function RegistrationsListPage() {
                     {importResult && (
                         <div className="flex flex-col gap-3">
                             {importResult.committed && <Tag color="green">Committed</Tag>}
+                            {importResult.idempotentReplay && <Tag color="blue">Already imported — no changes</Tag>}
+                            <div className="registrations-import-summary-grid" aria-label="Import change summary">
+                                <span>
+                                    Profiles: {importResult.summary.profilesCreated} new / {importResult.summary.profilesReused}{" "}
+                                    reused
+                                </span>
+                                <span>
+                                    Registrations: {importResult.summary.registrationsCreated} new /{" "}
+                                    {importResult.summary.registrationsUpdated} updated /{" "}
+                                    {importResult.summary.registrationsUnchanged} unchanged
+                                </span>
+                                <span>
+                                    Teams: {importResult.summary.teamsCreated} new / {importResult.summary.teamsUpdated} updated /{" "}
+                                    {importResult.summary.teamsUnchanged} unchanged
+                                </span>
+                                <span>Conflicts: {importResult.summary.conflicts}</span>
+                            </div>
                             <ResponsiveTabs
                                 type="capsule"
                                 activeTab={importResultView}

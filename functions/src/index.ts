@@ -11,7 +11,6 @@ import {
     Timestamp as FirestoreTimestamp,
     type QueryDocumentSnapshot,
     type Transaction,
-    type WriteBatch,
     getFirestore,
 } from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
@@ -28,6 +27,8 @@ import nodemailer from "nodemailer";
 import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
+import {appendImportPlanRows, buildImportPlan, commitIdempotentImport, sha256, stableChecksum} from "./importIdempotency.js";
+import {assertWritesEnabled, maintenanceAllowsOperation, readMaintenanceState} from "./maintenance.js";
 import {
     buildAuditDiff,
     logClientError,
@@ -127,6 +128,7 @@ type ImportRequestPayload = {
     defaultCountry?: unknown;
     defaultState?: unknown;
     sheetMappings?: unknown;
+    expectedPlanChecksum?: unknown;
     meta?: unknown;
 };
 
@@ -190,7 +192,6 @@ type ImportReportRow = {
     category?: "errors" | "warnings" | "athletes" | "registrations" | "teams";
 };
 
-const IMPORT_BATCH_WRITE_LIMIT = 450;
 const IMPORT_REPORT_ROW_LIMIT_PER_CATEGORY = 500;
 
 type ParsedWorkbookImport = {
@@ -200,23 +201,6 @@ type ParsedWorkbookImport = {
     registrationsByAthleteKey: Map<string, Set<string>>;
     teams: ImportTeam[];
     rows: ImportReportRow[];
-};
-
-type ImportUserProfileData = {
-    id?: string;
-    global_id?: string;
-    name?: string;
-    name_search?: string | null;
-    IC?: string | null;
-    email?: string | null;
-    owner_uids?: string[] | null;
-    primary_owner_email?: string | null;
-    account_status?: "claimed" | "unclaimed" | "claim_review" | null;
-    source?: "legacy" | "self_registered" | "admin_import" | null;
-    identity_type?: ImportIdentityType | null;
-    identity_key?: string | null;
-    passport_country?: string | null;
-    country?: string[] | null;
 };
 
 type ProfileClaimRequestStatus = "pending" | "approved" | "rejected";
@@ -273,7 +257,11 @@ const importCellToString = (value: ExcelJS.CellValue): string => {
 };
 
 const importNormalize = (value: string): string => value.trim().replace(/\s+/g, " ").toLowerCase();
-const importNormalizeCompact = (value: string): string => value.trim().replace(/\s+/g, "").toUpperCase();
+const importNormalizeCompact = (value: string): string =>
+    value
+        .trim()
+        .replace(/[^A-Z0-9]/gi, "")
+        .toUpperCase();
 
 const importNormalizeEventType = (value: string): string => {
     const normalized = importNormalize(value).replace(/&/g, "and");
@@ -371,15 +359,6 @@ const importParseDate = (value: ExcelJS.CellValue): Date | null => {
 };
 
 const importFormatDateKey = (date: Date): string => date.toISOString().slice(0, 10);
-
-const importAgeAtTournament = (birthdate: Date, startDate: Date): number => {
-    let age = startDate.getUTCFullYear() - birthdate.getUTCFullYear();
-    const birthdayThisYear = new Date(Date.UTC(startDate.getUTCFullYear(), birthdate.getUTCMonth(), birthdate.getUTCDate()));
-    if (startDate.getTime() < birthdayThisYear.getTime()) {
-        age -= 1;
-    }
-    return age;
-};
 
 const importInferGender = (identityType: ImportIdentityType, identityNumber: string | null): ImportGender | null => {
     if (identityType !== "MYKAD" || !identityNumber) {
@@ -999,54 +978,6 @@ const importParseWorkbook = (
     return parsed;
 };
 
-const importNextGlobalIdNumber = (current: number): number => {
-    let candidate = current + 1;
-    while (String(candidate).includes("4")) {
-        candidate += 1;
-    }
-    return candidate;
-};
-
-const importReserveGlobalIds = async (count: number): Promise<string[]> => {
-    if (count <= 0) {
-        return [];
-    }
-
-    const counterRef = db.collection("counters").doc("userCounter");
-    return db.runTransaction(async (transaction) => {
-        const snap = await transaction.get(counterRef);
-        const current = snap.exists ? ((snap.data()?.count as number | undefined) ?? 0) : 0;
-        const reserved: number[] = [];
-        let last = current;
-
-        while (reserved.length < count) {
-            last = importNextGlobalIdNumber(last);
-            reserved.push(last);
-        }
-
-        transaction.set(counterRef, {count: last}, {merge: true});
-        return reserved.map((value) => String(value).padStart(5, "0"));
-    });
-};
-
-const importCommitBatchWrites = async (applyWrites: Array<(batch: WriteBatch) => void>): Promise<void> => {
-    for (let index = 0; index < applyWrites.length; index += IMPORT_BATCH_WRITE_LIMIT) {
-        const batch = db.batch();
-        for (const applyWrite of applyWrites.slice(index, index + IMPORT_BATCH_WRITE_LIMIT)) {
-            applyWrite(batch);
-        }
-        await batch.commit();
-    }
-};
-
-const importGetDocumentsInChunks = async <T extends DocumentReference>(refs: T[]) => {
-    const snapshots: Awaited<ReturnType<typeof db.getAll>> = [];
-    for (let index = 0; index < refs.length; index += IMPORT_BATCH_WRITE_LIMIT) {
-        snapshots.push(...(await db.getAll(...refs.slice(index, index + IMPORT_BATCH_WRITE_LIMIT))));
-    }
-    return snapshots;
-};
-
 const profileSnapshotBelongsToUid = (
     profile: {id: string; data: () => Record<string, unknown> | undefined},
     uid: string,
@@ -1145,408 +1076,6 @@ const requesterHasModifyAdmin = async (uid: string): Promise<boolean> => {
         const data = profile.data() as {roles?: {modify_admin?: boolean}} | undefined;
         return data?.roles?.modify_admin === true;
     });
-};
-
-const importInferStoredIdentityType = (data: ImportUserProfileData): ImportIdentityType | null => {
-    if (data.identity_type) {
-        return data.identity_type;
-    }
-
-    const normalizedIc = importNormalizeCompact(data.IC ?? "");
-    if (!normalizedIc) {
-        return null;
-    }
-    return /^\d{12}$/.test(normalizedIc) ? "MYKAD" : "PASSPORT";
-};
-
-const importGetLegacyIdentityCandidates = (athlete: ImportAthlete): string[] => {
-    const rawIdentityNumber = athlete.identityNumber?.trim();
-    const normalizedIdentityNumber = importNormalizeCompact(athlete.identityNumber ?? "");
-    return Array.from(new Set([rawIdentityNumber, normalizedIdentityNumber].filter((value): value is string => Boolean(value))));
-};
-
-const importLegacyProfileMatchesAthlete = (data: ImportUserProfileData, athlete: ImportAthlete): boolean => {
-    const storedIdentityNumber = importNormalizeCompact(data.IC ?? "");
-    const importedIdentityNumber = importNormalizeCompact(athlete.identityNumber ?? "");
-    if (!storedIdentityNumber || !importedIdentityNumber || storedIdentityNumber !== importedIdentityNumber) {
-        return false;
-    }
-
-    const storedIdentityType = importInferStoredIdentityType(data);
-    if (athlete.identityType === "MYKAD") {
-        return storedIdentityType == null || storedIdentityType === "MYKAD";
-    }
-    if (athlete.identityType === "PASSPORT") {
-        if (storedIdentityType === "MYKAD") {
-            return false;
-        }
-
-        const storedPassportCountry = importNormalizeCompact(data.passport_country ?? data.country?.[0] ?? "");
-        const importedPassportCountry = importNormalizeCompact(athlete.passportCountry ?? "");
-        return !storedPassportCountry || !importedPassportCountry || storedPassportCountry === importedPassportCountry;
-    }
-
-    return storedIdentityType == null || storedIdentityType === "NONE";
-};
-
-const importFindExistingUserForAthlete = async (athlete: ImportAthlete): Promise<QueryDocumentSnapshot | null> => {
-    if (athlete.identityKey) {
-        const existingSnap = await db.collection("users").where("identity_key", "==", athlete.identityKey).limit(1).get();
-        if (!existingSnap.empty) {
-            return existingSnap.docs[0];
-        }
-    }
-
-    const legacyIdentityCandidates = importGetLegacyIdentityCandidates(athlete);
-    const checkedDocIds = new Set<string>();
-    for (const identityCandidate of legacyIdentityCandidates) {
-        const legacySnap = await db.collection("users").where("IC", "==", identityCandidate).get();
-        for (const docSnap of legacySnap.docs) {
-            if (checkedDocIds.has(docSnap.id)) {
-                continue;
-            }
-            checkedDocIds.add(docSnap.id);
-            const data = docSnap.data() as ImportUserProfileData;
-            if (importLegacyProfileMatchesAthlete(data, athlete)) {
-                return docSnap;
-            }
-        }
-    }
-
-    return null;
-};
-
-const importBuildExistingUserPatch = (
-    athlete: ImportAthlete,
-    existingDoc: QueryDocumentSnapshot,
-    assignedGlobalId?: string,
-): Partial<ImportUserProfileData> & {updated_at: FirestoreTimestamp} => {
-    const data = existingDoc.data() as ImportUserProfileData;
-    const nextGlobalId = data.global_id ?? assignedGlobalId;
-    const accountStatus = data.account_status ?? (data.email ? "claimed" : "unclaimed");
-    const ownerUids = Array.isArray(data.owner_uids) ? data.owner_uids : data.email ? [existingDoc.id] : [];
-    const patch: Partial<ImportUserProfileData> & {updated_at: FirestoreTimestamp} = {
-        updated_at: FirestoreTimestamp.now(),
-    };
-
-    athlete.userDocId = existingDoc.id;
-    athlete.globalId = nextGlobalId;
-
-    if (!data.id) {
-        patch.id = existingDoc.id;
-    }
-    if (!data.global_id) {
-        patch.global_id = nextGlobalId;
-    }
-    const normalizedNameSearch = importNormalize(data.name ?? athlete.name);
-    if (data.name_search !== normalizedNameSearch) {
-        patch.name_search = normalizedNameSearch;
-    }
-    if (!Array.isArray(data.owner_uids)) {
-        patch.owner_uids = ownerUids;
-    }
-    if (!data.primary_owner_email && data.email) {
-        patch.primary_owner_email = data.email;
-    }
-    if (!data.account_status) {
-        patch.account_status = accountStatus;
-    }
-    if (!data.source) {
-        patch.source = "legacy";
-    }
-    if (!data.identity_type) {
-        patch.identity_type = athlete.identityType;
-    }
-    if (!data.identity_key && athlete.identityKey) {
-        patch.identity_key = athlete.identityKey;
-    }
-    if (!data.passport_country && athlete.passportCountry) {
-        patch.passport_country = athlete.passportCountry;
-    }
-
-    return patch;
-};
-
-const importResolveUsers = async (athletes: Iterable<ImportAthlete>, importBatchId: string): Promise<void> => {
-    const existingAthletes: Array<{athlete: ImportAthlete; existingDoc: QueryDocumentSnapshot}> = [];
-    const newAthletes: ImportAthlete[] = [];
-
-    for (const athlete of athletes) {
-        const existingDoc = await importFindExistingUserForAthlete(athlete);
-        if (existingDoc) {
-            existingAthletes.push({athlete, existingDoc});
-            continue;
-        }
-
-        newAthletes.push(athlete);
-    }
-
-    const existingWithoutGlobalId = existingAthletes.filter(({existingDoc}) => {
-        const data = existingDoc.data() as ImportUserProfileData;
-        return !data.global_id;
-    });
-    const reservedGlobalIds = await importReserveGlobalIds(existingWithoutGlobalId.length + newAthletes.length);
-    let nextReservedGlobalIdIndex = 0;
-    const writes: Array<(batch: WriteBatch) => void> = [];
-
-    for (const {athlete, existingDoc} of existingAthletes) {
-        const data = existingDoc.data() as ImportUserProfileData;
-        const assignedGlobalId = data.global_id ? undefined : reservedGlobalIds[nextReservedGlobalIdIndex++];
-        const patch = importBuildExistingUserPatch(athlete, existingDoc, assignedGlobalId);
-        writes.push((batch) => batch.update(existingDoc.ref, patch));
-    }
-
-    for (const athlete of newAthletes) {
-        const userRef = db.collection("users").doc();
-        const globalId = reservedGlobalIds[nextReservedGlobalIdIndex++];
-        const now = FirestoreTimestamp.now();
-        athlete.userDocId = userRef.id;
-        athlete.globalId = globalId;
-        writes.push((batch) =>
-            batch.set(userRef, {
-                id: userRef.id,
-                global_id: globalId,
-                name: athlete.name,
-                name_search: importNormalize(athlete.name),
-                IC: athlete.identityNumber,
-                email: null,
-                phone_number: null,
-                birthdate: FirestoreTimestamp.fromDate(athlete.birthdate),
-                gender: athlete.gender,
-                country: athlete.country,
-                image_url: "",
-                owner_uids: [],
-                primary_owner_email: null,
-                account_status: "unclaimed",
-                source: "admin_import",
-                identity_type: athlete.identityType,
-                identity_key: athlete.identityKey,
-                passport_country: athlete.passportCountry,
-                import_batch_id: importBatchId,
-                claim_method: athlete.identityType === "NONE" ? "admin_review" : "identity_match",
-                roles: null,
-                school: null,
-                best_times: {},
-                registration_records: [],
-                created_at: now,
-                updated_at: now,
-            }),
-        );
-    }
-
-    await importCommitBatchWrites(writes);
-};
-
-const importCommitRegistrationsAndTeams = async ({
-    tournamentId,
-    tournamentStartDate,
-    parsed,
-    importBatchId,
-}: {
-    tournamentId: string;
-    tournamentStartDate: Date;
-    parsed: ParsedWorkbookImport;
-    importBatchId: string;
-}): Promise<{createdRegistrations: number; updatedRegistrations: number; createdTeams: number}> => {
-    let createdRegistrations = 0;
-    let updatedRegistrations = 0;
-    let createdTeams = 0;
-    const registrationIdByAthleteKey = new Map<string, string>();
-    const existingRegistrationsSnap = await db.collection("registrations").where("tournament_id", "==", tournamentId).get();
-    const existingRegistrationByGlobalId = new Map(
-        existingRegistrationsSnap.docs
-            .map((docSnap) => {
-                const data = docSnap.data() as {user_global_id?: string};
-                return data.user_global_id ? ([data.user_global_id, docSnap] as const) : null;
-            })
-            .filter((entry): entry is readonly [string, QueryDocumentSnapshot] => Boolean(entry)),
-    );
-    const registrationWrites: Array<(batch: WriteBatch) => void> = [];
-    const userRegistrationUpdates: Array<{
-        userRef: DocumentReference;
-        tournamentId: string;
-        registrationRecord: {
-            tournament_id: string;
-            events: string[];
-            registration_date: FirestoreTimestamp;
-            status: string;
-            rejection_reason: null;
-            created_at: FirestoreTimestamp;
-            updated_at: FirestoreTimestamp;
-        };
-        now: FirestoreTimestamp;
-    }> = [];
-
-    for (const [athleteKey, eventIds] of parsed.registrationsByAthleteKey.entries()) {
-        const athlete = parsed.athletes.get(athleteKey);
-        if (!athlete?.userDocId || !athlete.globalId || athlete.parentOnly) {
-            continue;
-        }
-        const existingRegistrationDoc = existingRegistrationByGlobalId.get(athlete.globalId);
-        const age = importAgeAtTournament(athlete.birthdate, tournamentStartDate);
-        const eventsRegistered = Array.from(eventIds);
-        const now = FirestoreTimestamp.now();
-        let recordEvents = eventsRegistered;
-        const registrationRecord = {
-            tournament_id: tournamentId,
-            events: recordEvents,
-            registration_date: now,
-            status: "approved",
-            rejection_reason: null,
-            created_at: now,
-            updated_at: now,
-        };
-
-        if (!existingRegistrationDoc) {
-            const registrationRef = db.collection("registrations").doc();
-            const payload = {
-                id: registrationRef.id,
-                tournament_id: tournamentId,
-                user_id: athlete.userDocId,
-                user_global_id: athlete.globalId,
-                user_name: athlete.name,
-                age,
-                gender: athlete.gender,
-                country: athlete.country[0],
-                phone_number: "",
-                organizer: "",
-                events_registered: eventsRegistered,
-                payment_proof_url: null,
-                registration_status: "approved",
-                rejection_reason: null,
-                final_status: null,
-                import_batch_id: importBatchId,
-                created_at: now,
-                updated_at: now,
-            };
-            registrationWrites.push((batch) => batch.set(registrationRef, payload));
-            registrationIdByAthleteKey.set(athleteKey, registrationRef.id);
-            createdRegistrations += 1;
-        } else {
-            const existingData = existingRegistrationDoc.data() as {events_registered?: string[]; registration_status?: string};
-            const mergedEvents = Array.from(new Set([...(existingData.events_registered ?? []), ...eventsRegistered]));
-            recordEvents = mergedEvents;
-            registrationWrites.push((batch) =>
-                batch.update(existingRegistrationDoc.ref, {
-                    events_registered: mergedEvents,
-                    registration_status: "approved",
-                    import_batch_id: importBatchId,
-                    updated_at: now,
-                }),
-            );
-            registrationIdByAthleteKey.set(athleteKey, existingRegistrationDoc.id);
-            updatedRegistrations += 1;
-            if (existingData.registration_status !== "approved") {
-                createdRegistrations += 1;
-            }
-        }
-
-        userRegistrationUpdates.push({
-            userRef: db.collection("users").doc(athlete.userDocId),
-            tournamentId,
-            registrationRecord: {
-                ...registrationRecord,
-                events: recordEvents,
-            },
-            now,
-        });
-    }
-
-    await importCommitBatchWrites(registrationWrites);
-
-    const userSnapshots = await importGetDocumentsInChunks(userRegistrationUpdates.map((update) => update.userRef));
-    const userWrites = userRegistrationUpdates.map((update, index) => {
-        const userSnap = userSnapshots[index];
-        const existingRecords = (userSnap?.data()?.registration_records as Array<{tournament_id?: string}> | undefined) ?? [];
-        const nextRecords = [
-            ...existingRecords.filter((record) => record.tournament_id !== update.tournamentId),
-            update.registrationRecord,
-        ];
-
-        return (batch: WriteBatch) =>
-            batch.update(update.userRef, {
-                registration_records: nextRecords,
-                updated_at: update.now,
-            });
-    });
-    await importCommitBatchWrites(userWrites);
-
-    if (createdRegistrations > 0) {
-        await db
-            .collection("tournaments")
-            .doc(tournamentId)
-            .update({participants: FieldValue.increment(createdRegistrations)});
-    }
-
-    const existingTeamsSnap = await db.collection("teams").where("tournament_id", "==", tournamentId).get();
-    const existingTeamsByKey: Map<string, DocumentReference> = new Map(
-        existingTeamsSnap.docs.map((docSnap) => {
-            const team = docSnap.data() as {event_id?: string; leader_id?: string; members?: Array<{global_id?: string}>};
-            const memberIds = (team.members ?? []).map((member) => member.global_id ?? "").sort();
-            return [`${team.event_id ?? ""}|${team.leader_id ?? ""}|${memberIds.join(",")}`, docSnap.ref] as const;
-        }),
-    );
-
-    for (const team of parsed.teams) {
-        const athletes = team.members
-            .map((memberKey) => parsed.athletes.get(memberKey))
-            .filter((value): value is ImportAthlete => Boolean(value));
-        if (athletes.some((athlete) => !athlete.globalId)) {
-            continue;
-        }
-        const leader = athletes[0];
-        const members = athletes.slice(1).map((athlete) => ({
-            global_id: athlete.globalId as string,
-            verified: true,
-        }));
-        const registrationId = registrationIdByAthleteKey.get(team.members[0]);
-        if (!registrationId || !leader.globalId) {
-            continue;
-        }
-        const teamKey = `${team.eventId}|${leader.globalId}|${members
-            .map((member) => member.global_id)
-            .sort()
-            .join(",")}`;
-        const existingTeam = existingTeamsByKey.get(teamKey);
-        if (existingTeam) {
-            if (team.name) {
-                await existingTeam.update({
-                    name: team.name,
-                    import_batch_id: importBatchId,
-                    updated_at: FirestoreTimestamp.now(),
-                });
-            }
-            continue;
-        }
-        const ages = athletes.map((athlete) => importAgeAtTournament(athlete.birthdate, tournamentStartDate));
-        const normalizedTeamEventType = importNormalizeEventType(team.eventType);
-        const teamAge =
-            normalizedTeamEventType === importNormalizeEventType("Team Relay") ||
-            normalizedTeamEventType === importNormalizeEventType("Double")
-                ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length)
-                : ages[0];
-        const teamRef = db.collection("teams").doc();
-        const teamName = team.name || athletes.map((athlete) => athlete.name).join(" & ");
-        await teamRef.set({
-            id: teamRef.id,
-            name: teamName,
-            tournament_id: tournamentId,
-            registration_id: registrationId,
-            leader_id: leader.globalId,
-            members,
-            event_id: team.eventId,
-            event: [team.eventType],
-            team_age: teamAge,
-            looking_for_member: false,
-            import_batch_id: importBatchId,
-            created_at: FirestoreTimestamp.now(),
-            updated_at: FirestoreTimestamp.now(),
-        });
-        existingTeamsByKey.set(teamKey, teamRef);
-        createdTeams += 1;
-    }
-
-    return {createdRegistrations, updatedRegistrations, createdTeams};
 };
 
 const importBuildReportRows = (parsed: ParsedWorkbookImport, events: ImportEvent[]): ImportReportRow[] => {
@@ -1885,7 +1414,7 @@ const buildRegistrationTeamSnapshot = (team: Team, existing?: RegistrationTeamSn
     return {
         team_id: team.id,
         label: maintenanceTeamNamesEqual(existing?.label, teamName) ? existing?.label : teamName,
-        name: maintenanceTeamNamesEqual(existing?.name, teamName) ? existing?.name ?? teamName : teamName,
+        name: maintenanceTeamNamesEqual(existing?.name, teamName) ? (existing?.name ?? teamName) : teamName,
         member: (team.members ?? []).map((member) => ({
             global_id: member.global_id,
             verified: Boolean(member.verified),
@@ -2811,6 +2340,7 @@ const getClientErrorText = (value: unknown, maxLength: number): string => {
 export const reportClientError = onCall(observabilityCallableOptions, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Authentication required.");
+    await assertWritesEnabled(db);
 
     const payload = (request.data && typeof request.data === "object" ? request.data : {}) as ClientErrorPayload;
     const message = sanitizeClientError(payload.message) || "Unknown client error";
@@ -3053,6 +2583,7 @@ export const sendPasswordResetEmailWithCustomEmail = onCall(
         secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERNAME, AWS_SES_SMTP_PASSWORD],
     },
     async (request) => {
+        await assertWritesEnabled(db);
         const email = normalizeEmail(request.data?.email);
         if (!email) {
             throw new HttpsError("invalid-argument", "Email is required.");
@@ -3135,6 +2666,13 @@ export const sendEmail = onRequest({secrets: [RESEND_API_KEY, AWS_SES_SMTP_USERN
             return;
         }
 
+        try {
+            await assertWritesEnabled(db);
+        } catch (error) {
+            res.status(503).json({error: error instanceof Error ? error.message : "Maintenance in progress."});
+            return;
+        }
+
         const {to, tournamentId, teamId, memberId, registrationId} = req.body;
         if (!tournamentId || !teamId || !memberId || !registrationId) {
             res.status(400).json({error: "Missing required fields"});
@@ -3192,6 +2730,8 @@ export const syncTeamVerificationRequests = onDocumentWritten(
         const beforeMembers = new Map((beforeTeam?.members ?? []).map((member) => [member.global_id, member]));
         const afterMembers = new Map((afterTeam?.members ?? []).map((member) => [member.global_id, member]));
         const tournamentId = afterTeam?.tournament_id ?? beforeTeam?.tournament_id ?? "";
+        const maintenance = await readMaintenanceState(db);
+        if (!maintenanceAllowsOperation(maintenance, `tournament.import:${tournamentId}`)) return;
 
         await syncRegistrationTeamSnapshots(teamId, beforeTeam, afterTeam);
 
@@ -3278,6 +2818,8 @@ export const deliverVerificationRequestEmails = onDocumentWritten(
             return;
         }
         const after = event.data.after.data() as VerificationRequestData;
+        const maintenance = await readMaintenanceState(db);
+        if (!maintenanceAllowsOperation(maintenance, `tournament.import:${after.tournament_id}`)) return;
         const before = event.data.before.exists ? (event.data.before.data() as VerificationRequestData) : null;
         const becamePending = before?.status !== "pending" && after.status === "pending";
         const emailBecamePending = before?.email_status !== "pending" && after.email_status === "pending";
@@ -3301,6 +2843,7 @@ export const deliverUserNotificationEmails = onDocumentWritten(
             return;
         }
         const after = event.data.after.data() as UserNotificationData;
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const before = event.data.before.exists ? (event.data.before.data() as UserNotificationData) : null;
         const becameUnread = before?.status !== "unread" && after.status === "unread";
         const emailBecamePending = before?.email_status !== "pending" && after.email_status === "pending";
@@ -3315,6 +2858,7 @@ export const rejectTeamInvitation = onCall(callableFunctionOptions, async (reque
     if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "Sign in to reject an invitation.");
     }
+    await assertWritesEnabled(db);
     const operation = normalizeOperationMeta(request.data?.meta);
     const requestId = typeof request.data?.requestId === "string" ? request.data.requestId.trim() : "";
     if (!requestId) {
@@ -3583,6 +3127,7 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
     if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
     const requesterUid = request.auth.uid;
 
     const input = request.data as AdminTeamMutationInput;
@@ -4051,6 +3596,7 @@ export const cacheGoogleAvatarCallable = onCall(callableFunctionOptions, async (
     if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "Unauthorized");
     }
+    await assertWritesEnabled(db);
 
     const photoURL = request.data?.photoURL;
     if (!photoURL || typeof photoURL !== "string") {
@@ -4124,6 +3670,7 @@ export const transferProfileOwnership = onCall(callableFunctionOptions, async (r
     if (!requesterUid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
 
     const payload = request.data as {profileId?: unknown; targetEmail?: unknown; meta?: unknown};
     const operation = normalizeOperationMeta(payload.meta);
@@ -4211,6 +3758,7 @@ export const releaseOwnedProfile = onCall(callableFunctionOptions, async (reques
     if (!requesterUid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
 
     const payload = request.data as {profileId?: unknown; meta?: unknown};
     const operation = normalizeOperationMeta(payload.meta);
@@ -4352,6 +3900,7 @@ export const createProfileClaimRequest = onCall(callableFunctionOptions, async (
     if (!requesterUid || !requesterEmail) {
         throw new HttpsError("unauthenticated", "Please sign in with Google before requesting a profile claim.");
     }
+    await assertWritesEnabled(db);
 
     const payload = request.data as {
         profile_global_id?: unknown;
@@ -4450,6 +3999,7 @@ export const approveProfileClaimRequest = onCall(callableFunctionOptions, async 
     if (!requesterUid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
     const authorized = await requesterHasModifyAdmin(requesterUid);
     if (!authorized) {
         throw new HttpsError("permission-denied", "You do not have permission to approve profile claims.");
@@ -4545,6 +4095,7 @@ export const rejectProfileClaimRequest = onCall(callableFunctionOptions, async (
     if (!requesterUid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
     const authorized = await requesterHasModifyAdmin(requesterUid);
     if (!authorized) {
         throw new HttpsError("permission-denied", "You do not have permission to reject profile claims.");
@@ -4596,8 +4147,8 @@ export const rejectProfileClaimRequest = onCall(callableFunctionOptions, async (
 
 export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, async (request) => {
     const importStartedAt = Date.now();
-    const importBatchRef = db.collection("import_batches").doc();
     const operation = normalizeOperationMeta(request.data?.meta);
+    let importBatchId = "pending";
     const logImportStage = (stage: string, details: Record<string, unknown> = {}) => {
         logInfo("importTournamentWorkbook.checkpoint", {
             ...details,
@@ -4607,7 +4158,7 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
             clientRelease: operation.release,
             databaseId: firestoreTriggerDatabase,
             functionsEmulator: process.env.FUNCTIONS_EMULATOR === "true",
-            importBatchId: importBatchRef.id,
+            importBatchId,
             elapsedMs: Date.now() - importStartedAt,
         });
     };
@@ -4629,6 +4180,7 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
         payload.sheetMappings && typeof payload.sheetMappings === "object"
             ? (payload.sheetMappings as Record<string, string>)
             : {};
+    const expectedPlanChecksum = typeof payload.expectedPlanChecksum === "string" ? payload.expectedPlanChecksum.trim() : "";
 
     logImportStage("request received", {
         mode,
@@ -4648,6 +4200,7 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
         logImportStage("authorization failed");
         throw new HttpsError("permission-denied", "You do not have permission to import registrations for this tournament.");
     }
+    if (mode === "commit") await assertWritesEnabled(db, `tournament.import:${tournamentId}`);
     logImportStage("authorization complete");
 
     const [tournamentSnap, eventsSnap] = await Promise.all([
@@ -4686,6 +4239,9 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
     const workbook = new ExcelJS.Workbook();
     const base64Payload = fileBase64.includes(",") ? (fileBase64.split(",").pop() ?? "") : fileBase64;
     const workbookBuffer = Buffer.from(base64Payload, "base64");
+    const workbookSha256 = sha256(workbookBuffer);
+    importBatchId = stableChecksum({tournamentId, workbookSha256, defaultCountry, defaultState, sheetMappings});
+    const importBatchRef = db.collection("import_batches").doc(importBatchId);
     const workbookArrayBuffer = workbookBuffer.buffer.slice(
         workbookBuffer.byteOffset,
         workbookBuffer.byteOffset + workbookBuffer.byteLength,
@@ -4696,29 +4252,41 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
         worksheets: workbook.worksheets.length,
     });
     const parsed = importParseWorkbook(workbook, events, {defaultCountry, defaultState, sheetMappings});
-    const errors = parsed.rows.filter((row) => row.level === "error");
+    const parserErrors = parsed.rows.filter((row) => row.level === "error");
     logImportStage("workbook parsed", {
         athletes: parsed.athletes.size,
         baseRoster: parsed.baseRosterKeys.size,
         registrations: parsed.registrationsByAthleteKey.size,
         teams: parsed.teams.length,
         issues: parsed.rows.length,
-        errors: errors.length,
+        errors: parserErrors.length,
         warnings: parsed.rows.filter((row) => row.level === "warning").length,
     });
     const reportRows = importBuildReportRows(parsed, events);
+    const existingBatch = mode === "commit" ? await importBatchRef.get() : null;
+    if (existingBatch?.data()?.status === "committed" && existingBatch.data()?.result) {
+        const storedResult = existingBatch.data()?.result as Record<string, unknown>;
+        logImportStage("idempotent replay", {workbookSha256});
+        return {...storedResult, idempotentReplay: true};
+    }
+    const plan = await buildImportPlan(db, tournamentId, parsed, workbookSha256);
+    appendImportPlanRows(reportRows, plan);
+    const errors = parserErrors.length + plan.conflicts.length;
     const summary = {
         mode,
         importBatchId: importBatchRef.id,
+        workbookSha256,
+        planChecksum: plan.checksum,
         athletes: parsed.athletes.size,
         baseRoster: parsed.baseRosterKeys.size,
         registrations: parsed.registrationsByAthleteKey.size,
         teams: parsed.teams.length,
-        errors: errors.length,
+        errors,
         warnings: parsed.rows.filter((row) => row.level === "warning").length,
         createdRegistrations: 0,
         updatedRegistrations: 0,
         createdTeams: 0,
+        ...plan.summary,
     };
     logImportStage("report rows built", {
         reportRows: reportRows.length,
@@ -4726,34 +4294,94 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
     });
 
     if (mode === "commit") {
-        if (errors.length > 0) {
-            logImportStage("commit skipped due to errors", {errors: errors.length});
+        if (errors > 0) {
+            logImportStage("commit skipped due to errors", {errors});
             return {
                 summary,
                 rows: reportRows,
                 committed: false,
+                idempotentReplay: false,
             };
         }
+        if (!expectedPlanChecksum || expectedPlanChecksum !== plan.checksum) {
+            throw new HttpsError(
+                "aborted",
+                "The import preview is missing or stale. Preview this workbook again before committing.",
+            );
+        }
+        const claim = await db.runTransaction(async (transaction) => {
+            const batchSnapshot = await transaction.get(importBatchRef);
+            if (batchSnapshot.data()?.status === "committed" && batchSnapshot.data()?.result) {
+                return {result: batchSnapshot.data()?.result as Record<string, unknown>, replay: true};
+            }
+            if (batchSnapshot.data()?.status === "processing") return {result: null, replay: false, waiting: true};
+            const now = FirestoreTimestamp.now();
+            transaction.set(
+                importBatchRef,
+                {
+                    tournament_id: tournamentId,
+                    file_name: typeof payload.fileName === "string" ? payload.fileName : null,
+                    workbook_sha256: workbookSha256,
+                    plan_checksum: plan.checksum,
+                    status: "processing",
+                    operation_id: operation.operationId,
+                    created_at: batchSnapshot.data()?.created_at ?? now,
+                    updated_at: now,
+                    created_by_uid: request.auth?.uid,
+                },
+                {merge: true},
+            );
+            return {result: null, replay: false, waiting: false};
+        });
+        if (claim.replay && claim.result) {
+            logImportStage("idempotent replay", {workbookSha256});
+            return {...claim.result, idempotentReplay: true};
+        }
+        if (claim.waiting) {
+            const deadline = Date.now() + 30_000;
+            while (Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 250));
+                const pendingBatch = await importBatchRef.get();
+                if (pendingBatch.data()?.status === "committed" && pendingBatch.data()?.result) {
+                    logImportStage("concurrent idempotent replay", {workbookSha256});
+                    return {...(pendingBatch.data()?.result as Record<string, unknown>), idempotentReplay: true};
+                }
+                if (pendingBatch.data()?.status === "failed") {
+                    throw new HttpsError("aborted", "The concurrent workbook import failed. Preview and retry it.");
+                }
+            }
+            throw new HttpsError("deadline-exceeded", "The concurrent workbook import is still running. Retry shortly.");
+        }
         logImportStage("commit started");
-        await importResolveUsers(parsed.athletes.values(), importBatchRef.id);
-        logImportStage("users resolved");
-        const commitSummary = await importCommitRegistrationsAndTeams({
-            tournamentId,
-            tournamentStartDate: tournamentStart,
-            parsed,
-            importBatchId: importBatchRef.id,
-        });
-        Object.assign(summary, commitSummary);
-        logImportStage("registrations and teams committed", {commitSummary});
-        await importBatchRef.set({
-            tournament_id: tournamentId,
-            file_name: typeof payload.fileName === "string" ? payload.fileName : null,
-            mode,
-            summary,
-            rows: reportRows,
-            created_at: FirestoreTimestamp.now(),
-            created_by_uid: request.auth.uid,
-        });
+        let result: Record<string, unknown>;
+        try {
+            const commitSummary = await commitIdempotentImport(db, tournamentId, tournamentStart, parsed, importBatchRef.id);
+            Object.assign(summary, commitSummary);
+            logImportStage("registrations and teams committed", {commitSummary});
+            result = {summary, rows: reportRows, committed: true, idempotentReplay: false};
+            const completedAt = FirestoreTimestamp.now();
+            await importBatchRef.set(
+                {
+                    mode,
+                    result,
+                    status: "committed",
+                    completed_at: completedAt,
+                    updated_at: completedAt,
+                },
+                {merge: true},
+            );
+        } catch (error) {
+            await importBatchRef.set(
+                {
+                    status: "failed",
+                    failure_code: error instanceof HttpsError ? error.code : "internal",
+                    failed_at: FirestoreTimestamp.now(),
+                    updated_at: FirestoreTimestamp.now(),
+                },
+                {merge: true},
+            );
+            throw error;
+        }
         const actor = await resolveActorContext(db, request.auth.uid, operation.activeProfileGlobalId, tournamentId);
         await writeAuditLogBestEffort(db, {
             ...actor,
@@ -4768,11 +4396,7 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
             source: "callable",
         });
         logImportStage("import batch saved", {summary});
-        return {
-            summary,
-            rows: reportRows,
-            committed: true,
-        };
+        return result;
     }
 
     logImportStage("preview complete", {summary});
@@ -4780,6 +4404,7 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
         summary,
         rows: reportRows,
         committed: false,
+        idempotentReplay: false,
     };
 });
 
@@ -4812,6 +4437,13 @@ export const updateVerification = onRequest(async (req, res) => {
 
         if (!tournamentId || !teamId || !memberId || !registrationId) {
             res.status(400).json({error: "Missing fields"});
+            return;
+        }
+
+        try {
+            await assertWritesEnabled(db);
+        } catch (error) {
+            res.status(503).json({error: error instanceof Error ? error.message : "Maintenance in progress."});
             return;
         }
 
@@ -5107,6 +4739,7 @@ export const updateVerification = onRequest(async (req, res) => {
 /** Allows an authorized tournament manager to confirm a registered team invitee. */
 export const adminApproveTeamInvitation = onCall(callableFunctionOptions, async (request) => {
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Authentication required.");
+    await assertWritesEnabled(db);
     const operation = normalizeOperationMeta(request.data?.meta);
     const requestId = typeof request.data?.requestId === "string" ? request.data.requestId.trim() : "";
     if (!requestId) throw new HttpsError("invalid-argument", "Verification request ID is required.");
@@ -5364,6 +4997,7 @@ export const updateUserBestTimes = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const beforeData = event.data?.before?.data() as Record<string, unknown> | undefined;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         const affectedGlobalIds = collectParticipantGlobalIds(beforeData, afterData);
@@ -5387,6 +5021,7 @@ export const syncUserTournamentHistoryFromRecords = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         if (!afterData) {
             return;
@@ -5409,6 +5044,7 @@ export const syncUserTournamentHistoryFromPrelimRecords = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         if (!afterData) {
             return;
@@ -5431,6 +5067,7 @@ export const syncUserTournamentHistoryFromOverallRecords = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         if (!afterData) {
             return;
@@ -5453,6 +5090,7 @@ export const updateUserBestTimesFromOverall = onDocumentWritten(
         retry: false,
     },
     async (event) => {
+        if (!maintenanceAllowsOperation(await readMaintenanceState(db))) return;
         const beforeData = event.data?.before?.data() as Record<string, unknown> | undefined;
         const afterData = event.data?.after?.data() as Record<string, unknown> | undefined;
         const affectedGlobalIds = collectParticipantGlobalIds(beforeData, afterData);
@@ -5473,6 +5111,7 @@ export const adminCreateTournamentRegistration = onCall(lowCpuCallableFunctionOp
     if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "Authentication required.");
     }
+    await assertWritesEnabled(db);
     const input = request.data && typeof request.data === "object" ? (request.data as AdminTournamentRegistrationPayload) : {};
     const operation = normalizeOperationMeta(input.meta);
     const tournamentId = typeof input.tournamentId === "string" ? input.tournamentId.trim() : "";

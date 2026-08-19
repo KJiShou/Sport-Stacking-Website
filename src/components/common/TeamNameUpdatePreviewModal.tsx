@@ -220,7 +220,7 @@ export default function TeamNameUpdatePreviewModal({
             maskClosable={false}
             style={{width: "min(1180px, calc(100vw - 32px))"}}
         >
-            <div className="flex max-h-[72vh] flex-col gap-4 overflow-y-auto pr-1">
+            <div className="flex flex-col gap-4 pr-1">
                 <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
                     <div className="font-semibold">The following changes will be applied after confirmation.</div>
                     <div className="mt-1 text-xs text-blue-800">

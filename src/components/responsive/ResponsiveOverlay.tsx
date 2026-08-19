@@ -1,8 +1,8 @@
+import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
+import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 import {Drawer, Modal} from "@arco-design/web-react";
 import type {ReactNode, RefObject} from "react";
 import {useEffect, useRef} from "react";
-import {useDeviceBreakpoint} from "@/utils/DeviceInspector";
-import {DeviceBreakpoint} from "@/utils/DeviceInspector/deviceStore";
 
 export interface ResponsiveOverlayProps {
     visible: boolean;
@@ -44,17 +44,6 @@ export const ResponsiveOverlay = ({
             window.setTimeout(() => returnFocusRef?.current?.focus(), 0);
         }
     }, [returnFocusRef, visible]);
-
-    useEffect(() => {
-        if (!visible || isMobile || typeof document === "undefined") {
-            return;
-        }
-        const previousOverflow = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-        return () => {
-            document.body.style.overflow = previousOverflow;
-        };
-    }, [isMobile, visible]);
 
     if (isMobile) {
         const height = mobileMode === "fullscreen" ? "100dvh" : mobileHeight;
