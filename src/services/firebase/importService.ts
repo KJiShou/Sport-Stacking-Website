@@ -25,12 +25,24 @@ export type ImportWorkbookSummary = {
     createdRegistrations: number;
     updatedRegistrations: number;
     createdTeams: number;
+    workbookSha256: string;
+    planChecksum: string;
+    profilesCreated: number;
+    profilesReused: number;
+    registrationsCreated: number;
+    registrationsUpdated: number;
+    registrationsUnchanged: number;
+    teamsCreated: number;
+    teamsUpdated: number;
+    teamsUnchanged: number;
+    conflicts: number;
 };
 
 export type ImportWorkbookResult = {
     summary: ImportWorkbookSummary;
     rows: ImportReportRow[];
     committed: boolean;
+    idempotentReplay: boolean;
 };
 
 type ImportWorkbookInput = {
@@ -41,6 +53,7 @@ type ImportWorkbookInput = {
     defaultCountry: string;
     defaultState: string;
     sheetMappings?: Record<string, string>;
+    expectedPlanChecksum?: string;
     meta?: {operationId: string; release: string};
 };
 
