@@ -812,7 +812,7 @@ export default function RegistrationsListPage() {
                 desktopWidth="min(96vw, 1100px)"
                 mobileMode="fullscreen"
             >
-                <div className="flex flex-col gap-6 py-4 md:px-3 max-h-[76vh] overflow-y-auto registrations-import-body">
+                <div className="flex flex-col gap-6 py-4 md:px-3 registrations-import-body">
                     <Form form={importForm} layout="vertical" initialValues={{defaultCountry: "Malaysia"}}>
                         <Form.Item label="Workbook" required>
                             <Upload

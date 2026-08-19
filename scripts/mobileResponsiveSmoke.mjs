@@ -43,6 +43,11 @@ assert(globalStyles.includes("Swipe horizontally to see more"), "Table scroll af
 assert(globalStyles.includes(".print-action-sheet"), "Print action sheet styling is missing");
 assert(globalStyles.includes(".arco-modal.responsive-overlay"), "Responsive modal scope is missing");
 assert(
+    globalStyles.includes(".arco-modal.responsive-overlay .arco-modal-content") &&
+        globalStyles.includes(".arco-modal.responsive-overlay .responsive-overlay__body"),
+    "Desktop responsive overlay scroll containment is missing",
+);
+assert(
     !globalStyles.includes(".arco-modal,\n    .admin-responsive-modal,\n    .registrations-import-modal"),
     "All Arco modals are still being forced into the mobile full-screen shell",
 );
@@ -80,6 +85,16 @@ for (const page of rankingPages) {
 }
 
 const registrationSource = read("src/pages/Tournaments/RegistrationsList/RegistrationsList.tsx");
+const overlaySource = read("src/components/responsive/ResponsiveOverlay.tsx");
+assert(!overlaySource.includes("document.body.style.overflow"), "ResponsiveOverlay still overrides Arco body scroll locking");
+assert(
+    !registrationSource.includes("max-h-[76vh] overflow-y-auto registrations-import-body"),
+    "Excel import modal still has a nested vertical scroll container",
+);
+assert(
+    read("src/pages/Tournaments/Scoring/ScoringPage.tsx").includes("<ResponsiveOverlay"),
+    "Scoring modal no longer uses the shared responsive overlay",
+);
 assert(
     !registrationSource.includes("(record.events_registered ?? []).join"),
     "Raw Event IDs are still rendered on registration cards",

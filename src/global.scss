@@ -174,14 +174,21 @@ body,
     -webkit-overflow-scrolling: touch;
 }
 
-/* Keep long desktop overlays usable as well as their mobile Drawer variant. */
-.arco-modal.responsive-overlay .arco-modal-content {
+/* Keep headers and footers visible while a single body container owns vertical scrolling. */
+.arco-modal.responsive-overlay {
     display: flex;
     max-height: calc(100dvh - 4rem);
     flex-direction: column;
+    overflow: hidden;
+    top: 2rem;
 }
 
-.arco-modal.responsive-overlay .arco-modal-body {
+.arco-modal.responsive-overlay .arco-modal-header,
+.arco-modal.responsive-overlay .arco-modal-footer {
+    flex-shrink: 0;
+}
+
+.arco-modal.responsive-overlay .arco-modal-content {
     display: flex;
     min-height: 0;
     flex: 1 1 auto;
@@ -193,11 +200,9 @@ body,
     min-height: 0;
     flex: 1 1 auto;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     -webkit-overflow-scrolling: touch;
-}
-
-.arco-modal.responsive-overlay .arco-modal-footer {
-    flex-shrink: 0;
 }
 
 @media (max-width: 991px) {
@@ -1758,10 +1763,6 @@ body,
         display: none;
     }
 
-    .registrations-import-body {
-        max-height: none !important;
-    }
-
     .registrations-import-footer {
         align-items: stretch;
         flex-direction: column;
@@ -2393,6 +2394,7 @@ body,
         flex: 1 1 auto;
         min-height: 0;
         overflow-y: auto;
+        overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
     }
 
