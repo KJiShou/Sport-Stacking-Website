@@ -284,6 +284,57 @@ describe("idempotent tournament workbook import", () => {
         assert.deepEqual(correctedRegistration?.data().events_registered, [cycleEventId]);
     });
 
+    it("creates a profile but no registration for a Parent & Child parent", async () => {
+        const child = athlete(`Parent Child Athlete ${suffix}`, "2014-03-04");
+        const parent = {
+            ...athlete(`Parent Child Parent ${suffix}`, "1985-05-06"),
+            parentOnly: true,
+            sourceSheet: "Parent & Child",
+        };
+        const parentChildParsed = parsed(
+            [child, parent],
+            {[child.name]: [individualEventId, teamEventId], [parent.name]: []},
+            [
+                {
+                    eventId: teamEventId,
+                    eventType: "Parent & Child",
+                    sheetName: "Parent & Child",
+                    sourceRow: 2,
+                    name: "",
+                    members: [child.workbookKey, parent.workbookKey],
+                },
+            ],
+        );
+        parentChildParsed.baseRosterKeys.delete(parent.workbookKey);
+        parentChildParsed.registrationsByAthleteKey.delete(parent.workbookKey);
+
+        const plan = await buildImportPlan(database, tournamentId, parentChildParsed, "parent-child-workbook");
+        assert.equal(plan.summary.profilesCreated, 2);
+        assert.equal(plan.summary.registrationsCreated, 1);
+        assert.equal(plan.summary.teamsCreated, 1);
+        assert.equal(plan.summary.conflicts, 0);
+
+        const result = await commitIdempotentImport(
+            database,
+            tournamentId,
+            new Date("2026-11-07T00:00:00.000Z"),
+            parentChildParsed,
+            "parent-child-batch",
+        );
+        track([child, parent]);
+        assert.equal(result.profilesCreated, 2);
+        assert.equal(result.registrationsCreated, 1);
+        assert.equal(result.teamsCreated, 1);
+        assert.ok(parent.userDocId);
+        assert.ok(parent.globalId);
+        assert.equal(
+            (await database.collection("registrations").where("tournament_id", "==", tournamentId).get()).docs.filter(
+                (document) => document.data().profile_id === parent.userDocId,
+            ).length,
+            0,
+        );
+    });
+
     it("converges concurrent imports on one profile and registration", async () => {
         const name = `Concurrent Athlete ${suffix}`;
         const firstAthlete = athlete(name, "2015-10-11");
