@@ -129,7 +129,7 @@ jobs:
 
                   "$firebase_cli" deploy \
                       --project sport-stacking-website \
-                      --only firestore \
+                      --only 'firestore:(default)' \
                       --non-interactive \
                       --debug
 
