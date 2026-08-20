@@ -17,6 +17,8 @@ export interface ResponsiveOverlayProps {
     className?: string;
 }
 
+const getOverlayPopupContainer = (node: HTMLElement): HTMLElement => node.ownerDocument.body;
+
 /** Uses a full-width bottom sheet on phones and a normal modal on larger screens. */
 export const ResponsiveOverlay = ({
     visible,
@@ -57,6 +59,7 @@ export const ResponsiveOverlay = ({
                 footer={footer}
                 focusLock
                 autoFocus
+                getChildrenPopupContainer={getOverlayPopupContainer}
                 className={`responsive-overlay responsive-overlay--mobile responsive-overlay--${mobileMode} ${className}`}
             >
                 <div className="responsive-overlay__body">{children}</div>
@@ -72,6 +75,7 @@ export const ResponsiveOverlay = ({
             footer={footer}
             autoFocus={false}
             focusLock
+            getChildrenPopupContainer={getOverlayPopupContainer}
             style={{width: desktopWidth}}
             className={`responsive-overlay ${className}`}
         >
