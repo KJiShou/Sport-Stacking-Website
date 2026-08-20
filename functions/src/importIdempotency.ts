@@ -259,7 +259,10 @@ const teamParticipantIds = (data: DocumentData): string[] =>
             : []),
     ].filter(Boolean);
 
-const parsedAthleteEntries = (parsed: ParsedWorkbookInput): [string, ImportAthleteInput][] =>
+const parsedProfileEntries = (parsed: ParsedWorkbookInput): [string, ImportAthleteInput][] =>
+    [...parsed.athletes.entries()].sort(([left], [right]) => left.localeCompare(right));
+
+const parsedRegistrationEntries = (parsed: ParsedWorkbookInput): [string, ImportAthleteInput][] =>
     [...parsed.athletes.entries()]
         .filter(([, athlete]) => !athlete.parentOnly)
         .sort(([left], [right]) => left.localeCompare(right));
@@ -271,7 +274,7 @@ const resolveProfilesForPlan = async (
     const profiles = new Map<string, ExistingProfile | null>();
     const conflicts: string[] = [];
     const conflictedKeys = new Set<string>();
-    for (const [athleteKey, athlete] of parsedAthleteEntries(parsed)) {
+    for (const [athleteKey, athlete] of parsedProfileEntries(parsed)) {
         const matches = await findExistingProfileCandidates(database, athlete, importIdentityKey(athlete));
         if (matches.length > 1) {
             conflicts.push(`${athlete.name}: multiple profiles match the imported identity.`);
@@ -317,24 +320,26 @@ export const buildImportPlan = async (
     };
     const planEntries: unknown[] = [];
 
-    for (const [athleteKey, athlete] of parsedAthleteEntries(parsed)) {
+    for (const [athleteKey, athlete] of parsedProfileEntries(parsed)) {
         const profile = profiles.get(athleteKey) ?? null;
         if (profile) summary.profilesReused += 1;
         else if (!conflictedKeys.has(athleteKey)) summary.profilesCreated += 1;
         const desiredEvents = [...(parsed.registrationsByAthleteKey.get(athleteKey) ?? [])].sort();
-        const matches = profile
+        const matches = !athlete.parentOnly && profile
             ? registrations.docs.filter((snapshot) => registrationBelongsToProfile(snapshot.data(), profile))
             : [];
-        if (matches.length > 1) {
-            conflicts.push(`${athlete.name}: multiple registrations already exist for this tournament.`);
-        } else if (matches.length === 1 && !isImportManaged(matches[0].data())) {
-            conflicts.push(`${athlete.name}: an existing member/admin registration will not be overwritten.`);
-        } else if (matches.length === 0) {
-            summary.registrationsCreated += 1;
-        } else if (sameStrings(matches[0].data().events_registered ?? matches[0].data().event_ids, desiredEvents)) {
-            summary.registrationsUnchanged += 1;
-        } else {
-            summary.registrationsUpdated += 1;
+        if (!athlete.parentOnly) {
+            if (matches.length > 1) {
+                conflicts.push(`${athlete.name}: multiple registrations already exist for this tournament.`);
+            } else if (matches.length === 1 && !isImportManaged(matches[0].data())) {
+                conflicts.push(`${athlete.name}: an existing member/admin registration will not be overwritten.`);
+            } else if (matches.length === 0) {
+                summary.registrationsCreated += 1;
+            } else if (sameStrings(matches[0].data().events_registered ?? matches[0].data().event_ids, desiredEvents)) {
+                summary.registrationsUnchanged += 1;
+            } else {
+                summary.registrationsUpdated += 1;
+            }
         }
         planEntries.push({
             athleteKey,
@@ -804,7 +809,7 @@ export const commitIdempotentImport = async (
     importBatchId: string,
 ): Promise<ImportCommitSummary> => {
     const profilesBefore = new Map<string, boolean>();
-    for (const [athleteKey, athlete] of parsedAthleteEntries(parsed)) {
+    for (const [athleteKey, athlete] of parsedProfileEntries(parsed)) {
         const matches = await findExistingProfileCandidates(database, athlete, importIdentityKey(athlete));
         if (matches.length > 1) {
             throw new HttpsError("failed-precondition", `${athlete.name} matches multiple profiles and requires review.`);
@@ -816,7 +821,7 @@ export const commitIdempotentImport = async (
     let registrationsCreated = 0;
     let registrationsUpdated = 0;
     let registrationsUnchanged = 0;
-    for (const [athleteKey, athlete] of parsedAthleteEntries(parsed)) {
+    for (const [athleteKey, athlete] of parsedRegistrationEntries(parsed)) {
         const events = [...(parsed.registrationsByAthleteKey.get(athleteKey) ?? [])];
         const result = await commitRegistration(database, tournamentId, tournamentStartDate, athlete, events, importBatchId);
         if (result === "created") registrationsCreated += 1;
