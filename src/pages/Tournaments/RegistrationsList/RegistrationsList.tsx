@@ -277,6 +277,9 @@ export default function RegistrationsListPage() {
                         ? "This workbook was already imported; no duplicates were created."
                         : "Workbook imported.",
                 );
+                setImportModalVisible(false);
+                setImportResult(null);
+                setImportResultView("registrations");
                 await refreshRegistrationsList();
             } else if (result.summary.errors > 0) {
                 Message.error("Import has errors. Fix the workbook before committing.");
