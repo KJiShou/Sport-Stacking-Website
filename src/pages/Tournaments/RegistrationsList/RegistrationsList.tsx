@@ -8,7 +8,15 @@ import {
     fetchAdminPendingTeamInvitations,
 } from "@/services/firebase/adminRegistrationService";
 import {fetchUsersByIds} from "@/services/firebase/authService";
-import {type ImportWorkbookResult, importTournamentWorkbook} from "@/services/firebase/importService";
+import {
+    type ImportRevertPreview,
+    type ImportWorkbookResult,
+    type TournamentImportHistoryItem,
+    importTournamentWorkbook,
+    listTournamentImportHistory,
+    previewTournamentImportRevert,
+    revertTournamentImport,
+} from "@/services/firebase/importService";
 import {deleteRegistrationById, fetchRegistrations} from "@/services/firebase/registerService";
 import {fetchTeamsByTournament, fetchTournamentById, fetchTournamentEvents} from "@/services/firebase/tournamentsService";
 import {stripTeamLeaderPrefix} from "@/utils/teamLeaderId";
@@ -83,6 +91,31 @@ const getImportLevelColor = (level: string): "red" | "orange" | "blue" => {
     return "blue";
 };
 
+const formatImportDate = (value: TournamentImportHistoryItem["createdAt"]): string => {
+    if (!value) return "—";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+};
+
+const getImportStatusLabel = (status: TournamentImportHistoryItem["status"]): string => {
+    if (status === "committed") return "Imported";
+    if (status === "reverted") return "Undone";
+    if (status === "failed") return "Failed";
+    if (status === "processing") return "Processing";
+    return "Previous import";
+};
+
+const getImportChangeLabel = (collection: string, action: "remove" | "restore", count: number): string => {
+    const collectionLabels: Record<string, string> = {
+        users: "participant profiles",
+        registrations: "registrations",
+        teams: "teams",
+        events: "events",
+    };
+    const label = collectionLabels[collection] ?? "records";
+    return `${action === "remove" ? "Remove" : "Restore"} ${count} ${label}`;
+};
+
 export default function RegistrationsListPage() {
     const {tournamentId} = useParams();
     const {user} = useAuthContext();
@@ -114,6 +147,12 @@ export default function RegistrationsListPage() {
     const [importFileList, setImportFileList] = useState<UploadItem[]>([]);
     const [importResult, setImportResult] = useState<ImportWorkbookResult | null>(null);
     const [importResultView, setImportResultView] = useState<ImportResultView>("registrations");
+    const [importHistoryVisible, setImportHistoryVisible] = useState(false);
+    const [importHistoryLoading, setImportHistoryLoading] = useState(false);
+    const [importHistory, setImportHistory] = useState<TournamentImportHistoryItem[]>([]);
+    const [showLegacyImportHistory, setShowLegacyImportHistory] = useState(false);
+    const [revertPreview, setRevertPreview] = useState<{batchId: string; result: ImportRevertPreview} | null>(null);
+    const [revertingBatchId, setRevertingBatchId] = useState<string | null>(null);
     const [teamInvitations, setTeamInvitations] = useState<AdminPendingTeamInvitation[]>([]);
     const [teamInvitationsLoading, setTeamInvitationsLoading] = useState(false);
     const [approvingInvitationId, setApprovingInvitationId] = useState<string | null>(null);
@@ -291,6 +330,53 @@ export default function RegistrationsListPage() {
             Message.error(getWorkbookImportErrorMessage(error));
         } finally {
             setImportLoading(false);
+        }
+    };
+
+    const loadImportHistory = async () => {
+        if (!tournamentId) return;
+        setImportHistoryLoading(true);
+        try {
+            setImportHistory(await listTournamentImportHistory(tournamentId));
+        } catch (error) {
+            console.error("Failed to load import history:", error);
+            Message.error(error instanceof Error ? error.message : "Failed to load import history.");
+        } finally {
+            setImportHistoryLoading(false);
+        }
+    };
+
+    const openImportHistory = async () => {
+        setImportHistoryVisible(true);
+        setRevertPreview(null);
+        setShowLegacyImportHistory(false);
+        await loadImportHistory();
+    };
+
+    const handlePreviewRevert = async (batchId: string) => {
+        if (!tournamentId) return;
+        setImportHistoryLoading(true);
+        try {
+            setRevertPreview({batchId, result: await previewTournamentImportRevert(tournamentId, batchId)});
+        } catch (error) {
+            Message.error(error instanceof Error ? error.message : "Failed to preview import revert.");
+        } finally {
+            setImportHistoryLoading(false);
+        }
+    };
+
+    const handleRevertImport = async (batchId: string) => {
+        if (!tournamentId) return;
+        setRevertingBatchId(batchId);
+        try {
+            const result = await revertTournamentImport(tournamentId, batchId);
+            Message.success(`Import reverted (${result.changes} changes restored).`);
+            setRevertPreview(null);
+            await Promise.all([loadImportHistory(), refreshRegistrationsList()]);
+        } catch (error) {
+            Message.error(error instanceof Error ? error.message : "Failed to revert import.");
+        } finally {
+            setRevertingBatchId(null);
         }
     };
 
@@ -568,6 +654,14 @@ export default function RegistrationsListPage() {
             return category === importResultView;
         });
     }, [importResult, importResultView]);
+    const safeImportHistory = useMemo(
+        () => importHistory.filter((batch) => batch.status === "committed" && batch.revertible),
+        [importHistory],
+    );
+    const legacyImportHistory = useMemo(
+        () => importHistory.filter((batch) => !(batch.status === "committed" && batch.revertible)),
+        [importHistory],
+    );
 
     useEffect(() => {
         if (loading) {
@@ -579,6 +673,86 @@ export default function RegistrationsListPage() {
             setCurrentPage(totalPages);
         }
     }, [currentPage, filteredRegistrations.length, loading]);
+
+    const renderImportHistoryCard = (batch: TournamentImportHistoryItem, allowUndo: boolean) => {
+        const preview = revertPreview?.batchId === batch.id ? revertPreview.result : null;
+        const registrationsCreated = batch.summary?.registrationsCreated ?? batch.summary?.createdRegistrations ?? 0;
+        const teamsCreated = batch.summary?.teamsCreated ?? batch.summary?.createdTeams ?? 0;
+        const legacyMessage =
+            batch.status === "failed"
+                ? "This import did not finish, so there is nothing to undo."
+                : batch.status === "reverted"
+                  ? "This import has already been undone."
+                  : "This older import has no safe snapshot and cannot be undone automatically.";
+
+        return (
+            <Card key={batch.id} size="small" title={batch.fileName || "Workbook import"}>
+                <div className="flex flex-col gap-2">
+                    <span>
+                        <strong>Date:</strong> {formatImportDate(batch.createdAt)}
+                    </span>
+                    <span>
+                        <strong>Imported by:</strong> {batch.importedByName}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                        <Tag color={batch.status === "committed" ? "green" : batch.status === "reverted" ? "gray" : "orange"}>
+                            {getImportStatusLabel(batch.status)}
+                        </Tag>
+                        {batch.summary && (
+                            <Tag color="blue">
+                                {registrationsCreated} registrations / {teamsCreated} teams created
+                            </Tag>
+                        )}
+                        {batch.journalChanges > 0 && <Tag color="arcoblue">{batch.journalChanges} changes recorded</Tag>}
+                    </div>
+                    {allowUndo ? (
+                        <div className="flex flex-col gap-2">
+                            <div className="flex flex-wrap gap-2">
+                                <Button size="small" onClick={() => void handlePreviewRevert(batch.id)}>
+                                    Preview undo
+                                </Button>
+                                <Popconfirm
+                                    title="Undo this import?"
+                                    content="Only unchanged records will be restored."
+                                    onOk={() => void handleRevertImport(batch.id)}
+                                >
+                                    <Button
+                                        size="small"
+                                        status="danger"
+                                        loading={revertingBatchId === batch.id}
+                                        disabled={!preview?.canRevert}
+                                    >
+                                        Undo import
+                                    </Button>
+                                </Popconfirm>
+                            </div>
+                            {preview && (
+                                <div className="flex flex-col gap-1">
+                                    <Tag color={preview.canRevert ? "green" : "red"}>
+                                        {preview.canRevert
+                                            ? `${preview.changes.reduce((total, change) => total + change.count, 0)} changes will be undone`
+                                            : "Undo is blocked"}
+                                    </Tag>
+                                    {preview.changes.map((change) => (
+                                        <Typography.Text key={`${change.collection}-${change.action}`} type="secondary">
+                                            {getImportChangeLabel(change.collection, change.action, change.count)}
+                                        </Typography.Text>
+                                    ))}
+                                    {preview.blockers.map((blocker) => (
+                                        <Typography.Text key={blocker} type="error" className="break-words">
+                                            {blocker}
+                                        </Typography.Text>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <Typography.Text type="secondary">{legacyMessage}</Typography.Text>
+                    )}
+                </div>
+            </Card>
+        );
+    };
 
     if (!isMounted) {
         return (
@@ -606,6 +780,7 @@ export default function RegistrationsListPage() {
                                 <Button type="primary" icon={<IconImport />} onClick={() => setImportModalVisible(true)}>
                                     Import Excel
                                 </Button>
+                                <Button onClick={() => void openImportHistory()}>Import History</Button>
                             </>
                         )}
                         {canImportWorkbook && (
@@ -934,6 +1109,43 @@ export default function RegistrationsListPage() {
                         </div>
                     )}
                 </div>
+            </ResponsiveOverlay>
+            <ResponsiveOverlay
+                title="Import History"
+                visible={importHistoryVisible}
+                onCancel={() => {
+                    setImportHistoryVisible(false);
+                    setRevertPreview(null);
+                }}
+                footer={<Button onClick={() => setImportHistoryVisible(false)}>Close</Button>}
+                desktopWidth="min(92vw, 820px)"
+                mobileMode="fullscreen"
+            >
+                <Spin loading={importHistoryLoading}>
+                    <div className="flex flex-col gap-3 py-4">
+                        {importHistory.length === 0 ? (
+                            <Typography.Text>No imports have been recorded for this tournament.</Typography.Text>
+                        ) : (
+                            <>
+                                {safeImportHistory.length === 0 ? (
+                                    <Typography.Text type="secondary">No imports are currently available for safe undo.</Typography.Text>
+                                ) : (
+                                    safeImportHistory.map((batch) => renderImportHistoryCard(batch, true))
+                                )}
+                                {legacyImportHistory.length > 0 && (
+                                    <div className="flex flex-col gap-3 pt-2">
+                                        <Button type="text" onClick={() => setShowLegacyImportHistory((visible) => !visible)}>
+                                            {showLegacyImportHistory
+                                                ? "Hide previous import records"
+                                                : `View previous import records (${legacyImportHistory.length})`}
+                                        </Button>
+                                        {showLegacyImportHistory && legacyImportHistory.map((batch) => renderImportHistoryCard(batch, false))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </Spin>
             </ResponsiveOverlay>
         </div>
     );

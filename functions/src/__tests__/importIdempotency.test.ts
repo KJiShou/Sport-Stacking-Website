@@ -9,6 +9,8 @@ import {
     type ImportAthleteInput,
     type ParsedWorkbookInput,
     buildImportPlan,
+    buildImportJournal,
+    captureImportJournalBefore,
     commitIdempotentImport,
     importIdentityKey,
     nextAllowedGlobalIdNumber,
@@ -170,6 +172,29 @@ describe("idempotent tournament workbook import", () => {
         assert.equal(stableChecksum({b: 2, a: 1}), stableChecksum({a: 1, b: 2}));
         assert.notEqual(stableChecksum({a: 1}), stableChecksum({a: 2}));
         assert.equal(nextAllowedGlobalIdNumber(3), 5);
+    });
+
+    it("records a reversible journal for newly imported documents", async () => {
+        const imported = athlete(`Journal Athlete ${suffix}`, "2013-03-04");
+        const workbook = parsed([imported], {[imported.name]: [individualEventId]});
+        const before = await captureImportJournalBefore(database, tournamentId, workbook);
+        await commitIdempotentImport(
+            database,
+            tournamentId,
+            new Date("2026-11-07T00:00:00.000Z"),
+            workbook,
+            `journal-${suffix}`,
+        );
+        const journal = await buildImportJournal(database, tournamentId, workbook, before);
+        assert.ok(journal.some((entry) => entry.path === `users/${imported.userDocId}` && entry.before === null));
+        assert.ok(journal.some((entry) => entry.path.startsWith("registrations/") && entry.before === null));
+        const cleanup = database.batch();
+        for (const entry of journal) {
+            const ref = database.doc(entry.path);
+            if (entry.before === null) cleanup.delete(ref);
+            else cleanup.set(ref, entry.before);
+        }
+        await cleanup.commit();
     });
 
     it("matches a normalized MyKad to a legacy profile", async () => {
