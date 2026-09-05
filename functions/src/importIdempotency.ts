@@ -77,6 +77,15 @@ export type ImportCommitSummary = ImportPlanSummary & {
     createdTeams: number;
 };
 
+export type ImportJournalEntry = {
+    path: string;
+    before: DocumentData | null;
+    after: DocumentData | null;
+    afterChecksum: string;
+};
+
+export type ImportJournalBefore = Map<string, DocumentData | null>;
+
 type ExistingProfile = {
     id: string;
     globalId: string;
@@ -259,6 +268,22 @@ const teamParticipantIds = (data: DocumentData): string[] =>
             : []),
     ].filter(Boolean);
 
+const describeTeam = async (database: Firestore, id: string, data: DocumentData): Promise<string> => {
+    const participants = teamParticipantIds(data);
+    const leader = typeof data.leader_id === "string" ? data.leader_id : "unknown";
+    const members = participants.filter((participant) => participant !== leader);
+    const event = String(data.event_id ?? data.event?.[0] ?? "unknown event");
+    const names = new Map<string, string>();
+    for (const participant of participants) {
+        const profile = await database.collection("users").where("global_id", "==", participant).limit(1).get();
+        names.set(participant, String(profile.docs[0]?.data().name ?? participant));
+    }
+    const label = (participant: string): string => `${names.get(participant) ?? participant} (${participant})`;
+    return `Team ${String(data.name ?? "Unnamed")} (${id}) in ${event}; leader: ${label(leader)}; members: ${
+        members.map(label).join(", ") || "none"
+    }`;
+};
+
 const parsedProfileEntries = (parsed: ParsedWorkbookInput): [string, ImportAthleteInput][] =>
     [...parsed.athletes.entries()].sort(([left], [right]) => left.localeCompare(right));
 
@@ -266,6 +291,83 @@ const parsedRegistrationEntries = (parsed: ParsedWorkbookInput): [string, Import
     [...parsed.athletes.entries()]
         .filter(([, athlete]) => !athlete.parentOnly)
         .sort(([left], [right]) => left.localeCompare(right));
+
+const putSnapshot = (snapshots: Map<string, DocumentData | null>, path: string, data: DocumentData | undefined): void => {
+    if (!snapshots.has(path)) snapshots.set(path, data ?? null);
+};
+
+const captureScopedImportDocuments = async (
+    database: Firestore,
+    tournamentId: string,
+    parsed: ParsedWorkbookInput,
+    snapshots: Map<string, DocumentData | null>,
+    resolveProfiles: boolean,
+): Promise<void> => {
+    const [registrations, teams, teamKeys] = await Promise.all([
+        database.collection("registrations").where("tournament_id", "==", tournamentId).get(),
+        database.collection("teams").where("tournament_id", "==", tournamentId).get(),
+        database.collection("team_import_keys").where("tournament_id", "==", tournamentId).get(),
+    ]);
+    for (const snapshot of [...registrations.docs, ...teams.docs, ...teamKeys.docs]) {
+        putSnapshot(snapshots, snapshot.ref.path, snapshot.data());
+    }
+    for (const [, athlete] of parsedProfileEntries(parsed)) {
+        const identityRef = database.collection("profile_identity_keys").doc(importIdentityKey(athlete));
+        const identity = await identityRef.get();
+        putSnapshot(snapshots, identityRef.path, identity.data());
+        if (resolveProfiles) {
+            const matches = await findExistingProfileCandidates(database, athlete, importIdentityKey(athlete));
+            for (const match of matches) {
+                putSnapshot(snapshots, match.ref.path, match.data());
+                const uniqueRef = database.collection("registration_unique_keys").doc(
+                    registrationIdentityKey(tournamentId, match.id),
+                );
+                const unique = await uniqueRef.get();
+                putSnapshot(snapshots, uniqueRef.path, unique.data());
+            }
+        } else if (athlete.userDocId) {
+            const profileRef = database.collection("users").doc(athlete.userDocId);
+            const profile = await profileRef.get();
+            putSnapshot(snapshots, profileRef.path, profile.data());
+            const uniqueRef = database.collection("registration_unique_keys").doc(
+                registrationIdentityKey(tournamentId, athlete.userDocId),
+            );
+            const unique = await uniqueRef.get();
+            putSnapshot(snapshots, uniqueRef.path, unique.data());
+        }
+    }
+};
+
+/** Capture only documents an import is allowed to alter. The resulting diff is
+ * stored separately from the batch so a successful import can be safely undone. */
+export const captureImportJournalBefore = async (
+    database: Firestore,
+    tournamentId: string,
+    parsed: ParsedWorkbookInput,
+): Promise<ImportJournalBefore> => {
+    const snapshots: ImportJournalBefore = new Map();
+    await captureScopedImportDocuments(database, tournamentId, parsed, snapshots, true);
+    return snapshots;
+};
+
+export const buildImportJournal = async (
+    database: Firestore,
+    tournamentId: string,
+    parsed: ParsedWorkbookInput,
+    before: ImportJournalBefore,
+): Promise<ImportJournalEntry[]> => {
+    const after = new Map<string, DocumentData | null>();
+    await captureScopedImportDocuments(database, tournamentId, parsed, after, false);
+    const paths = new Set([...before.keys(), ...after.keys()]);
+    return [...paths]
+        .sort()
+        .map((path) => {
+            const beforeData = before.get(path) ?? null;
+            const afterData = after.get(path) ?? null;
+            return {path, before: beforeData, after: afterData, afterChecksum: stableChecksum(afterData)};
+        })
+        .filter((entry) => stableChecksum(entry.before) !== entry.afterChecksum);
+};
 
 const resolveProfilesForPlan = async (
     database: Firestore,
@@ -353,6 +455,7 @@ export const buildImportPlan = async (
     }
 
     const desiredTeamKeys = new Set<string>();
+    const desiredTeams: Array<{team: ImportTeamInput; key: string; participantIds: string[]}> = [];
     for (const team of parsed.teams) {
         const key = desiredTeamIdentity(tournamentId, team, profiles);
         if (!key) {
@@ -360,6 +463,11 @@ export const buildImportPlan = async (
             continue;
         }
         desiredTeamKeys.add(key);
+        desiredTeams.push({
+            team,
+            key,
+            participantIds: team.members.map((memberKey) => profiles.get(memberKey)?.globalId ?? "").filter(Boolean),
+        });
         const matchingTeams = teams.docs.filter((snapshot) => {
             const data = snapshot.data();
             return importedTeamIdentityKey(tournamentId, String(data.event_id ?? ""), teamParticipantIds(data)) === key;
@@ -374,6 +482,27 @@ export const buildImportPlan = async (
             summary.teamsUnchanged += 1;
         } else {
             summary.teamsUpdated += 1;
+        }
+    }
+
+    // The commit path replaces import-managed teams whose members are present in a
+    // corrected workbook. Manual teams cannot be safely replaced, so detect the
+    // exact same overlap during preview instead of failing only after registrations
+    // have already been written.
+    for (const existing of teams.docs) {
+        const data = existing.data();
+        if (isImportManaged(data)) continue;
+        const eventId = String(data.event_id ?? "");
+        const existingIds = teamParticipantIds(data);
+        const overlapping = desiredTeams.find(
+            ({team, participantIds, key}) =>
+                team.eventId === eventId && key !== importedTeamIdentityKey(tournamentId, eventId, existingIds) &&
+                participantIds.some((participantId) => existingIds.includes(participantId)),
+        );
+        if (overlapping) {
+            conflicts.push(
+                `${overlapping.team.name || overlapping.team.eventType}: conflicts with manual ${await describeTeam(database, existing.id, data)}.`,
+            );
         }
     }
 
@@ -685,7 +814,10 @@ const commitTeams = async (
         const touchesPresent = presentIds && teamParticipantIds(data).some((id) => presentIds.has(id));
         if (!touchesPresent || desiredKeys.has(key)) continue;
         if (!isImportManaged(data)) {
-            throw new HttpsError("failed-precondition", `Manual team ${snapshot.id} conflicts with the corrected workbook.`);
+            throw new HttpsError(
+                "failed-precondition",
+                `Corrected workbook conflicts with manual ${await describeTeam(database, snapshot.id, data)}.`,
+            );
         }
         operations.push((batch) => batch.delete(snapshot.ref));
         operations.push((batch) => batch.delete(database.collection("team_import_keys").doc(key)));
@@ -697,7 +829,10 @@ const commitTeams = async (
     for (const entry of desired) {
         const existing = existingByKey.get(entry.key);
         if (existing && !isImportManaged(existing.data())) {
-            throw new HttpsError("failed-precondition", `Manual team ${existing.id} cannot be overwritten.`);
+            throw new HttpsError(
+                "failed-precondition",
+                `Corrected workbook cannot overwrite manual ${await describeTeam(database, existing.id, existing.data())}.`,
+            );
         }
         const leader = entry.athletes[0];
         const registration = registrations.docs.find((snapshot) =>
@@ -768,7 +903,7 @@ const eventMatchesRegistration = (event: DocumentData, registration: DocumentDat
     );
 };
 
-const recomputeCapacity = async (database: Firestore, tournamentId: string): Promise<void> => {
+export const recomputeImportCapacity = async (database: Firestore, tournamentId: string): Promise<void> => {
     const [registrations, events] = await Promise.all([
         database.collection("registrations").where("tournament_id", "==", tournamentId).get(),
         database.collection("events").where("tournament_id", "==", tournamentId).get(),
@@ -829,7 +964,7 @@ export const commitIdempotentImport = async (
         else registrationsUnchanged += 1;
     }
     const teamResult = await commitTeams(database, tournamentId, tournamentStartDate, parsed, importBatchId);
-    await recomputeCapacity(database, tournamentId);
+    await recomputeImportCapacity(database, tournamentId);
 
     const profilesReused = [...profilesBefore.values()].filter(Boolean).length;
     const profilesCreated = profilesBefore.size - profilesReused;

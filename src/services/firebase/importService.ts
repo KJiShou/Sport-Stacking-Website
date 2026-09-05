@@ -45,6 +45,25 @@ export type ImportWorkbookResult = {
     idempotentReplay: boolean;
 };
 
+export type TournamentImportHistoryItem = {
+    id: string;
+    fileName: string | null;
+    status: "processing" | "committed" | "failed" | "reverted" | string;
+    createdAt: string | null;
+    completedAt: string | null;
+    importedByName: string;
+    summary: ImportWorkbookSummary | null;
+    revertible: boolean;
+    legacy: boolean;
+    journalChanges: number;
+};
+
+export type ImportRevertPreview = {
+    canRevert: boolean;
+    blockers: string[];
+    changes: Array<{collection: string; action: "remove" | "restore"; count: number}>;
+};
+
 type ImportWorkbookInput = {
     tournamentId: string;
     fileBase64: string;
@@ -73,4 +92,29 @@ export const importTournamentWorkbook = async (input: ImportWorkbookInput): Prom
         {entityType: "tournament-import", tournamentId: input.tournamentId},
     );
     return result.data;
+};
+
+export const listTournamentImportHistory = async (tournamentId: string): Promise<TournamentImportHistoryItem[]> => {
+    const callable = httpsCallable<{tournamentId: string}, {batches: TournamentImportHistoryItem[]}>(
+        functions,
+        "listTournamentImportHistory",
+    );
+    return (await callable({tournamentId})).data.batches;
+};
+
+export const previewTournamentImportRevert = async (tournamentId: string, importBatchId: string): Promise<ImportRevertPreview> => {
+    const callable = httpsCallable<{tournamentId: string; importBatchId: string}, ImportRevertPreview>(
+        functions,
+        "previewTournamentImportRevert",
+    );
+    return (await callable({tournamentId, importBatchId})).data;
+};
+
+export const revertTournamentImport = async (tournamentId: string, importBatchId: string): Promise<{reverted: boolean; changes: number}> => {
+    const callable = httpsCallable<{tournamentId: string; importBatchId: string; confirm: boolean}, {reverted: boolean; changes: number}>(
+        functions,
+        "revertTournamentImport",
+        {timeout: 540000},
+    );
+    return (await callable({tournamentId, importBatchId, confirm: true})).data;
 };

@@ -27,7 +27,16 @@ import nodemailer from "nodemailer";
 import type {Registration} from "./../../src/schema/RegistrationSchema.js";
 import type {Team, TeamMember} from "./../../src/schema/TeamSchema.js";
 import type {UserRegistrationRecord} from "./../../src/schema/UserSchema.js";
-import {appendImportPlanRows, buildImportPlan, commitIdempotentImport, sha256, stableChecksum} from "./importIdempotency.js";
+import {
+    appendImportPlanRows,
+    buildImportJournal,
+    buildImportPlan,
+    captureImportJournalBefore,
+    commitIdempotentImport,
+    recomputeImportCapacity,
+    sha256,
+    stableChecksum,
+} from "./importIdempotency.js";
 import {assertWritesEnabled, maintenanceAllowsOperation, readMaintenanceState} from "./maintenance.js";
 import {
     buildAuditDiff,
@@ -111,10 +120,11 @@ if (!getApps().length) {
 }
 
 const firebaseApp = getApps()[0] ?? initializeApp();
-// Cloud Functions always operate on the primary production database. This must
-// not be configurable by deployment environment variables.
-const db = getFirestore(firebaseApp);
-const firestoreTriggerDatabase = "(default)";
+// Production uses the primary database. The local Functions emulator may opt
+// into a named database through RANKINGSTACK_FIRESTORE_DATABASE_ID.
+const firestoreDatabaseId = process.env.RANKINGSTACK_FIRESTORE_DATABASE_ID?.trim() || "";
+const db = firestoreDatabaseId ? getFirestore(firebaseApp, firestoreDatabaseId) : getFirestore(firebaseApp);
+const firestoreTriggerDatabase = firestoreDatabaseId || "(default)";
 
 type ImportIdentityType = "MYKAD" | "PASSPORT" | "NONE";
 type ImportGender = "Male" | "Female";
@@ -131,6 +141,8 @@ type ImportRequestPayload = {
     expectedPlanChecksum?: unknown;
     meta?: unknown;
 };
+
+type ImportHistoryPayload = {tournamentId?: unknown; importBatchId?: unknown; confirm?: unknown; meta?: unknown};
 
 type AdminTournamentRegistrationPayload = {
     tournamentId?: unknown;
@@ -4355,7 +4367,20 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
         logImportStage("commit started");
         let result: Record<string, unknown>;
         try {
+            const journalBefore = await captureImportJournalBefore(db, tournamentId, parsed);
             const commitSummary = await commitIdempotentImport(db, tournamentId, tournamentStart, parsed, importBatchRef.id);
+            const journal = await buildImportJournal(db, tournamentId, parsed, journalBefore);
+            for (let offset = 0; offset < journal.length; offset += 400) {
+                const batch = db.batch();
+                for (const entry of journal.slice(offset, offset + 400)) {
+                    batch.set(importBatchRef.collection("changes").doc(sha256(entry.path)), entry);
+                }
+                await batch.commit();
+            }
+            await importBatchRef.set(
+                {journal_version: 1, journal_entries: journal.length, revertible: true, updated_at: FirestoreTimestamp.now()},
+                {merge: true},
+            );
             Object.assign(summary, commitSummary);
             logImportStage("registrations and teams committed", {commitSummary});
             result = {summary, rows: reportRows, committed: true, idempotentReplay: false};
@@ -4406,6 +4431,210 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
         committed: false,
         idempotentReplay: false,
     };
+});
+
+const readImportHistoryRequest = (data: unknown): {tournamentId: string; importBatchId: string; confirm: boolean} => {
+    const payload = (data ?? {}) as ImportHistoryPayload;
+    return {
+        tournamentId: typeof payload.tournamentId === "string" ? payload.tournamentId.trim() : "",
+        importBatchId: typeof payload.importBatchId === "string" ? payload.importBatchId.trim() : "",
+        confirm: payload.confirm === true,
+    };
+};
+
+type ImportJournalEntry = {path: string; before: unknown; after: unknown; afterChecksum: string};
+
+const importTimestampToIso = (value: unknown): string | null => {
+    if (value instanceof FirestoreTimestamp) return value.toDate().toISOString();
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+    if (typeof value === "string") {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    }
+    if (value && typeof value === "object") {
+        const seconds = (value as {_seconds?: unknown; seconds?: unknown})._seconds ??
+            (value as {seconds?: unknown}).seconds;
+        if (typeof seconds === "number" && Number.isFinite(seconds)) return new Date(seconds * 1000).toISOString();
+    }
+    return null;
+};
+
+const resolveImportActorNames = async (uids: string[]): Promise<Map<string, string>> => {
+    const uniqueUids = Array.from(new Set(uids.filter(Boolean)));
+    const entries = await Promise.all(
+        uniqueUids.map(async (uid) => {
+            const directProfile = await db.collection("users").doc(uid).get();
+            const directName = directProfile.data()?.name;
+            if (typeof directName === "string" && directName.trim()) return [uid, directName.trim()] as const;
+
+            const ownedProfiles = await db.collection("users").where("owner_uids", "array-contains", uid).limit(1).get();
+            const ownedName = ownedProfiles.docs[0]?.data()?.name;
+            return [uid, typeof ownedName === "string" && ownedName.trim() ? ownedName.trim() : "Unknown administrator"] as const;
+        }),
+    );
+    return new Map(entries);
+};
+
+const summarizeImportJournalChanges = (entries: ImportJournalEntry[]) => {
+    const summary = new Map<string, {collection: string; action: "remove" | "restore"; count: number}>();
+    for (const entry of entries) {
+        const collection = entry.path.split("/")[0] || "records";
+        const action: "remove" | "restore" = entry.before === null ? "remove" : "restore";
+        const key = `${collection}:${action}`;
+        const existing = summary.get(key);
+        summary.set(key, {...(existing ?? {collection, action, count: 0}), count: (existing?.count ?? 0) + 1});
+    }
+    return Array.from(summary.values()).sort((left, right) => left.collection.localeCompare(right.collection));
+};
+
+const assertImportHistoryAccess = async (uid: string | undefined, tournamentId: string): Promise<void> => {
+    if (!uid) throw new HttpsError("unauthenticated", "Authentication required.");
+    if (!tournamentId) throw new HttpsError("invalid-argument", "Tournament ID is required.");
+    if (!(await importIsAuthorized(uid, tournamentId))) {
+        throw new HttpsError("permission-denied", "You do not have permission to manage tournament imports.");
+    }
+};
+
+const importJournalPreview = async (tournamentId: string, importBatchId: string) => {
+    const batchRef = db.collection("import_batches").doc(importBatchId);
+    const batch = await batchRef.get();
+    if (!batch.exists || batch.data()?.tournament_id !== tournamentId) {
+        throw new HttpsError("not-found", "Import batch not found for this tournament.");
+    }
+    const data = batch.data() ?? {};
+    if (data.status === "reverted") return {batchRef, batch, entries: [], blockers: ["This import has already been reverted."]};
+    if (data.status !== "committed" || data.journal_version !== 1 || data.revertible !== true) {
+        return {batchRef, batch, entries: [], blockers: ["This historical import has no safe recovery snapshot."]};
+    }
+    const changes = await batchRef.collection("changes").get();
+    const entries = changes.docs.map((document) => document.data() as ImportJournalEntry);
+    const blockers: string[] = [];
+    let changedDocumentCount = 0;
+    let hasPaymentEvidence = false;
+    for (const entry of entries) {
+        const current = await db.doc(entry.path).get();
+        if (stableChecksum(current.exists ? current.data() : null) !== entry.afterChecksum) {
+            changedDocumentCount += 1;
+        }
+        const after = entry.after as Record<string, unknown> | null;
+        if (entry.before === null && entry.path.startsWith("registrations/") && after?.payment_proof_path) {
+            hasPaymentEvidence = true;
+        }
+    }
+    if (changedDocumentCount > 0) {
+        blockers.push(`${changedDocumentCount} imported record(s) changed after this import, so undo is no longer safe.`);
+    }
+    if (hasPaymentEvidence) {
+        blockers.push("This import includes registration payment evidence and cannot be removed automatically.");
+    }
+    const removedProfileIds = entries
+        .filter((entry) => entry.before === null && entry.after !== null && entry.path.startsWith("users/"))
+        .map((entry) => entry.path.split("/")[1])
+        .filter(Boolean);
+    if (removedProfileIds.length > 0) {
+        const changedPaths = new Set(entries.map((entry) => entry.path));
+        const [registrations, teams] = await Promise.all([db.collection("registrations").get(), db.collection("teams").get()]);
+        let hasNewerProfileReference = false;
+        for (const registration of registrations.docs) {
+            const profileId = String(registration.data().profile_id ?? registration.data().user_id ?? "");
+            if (removedProfileIds.includes(profileId) && !changedPaths.has(registration.ref.path)) {
+                hasNewerProfileReference = true;
+            }
+        }
+        for (const team of teams.docs) {
+            const ids = [team.data().leader_id, ...(team.data().members ?? []).map((member: {global_id?: string}) => member.global_id)]
+                .filter((value): value is string => typeof value === "string");
+            const importedProfiles = entries
+                .filter((entry) => entry.before === null && entry.path.startsWith("users/"))
+                .map((entry) => String((entry.after as Record<string, unknown> | null)?.global_id ?? ""));
+            if (ids.some((id) => importedProfiles.includes(id)) && !changedPaths.has(team.ref.path)) {
+                hasNewerProfileReference = true;
+            }
+        }
+        if (hasNewerProfileReference) {
+            blockers.push("Newer registrations or teams depend on a participant created by this import.");
+        }
+    }
+    return {batchRef, batch, entries, blockers: [...new Set(blockers)]};
+};
+
+export const listTournamentImportHistory = onCall(lowCpuCallableFunctionOptions, async (request) => {
+    const {tournamentId} = readImportHistoryRequest(request.data);
+    await assertImportHistoryAccess(request.auth?.uid, tournamentId);
+    const batches = await db.collection("import_batches").where("tournament_id", "==", tournamentId).get();
+    const actorNames = await resolveImportActorNames(
+        batches.docs.map((snapshot) => String(snapshot.data().created_by_uid ?? "")).filter(Boolean),
+    );
+    return {
+        batches: batches.docs
+            .map((snapshot) => {
+                const data = snapshot.data();
+                const createdByUid = typeof data.created_by_uid === "string" ? data.created_by_uid : "";
+                return {
+                    id: snapshot.id,
+                    fileName: data.file_name ?? null,
+                    status: data.status ?? "unknown",
+                    createdAt: importTimestampToIso(data.created_at),
+                    completedAt: importTimestampToIso(data.completed_at),
+                    importedByName: actorNames.get(createdByUid) ?? "Unknown administrator",
+                    summary: data.result?.summary ?? null,
+                    revertible: data.status === "committed" && data.journal_version === 1 && data.revertible === true,
+                    legacy: data.journal_version !== 1,
+                    journalChanges: typeof data.journal_entries === "number" ? data.journal_entries : 0,
+                };
+            })
+            .sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? "")),
+    };
+});
+
+export const previewTournamentImportRevert = onCall(lowCpuCallableFunctionOptions, async (request) => {
+    const {tournamentId, importBatchId} = readImportHistoryRequest(request.data);
+    await assertImportHistoryAccess(request.auth?.uid, tournamentId);
+    if (!importBatchId) throw new HttpsError("invalid-argument", "Import batch ID is required.");
+    const preview = await importJournalPreview(tournamentId, importBatchId);
+    return {
+        canRevert: preview.entries.length > 0 && preview.blockers.length === 0,
+        blockers: preview.blockers,
+        changes: summarizeImportJournalChanges(preview.entries),
+    };
+});
+
+export const revertTournamentImport = onCall(importWorkbookFunctionOptions, async (request) => {
+    const {tournamentId, importBatchId, confirm} = readImportHistoryRequest(request.data);
+    await assertImportHistoryAccess(request.auth?.uid, tournamentId);
+    if (!importBatchId || !confirm) throw new HttpsError("invalid-argument", "Import batch ID and confirmation are required.");
+    await assertWritesEnabled(db, `tournament.import.revert:${tournamentId}`);
+    const preview = await importJournalPreview(tournamentId, importBatchId);
+    if (preview.entries.length === 0 || preview.blockers.length > 0) {
+        throw new HttpsError("failed-precondition", preview.blockers.join(" ") || "This import cannot be reverted.");
+    }
+    for (let offset = 0; offset < preview.entries.length; offset += 400) {
+        const batch = db.batch();
+        for (const entry of preview.entries.slice(offset, offset + 400)) {
+            const ref = db.doc(entry.path);
+            if (entry.before === null) batch.delete(ref);
+            else batch.set(ref, entry.before as Record<string, unknown>);
+        }
+        await batch.commit();
+    }
+    await recomputeImportCapacity(db, tournamentId);
+    await preview.batchRef.set(
+        {status: "reverted", reverted_at: FirestoreTimestamp.now(), reverted_by_uid: request.auth?.uid, updated_at: FirestoreTimestamp.now()},
+        {merge: true},
+    );
+    const actor = await resolveActorContext(db, request.auth?.uid ?? "", normalizeOperationMeta(request.data?.meta).activeProfileGlobalId, tournamentId);
+    await writeAuditLogBestEffort(db, {
+        ...actor,
+        action: "import.revert",
+        status: "success",
+        entityType: "import-batch",
+        entityId: importBatchId,
+        tournamentId,
+        changedFields: ["status", "journal_entries"],
+        after: {status: "reverted", changes: preview.entries.length},
+        source: "callable",
+    });
+    return {reverted: true, changes: preview.entries.length};
 });
 
 export const updateVerification = onRequest(async (req, res) => {
