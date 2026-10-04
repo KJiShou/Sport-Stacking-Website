@@ -92,8 +92,8 @@ const EVENT_NAME_TO_COMBOS: Record<string, Array<{category: Category; eventType:
     Cycle: [{category: "individual", eventType: "Cycle"}],
     Double: [{category: "double", eventType: "Cycle"}],
     "Team Relay": [
-        {category: "team_relay", eventType: "Cycle"},
         {category: "team_relay", eventType: "3-6-3"},
+        {category: "team_relay", eventType: "Cycle"},
     ],
     "Parent & Child": [{category: "parent_&_child", eventType: "Cycle"}],
     "Special Need": [
