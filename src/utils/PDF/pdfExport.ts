@@ -316,6 +316,36 @@ const addHeaderIcons = async (
     }
 };
 
+interface HeaderIcons {
+    defaultIcon?: string;
+    userLogo?: string;
+}
+
+const loadHeaderIcons = async (userLogoUrl?: string | null): Promise<HeaderIcons> => {
+    const [defaultIcon, userLogo] = await Promise.all([loadDefaultIcon(), loadUserLogo(userLogoUrl)]);
+    return {defaultIcon, userLogo};
+};
+
+const addResolvedHeaderIcons = (doc: jsPDF, marginX: number, size: number, icons: HeaderIcons): void => {
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    if (icons.defaultIcon) {
+        try {
+            doc.addImage(icons.defaultIcon, inferImageFormat(icons.defaultIcon), marginX, HEADER_ICON_Y, size, size);
+        } catch (error) {
+            console.error("Error adding default icon:", error);
+        }
+    }
+
+    if (icons.userLogo) {
+        try {
+            doc.addImage(icons.userLogo, inferImageFormat(icons.userLogo), pageWidth - marginX - size, HEADER_ICON_Y, size, size);
+        } catch (error) {
+            console.error("Error adding user logo:", error);
+        }
+    }
+};
+
 const addPDFFooter = (doc: jsPDF): void => {
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
@@ -925,16 +955,15 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
     try {
         const doc = new jsPDF();
         doc.setFont(PDF_DEFAULT_FONT_FAMILY);
+        const headerIcons = await loadHeaderIcons(tournament.logo);
 
-        const addHeader = async (docInstance: jsPDF) => {
+        const addHeader = (docInstance: jsPDF) => {
             const pageWidth = docInstance.internal.pageSize.getWidth();
             const marginX = 14;
             const logoWidth = 60;
             const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
 
-            await addHeaderIcons(docInstance, marginX, 30, tournament.logo);
-
-            await addHeaderIcons(docInstance, marginX, 30, tournament.logo);
+            addResolvedHeaderIcons(docInstance, marginX, 30, headerIcons);
 
             docInstance.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
             docInstance.setFontSize(25);
@@ -949,7 +978,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
             return currentY + 10;
         };
 
-        let currentY = await addHeader(doc);
+        let currentY = addHeader(doc);
         let isFirstEvent = true;
 
         for (const eventResult of resultsData) {
@@ -957,7 +986,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
 
             if (!isFirstEvent) {
                 doc.addPage();
-                currentY = await addHeader(doc);
+                currentY = addHeader(doc);
             }
             isFirstEvent = false;
 
@@ -972,7 +1001,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
 
                 if (currentY > doc.internal.pageSize.height - 40) {
                     doc.addPage();
-                    currentY = await addHeader(doc);
+                    currentY = addHeader(doc);
                 }
 
                 doc.setFontSize(14);
@@ -1123,7 +1152,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                         // Check if we need a new page
                         if (currentY > doc.internal.pageSize.height - 60) {
                             doc.addPage();
-                            currentY = await addHeader(doc);
+                            currentY = addHeader(doc);
                         }
 
                         // Add legend title
@@ -1171,7 +1200,7 @@ export const exportAllPrelimResultsToPDF = async (options: AllPrelimResultsPDFPa
                 }
                 if (currentY > doc.internal.pageSize.height - 40) {
                     doc.addPage();
-                    currentY = await addHeader(doc);
+                    currentY = addHeader(doc);
                 }
             }
         }
@@ -1190,14 +1219,15 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
     try {
         const doc = new jsPDF();
         doc.setFont(PDF_DEFAULT_FONT_FAMILY);
+        const headerIcons = await loadHeaderIcons(tournament.logo);
 
-        const addHeader = async (docInstance: jsPDF) => {
+        const addHeader = (docInstance: jsPDF) => {
             const pageWidth = docInstance.internal.pageSize.getWidth();
             const marginX = 14;
             const logoWidth = 60;
             const titleMaxWidth = pageWidth - marginX * 2 - logoWidth;
 
-            await addHeaderIcons(docInstance, marginX, 30, tournament.logo);
+            addResolvedHeaderIcons(docInstance, marginX, 30, headerIcons);
 
             docInstance.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
             docInstance.setFontSize(25);
@@ -1212,7 +1242,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
             return currentY + 10;
         };
 
-        let currentY = await addHeader(doc);
+        let currentY = addHeader(doc);
 
         let isFirstEvent = true;
 
@@ -1221,7 +1251,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
 
             if (!isFirstEvent) {
                 doc.addPage();
-                currentY = await addHeader(doc);
+                currentY = addHeader(doc);
             }
             isFirstEvent = false;
 
@@ -1234,7 +1264,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
             for (const bracketResult of brackets) {
                 if (!isFirstBracketInEvent) {
                     doc.addPage();
-                    currentY = await addHeader(doc);
+                    currentY = addHeader(doc);
                     doc.setFontSize(16);
                     doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
                     doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, currentY);
@@ -1246,7 +1276,7 @@ export const exportFinalistsNameListToPDF = async (options: FinalistsPDFParams):
 
                 if (currentY > doc.internal.pageSize.height - 40) {
                     doc.addPage();
-                    currentY = await addHeader(doc);
+                    currentY = addHeader(doc);
                     doc.setFontSize(16);
                     doc.setFont(PDF_DEFAULT_FONT_FAMILY, "bold");
                     doc.text(getEventLabel(event) || `${getPrimaryEventCode(event)} (${event.type})`, 14, currentY);
@@ -1519,7 +1549,7 @@ export const exportCurrentEventNameListToPDF = async (
     });
 };
 
-export const exportNameListStickerPDF = async ({tournament, registrations}: NameListStickerOptions): Promise<void> => {
+export const exportNameListStickerPDF = ({tournament, registrations}: NameListStickerOptions): void => {
     try {
         const doc = new jsPDF("p", "pt", "a4");
         const pageHeight = doc.internal.pageSize.height;
@@ -1601,7 +1631,7 @@ export const exportNameListStickerPDF = async ({tournament, registrations}: Name
     }
 };
 
-export const exportLargeNameListStickerPDF = async ({tournament, registrations}: NameListStickerOptions): Promise<void> => {
+export const exportLargeNameListStickerPDF = ({tournament, registrations}: NameListStickerOptions): void => {
     try {
         const doc = new jsPDF("p", "pt", "a4");
         const pageHeight = doc.internal.pageSize.height;
@@ -2422,8 +2452,8 @@ export const generateAllStackingSheets = (
     ageMap: Record<string, number>,
     division: string,
     logoUrl?: string,
-): void => {
-    generateStackingSheetPDF(tournament, participants, ageMap, division, {logoUrl, includeAllParticipants: true});
+): Promise<void> => {
+    return generateStackingSheetPDF(tournament, participants, ageMap, division, {logoUrl, includeAllParticipants: true});
 };
 
 export const generateAllTeamStackingSheetsPDF = async (

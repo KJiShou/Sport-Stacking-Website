@@ -323,7 +323,7 @@ const RecordsIndex: React.FC = () => {
     const isAdmin = user?.roles?.verify_record || user?.roles?.edit_tournament || false;
 
     useEffect(() => {
-        loadRecords();
+        void loadRecords();
     }, []);
 
     const loadRecords = async () => {
@@ -378,7 +378,7 @@ const RecordsIndex: React.FC = () => {
         }
     };
 
-    const handleDeleteRecord = async (record: RecordDisplay) => {
+    const handleDeleteRecord = (record: RecordDisplay) => {
         if (!record.recordId) {
             Message.error("Missing record information for deletion");
             return;
@@ -400,7 +400,7 @@ const RecordsIndex: React.FC = () => {
                         await deleteRecord(record.recordId ?? "");
                     }
                     Message.success("Record deleted successfully");
-                    loadRecords(); // Refresh records
+                    await loadRecords();
                 } catch (error) {
                     console.error("Failed to delete record:", error);
                     Message.error("Failed to delete record");
@@ -422,7 +422,7 @@ const RecordsIndex: React.FC = () => {
             Message.success("Video URL updated successfully");
             setEditVideoModalVisible(false);
             videoForm.resetFields();
-            loadRecords(); // Refresh records
+            await loadRecords();
         } catch (error) {
             console.error("Failed to update video URL:", error);
             Message.error("Failed to update video URL");
