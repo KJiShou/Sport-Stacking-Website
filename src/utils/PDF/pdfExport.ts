@@ -2084,15 +2084,15 @@ const generateSingleStackingSheet = (
     const titleCenterY = startY + titleHeight / 2;
     const titleCenterX = marginX + logoBoxWidth + (pageWidth - 2 * marginX - logoBoxWidth * 2) / 2;
     const titleMaxWidth = pageWidth - marginX * 2 - logoBoxWidth * 2 - 6;
-    const venueTitle = fitTextToWidth(tournament.venue ?? "-", titleMaxWidth, 14);
-    drawMixedText(doc, venueTitle.text, titleCenterX, titleCenterY - 4, {
-        fontSize: venueTitle.fontSize,
+    const tournamentTitle = fitTextToWidth(tournament.name ?? "-", titleMaxWidth, 14);
+    drawMixedText(doc, tournamentTitle.text, titleCenterX, titleCenterY - 4, {
+        fontSize: tournamentTitle.fontSize,
         fontStyle: "bold",
         align: "center",
     });
-    const tournamentTitle = fitTextToWidth(tournament.name ?? "-", titleMaxWidth, 14);
-    drawMixedText(doc, tournamentTitle.text, titleCenterX, titleCenterY + 4, {
-        fontSize: tournamentTitle.fontSize,
+    const venueTitle = fitTextToWidth(tournament.venue ?? "-", titleMaxWidth, 14);
+    drawMixedText(doc, venueTitle.text, titleCenterX, titleCenterY + 4, {
+        fontSize: venueTitle.fontSize,
         fontStyle: "bold",
         align: "center",
     });

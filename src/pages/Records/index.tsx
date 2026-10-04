@@ -149,7 +149,7 @@ const EVENTS_FOR_CATEGORY: Record<Category, EventTypeKey[]> = {
     Individual: ["3-3-3", "3-6-3", "Cycle", "Overall"],
     Double: ["Cycle"],
     "Parent & Child": ["Cycle"],
-    "Team Relay": ["Cycle", "3-6-3"],
+    "Team Relay": ["3-6-3", "Cycle"],
     "Special Need": ["3-3-3", "3-6-3", "Cycle"],
 };
 
