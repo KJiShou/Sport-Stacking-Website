@@ -602,7 +602,7 @@ const RecordsIndex: React.FC = () => {
 
     const [selectedIndividualEvent, setSelectedIndividualEvent] = useState<EventTypeKey>("3-3-3");
     const [selectedDoubleEvent, setSelectedDoubleEvent] = useState<EventTypeKey>("Cycle");
-    const [selectedTeamRelayEvent, setSelectedTeamRelayEvent] = useState<EventTypeKey>("Cycle");
+    const [selectedTeamRelayEvent, setSelectedTeamRelayEvent] = useState<EventTypeKey>("3-6-3");
     const [selectedParentChildEvent, setSelectedParentChildEvent] = useState<EventTypeKey>("Cycle");
     const [selectedSpecialNeedEvent, setSelectedSpecialNeedEvent] = useState<EventTypeKey>("3-3-3");
 
