@@ -545,10 +545,9 @@ const reserveNextGlobalId = async (
     let numericId = nextAllowedGlobalIdNumber(Number(counterData?.count ?? 0));
     for (;;) {
         const globalId = String(numericId).padStart(5, "0");
-        const [existingProfile, retired] = await Promise.all([
-            transaction.get(database.collection("users").where("global_id", "==", globalId).limit(1)),
-            transaction.get(database.collection("retired_global_ids").doc(globalId)),
-        ]);
+        // Keep transaction reads ordered so a concurrent import cannot close a read still in flight.
+        const existingProfile = await transaction.get(database.collection("users").where("global_id", "==", globalId).limit(1));
+        const retired = await transaction.get(database.collection("retired_global_ids").doc(globalId));
         if (existingProfile.empty && !retired.exists) return {globalId, numericId};
         numericId = nextAllowedGlobalIdNumber(numericId);
     }
@@ -576,10 +575,8 @@ const resolveAthleteProfile = async (
     const counterRef = database.collection("counters").doc("userCounter");
 
     const resolved = await database.runTransaction(async (transaction) => {
-        const [identitySnapshot, counterSnapshot] = await Promise.all([
-            transaction.get(identityRef),
-            transaction.get(counterRef),
-        ]);
+        const identitySnapshot = await transaction.get(identityRef);
+        const counterSnapshot = await transaction.get(counterRef);
         const mappedProfileId = identitySnapshot.exists ? String(identitySnapshot.data()?.profile_id ?? "") : "";
         const selectedProfileId = mappedProfileId || candidateId;
         const selectedProfile = selectedProfileId

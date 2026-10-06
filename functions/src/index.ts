@@ -53,6 +53,7 @@ import {
     writeAuditLog,
     writeAuditLogBestEffort,
 } from "./observability.js";
+import {importJournalEntryMatches, syncTournamentRegistrationTeams} from "./registrationTeamSnapshots.js";
 import {VerificationRequestGuardError, guardVerificationRequest} from "./verificationRequestGuard.js";
 
 const allowedOriginList = [
@@ -1409,86 +1410,21 @@ const resolveTeamEvents = (
     };
 };
 
-type RegistrationTeamSnapshot = NonNullable<Registration["teams"]>[number];
-
-const normalizeMaintenanceTeamName = (value: string | null | undefined): string =>
-    (value ?? "")
-        .normalize("NFC")
-        .replace(/(?:\u200B|\u200C|\u200D|\uFEFF)/gu, "")
-        .replace(/\s+/gu, " ")
-        .trim();
-
-const maintenanceTeamNamesEqual = (left: string | null | undefined, right: string | null | undefined): boolean =>
-    normalizeMaintenanceTeamName(left) === normalizeMaintenanceTeamName(right);
-
-const buildRegistrationTeamSnapshot = (team: Team, existing?: RegistrationTeamSnapshot): RegistrationTeamSnapshot => {
-    const teamName = team.name ?? "";
-    return {
-        team_id: team.id,
-        label: maintenanceTeamNamesEqual(existing?.label, teamName) ? existing?.label : teamName,
-        name: maintenanceTeamNamesEqual(existing?.name, teamName) ? (existing?.name ?? teamName) : teamName,
-        member: (team.members ?? []).map((member) => ({
-            global_id: member.global_id,
-            verified: Boolean(member.verified),
-        })),
-        leader: {
-            global_id: team.leader_id ?? null,
-            verified: true,
-        },
-        looking_for_team_members: Boolean(team.looking_for_member),
-    };
-};
-
-/**
- * Keeps the legacy registration team snapshot readable by every confirmed
- * participant. The teams collection remains the source of truth.
- */
-const syncRegistrationTeamSnapshots = async (teamId: string, beforeTeam: Team | null, afterTeam: Team | null): Promise<void> => {
-    const tournamentId = afterTeam?.tournament_id ?? beforeTeam?.tournament_id ?? "";
-    if (!tournamentId) return;
-
+/** Reconcile against current source documents, including delayed delete events. */
+const syncRegistrationTeamSnapshots = async (_teamId: string, beforeTeam: Team | null, afterTeam: Team | null): Promise<void> => {
     const participantIds = new Set<string>();
     for (const team of [beforeTeam, afterTeam]) {
-        if (!team) continue;
-        if (team.leader_id) participantIds.add(team.leader_id);
-        for (const member of team.members ?? []) {
+        if (team?.leader_id) participantIds.add(team.leader_id);
+        for (const member of team?.members ?? []) {
             if (member.global_id) participantIds.add(member.global_id);
         }
     }
-    if (participantIds.size === 0) return;
-
-    const registrationSnapshots = await Promise.all(
-        [...participantIds].map((participantId) =>
-            db
-                .collection("registrations")
-                .where("tournament_id", "==", tournamentId)
-                .where("user_global_id", "==", participantId)
-                .limit(1)
-                .get(),
-        ),
+    const tournamentIds = new Set(
+        [beforeTeam?.tournament_id, afterTeam?.tournament_id].filter((id): id is string => Boolean(id)),
     );
-    const activeParticipantIds = new Set<string>();
-    if (afterTeam?.leader_id) activeParticipantIds.add(afterTeam.leader_id);
-    for (const member of afterTeam?.members ?? []) {
-        if (member.global_id && member.verified) activeParticipantIds.add(member.global_id);
+    for (const tournamentId of tournamentIds) {
+        await syncTournamentRegistrationTeams(db, tournamentId, participantIds);
     }
-    await Promise.all(
-        registrationSnapshots.flatMap((result) =>
-            result.docs.map((registrationDoc) => {
-                const registration = registrationDoc.data() as Registration;
-                const existingTeams = Array.isArray(registration.teams) ? registration.teams : [];
-                const withoutCurrentTeam = existingTeams.filter((entry) => entry.team_id !== teamId);
-                const existingTeam = existingTeams.find((entry) => entry.team_id === teamId);
-                const snapshot = afterTeam ? buildRegistrationTeamSnapshot(afterTeam, existingTeam) : null;
-                const nextTeams =
-                    snapshot && activeParticipantIds.has(registration.user_global_id)
-                        ? [...withoutCurrentTeam, snapshot]
-                        : withoutCurrentTeam;
-                if (JSON.stringify(nextTeams) === JSON.stringify(existingTeams)) return Promise.resolve();
-                return registrationDoc.ref.update({teams: nextTeams, updated_at: FirestoreTimestamp.now()});
-            }),
-        ),
-    );
 };
 
 const normalizeEventValue = (value: string): string => value.trim().toLowerCase();
@@ -4369,6 +4305,7 @@ export const importTournamentWorkbook = onCall(importWorkbookFunctionOptions, as
         try {
             const journalBefore = await captureImportJournalBefore(db, tournamentId, parsed);
             const commitSummary = await commitIdempotentImport(db, tournamentId, tournamentStart, parsed, importBatchRef.id);
+            await syncTournamentRegistrationTeams(db, tournamentId);
             const journal = await buildImportJournal(db, tournamentId, parsed, journalBefore);
             for (let offset = 0; offset < journal.length; offset += 400) {
                 const batch = db.batch();
@@ -4442,7 +4379,12 @@ const readImportHistoryRequest = (data: unknown): {tournamentId: string; importB
     };
 };
 
-type ImportJournalEntry = {path: string; before: unknown; after: unknown; afterChecksum: string};
+type ImportJournalEntry = {
+    path: string;
+    before: Record<string, unknown> | null;
+    after: Record<string, unknown> | null;
+    afterChecksum: string;
+};
 
 const importTimestampToIso = (value: unknown): string | null => {
     if (value instanceof FirestoreTimestamp) return value.toDate().toISOString();
@@ -4452,8 +4394,7 @@ const importTimestampToIso = (value: unknown): string | null => {
         return Number.isNaN(date.getTime()) ? null : date.toISOString();
     }
     if (value && typeof value === "object") {
-        const seconds = (value as {_seconds?: unknown; seconds?: unknown})._seconds ??
-            (value as {seconds?: unknown}).seconds;
+        const seconds = (value as {_seconds?: unknown; seconds?: unknown})._seconds ?? (value as {seconds?: unknown}).seconds;
         if (typeof seconds === "number" && Number.isFinite(seconds)) return new Date(seconds * 1000).toISOString();
     }
     return null;
@@ -4495,9 +4436,9 @@ const assertImportHistoryAccess = async (uid: string | undefined, tournamentId: 
     }
 };
 
-const importJournalPreview = async (tournamentId: string, importBatchId: string) => {
+const importJournalPreview = async (tournamentId: string, importBatchId: string, transaction?: Transaction) => {
     const batchRef = db.collection("import_batches").doc(importBatchId);
-    const batch = await batchRef.get();
+    const batch = transaction ? await transaction.get(batchRef) : await batchRef.get();
     if (!batch.exists || batch.data()?.tournament_id !== tournamentId) {
         throw new HttpsError("not-found", "Import batch not found for this tournament.");
     }
@@ -4506,14 +4447,27 @@ const importJournalPreview = async (tournamentId: string, importBatchId: string)
     if (data.status !== "committed" || data.journal_version !== 1 || data.revertible !== true) {
         return {batchRef, batch, entries: [], blockers: ["This historical import has no safe recovery snapshot."]};
     }
-    const changes = await batchRef.collection("changes").get();
+    const changes = transaction
+        ? await transaction.get(batchRef.collection("changes"))
+        : await batchRef.collection("changes").get();
     const entries = changes.docs.map((document) => document.data() as ImportJournalEntry);
     const blockers: string[] = [];
     let changedDocumentCount = 0;
     let hasPaymentEvidence = false;
-    for (const entry of entries) {
-        const current = await db.doc(entry.path).get();
-        if (stableChecksum(current.exists ? current.data() : null) !== entry.afterChecksum) {
+    const [currentSnapshots, teams] = await Promise.all([
+        entries.length > 0
+            ? transaction
+                ? transaction.getAll(...entries.map((entry) => db.doc(entry.path)))
+                : db.getAll(...entries.map((entry) => db.doc(entry.path)))
+            : Promise.resolve([]),
+        transaction
+            ? transaction.get(db.collection("teams").where("tournament_id", "==", tournamentId))
+            : db.collection("teams").where("tournament_id", "==", tournamentId).get(),
+    ]);
+    const currentTeams = teams.docs.map((team) => ({...team.data(), id: team.id}));
+    for (const [index, entry] of entries.entries()) {
+        const current = currentSnapshots[index];
+        if (!importJournalEntryMatches(entry, current.exists ? (current.data() ?? null) : null, entries, currentTeams)) {
             changedDocumentCount += 1;
         }
         const after = entry.after as Record<string, unknown> | null;
@@ -4533,7 +4487,10 @@ const importJournalPreview = async (tournamentId: string, importBatchId: string)
         .filter(Boolean);
     if (removedProfileIds.length > 0) {
         const changedPaths = new Set(entries.map((entry) => entry.path));
-        const [registrations, teams] = await Promise.all([db.collection("registrations").get(), db.collection("teams").get()]);
+        const [registrations, teams] = await Promise.all([
+            transaction ? transaction.get(db.collection("registrations")) : db.collection("registrations").get(),
+            transaction ? transaction.get(db.collection("teams")) : db.collection("teams").get(),
+        ]);
         let hasNewerProfileReference = false;
         for (const registration of registrations.docs) {
             const profileId = String(registration.data().profile_id ?? registration.data().user_id ?? "");
@@ -4542,8 +4499,10 @@ const importJournalPreview = async (tournamentId: string, importBatchId: string)
             }
         }
         for (const team of teams.docs) {
-            const ids = [team.data().leader_id, ...(team.data().members ?? []).map((member: {global_id?: string}) => member.global_id)]
-                .filter((value): value is string => typeof value === "string");
+            const ids = [
+                team.data().leader_id,
+                ...(team.data().members ?? []).map((member: {global_id?: string}) => member.global_id),
+            ].filter((value): value is string => typeof value === "string");
             const importedProfiles = entries
                 .filter((entry) => entry.before === null && entry.path.startsWith("users/"))
                 .map((entry) => String((entry.after as Record<string, unknown> | null)?.global_id ?? ""));
@@ -4604,25 +4563,38 @@ export const revertTournamentImport = onCall(importWorkbookFunctionOptions, asyn
     await assertImportHistoryAccess(request.auth?.uid, tournamentId);
     if (!importBatchId || !confirm) throw new HttpsError("invalid-argument", "Import batch ID and confirmation are required.");
     await assertWritesEnabled(db, `tournament.import.revert:${tournamentId}`);
-    const preview = await importJournalPreview(tournamentId, importBatchId);
-    if (preview.entries.length === 0 || preview.blockers.length > 0) {
-        throw new HttpsError("failed-precondition", preview.blockers.join(" ") || "This import cannot be reverted.");
-    }
-    for (let offset = 0; offset < preview.entries.length; offset += 400) {
-        const batch = db.batch();
-        for (const entry of preview.entries.slice(offset, offset + 400)) {
-            const ref = db.doc(entry.path);
-            if (entry.before === null) batch.delete(ref);
-            else batch.set(ref, entry.before as Record<string, unknown>);
+    // Validate and restore together: neither user edits nor delayed triggers can
+    // race the safety check, and an oversized undo fails without a partial restore.
+    const changes = await db.runTransaction(async (transaction) => {
+        const preview = await importJournalPreview(tournamentId, importBatchId, transaction);
+        if (preview.entries.length === 0 || preview.blockers.length > 0) {
+            throw new HttpsError("failed-precondition", preview.blockers.join(" ") || "This import cannot be reverted.");
         }
-        await batch.commit();
-    }
+        for (const entry of preview.entries) {
+            const ref = db.doc(entry.path);
+            if (entry.before === null) transaction.delete(ref);
+            else transaction.set(ref, entry.before);
+        }
+        transaction.set(
+            preview.batchRef,
+            {
+                status: "reverted",
+                reverted_at: FirestoreTimestamp.now(),
+                reverted_by_uid: request.auth?.uid,
+                updated_at: FirestoreTimestamp.now(),
+            },
+            {merge: true},
+        );
+        return preview.entries.length;
+    });
+    await syncTournamentRegistrationTeams(db, tournamentId);
     await recomputeImportCapacity(db, tournamentId);
-    await preview.batchRef.set(
-        {status: "reverted", reverted_at: FirestoreTimestamp.now(), reverted_by_uid: request.auth?.uid, updated_at: FirestoreTimestamp.now()},
-        {merge: true},
+    const actor = await resolveActorContext(
+        db,
+        request.auth?.uid ?? "",
+        normalizeOperationMeta(request.data?.meta).activeProfileGlobalId,
+        tournamentId,
     );
-    const actor = await resolveActorContext(db, request.auth?.uid ?? "", normalizeOperationMeta(request.data?.meta).activeProfileGlobalId, tournamentId);
     await writeAuditLogBestEffort(db, {
         ...actor,
         action: "import.revert",
@@ -4631,10 +4603,10 @@ export const revertTournamentImport = onCall(importWorkbookFunctionOptions, asyn
         entityId: importBatchId,
         tournamentId,
         changedFields: ["status", "journal_entries"],
-        after: {status: "reverted", changes: preview.entries.length},
+        after: {status: "reverted", changes},
         source: "callable",
     });
-    return {reverted: true, changes: preview.entries.length};
+    return {reverted: true, changes};
 });
 
 export const updateVerification = onRequest(async (req, res) => {
