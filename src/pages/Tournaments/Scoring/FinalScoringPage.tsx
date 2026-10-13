@@ -380,7 +380,7 @@ export default function FinalScoringPage() {
     useMount(() => {
         if (mountedRef.current) return;
         mountedRef.current = true;
-        refreshFinalScore();
+        void refreshFinalScore();
     });
 
     const filterParticipants = (participants: Registration[]) => {
@@ -703,7 +703,7 @@ export default function FinalScoringPage() {
                     console.error("Error updating rankings:", updateError);
                     Message.warning("Records complete but failed to update some rankings.");
                 }
-                navigate(`/tournaments/${tournamentId}/record/final`);
+                await navigate(`/tournaments/${tournamentId}/record/final`);
             } else {
                 const resolveName = (id: string, eventType: string) => {
                     const isTeamEvt = ["double", "team relay", "parent & child"].includes(eventType.toLowerCase());

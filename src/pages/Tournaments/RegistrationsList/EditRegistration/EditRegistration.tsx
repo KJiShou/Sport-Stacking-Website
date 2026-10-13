@@ -768,7 +768,7 @@ export default function EditTournamentRegistrationPage() {
                 try {
                     await deleteRegistrationById(tournamentId, registration.id ?? "", {adminDelete: true});
                     Message.success("Registration deleted successfully.");
-                    navigate(`/tournaments/${tournamentId}/registrations${location.search}`);
+                    await navigate(`/tournaments/${tournamentId}/registrations${location.search}`);
                 } catch (error) {
                     console.error("Failed to delete registration:", error);
                     Message.error("Failed to delete registration.");
@@ -790,13 +790,13 @@ export default function EditTournamentRegistrationPage() {
             setEvents(tournamentEvents);
             if (tournamentData?.editor !== user.global_id && user.roles?.edit_tournament !== true) {
                 Message.error("You are not authorized to edit this registration.");
-                navigate("/tournaments");
+                await navigate("/tournaments");
                 return;
             }
             const userReg = await fetchRegistrationById(tournamentId, registrationId);
             if (!userReg) {
                 Message.error("No registration found for this tournament.");
-                navigate("/tournaments");
+                await navigate("/tournaments");
                 return;
             }
             setRegistration({...userReg, id: registrationId});
@@ -904,7 +904,12 @@ export default function EditTournamentRegistrationPage() {
         if (mountedRef.current) return;
         mountedRef.current = true;
 
-        handleMount().finally(() => setIsMounted(true));
+        void handleMount()
+            .catch((error: unknown) => {
+                console.error("Failed to load registration editor:", error);
+                Message.error("Failed to load registration editor.");
+            })
+            .finally(() => setIsMounted(true));
     });
 
     const getEventDisplayLabel = (eventId: string): string => {
@@ -1445,7 +1450,7 @@ export default function EditTournamentRegistrationPage() {
                                             ] as UploadItem[])
                                           : []
                                 }
-                                customRequest={async (option) => {
+                                customRequest={(option) => {
                                     const {file, onSuccess, onError} = option;
                                     const MAX_SIZE = 10 * 1024 * 1024; // 10MB
                                     const validTypes = ["image/jpeg", "image/png", "image/gif"];
@@ -1537,7 +1542,7 @@ export default function EditTournamentRegistrationPage() {
                                         long
                                         type={`primary`}
                                         onClick={() => {
-                                            handleSave(
+                                            void handleSave(
                                                 form.getFieldsValue() as Registration,
                                                 registration?.rejection_reason ?? "",
                                             );

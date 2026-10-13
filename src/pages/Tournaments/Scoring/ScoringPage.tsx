@@ -403,7 +403,7 @@ export default function ScoringPage() {
     useMount(() => {
         if (mountedRef.current) return;
         mountedRef.current = true;
-        refreshParticipantList();
+        void refreshParticipantList();
     });
 
     const handleScoreChange = (userId: string, eventKey: string, tryNum: keyof Score, value: string) => {
@@ -1559,7 +1559,7 @@ export default function ScoringPage() {
                                                                         "Records saved but failed to update rankings.",
                                                                     );
                                                                 }
-                                                                navigate(`/tournaments/${tournamentId}/record/prelim`);
+                                                                await navigate(`/tournaments/${tournamentId}/record/prelim`);
                                                             } catch (error) {
                                                                 console.error("Failed to check records:", error);
                                                                 Message.error("Failed to check records.");

@@ -71,6 +71,40 @@ const getTeamParticipantIds = (team: Team): string[] => [
     ...(team.members?.map((member) => member.global_id) ?? []),
 ];
 
+const resolveTeamNameMap = async (
+    registrations: Registration[],
+    teams: Team[],
+    knownNames: Record<string, string> = {},
+): Promise<Record<string, string>> => {
+    const resolvedNames: Record<string, string> = {};
+    for (const [globalId, name] of Object.entries(knownNames)) {
+        if (name.trim() && name.trim() !== globalId.trim()) {
+            resolvedNames[globalId] = name.trim();
+        }
+    }
+    for (const registration of registrations) {
+        const name = registration.user_name?.trim();
+        const globalId = registration.user_global_id;
+        if (globalId && name && name !== globalId.trim() && !resolvedNames[globalId]) {
+            resolvedNames[globalId] = name;
+        }
+    }
+
+    const missingIds = Array.from(new Set(teams.flatMap(getTeamParticipantIds))).filter(
+        (globalId) => globalId.trim() && !resolvedNames[globalId],
+    );
+    if (missingIds.length > 0) {
+        const users = await fetchUsersByGlobalIds(Array.from(new Set(missingIds.map((globalId) => globalId.trim()))));
+        for (const globalId of missingIds) {
+            const name = users[globalId.trim()]?.name?.trim();
+            if (name && name !== globalId.trim()) {
+                resolvedNames[globalId] = name;
+            }
+        }
+    }
+    return resolvedNames;
+};
+
 const teamMatchesSearch = (team: Team, normalizedSearch: string, nameMap: Record<string, string>): boolean => {
     if (normalizedSearch.length === 0) return true;
     if (valueMatchesSearch(team.name, normalizedSearch)) return true;
@@ -454,37 +488,10 @@ export default function ParticipantListPage() {
                 const leaderId = stripTeamLeaderPrefix(team.leader_id);
                 return regs.some((r) => r.user_global_id === leaderId || r.user_id === leaderId);
             });
+            const resolvedNames = await resolveTeamNameMap(regs, verifiedTeams);
+            setSupplementalNameMap(resolvedNames);
             setRegistrationList(regs);
             setTeamList(verifiedTeams);
-
-            const approvedNameMap = regs.reduce(
-                (acc, registration) => {
-                    if (registration.user_global_id) {
-                        acc[registration.user_global_id] = registration.user_name || registration.user_global_id;
-                    }
-                    return acc;
-                },
-                {} as Record<string, string>,
-            );
-            const missingGlobalIds = Array.from(
-                new Set(
-                    verifiedTeams.flatMap((team) => [
-                        stripTeamLeaderPrefix(team.leader_id),
-                        ...(team.members ?? []).map((member) => member.global_id),
-                    ]),
-                ),
-            ).filter((globalId) => globalId && !approvedNameMap[globalId]);
-
-            if (missingGlobalIds.length > 0) {
-                const usersByGlobalId = await fetchUsersByGlobalIds(missingGlobalIds);
-                const fetchedNameMap: Record<string, string> = {};
-                for (const [globalId, user] of Object.entries(usersByGlobalId)) {
-                    fetchedNameMap[globalId] = user.name || globalId;
-                }
-                setSupplementalNameMap(fetchedNameMap);
-            } else {
-                setSupplementalNameMap({});
-            }
         } catch {
             Message.error("Unable to fetch participants");
         } finally {
@@ -514,7 +521,7 @@ export default function ParticipantListPage() {
     useMount(() => {
         if (mountedRef.current) return;
         mountedRef.current = true;
-        refreshParticipantList();
+        void refreshParticipantList();
     });
 
     useEffect(() => {
@@ -644,7 +651,7 @@ export default function ParticipantListPage() {
                 tournament,
                 entries,
                 ageMap,
-                nameMap: combinedNameMap,
+                nameMap: await resolveTeamNameMap(registrationList, teamList, combinedNameMap),
                 logoUrl: tournament.logo ?? "",
             });
             Message.success("Time sheets opened for all events");
@@ -692,7 +699,7 @@ export default function ParticipantListPage() {
                 teamList,
                 ageMap,
                 phoneMap,
-                combinedNameMap,
+                await resolveTeamNameMap(registrationList, teamList, combinedNameMap),
             );
             Message.success("All brackets list PDF opened");
         } catch (error) {
@@ -717,7 +724,7 @@ export default function ParticipantListPage() {
                 teamList,
                 ageMap,
                 phoneMap,
-                combinedNameMap,
+                await resolveTeamNameMap(registrationList, teamList, combinedNameMap),
             );
             Message.success("Current event name list PDF opened");
         } catch (error) {
@@ -834,7 +841,7 @@ export default function ParticipantListPage() {
                 registrations: registrationList,
                 ageMap,
                 phoneMap,
-                nameMap: combinedNameMap,
+                nameMap: await resolveTeamNameMap(registrationList, [team], combinedNameMap),
                 isTeamEvent: true,
                 team,
                 logoDataUrl: tournament.logo ?? "",
@@ -860,7 +867,7 @@ export default function ParticipantListPage() {
                 bracket.name,
                 {
                     logoUrl: tournament.logo ?? "",
-                    nameMap: combinedNameMap,
+                    nameMap: await resolveTeamNameMap(registrationList, [team], combinedNameMap),
                     eventCodes: sanitizeEventCodes(event.codes),
                 },
                 event.type,

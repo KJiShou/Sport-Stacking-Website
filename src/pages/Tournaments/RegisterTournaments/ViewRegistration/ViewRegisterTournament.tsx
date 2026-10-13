@@ -154,7 +154,7 @@ export default function ViewTournamentRegistrationPage() {
             // Here you would call your delete service function
             await deleteRegistrationById(tournamentId, registrationId);
             Message.success("Registration deleted successfully.");
-            navigate("/tournaments");
+            await navigate("/tournaments");
         } catch (error) {
             console.error("Failed to delete registration:", error);
             Message.error("Failed to delete registration.");
@@ -178,7 +178,7 @@ export default function ViewTournamentRegistrationPage() {
                 const userReg = await fetchUserRegistration(tournamentId, user.global_id ?? "");
                 if (!userReg) {
                     Message.error("No registration found for this tournament.");
-                    navigate("/tournaments");
+                    await navigate("/tournaments");
                     return;
                 }
                 setRegistration(userReg);
@@ -234,7 +234,7 @@ export default function ViewTournamentRegistrationPage() {
                 setLoading(false);
             }
         };
-        loadData();
+        void loadData();
     }, [tournamentId, user]);
 
     useEffect(() => {
@@ -459,7 +459,7 @@ export default function ViewTournamentRegistrationPage() {
                                 }
                                 onOk={(e) => {
                                     if (registration?.id) {
-                                        handleDeleteRegistration(registration.id);
+                                        void handleDeleteRegistration(registration.id);
                                     } else {
                                         Message.error("Unable to determine registration id");
                                     }

@@ -237,7 +237,7 @@ export default function PrintResultsPage() {
             }
         };
 
-        fetchData();
+        void fetchData();
     }, [tournamentId]);
 
     const nameMap = useMemo(

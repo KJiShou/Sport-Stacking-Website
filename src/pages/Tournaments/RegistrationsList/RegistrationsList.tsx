@@ -411,7 +411,12 @@ export default function RegistrationsListPage() {
         if (mountedRef.current) return;
         mountedRef.current = true;
 
-        handleMount().finally(() => setIsMounted(true));
+        void handleMount()
+            .catch((error: unknown) => {
+                console.error("Failed to load tournament registrations:", error);
+                Message.error("Failed to load tournament registrations.");
+            })
+            .finally(() => setIsMounted(true));
     });
 
     useEffect(() => {
@@ -608,7 +613,7 @@ export default function RegistrationsListPage() {
                             </div>
                         }
                         onOk={(e) => {
-                            handleDeleteRegistration(registration?.id ?? "");
+                            void handleDeleteRegistration(registration?.id ?? "");
                             e.stopPropagation();
                         }}
                         okText="Yes"
@@ -822,7 +827,7 @@ export default function RegistrationsListPage() {
                         }}
                         onRow={(record) => ({
                             onClick: () => {
-                                navigate(`/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`);
+                                void navigate(`/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`);
                             },
                         })}
                     />
@@ -841,7 +846,9 @@ export default function RegistrationsListPage() {
                             onKeyDown={(event) => {
                                 if (event.key === "Enter" || event.key === " ") {
                                     event.preventDefault();
-                                    navigate(`/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`);
+                                    void navigate(
+                                        `/tournaments/${tournamentId}/registrations/${record.id}/edit${location.search}`,
+                                    );
                                 }
                             }}
                         >
@@ -1128,7 +1135,9 @@ export default function RegistrationsListPage() {
                         ) : (
                             <>
                                 {safeImportHistory.length === 0 ? (
-                                    <Typography.Text type="secondary">No imports are currently available for safe undo.</Typography.Text>
+                                    <Typography.Text type="secondary">
+                                        No imports are currently available for safe undo.
+                                    </Typography.Text>
                                 ) : (
                                     safeImportHistory.map((batch) => renderImportHistoryCard(batch, true))
                                 )}
@@ -1139,7 +1148,8 @@ export default function RegistrationsListPage() {
                                                 ? "Hide previous import records"
                                                 : `View previous import records (${legacyImportHistory.length})`}
                                         </Button>
-                                        {showLegacyImportHistory && legacyImportHistory.map((batch) => renderImportHistoryCard(batch, false))}
+                                        {showLegacyImportHistory &&
+                                            legacyImportHistory.map((batch) => renderImportHistoryCard(batch, false))}
                                     </div>
                                 )}
                             </>

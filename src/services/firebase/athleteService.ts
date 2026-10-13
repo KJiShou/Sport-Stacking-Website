@@ -143,7 +143,7 @@ export async function fetchAthleteProfile(participantId: string): Promise<Athlet
     const upsertEventSummary = (
         event: IndividualEvent,
         record: AthleteRecordSummary,
-        context: {rank: number | null; fasterCount: number | null} = {rank: null, fasterCount: null},
+        context?: {rank: number | null; fasterCount: number | null},
     ) => {
         if (!record.time || record.time <= 0) {
             return;
@@ -161,8 +161,8 @@ export async function fetchAthleteProfile(participantId: string): Promise<Athlet
         eventSummaryMap.set(event, {
             event,
             bestTime: record.time,
-            rank: context.rank ?? existing?.rank ?? null,
-            fasterCount: context.fasterCount ?? existing?.fasterCount ?? null,
+            rank: context?.rank ?? existing?.rank ?? null,
+            fasterCount: context?.fasterCount ?? existing?.fasterCount ?? null,
             lastUpdated: record.updatedAt ?? record.createdAt ?? existing?.lastUpdated ?? null,
             bestRecord: {
                 ...record,

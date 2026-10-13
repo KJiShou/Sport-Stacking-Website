@@ -173,7 +173,7 @@ const RegisterPage = () => {
             await refreshProfiles(profileId ?? firebaseUser.uid);
             clearGoogleSignInIntent();
             Message.success("Registration successful!");
-            navigate("/", {replace: true});
+            await navigate("/", {replace: true});
         } catch (err: unknown) {
             Message.error(getErrorMessage(err, "Something went wrong"));
         } finally {
@@ -226,7 +226,7 @@ const RegisterPage = () => {
                 }
             }
         };
-        fetchAndUploadGoogleAvatar();
+        void fetchAndUploadGoogleAvatar();
     }, [firebaseUser, form, isICMode]);
 
     const handleResetAvatar = async () => {
@@ -385,7 +385,7 @@ const RegisterPage = () => {
                                                         size="mini"
                                                         type="text"
                                                         onClick={() => {
-                                                            handleResetAvatar();
+                                                            void handleResetAvatar();
                                                         }}
                                                     >
                                                         Reset Avatar

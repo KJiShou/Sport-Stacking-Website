@@ -666,7 +666,7 @@ export default function FinalResultsPage() {
             }
         };
 
-        fetchData();
+        void fetchData();
     }, [tournamentId]);
 
     const nameMap = useMemo(
@@ -917,7 +917,7 @@ export default function FinalResultsPage() {
         }
     }, [aggregationContext, events, getPlacementLabel, tournament]);
 
-    const handleEndCompetition = async () => {
+    const handleEndCompetition = () => {
         if (!tournamentId || !user) return;
 
         Modal.confirm({
@@ -934,7 +934,7 @@ export default function FinalResultsPage() {
                     if (t) {
                         setTournament(t);
                     }
-                    navigate(`/tournaments`);
+                    await navigate(`/tournaments`);
                 } catch (error: unknown) {
                     if (error instanceof Error) {
                         Message.error(error.message || "Failed to update tournament status.");
