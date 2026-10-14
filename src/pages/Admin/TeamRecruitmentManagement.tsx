@@ -243,7 +243,7 @@ export default function TeamRecruitmentManagement() {
             setAssignmentModalVisible(false);
             setAssignmentData(null);
             assignmentForm.resetFields();
-            loadRecruitmentData(); // Refresh data
+            await loadRecruitmentData(); // Refresh data
         } catch (error) {
             console.error("Failed to assign participant:", error);
             const errorMessage = error instanceof Error ? error.message : "Failed to assign participant to team";
@@ -322,7 +322,7 @@ export default function TeamRecruitmentManagement() {
             setDoubleAssignmentModalVisible(false);
             setDoubleAssignmentData(null);
             doubleAssignmentForm.resetFields();
-            loadRecruitmentData();
+            await loadRecruitmentData();
         } catch (error) {
             console.error("Failed to match double recruitment:", error);
             const errorMessage = error instanceof Error ? error.message : "Failed to match double recruitment.";
@@ -343,7 +343,7 @@ export default function TeamRecruitmentManagement() {
                 try {
                     await deleteIndividualRecruitment(individual.id);
                     Message.success("Recruitment request deleted");
-                    loadRecruitmentData();
+                    await loadRecruitmentData();
                 } catch (error) {
                     console.error("Failed to delete recruitment:", error);
                     Message.error("Failed to delete recruitment request");
@@ -362,7 +362,7 @@ export default function TeamRecruitmentManagement() {
                 try {
                     await deleteDoubleRecruitment(recruitment.id);
                     Message.success("Recruitment request deleted");
-                    loadRecruitmentData();
+                    await loadRecruitmentData();
                 } catch (error) {
                     console.error("Failed to delete double recruitment:", error);
                     Message.error("Failed to delete recruitment request");
@@ -394,7 +394,7 @@ export default function TeamRecruitmentManagement() {
             setEditTeamRecruitmentModalVisible(false);
             setEditingTeamRecruitment(null);
             teamRecruitmentForm.resetFields();
-            loadRecruitmentData();
+            await loadRecruitmentData();
         } catch (error) {
             console.error("Failed to update team recruitment:", error);
             const errorMessage = error instanceof Error ? error.message : "Failed to update recruitment.";
@@ -542,7 +542,7 @@ export default function TeamRecruitmentManagement() {
                             icon={<IconUserAdd style={{marginRight: "4px"}} />}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                handleAssignDouble(record);
+                                void handleAssignDouble(record);
                             }}
                             disabled={record.status !== "active" || !hasPartner}
                         >
@@ -646,7 +646,7 @@ export default function TeamRecruitmentManagement() {
                                     try {
                                         await deleteTeamRecruitment(record.id);
                                         Message.success("Recruitment deleted.");
-                                        loadRecruitmentData();
+                                        await loadRecruitmentData();
                                     } catch (error) {
                                         console.error("Failed to delete team recruitment:", error);
                                         Message.error("Failed to delete recruitment.");
@@ -662,13 +662,13 @@ export default function TeamRecruitmentManagement() {
 
     useEffect(() => {
         if (isAdmin) {
-            loadTournaments();
+            void loadTournaments();
         }
     }, [isAdmin]);
 
     useEffect(() => {
         if (isAdmin && selectedTournament) {
-            loadRecruitmentData();
+            void loadRecruitmentData();
         }
     }, [selectedTournament, isAdmin]);
 
@@ -797,7 +797,7 @@ export default function TeamRecruitmentManagement() {
                                             pagination={{pageSize: 10}}
                                             onRow={(individual) => ({
                                                 onClick: () => {
-                                                    navigate(
+                                                    void navigate(
                                                         `/tournaments/${selectedTournament}/registrations/${individual.registration_id}/edit`,
                                                     );
                                                 },
@@ -857,7 +857,7 @@ export default function TeamRecruitmentManagement() {
                                             pagination={{pageSize: 10}}
                                             onRow={(recruitment) => ({
                                                 onClick: () => {
-                                                    navigate(
+                                                    void navigate(
                                                         `/tournaments/${selectedTournament}/registrations/${recruitment.registration_id}/edit`,
                                                     );
                                                 },
@@ -917,7 +917,7 @@ export default function TeamRecruitmentManagement() {
                                             pagination={{pageSize: 10}}
                                             onRow={(team) => ({
                                                 onClick: () => {
-                                                    navigate(
+                                                    void navigate(
                                                         `/tournaments/${selectedTournament}/registrations/${team.registration_id}/edit`,
                                                     );
                                                 },

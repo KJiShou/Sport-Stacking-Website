@@ -557,7 +557,7 @@ export default function TournamentList() {
                                         type="text"
                                         loading={loading}
                                         className={`text-left`}
-                                        onClick={async () => handleView(tournament)}
+                                        onClick={() => handleView(tournament)}
                                     >
                                         <IconEye /> View Tournament
                                     </Button>
@@ -588,7 +588,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleView(tournament)}
+                                            onClick={() => handleView(tournament)}
                                         >
                                             <IconEye /> View Tournament
                                         </Button>
@@ -596,7 +596,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleCopyRegisterLink(tournament.id ?? "")}
+                                            onClick={() => handleCopyRegisterLink(tournament.id ?? "")}
                                         >
                                             <IconCopy /> Copy Register Link
                                         </Button>
@@ -604,7 +604,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
+                                            onClick={() => navigate(`/tournaments/${tournament.id}/registrations`)}
                                         >
                                             <IconEye /> View Registration List
                                         </Button>
@@ -612,7 +612,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => navigate(`/tournaments/${tournament.id}/participants`)}
+                                            onClick={() => navigate(`/tournaments/${tournament.id}/participants`)}
                                         >
                                             <IconUser /> Participant List
                                         </Button>
@@ -622,7 +622,7 @@ export default function TournamentList() {
                                                     type="text"
                                                     loading={loading}
                                                     className={`text-left`}
-                                                    onClick={async () => handleEdit(tournament)}
+                                                    onClick={() => handleEdit(tournament)}
                                                 >
                                                     <IconEdit /> Edit
                                                 </Button>
@@ -631,7 +631,7 @@ export default function TournamentList() {
                                                     status="danger"
                                                     loading={loading}
                                                     className={`text-left`}
-                                                    onClick={async () => handleDelete(tournament)}
+                                                    onClick={() => handleDelete(tournament)}
                                                 >
                                                     <IconDelete /> Delete
                                                 </Button>
@@ -664,7 +664,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleView(tournament)}
+                                            onClick={() => handleView(tournament)}
                                         >
                                             <IconEye /> View Tournament
                                         </Button>
@@ -672,7 +672,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleCopyRegisterLink(tournament.id ?? "")}
+                                            onClick={() => handleCopyRegisterLink(tournament.id ?? "")}
                                         >
                                             <IconCopy /> Copy Register Link
                                         </Button>
@@ -680,7 +680,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
+                                            onClick={() => navigate(`/tournaments/${tournament.id}/registrations`)}
                                         >
                                             <IconEye /> View Registration List
                                         </Button>
@@ -688,7 +688,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => navigate(`/tournaments/${tournament.id}/participants`)}
+                                            onClick={() => navigate(`/tournaments/${tournament.id}/participants`)}
                                         >
                                             <IconUser /> Participant List
                                         </Button>
@@ -712,7 +712,7 @@ export default function TournamentList() {
                                         await updateTournamentStatus(user, tournament.id, "On Going");
                                         await fetchTournaments();
                                         Message.success("Tournament started successfully!");
-                                        navigate(`/tournaments/${tournament.id}/start/record`);
+                                        await navigate(`/tournaments/${tournament.id}/start/record`);
                                     } catch (error) {
                                         console.error("Failed to start tournament:", error);
                                         Message.error("Failed to start tournament.");
@@ -737,7 +737,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleView(tournament)}
+                                            onClick={() => handleView(tournament)}
                                         >
                                             <IconEye /> View Tournament
                                         </Button>
@@ -745,7 +745,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleCopyRegisterLink(tournament.id ?? "")}
+                                            onClick={() => handleCopyRegisterLink(tournament.id ?? "")}
                                         >
                                             <IconCopy /> Copy Register Link
                                         </Button>
@@ -753,7 +753,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => navigate(`/tournaments/${tournament.id}/registrations`)}
+                                            onClick={() => navigate(`/tournaments/${tournament.id}/registrations`)}
                                         >
                                             <IconEye /> View Registration List
                                         </Button>
@@ -761,7 +761,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => navigate(`/tournaments/${tournament.id}/participants`)}
+                                            onClick={() => navigate(`/tournaments/${tournament.id}/participants`)}
                                         >
                                             <IconUser /> Participant List
                                         </Button>
@@ -769,7 +769,7 @@ export default function TournamentList() {
                                             type="text"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleEdit(tournament)}
+                                            onClick={() => handleEdit(tournament)}
                                         >
                                             <IconEdit /> Edit
                                         </Button>
@@ -778,7 +778,7 @@ export default function TournamentList() {
                                             status="danger"
                                             loading={loading}
                                             className={`text-left`}
-                                            onClick={async () => handleDelete(tournament)}
+                                            onClick={() => handleDelete(tournament)}
                                         >
                                             <IconDelete /> Delete
                                         </Button>
@@ -817,7 +817,7 @@ export default function TournamentList() {
                                         type="text"
                                         loading={loading}
                                         className={`text-left`}
-                                        onClick={async () => handleView(tournament)}
+                                        onClick={() => handleView(tournament)}
                                     >
                                         <IconEye /> View Tournament
                                     </Button>
@@ -867,7 +867,7 @@ export default function TournamentList() {
                                         type="text"
                                         loading={loading}
                                         className={`text-left`}
-                                        onClick={async () => handleView(tournament)}
+                                        onClick={() => handleView(tournament)}
                                     >
                                         <IconEye /> View Tournament
                                     </Button>
@@ -890,7 +890,7 @@ export default function TournamentList() {
                                     type="text"
                                     loading={loading}
                                     className={`text-left`}
-                                    onClick={async () => handleView(tournament)}
+                                    onClick={() => handleView(tournament)}
                                 >
                                     <IconEye /> View Tournament
                                 </Button>
@@ -1205,10 +1205,10 @@ export default function TournamentList() {
     };
 
     const handleView = (tournament: Tournament) => {
-        navigate(`/tournaments/${tournament.id}/view`);
+        void navigate(`/tournaments/${tournament.id}/view`);
     };
 
-    const handleDelete = async (tournament: Tournament) => {
+    const handleDelete = (tournament: Tournament) => {
         Modal.confirm({
             title: "Delete Confirmation",
             content: `Are you sure you want to delete the tournament "${tournament.name}"?`,
@@ -1243,7 +1243,7 @@ export default function TournamentList() {
             Message.error("Invalid tournament ID.");
             return;
         }
-        navigate(`/tournaments/${tournamentId}/register`);
+        void navigate(`/tournaments/${tournamentId}/register`);
     };
 
     const handleCopyRegisterLink = async (tournamentId?: string) => {
@@ -1327,7 +1327,7 @@ export default function TournamentList() {
     useMount(() => {
         if (mountedRef.current) return;
         mountedRef.current = true;
-        fetchTournaments();
+        void fetchTournaments();
     });
 
     const renderTournamentCard = (tournament: Tournament) => {
@@ -1339,7 +1339,10 @@ export default function TournamentList() {
                     <div className="min-w-0">
                         <div className="font-semibold text-base break-words">{tournament.name}</div>
                         <div className="country-cell text-sm text-gray-500 break-words">
-                            <CountryFlag country={Array.isArray(tournament.country) ? tournament.country[0] : tournament.country} size="sm" />
+                            <CountryFlag
+                                country={Array.isArray(tournament.country) ? tournament.country[0] : tournament.country}
+                                size="sm"
+                            />
                             <span>{country || "Location TBC"}</span>
                         </div>
                     </div>

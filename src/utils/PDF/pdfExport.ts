@@ -110,15 +110,16 @@ const drawMixedText = (
     value: string,
     x: number,
     y: number,
-    options: {fontStyle?: string; fontSize: number; align?: "left" | "center"} = {fontSize: 10},
+    options?: {fontStyle?: string; fontSize: number; align?: "left" | "center"},
 ): void => {
-    const fontStyle = options.fontStyle ?? "normal";
-    const textWidth = getMixedTextWidth(doc, value, fontStyle, options.fontSize);
-    let currentX = options.align === "center" ? x - textWidth / 2 : x;
+    const fontStyle = options?.fontStyle ?? "normal";
+    const fontSize = options?.fontSize ?? 10;
+    const textWidth = getMixedTextWidth(doc, value, fontStyle, fontSize);
+    let currentX = options?.align === "center" ? x - textWidth / 2 : x;
 
     for (const run of splitPDFTextRuns(value)) {
         doc.setFont(run.fontFamily, fontStyle);
-        doc.setFontSize(options.fontSize);
+        doc.setFontSize(fontSize);
         doc.text(run.text, currentX, y);
         currentX += doc.getTextWidth(run.text);
     }

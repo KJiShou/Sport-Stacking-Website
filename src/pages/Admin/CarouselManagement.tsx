@@ -51,7 +51,7 @@ export const CarouselManagement: React.FC = () => {
     const MOBILE_PAGE_SIZE = 10;
 
     useEffect(() => {
-        loadImages();
+        void loadImages();
     }, []);
 
     async function loadImages() {

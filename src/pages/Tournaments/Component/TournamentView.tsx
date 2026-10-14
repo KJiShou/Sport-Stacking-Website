@@ -515,7 +515,7 @@ export default function TournamentView() {
         }
     };
 
-    const handleEditRecord = async (
+    const handleEditRecord = (
         record: TournamentRecord | TournamentTeamRecord | TournamentOverallRecord,
         type: EditableRecordType,
     ) => {
@@ -822,7 +822,10 @@ export default function TournamentView() {
                 setLoading(false);
             }
         }
-        fetchTournament();
+        void fetchTournament().catch((error: unknown) => {
+            console.error("Failed to load tournament:", error);
+            Message.error("Failed to load tournament.");
+        });
     }, [id]);
     if (loading) {
         return (

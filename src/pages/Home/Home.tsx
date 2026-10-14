@@ -86,7 +86,7 @@ const Home: React.FC = () => {
     const [selectedImage, setSelectedImage] = useState<HomeCarouselImage | null>(null);
 
     useEffect(() => {
-        loadHomePageData();
+        void loadHomePageData();
     }, []);
 
     async function loadHomePageData() {
@@ -527,13 +527,14 @@ const Home: React.FC = () => {
                             <Title heading={2} style={{marginBottom: "1rem"}}>
                                 Ready to Start Stacking?
                             </Title>
-                            <Paragraph
-                                style={{fontSize: "16px", marginBottom: "2rem", maxWidth: "600px", margin: "0 auto 2rem"}}
-                            >
+                            <Paragraph style={{fontSize: "16px", marginBottom: "2rem", maxWidth: "600px", margin: "0 auto 2rem"}}>
                                 Join our community and discover the exciting world of sport stacking. Whether you're a beginner or
                                 an experienced stacker, we have something for everyone!
                             </Paragraph>
-                            <div className="home-cta-actions" style={{display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap"}}>
+                            <div
+                                className="home-cta-actions"
+                                style={{display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap"}}
+                            >
                                 <Link to="/tournaments">
                                     <Button type="primary" size="large">
                                         View Tournaments

@@ -122,7 +122,7 @@ export default function UserManagementPage() {
 
     useEffect(() => {
         if (isAdmin) {
-            loadUsers();
+            void loadUsers();
         }
     }, [isAdmin]);
 
@@ -236,7 +236,7 @@ export default function UserManagementPage() {
         }
     };
 
-    const handleDelete = async () => {
+    const handleDelete = () => {
         if (!selectedUser?.id) return;
         Modal.confirm({
             title: "Delete Account",
@@ -415,11 +415,17 @@ export default function UserManagementPage() {
                                 </div>
                                 <div className="user-management-mobile-cards">
                                     {filteredUsers
-                                        .slice((mobileUserPage - 1) * MOBILE_USER_PAGE_SIZE, mobileUserPage * MOBILE_USER_PAGE_SIZE)
+                                        .slice(
+                                            (mobileUserPage - 1) * MOBILE_USER_PAGE_SIZE,
+                                            mobileUserPage * MOBILE_USER_PAGE_SIZE,
+                                        )
                                         .map((entry) => {
                                             const status = entry.account_status ?? "claimed";
                                             return (
-                                                <div key={entry.id ?? entry.global_id ?? entry.email} className="admin-mobile-card">
+                                                <div
+                                                    key={entry.id ?? entry.global_id ?? entry.email}
+                                                    className="admin-mobile-card"
+                                                >
                                                     <div className="flex items-start justify-between gap-3">
                                                         <div className="min-w-0">
                                                             <div className="font-semibold break-words">

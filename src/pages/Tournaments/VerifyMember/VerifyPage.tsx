@@ -142,7 +142,11 @@ export default function VerifyPage() {
             }
         };
 
-        update();
+        void update().catch((error: unknown) => {
+            console.error("Failed to load member verification:", error);
+            setStatus("error");
+            setErrorMessage(error instanceof Error ? error.message : "Network or server error.");
+        });
     }, []);
 
     if (status === "loading") {

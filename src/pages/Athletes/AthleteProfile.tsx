@@ -315,7 +315,7 @@ const AthleteProfilePage = () => {
 
         let cancelled = false;
 
-        Promise.all(
+        void Promise.all(
             tournamentIds.map(async (tournamentId) => {
                 try {
                     const tournament = await fetchTournamentById(tournamentId);
@@ -329,14 +329,18 @@ const AthleteProfilePage = () => {
                     return {tournamentId, startDate: null, name: null};
                 }
             }),
-        ).then((entries) => {
-            if (!cancelled) {
-                setTournamentStartDates(
-                    Object.fromEntries(entries.map(({tournamentId, startDate}) => [tournamentId, startDate])),
-                );
-                setTournamentNames(Object.fromEntries(entries.map(({tournamentId, name}) => [tournamentId, name])));
-            }
-        });
+        )
+            .then((entries) => {
+                if (!cancelled) {
+                    setTournamentStartDates(
+                        Object.fromEntries(entries.map(({tournamentId, startDate}) => [tournamentId, startDate])),
+                    );
+                    setTournamentNames(Object.fromEntries(entries.map(({tournamentId, name}) => [tournamentId, name])));
+                }
+            })
+            .catch((error: unknown) => {
+                console.error("Failed to load athlete tournament details:", error);
+            });
 
         return () => {
             cancelled = true;

@@ -216,7 +216,7 @@ export const AuthProvider = ({children}: {children: React.ReactNode}) => {
             }
         };
 
-        resolveRedirectResult();
+        void resolveRedirectResult();
 
         return () => {
             isActive = false;

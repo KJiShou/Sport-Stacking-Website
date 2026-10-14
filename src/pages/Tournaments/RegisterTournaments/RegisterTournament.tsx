@@ -928,7 +928,7 @@ export default function RegisterTournamentPage() {
                 });
             } else {
                 Message.success("Registration successful!");
-                navigate("/tournaments");
+                await navigate("/tournaments");
             }
         } catch (error) {
             console.error("Tournament registration failed", {
@@ -1120,7 +1120,7 @@ export default function RegisterTournamentPage() {
                 setPageLoading(false);
             }
         };
-        fetch();
+        void fetch();
     }, [tournamentId, user, refreshTeamInvitations]);
 
     useEffect(() => {

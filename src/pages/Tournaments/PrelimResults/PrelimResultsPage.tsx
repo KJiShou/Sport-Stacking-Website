@@ -740,7 +740,7 @@ export default function PrelimResultsPage() {
             }
         };
 
-        fetchData();
+        void fetchData();
     }, [tournamentId]);
 
     const nameMap = useMemo(
@@ -1362,7 +1362,7 @@ export default function PrelimResultsPage() {
                 }
             }
 
-            navigate(`/tournaments/${tournamentId}/scoring/final`);
+            await navigate(`/tournaments/${tournamentId}/scoring/final`);
         } catch (error) {
             console.error(error);
             Message.error("Failed to start finals.");
