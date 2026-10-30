@@ -439,6 +439,11 @@ async function fetchImageFixedOrientation(url: string): Promise<string> {
 // Core PDF Generation Functions
 // Use getTeamMaxAge from eventUtils to avoid duplication
 
+const sortNameListRows = (rows: string[][], nameColumn: number): string[][] =>
+    rows
+        .sort((a, b) => (a[nameColumn] ?? "").localeCompare(b[nameColumn] ?? "", undefined, {sensitivity: "base"}))
+        .map((row, index) => [(index + 1).toString(), ...row.slice(1)]);
+
 const generateTeamTableData = (
     teams: Team[],
     eventKey: string,
@@ -753,6 +758,9 @@ export const exportParticipantListToPDF = async (options: ExportPDFOptions): Pro
             tableData = generateTeamTableData(teams, eventKey, bracket, ageLookup, phoneMap, resolvedNameMap, events ?? []);
         } else {
             tableData = generateIndividualTableData(registrations, bracket, phoneMap);
+        }
+        if (!team) {
+            tableData = sortNameListRows(tableData, 2);
         }
 
         const {headers, columnStyles} = getParticipantListTableLayout(team, isTeamEvent, teamEventType);
@@ -1427,7 +1435,7 @@ const exportBracketsListToPDF = async ({
                     {} as Record<string, string>,
                 );
                 const resolvedNameMap = {...registrationNameMap, ...nameMap};
-                const tableData = isTeamEvent
+                const unsortedTableData = isTeamEvent
                     ? generateTeamTableData(teams, eventKey, bracket, ageMap, phoneMap, resolvedNameMap, events ?? [])
                     : registrations
                           .filter((r) => {
@@ -1442,6 +1450,7 @@ const exportBracketsListToPDF = async ({
                               r.age?.toString() || "N/A",
                               phoneMap[r.user_global_id] || "N/A",
                           ]);
+                const tableData = sortNameListRows(unsortedTableData, isTeamEvent ? 2 : 1);
 
                 if (tableData.length > 0) {
                     const {headers, columnStyles} = getAllPrelimTableLayout(isTeamEvent, event.type);
