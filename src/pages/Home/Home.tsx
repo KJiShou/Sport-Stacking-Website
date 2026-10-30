@@ -101,14 +101,15 @@ const Home: React.FC = () => {
             setCarouselImages(images);
             setUpcomingTournaments(tournaments.filter((tournament) => !tournament.isDraft));
 
-            // Get top individual record for each of the three events
+            // Get the best Malaysian individual record for each of the three events.
             const topRecords: Array<GlobalResult | GlobalTeamResult> = [];
             const events: Array<"3-3-3" | "3-6-3" | "Cycle"> = ["3-3-3", "3-6-3", "Cycle"];
 
             for (const event of events) {
                 const eventRecords = records.Individual[event] || [];
-                if (eventRecords.length > 0) {
-                    topRecords.push(eventRecords[0]);
+                const malaysianRecord = eventRecords.find((record) => record.country?.trim().toLowerCase() === "malaysia");
+                if (malaysianRecord) {
+                    topRecords.push(malaysianRecord);
                 }
             }
 
