@@ -92,6 +92,11 @@ type ExistingProfile = {
     data: DocumentData;
 };
 
+const importedPhoneNumber = (registrationPhone: unknown, profilePhone: unknown): string => {
+    if (typeof registrationPhone === "string" && registrationPhone.trim()) return registrationPhone;
+    return typeof profilePhone === "string" ? profilePhone.trim() : "";
+};
+
 const normalizeText = (value: string): string =>
     value.normalize("NFKD").replace(/\p{M}/gu, "").trim().replace(/\s+/g, " ").toLowerCase();
 
@@ -319,9 +324,9 @@ const captureScopedImportDocuments = async (
             const matches = await findExistingProfileCandidates(database, athlete, importIdentityKey(athlete));
             for (const match of matches) {
                 putSnapshot(snapshots, match.ref.path, match.data());
-                const uniqueRef = database.collection("registration_unique_keys").doc(
-                    registrationIdentityKey(tournamentId, match.id),
-                );
+                const uniqueRef = database
+                    .collection("registration_unique_keys")
+                    .doc(registrationIdentityKey(tournamentId, match.id));
                 const unique = await uniqueRef.get();
                 putSnapshot(snapshots, uniqueRef.path, unique.data());
             }
@@ -329,9 +334,9 @@ const captureScopedImportDocuments = async (
             const profileRef = database.collection("users").doc(athlete.userDocId);
             const profile = await profileRef.get();
             putSnapshot(snapshots, profileRef.path, profile.data());
-            const uniqueRef = database.collection("registration_unique_keys").doc(
-                registrationIdentityKey(tournamentId, athlete.userDocId),
-            );
+            const uniqueRef = database
+                .collection("registration_unique_keys")
+                .doc(registrationIdentityKey(tournamentId, athlete.userDocId));
             const unique = await uniqueRef.get();
             putSnapshot(snapshots, uniqueRef.path, unique.data());
         }
@@ -427,9 +432,10 @@ export const buildImportPlan = async (
         if (profile) summary.profilesReused += 1;
         else if (!conflictedKeys.has(athleteKey)) summary.profilesCreated += 1;
         const desiredEvents = [...(parsed.registrationsByAthleteKey.get(athleteKey) ?? [])].sort();
-        const matches = !athlete.parentOnly && profile
-            ? registrations.docs.filter((snapshot) => registrationBelongsToProfile(snapshot.data(), profile))
-            : [];
+        const matches =
+            !athlete.parentOnly && profile
+                ? registrations.docs.filter((snapshot) => registrationBelongsToProfile(snapshot.data(), profile))
+                : [];
         if (!athlete.parentOnly) {
             if (matches.length > 1) {
                 conflicts.push(`${athlete.name}: multiple registrations already exist for this tournament.`);
@@ -437,7 +443,11 @@ export const buildImportPlan = async (
                 conflicts.push(`${athlete.name}: an existing member/admin registration will not be overwritten.`);
             } else if (matches.length === 0) {
                 summary.registrationsCreated += 1;
-            } else if (sameStrings(matches[0].data().events_registered ?? matches[0].data().event_ids, desiredEvents)) {
+            } else if (
+                sameStrings(matches[0].data().events_registered ?? matches[0].data().event_ids, desiredEvents) &&
+                matches[0].data().registration_status === "approved" &&
+                matches[0].data().phone_number === importedPhoneNumber(matches[0].data().phone_number, profile?.data.phone_number)
+            ) {
                 summary.registrationsUnchanged += 1;
             } else {
                 summary.registrationsUpdated += 1;
@@ -496,7 +506,8 @@ export const buildImportPlan = async (
         const existingIds = teamParticipantIds(data);
         const overlapping = desiredTeams.find(
             ({team, participantIds, key}) =>
-                team.eventId === eventId && key !== importedTeamIdentityKey(tournamentId, eventId, existingIds) &&
+                team.eventId === eventId &&
+                key !== importedTeamIdentityKey(tournamentId, eventId, existingIds) &&
                 participantIds.some((participantId) => existingIds.includes(participantId)),
         );
         if (overlapping) {
@@ -703,10 +714,12 @@ const commitRegistration = async (
         if (current.exists && !isImportManaged(existing)) {
             throw new HttpsError("failed-precondition", `${athlete.name}'s registration is no longer import-managed.`);
         }
+        const phoneNumber = importedPhoneNumber(existing.phone_number, user.data()?.phone_number);
         const unchanged =
             current.exists &&
             sameStrings(existing.events_registered ?? existing.event_ids, desiredEvents) &&
-            existing.registration_status === "approved";
+            existing.registration_status === "approved" &&
+            existing.phone_number === phoneNumber;
         const payload = {
             ...existing,
             id: registrationRef.id,
@@ -719,7 +732,7 @@ const commitRegistration = async (
             age: ageAtTournament(athlete.birthdate, tournamentStartDate),
             gender: athlete.gender,
             country: athlete.country[0],
-            phone_number: existing.phone_number ?? "",
+            phone_number: phoneNumber,
             organizer: existing.organizer ?? "",
             event_ids: desiredEvents,
             events_registered: desiredEvents,

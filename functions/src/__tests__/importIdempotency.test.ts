@@ -178,13 +178,7 @@ describe("idempotent tournament workbook import", () => {
         const imported = athlete(`Journal Athlete ${suffix}`, "2013-03-04");
         const workbook = parsed([imported], {[imported.name]: [individualEventId]});
         const before = await captureImportJournalBefore(database, tournamentId, workbook);
-        await commitIdempotentImport(
-            database,
-            tournamentId,
-            new Date("2026-11-07T00:00:00.000Z"),
-            workbook,
-            `journal-${suffix}`,
-        );
+        await commitIdempotentImport(database, tournamentId, new Date("2026-11-07T00:00:00.000Z"), workbook, `journal-${suffix}`);
         const journal = await buildImportJournal(database, tournamentId, workbook, before);
         assert.ok(journal.some((entry) => entry.path === `users/${imported.userDocId}` && entry.before === null));
         assert.ok(journal.some((entry) => entry.path.startsWith("registrations/") && entry.before === null));
@@ -316,20 +310,16 @@ describe("idempotent tournament workbook import", () => {
             parentOnly: true,
             sourceSheet: "Parent & Child",
         };
-        const parentChildParsed = parsed(
-            [child, parent],
-            {[child.name]: [individualEventId, teamEventId], [parent.name]: []},
-            [
-                {
-                    eventId: teamEventId,
-                    eventType: "Parent & Child",
-                    sheetName: "Parent & Child",
-                    sourceRow: 2,
-                    name: "",
-                    members: [child.workbookKey, parent.workbookKey],
-                },
-            ],
-        );
+        const parentChildParsed = parsed([child, parent], {[child.name]: [individualEventId, teamEventId], [parent.name]: []}, [
+            {
+                eventId: teamEventId,
+                eventType: "Parent & Child",
+                sheetName: "Parent & Child",
+                sourceRow: 2,
+                name: "",
+                members: [child.workbookKey, parent.workbookKey],
+            },
+        ]);
         parentChildParsed.baseRosterKeys.delete(parent.workbookKey);
         parentChildParsed.registrationsByAthleteKey.delete(parent.workbookKey);
 
@@ -552,5 +542,46 @@ describe("idempotent tournament workbook import", () => {
         const registrations = await database.collection("registrations").where("tournament_id", "==", callableTournamentId).get();
         for (const registration of registrations.docs) cleanup.delete(registration.ref);
         await cleanup.commit();
+    });
+
+    it("copies profile phones into imported registrations without replacing existing contacts", async () => {
+        const entries = [athlete(`Phone Athlete ${suffix}`, "2010-01-02"), athlete(`No Phone Athlete ${suffix}`, "2011-02-03")];
+        const workbook = parsed(entries, {});
+        await commitIdempotentImport(database, tournamentId, new Date("2026-11-07T00:00:00Z"), workbook, "phone-initial");
+        track(entries);
+        const profile = database.collection("users").doc(entries[0].userDocId as string);
+        await profile.update({phone_number: " 0123456789 "});
+        const registrations = await database.collection("registrations").where("tournament_id", "==", tournamentId).get();
+        const registration = registrations.docs.find((entry) => entry.data().user_id === entries[0].userDocId);
+        const noPhone = registrations.docs.find((entry) => entry.data().user_id === entries[1].userDocId);
+        assert.ok(registration);
+        assert.ok(noPhone);
+        for (const empty of ["", null, "   "]) {
+            await registration.ref.update({phone_number: empty});
+            const result = await commitIdempotentImport(
+                database,
+                tournamentId,
+                new Date("2026-11-07T00:00:00Z"),
+                workbook,
+                "phone-repeat",
+            );
+            assert.equal((await registration.ref.get()).data()?.phone_number, "0123456789");
+            assert.equal(result.registrationsUpdated, 1);
+        }
+        await registration.ref.update({phone_number: "0999999999"});
+        await profile.update({phone_number: "0888888888"});
+        await commitIdempotentImport(database, tournamentId, new Date("2026-11-07T00:00:00Z"), workbook, "phone-preserve");
+        assert.equal((await registration.ref.get()).data()?.phone_number, "0999999999");
+        assert.equal((await noPhone.ref.get()).data()?.phone_number, "");
+        // Creating a fresh registration for an existing profile also copies its contact.
+        await registration.ref.delete();
+        await commitIdempotentImport(
+            database,
+            tournamentId,
+            new Date("2026-11-07T00:00:00Z"),
+            workbook,
+            "phone-new-registration",
+        );
+        assert.equal((await registration.ref.get()).data()?.phone_number, "0888888888");
     });
 });

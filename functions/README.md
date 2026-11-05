@@ -94,3 +94,41 @@ To test email sending locally:
 - **Email not sending**: Check Firebase function logs with `yarn logs`
 - **AWS SES errors**: Verify sender email is verified in AWS SES console
 - **Build errors**: Run `yarn build` to see TypeScript compilation errors
+
+## Repair imported registration phone numbers
+
+Excel imports preserve a nonblank registration phone number, or copy the matched
+profile's phone when the registration contact is blank. Profile changes do not
+subsequently overwrite an existing registration contact.
+
+The repair CLI is restricted to the ISSF Asian Open 2026 tournament in the
+production `(default)` database. It only fills blank contacts on approved
+`admin_import` registrations. Run from the repository root with production Admin
+SDK credentials:
+
+```bash
+yarn workspace functions build
+yarn workspace functions repair:registration-phones --database '(default)' --tournament qzhR8w2Zs7MNUtlycL9N
+yarn workspace functions repair:registration-phones --database '(default)' --tournament qzhR8w2Zs7MNUtlycL9N --apply
+```
+
+Omitting `--apply` previews without writing. Identity conflicts, ambiguous profile
+matches and profiles without a phone are reported by record ID. Repeating the
+repair does not overwrite existing contacts. Each update atomically saves full
+before/after snapshots under the server-only
+`repair_manifests/registration-phones-qzhR8w2Zs7MNUtlycL9N/entries` collection and
+writes an audit entry. Snapshots contain contact data; do not export them into
+source control or terminal logs. Use `--repair-id <id>` for a separate repair run.
+
+To preview or apply restoration of this repair:
+
+```bash
+yarn workspace functions repair:registration-phones --database '(default)' --tournament qzhR8w2Zs7MNUtlycL9N --restore
+yarn workspace functions repair:registration-phones --database '(default)' --tournament qzhR8w2Zs7MNUtlycL9N --restore --apply
+```
+
+Restoration requires the entire registration to still match the saved post-repair
+snapshot; subsequent edits are skipped. It restores only the original phone and
+update timestamp, including missing fields. Original import journals are left
+intact: import undo may detect this repair as a later edit. Restore the phone
+repair before attempting to undo the original import.
