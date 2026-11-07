@@ -24,7 +24,7 @@ import {Button, Input, InputNumber, Message, Modal, Table, Tabs} from "@arco-des
 import type {TableColumnProps} from "@arco-design/web-react";
 import {IconSearch} from "@arco-design/web-react/icon";
 import {useEffect, useRef, useState} from "react";
-import {useNavigate, useParams} from "react-router-dom";
+import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
 import {CountryFlag, MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 
@@ -275,6 +275,7 @@ const createFinalParticipantCardRenderer =
 export default function FinalScoringPage() {
     const navigate = useNavigate();
     const {tournamentId} = useParams<{tournamentId: string}>();
+    const [searchParams] = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [records, setRecords] = useState<(TournamentRecord | TournamentTeamRecord)[]>([]);
@@ -303,7 +304,7 @@ export default function FinalScoringPage() {
         if (!tournamentId) return;
         setLoading(true);
         // Preserve current tab state
-        const prevEventTab = currentEventTab;
+        const prevEventTab = currentEventTab || searchParams.get("event") || "";
         const prevBracketTab = currentBracketTab;
         const prevClassificationTab = currentClassificationTab;
         try {

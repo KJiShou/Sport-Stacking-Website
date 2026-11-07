@@ -1102,7 +1102,7 @@ export default function PrelimResultsPage() {
     );
 
     const handleStartFinal = useCallback(async () => {
-        if (!tournament) return;
+        if (!tournament || !currentEvent) return;
 
         setLoading(true);
         try {
@@ -1114,7 +1114,7 @@ export default function PrelimResultsPage() {
             );
             const validationErrors: string[] = [];
 
-            for (const event of events) {
+            for (const event of [currentEvent]) {
                 const eventKey = getEventKey(event);
                 const eventCodes = sanitizeEventCodes(event.codes);
 
@@ -1226,7 +1226,8 @@ export default function PrelimResultsPage() {
                     content: (
                         <div style={{maxHeight: 420, overflowY: "auto"}}>
                             <p style={{marginBottom: 12}}>
-                                Finals can only start after every required prelim record has been entered.
+                                Finals for {getEventLabel(currentEvent)} can only start after every required prelim record for
+                                this event has been entered.
                             </p>
                             <ul style={{paddingLeft: 20, margin: 0}}>
                                 {previewErrors.map((error) => (
@@ -1247,7 +1248,7 @@ export default function PrelimResultsPage() {
 
             const finalists: Finalist[] = [];
 
-            for (const event of events) {
+            for (const event of [currentEvent]) {
                 const eventCodes = sanitizeEventCodes(event.codes);
                 const eventCode = eventCodes[0] ?? event.type;
 
@@ -1362,14 +1363,16 @@ export default function PrelimResultsPage() {
                 }
             }
 
-            await navigate(`/tournaments/${tournamentId}/scoring/final`);
+            await navigate(
+                `/tournaments/${tournamentId}/scoring/final?event=${encodeURIComponent(currentEvent.id ?? currentEvent.type)}`,
+            );
         } catch (error) {
             console.error(error);
             Message.error("Failed to start finals.");
         } finally {
             setLoading(false);
         }
-    }, [aggregationContext, navigate, registrations, teams, tournament, tournamentId]);
+    }, [aggregationContext, allRecords, currentEvent, events, navigate, registrations, teams, tournament, tournamentId]);
 
     const handleCopyShareLink = useCallback(async () => {
         if (!tournamentId) return;
@@ -1399,8 +1402,9 @@ export default function PrelimResultsPage() {
                             icon={<IconCaretRight />}
                             onClick={handleStartFinal}
                             loading={loading}
+                            disabled={!currentEvent}
                         >
-                            Start Final
+                            Start Final for Current Event
                         </Button>
                         <Dropdown
                             trigger="click"
