@@ -3338,7 +3338,18 @@ export const mutateAdminTeam = onCall(callableFunctionOptions, async (request) =
                 hasEventOverlap(
                     buildNormalizedEventSet(getTeamEventReferences(candidate)),
                     buildNormalizedEventSet(getTeamEventReferences(nextTeam)),
-                ) && teamParticipantIds(candidate).some((participantId) => confirmedParticipantIds.includes(participantId))
+                ) &&
+                teamParticipantIds(candidate).some((participantId) => {
+                    if (!confirmedParticipantIds.includes(participantId)) return false;
+                    // Parent & Child stores the child as leader and the parent
+                    // as member. Only a parent shared by both teams is allowed.
+                    const isParentChild = eventType.includes("parent") && eventType.includes("child");
+                    return (
+                        !isParentChild ||
+                        participantId === normalizeAdminGlobalId(candidate.leader_id) ||
+                        participantId === normalizeAdminGlobalId(nextTeam.leader_id)
+                    );
+                })
             );
         });
         const replaceableConflictingTeams = conflictingTeams.filter((teamSnapshot) => {

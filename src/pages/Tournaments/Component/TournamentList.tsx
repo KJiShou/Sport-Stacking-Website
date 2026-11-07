@@ -708,11 +708,20 @@ export default function TournamentList() {
                                 if (user && tournament.id) {
                                     try {
                                         setLoading(true);
-                                        await updateTeamNamesForTournament(tournament.id);
                                         await updateTournamentStatus(user, tournament.id, "On Going");
                                         await fetchTournaments();
                                         Message.success("Tournament started successfully!");
-                                        await navigate(`/tournaments/${tournament.id}/start/record`);
+
+                                        try {
+                                            await updateTeamNamesForTournament(tournament.id);
+                                        } catch (error) {
+                                            console.error("Failed to synchronize team details after starting tournament:", error);
+                                            Message.warning(
+                                                "Tournament started, but team details could not be synchronized. Please try again from the tournament page.",
+                                            );
+                                        }
+
+                                        navigate(`/tournaments/${tournament.id}/start/record`);
                                     } catch (error) {
                                         console.error("Failed to start tournament:", error);
                                         Message.error("Failed to start tournament.");
