@@ -1,16 +1,17 @@
+import {CountryFlag, MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 import type {FinalistGroupPayload, Registration, Team, TeamMember, Tournament, TournamentEvent} from "@/schema";
 import {
-    TournamentOverallRecordSchema,
     type TournamentRecord,
     TournamentRecordSchema,
     type TournamentTeamRecord,
     TournamentTeamRecordSchema,
 } from "@/schema/RecordSchema";
+import {db} from "@/services/firebase/config";
+import {saveFinalIndividualScores} from "@/services/firebase/finalScoreService";
 import {fetchTournamentFinalists} from "@/services/firebase/finalistService";
 import {
     getBestRecords,
     getTournamentFinalRecords,
-    saveOverallRecord,
     saveRecord,
     saveTeamRecord,
     updateParticipantRankingsAndResults,
@@ -26,7 +27,6 @@ import {IconSearch} from "@arco-design/web-react/icon";
 import {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {useMount} from "react-use";
-import {CountryFlag, MobilePageHeader, ResponsiveOverlay, ResponsiveTabs} from "@/components/responsive";
 
 const {TabPane} = Tabs;
 const TEAM_EVENT_TYPES = new Set(["Double", "Team Relay", "Parent & Child"]);
@@ -745,8 +745,7 @@ export default function FinalScoringPage() {
         try {
             const now = new Date().toISOString();
             const codes = currentEvent.codes ?? [];
-            // Track best times per code while saving
-            const bestTimes: Partial<Record<"3-3-3" | "3-6-3" | "Cycle", number>> = {};
+            const individualScores: TournamentRecord[] = [];
 
             // Validate all scores before saving
             const validationErrors: string[] = [];
@@ -785,7 +784,6 @@ export default function FinalScoringPage() {
                 const numbers = [t1, t2, t3].filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0);
                 if (numbers.length === 0) continue; // skip empty
                 const best = Math.min(...numbers);
-                bestTimes[code] = best;
 
                 if (isIndividual && selectedParticipant) {
                     // find existing record for update fields like submitted_at
@@ -826,10 +824,7 @@ export default function FinalScoringPage() {
                         gender: selectedParticipant.gender ?? "Male",
                     };
 
-                    await saveRecord(TournamentRecordSchema.parse(data));
-
-                    // Check if this beats the current best record
-                    await checkAndNotifyNewRecord(best, selectedParticipant.age, currentEvent.type, code);
+                    individualScores.push(TournamentRecordSchema.parse(data));
                 }
 
                 if (!isIndividual && selectedTeam) {
@@ -880,67 +875,14 @@ export default function FinalScoringPage() {
                 }
             }
 
-            // After saving individual code records, create/update overall record for Individual finals
-            if (
-                isIndividual &&
-                selectedParticipant &&
-                (currentEvent.type === "Individual" || currentEvent.type === "Open Age Individual") &&
-                (["3-3-3", "3-6-3", "Cycle"] as const).every((c) => new Set(currentEvent.codes ?? []).has(c))
-            ) {
-                // Ensure we have best times for all three codes from modal, otherwise try to derive from existing records
-                const needCodes: Array<"3-3-3" | "3-6-3" | "Cycle"> = ["3-3-3", "3-6-3", "Cycle"];
-                for (const c of needCodes) {
-                    if (bestTimes[c] == null) {
-                        const existing = records.find(
-                            (r) =>
-                                r.event === currentEvent.type &&
-                                r.code === c &&
-                                (r as TournamentRecord).participant_id === selectedParticipant.user_id,
-                        ) as TournamentRecord | undefined;
-                        if (existing) {
-                            const vals = [existing.try1, existing.try2, existing.try3].filter(
-                                (v): v is number => typeof v === "number" && Number.isFinite(v),
-                            );
-                            if (vals.length > 0) bestTimes[c] = Math.min(...vals);
-                        }
-                    }
+            if (individualScores.length > 0) {
+                if (currentEvent.type === "Individual" || currentEvent.type === "Open Age Individual") {
+                    await saveFinalIndividualScores(db, individualScores);
+                } else {
+                    for (const record of individualScores) await saveRecord(record);
                 }
-
-                if (needCodes.every((c) => typeof bestTimes[c] === "number")) {
-                    const threeBest = bestTimes["3-3-3"] as number;
-                    const threeSixThreeBest = bestTimes["3-6-3"] as number;
-                    const cycleBest = bestTimes.Cycle as number;
-                    const overallTime = threeBest + threeSixThreeBest + cycleBest;
-
-                    await saveOverallRecord(
-                        TournamentOverallRecordSchema.parse({
-                            id: "",
-                            tournament_id: tournamentId,
-                            tournament_name: tournament?.name ?? null,
-                            event_id: currentEvent.id ?? "",
-                            event: "Individual",
-                            code: "Overall",
-                            participant_id: selectedParticipant.user_id,
-                            participant_global_id: selectedParticipant.user_global_id,
-                            participant_name: selectedParticipant.user_name,
-                            age: selectedParticipant.age,
-                            country: selectedParticipant.country,
-                            gender: selectedParticipant.gender || "Male",
-                            three_three_three: threeBest,
-                            three_six_three: threeSixThreeBest,
-                            cycle: cycleBest,
-                            overall_time: overallTime,
-                            classification:
-                                (currentClassificationTab as "beginner" | "intermediate" | "advance" | "prelim" | undefined) ??
-                                undefined,
-                            round: "final",
-                            try1: overallTime,
-                            try2: overallTime,
-                            try3: overallTime,
-                            status: "submitted",
-                            submitted_at: now,
-                        }),
-                    );
+                for (const record of individualScores) {
+                    await checkAndNotifyNewRecord(record.best_time, record.age ?? 0, record.event, record.code);
                 }
             }
 
