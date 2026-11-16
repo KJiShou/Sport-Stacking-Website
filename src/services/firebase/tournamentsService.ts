@@ -561,7 +561,23 @@ export async function deleteTournamentById(user: FirestoreUser, tournamentId: st
 async function deleteTournamentCascade(tournamentId: string): Promise<void> {
     const affectedAthleteGlobalIds = new Set<string>();
 
-    // 1. Delete all registrations
+    // 1. Delete teams before registrations so each team transaction can clean up
+    // participant registrations while they still exist.
+    try {
+        const teamsQuery = query(collection(db, "teams"), where("tournament_id", "==", tournamentId));
+        const teamsSnapshot = await getDocs(teamsQuery);
+
+        // Each deletion reads all teams in this tournament. Parallel deletions
+        // contend on those same documents and can exhaust Firestore retries.
+        for (const docSnapshot of teamsSnapshot.docs) {
+            await deleteTeam(tournamentId, docSnapshot.id);
+        }
+    } catch (error) {
+        console.error("Error deleting teams:", error);
+        throw new Error("Failed to delete tournament teams");
+    }
+
+    // 2. Delete all registrations after team cleanup succeeds.
     try {
         const registrationsQuery = query(collection(db, "registrations"), where("tournament_id", "==", tournamentId));
         const registrationsSnapshot = await getDocs(registrationsQuery);
@@ -572,19 +588,6 @@ async function deleteTournamentCascade(tournamentId: string): Promise<void> {
     } catch (error) {
         console.error("Error deleting registrations:", error);
         throw new Error("Failed to delete tournament registrations");
-    }
-
-    // 2. Delete all teams
-    try {
-        const teamsQuery = query(collection(db, "teams"), where("tournament_id", "==", tournamentId));
-        const teamsSnapshot = await getDocs(teamsQuery);
-
-        const teamDeletePromises = teamsSnapshot.docs.map((docSnapshot) => deleteTeam(tournamentId, docSnapshot.id));
-
-        await Promise.all(teamDeletePromises);
-    } catch (error) {
-        console.error("Error deleting teams:", error);
-        throw new Error("Failed to delete tournament teams");
     }
 
     // 3. Delete tournament records stored in records collections
